@@ -62,6 +62,7 @@ import {
   tokens,
 } from '../format.js';
 import { createCost, type CostHandle } from './cost.js';
+import { createQuotas, type QuotaHandle } from './quotas.js';
 import { gripDots, providerMark } from './logo.js';
 import { createMeter, isDrawable, meterStateStep, type MeterHandle } from './meter.js';
 
@@ -141,6 +142,7 @@ export interface RowHandle {
 interface Refs {
   grip: HTMLButtonElement;
   cost: CostHandle;
+  quotas: QuotaHandle;
   name: HTMLElement | null;
   plan: HTMLElement | null;
   meter: MeterHandle | null;
@@ -155,6 +157,7 @@ interface Refs {
 const EMPTY_REFS: Refs = {
   grip: null as unknown as HTMLButtonElement,
   cost: null as unknown as CostHandle,
+  quotas: null as unknown as QuotaHandle,
   name: null,
   plan: null,
   meter: null,
@@ -478,6 +481,9 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
   // open across the 15s snapshot cadence. A block that collapsed itself every
   // time main pushed would be unusable.
   refs.cost = createCost(provider.id);
+  // Same lifetime and the same reason: a disclosure that collapsed itself on
+  // every 15s push would be unusable.
+  refs.quotas = createQuotas(provider.id);
 
   root.appendChild(refs.grip);
   root.appendChild(body);
@@ -613,7 +619,18 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     // `p.status` here is the EFFECTIVE status, already run through
     // effectiveStatus() at the top of update(), so a snapshot that main has
     // stopped pushing degrades the cost figure too — not just the meter.
-    refs.cost.update(p.weeklyCost, p.displayName, p.status === 'stale' || p.status === 'error');
+    const degraded = p.status === 'stale' || p.status === 'error';
+
+    // Per-model quota detail, ABOVE the cost block. Order is deliberate: this
+    // one is about the same limit the meter above reports, so it belongs next
+    // to it, while the cost block is a different kind of claim entirely and
+    // reads as the row's footnote.
+    refs.quotas.update(p.modelQuotas ?? null, p.displayName, degraded);
+    if (!refs.quotas.el.hidden && refs.quotas.el.parentElement !== body) {
+      body.appendChild(refs.quotas.el);
+    }
+
+    refs.cost.update(p.weeklyCost, p.displayName, degraded);
     if (!refs.cost.el.hidden && refs.cost.el.parentElement !== body) {
       body.appendChild(refs.cost.el);
     }
@@ -621,7 +638,13 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     // and a vertically centred mark then floats away from the name it
     // identifies. The flag lets CSS pin it to the first line for those rows
     // only, leaving the 44px and 64px rows centred as they were.
-    setAttr(root, 'data-cost', refs.cost.el.hidden ? null : 'true');
+    // Either block makes the row tall enough that a vertically centred mark
+    // drifts away from the name it identifies, so both drive the same flag.
+    setAttr(
+      root,
+      'data-cost',
+      refs.cost.el.hidden && refs.quotas.el.hidden ? null : 'true',
+    );
 
     // Pending state on whichever action this shape owns.
     const busy = context.isBusy(p.id);

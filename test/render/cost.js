@@ -258,6 +258,156 @@ app.whenReady().then(async () => {
   check('the disclosure survives a pushed snapshot',
     after.expanded === 'true' && after.rows === 5, after);
 
+  // ---- per-model quota detail ------------------------------------------
+  //
+  // The user asked to see Antigravity's usage broken down with "Claude and GPT
+  // usage visible separately inside". The load-bearing rule is that the figure
+  // lives on the GROUP and members carry names only: an Antigravity row lists
+  // "Claude Opus 4.6" directly beneath the user's real Claude Code row, and
+  // "Claude Opus 4.6 · %60" would read as a claim about their Claude
+  // subscription in every screenshot and every screen-reader pass.
+  const quotaCollapsed = await js(`(() => {
+    const b = ${q('antigravity')}.querySelector('.quota');
+    const t = b.querySelector('.quota__toggle');
+    return {
+      present: !b.hidden,
+      expanded: t.getAttribute('aria-expanded'),
+      detailHidden: b.querySelector('.quota__detail').hidden,
+      summary: b.querySelector('.quota__summary').textContent,
+      name: t.getAttribute('aria-label'),
+      controls: t.getAttribute('aria-controls'),
+      controlsExists: !!document.getElementById(t.getAttribute('aria-controls')),
+      // Nothing in the collapsed state may show a percentage: the meter above
+      // owns the row's reading and a second figure here competes with it.
+      percentInCollapsed: /%/.test(t.textContent),
+    };
+  })()`);
+  say('quota collapsed: ' + JSON.stringify(quotaCollapsed));
+  check('a provider reporting per-model quota gets the block',
+    quotaCollapsed.present === true, quotaCollapsed);
+  check('it starts collapsed, so the hover panel stays quiet',
+    quotaCollapsed.expanded === 'false' && quotaCollapsed.detailHidden === true, quotaCollapsed);
+  check('the collapsed line counts models and shows no figure at all',
+    /8 model/.test(quotaCollapsed.summary) && quotaCollapsed.percentInCollapsed === false,
+    quotaCollapsed.summary);
+  check('with one shared figure it does not claim a spread',
+    /farklı oran/.test(quotaCollapsed.summary) === false, quotaCollapsed.summary);
+  check('the toggle names the provider for a reader with no surrounding layout',
+    /^Antigravity:/.test(quotaCollapsed.name || ''), quotaCollapsed.name);
+  check('and it points at a panel that exists',
+    quotaCollapsed.controlsExists === true, quotaCollapsed.controls);
+
+  await js(`${q('antigravity')}.querySelector('.quota__toggle').click()`);
+  await sleep(160);
+  const quotaOpen = await js(`(() => {
+    const b = ${q('antigravity')}.querySelector('.quota');
+    const groups = [...b.querySelectorAll('.quota__group')];
+    return {
+      expanded: b.querySelector('.quota__toggle').getAttribute('aria-expanded'),
+      lead: (b.querySelector('.quota__lead') || {}).textContent,
+      denial: (b.querySelector('.quota__denial') || {}).textContent,
+      groups: groups.length,
+      heads: groups.map(g => g.querySelector('.quota__head').textContent),
+      headStates: groups.map(g => g.querySelector('.quota__head').dataset.state),
+      members: groups.map(g => [...g.querySelectorAll('.quota__models > li')].map(li => li.textContent)),
+      notes: [...b.querySelectorAll('.quota__note')].map(n => n.textContent),
+      // The denial must come BEFORE any model name in document order: a caveat
+      // placed after the thing it qualifies has already been misread.
+      denialFirst: (() => {
+        const d = b.querySelector('.quota__denial');
+        const first = b.querySelector('.quota__models > li');
+        return !!(d && first) &&
+          (d.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      })(),
+    };
+  })()`);
+  say('quota open: ' + JSON.stringify(quotaOpen));
+  check('expanding shows the group and its models', quotaOpen.expanded === 'true'
+    && quotaOpen.groups === 1 && quotaOpen.members[0].length === 8, quotaOpen);
+  check('the figure sits on the GROUP heading, once',
+    /%0 kullanıldı/.test(quotaOpen.heads[0]) && /8 model/.test(quotaOpen.heads[0]),
+    quotaOpen.heads);
+  check('the group figure takes the state ramp, like the meter above it',
+    quotaOpen.headStates[0] === 'calm', quotaOpen.headStates);
+  check('Claude and GPT appear by name, which is what was asked for',
+    quotaOpen.members[0].some(m => /Claude Opus/.test(m))
+      && quotaOpen.members[0].some(m => /GPT-OSS/.test(m)), quotaOpen.members[0]);
+  check('the denial is present and names the confusion it prevents',
+    /kendi satırı olan araçların kotasıyla ilgileri yoktur/.test(quotaOpen.denial || ''),
+    quotaOpen.denial);
+  check('and it is rendered above the model names, not under them',
+    quotaOpen.denialFirst === true, quotaOpen.denialFirst);
+  check('a derived figure says so: it came from an undocumented local store',
+    quotaOpen.notes.some(n => /Belgelenmiş bir arayüz değil/.test(n)), quotaOpen.notes);
+  check('and it never appears without the instant it was measured',
+    quotaOpen.notes.some(n => /itibarıyla/.test(n)), quotaOpen.notes);
+
+  // THE CHECK THIS WHOLE COMPONENT EXISTS FOR.
+  const pairing = await js(`(() => {
+    const b = ${q('antigravity')}.querySelector('.quota');
+    // Any element whose text contains BOTH a model name and a percentage,
+    // other than an ancestor that legitimately holds a group heading and its
+    // list. Leaf-level pairing is what must not exist.
+    return [...b.querySelectorAll('.quota__models > li')]
+      .filter(li => /%/.test(li.textContent))
+      .map(li => li.textContent);
+  })()`);
+  check('NO model name is ever rendered next to a percentage',
+    pairing.length === 0, pairing);
+
+  // Divergence: the same block, two groups. Antigravity's own UI splits these
+  // as "Gemini models" and "Claude and GPT models", and the decode clusters
+  // them exactly that way.
+  await js(`window.__probe.setWindowsDirect('antigravity', { modelQuotas: {
+    groups: [
+      { usedPercentage: 60, resetsAt: null,
+        members: ['Claude Opus 4.6 (Thinking)', 'Claude Sonnet 4.6 (Thinking)', 'GPT-OSS 120B (Medium)'] },
+      { usedPercentage: 0, resetsAt: null,
+        members: ['Gemini 3.1 Pro (High)', 'Gemini 3.1 Pro (Low)'] }
+    ],
+    diverged: true,
+    source: 'antigravity.ide.quota_info.remaining_fraction',
+    provenance: 'derived',
+    capturedAt: new Date().toISOString(),
+  } })`);
+  await sleep(200);
+  const diverged = await js(`(() => {
+    const b = ${q('antigravity')}.querySelector('.quota');
+    const groups = [...b.querySelectorAll('.quota__group')];
+    return {
+      summary: b.querySelector('.quota__summary').textContent,
+      expanded: b.querySelector('.quota__toggle').getAttribute('aria-expanded'),
+      groups: groups.length,
+      heads: groups.map(g => g.querySelector('.quota__head').textContent),
+      states: groups.map(g => g.querySelector('.quota__head').dataset.state),
+      claudeLine: [...b.querySelectorAll('.quota__models > li')]
+        .map(li => li.textContent).filter(t => /Claude Opus/.test(t)),
+      anyPaired: [...b.querySelectorAll('.quota__models > li')].some(li => /%/.test(li.textContent)),
+    };
+  })()`);
+  say('quota diverged: ' + JSON.stringify(diverged));
+  check('when the figures differ the groups separate on their own',
+    diverged.groups === 2, diverged);
+  check('and the collapsed line says so, still without a figure',
+    /2 farklı oran/.test(diverged.summary) && !/%/.test(diverged.summary), diverged.summary);
+  check('each group carries its own figure and its own ramp step',
+    /%60/.test(diverged.heads[0]) && /%0/.test(diverged.heads[1])
+      && diverged.states[0] === 'watch' && diverged.states[1] === 'calm', diverged);
+  check('the disclosure stays open across a pushed snapshot',
+    diverged.expanded === 'true', diverged.expanded);
+  check('"Claude Opus 4.6" is on screen and still carries no number of its own',
+    diverged.claudeLine.length === 1 && diverged.anyPaired === false, diverged.claudeLine);
+
+  // A provider with no per-model detail must show no block at all — an empty
+  // disclosure is indistinguishable from a broken one.
+  const noQuota = await js(`${q('claude')}.querySelector('.quota') === null
+    || ${q('claude')}.querySelector('.quota').hidden`);
+  check('a provider that reports no per-model detail gets no block',
+    noQuota === true, noQuota);
+
+  await js(`${q('antigravity')}.querySelector('.quota__toggle').click()`);
+  await sleep(120);
+
   // ---- no bare total anywhere in the rendered text ---------------------
   const bare = await js(`(() => {
     const RE = /^~?(en az )?<?\$[\d.,]+$/;

@@ -115,6 +115,39 @@ const ALL_UNPRICED_COST = {
   windowEnd: '2026-09-10T03:00:00.000Z',
   windowAnchored: true,
 };
+/**
+ * The per-model quota block, as measured live: eight models, one figure, one
+ * reset. `diverged: false` is the common case and the one the collapsed line
+ * has to stay quiet about.
+ *
+ * Two of the eight are Claude models. That is the whole reason this block is
+ * shaped the way it is: an Antigravity row lists them directly beneath the
+ * user's real Claude Code row, so no rendered string may pair one of these
+ * names with a percentage.
+ */
+const LIVE_QUOTAS = {
+  groups: [
+    {
+      usedPercentage: 0,
+      resetsAt: iso(5 * 3600000),
+      members: [
+        'Claude Opus 4.6 (Thinking)',
+        'Claude Sonnet 4.6 (Thinking)',
+        'GPT-OSS 120B (Medium)',
+        'Gemini 3.1 Pro (High)',
+        'Gemini 3.1 Pro (Low)',
+        'Gemini 3.6 Flash (High)',
+        'Gemini 3.6 Flash (Low)',
+        'Gemini 3.6 Flash (Medium)',
+      ],
+    },
+  ],
+  diverged: false,
+  source: 'antigravity.ide.quota_info.remaining_fraction',
+  provenance: 'derived',
+  capturedAt: new Date(now.getTime() - 12 * 60000).toISOString(),
+};
+
 const TINY_COST = {
   ...LIVE_COST,
   totalUsd: 0.004,
@@ -187,6 +220,7 @@ const FIXTURES = {
       weeklyCost: ALL_UNPRICED_COST,
       fiveHour: win(12, 'known'),
       tokens: tok(4_215_300),
+      modelQuotas: LIVE_QUOTAS,
     }),
     p('kimi', 'Kimi', '#2B6BE8', false, 'passive', { setupAction: ADD }),
   ],
