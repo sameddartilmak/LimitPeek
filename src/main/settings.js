@@ -1,0 +1,111 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const { sanitizeOrder } = require('../core/order');
+const { sanitizeEnabled } = require('../core/enabled');
+const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
+
+/**
+ * App settings, stored in the app's own userData. Small and hand-editable.
+ *
+ * `planLabel` lives here on purpose: it is the ONLY source for that field.
+ * ADR-001 security F1 forbids opening `~/.claude/.credentials.json`, so the
+ * plan is either something the user told us or it stays null. It is never
+ * inferred from usage volume, which would be a guess presented as a fact.
+ *
+ * `providerOrder` and `enabledProviders` live here rather than in the
+ * transcript store on purpose: the store is derived data that is rewritten,
+ * pruned and thrown away whenever its schema moves, and losing a user's drag
+ * order — or, worse, which providers they added — to a cache eviction would be
+ * a bug with no visible cause. This file is user state.
+ */
+const FILE = 'settings.json';
+
+const DEFAULTS = Object.freeze({
+  autostart: true,
+  planLabel: null,
+  /** Empty means "registry order"; see src/core/order.js. */
+  providerOrder: [],
+  /**
+   * Partial map id -> boolean. Empty means "every provider takes its shipped
+   * default" (claude on, the other five off); see src/core/enabled.js. It is
+   * deliberately partial rather than a full map, so a provider added in a
+   * later version arrives with ITS default rather than inheriting a `false`
+   * that a settings file written before it existed could never have meant.
+   */
+  enabledProviders: {},
+  /**
+   * 'dark' | 'light' | 'system'. See `src/core/theme.js` for why an
+   * unrecognised value falls back to the default rather than being passed
+   * through: a theme the renderer does not know is a panel with no palette.
+   */
+  theme: DEFAULT_THEME,
+});
+
+function file(userDataDir) {
+  return path.join(userDataDir, FILE);
+}
+
+function defaults() {
+  // DEFAULTS is frozen and holds an array and an object, so a spread would hand
+  // the caller a shared, frozen `providerOrder` / `enabledProviders`.
+  return { ...DEFAULTS, providerOrder: [], enabledProviders: {} };
+}
+
+function load(userDataDir) {
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(file(userDataDir), 'utf8'));
+  } catch {
+    // Missing, unreadable or corrupt. Never a throw and never a partial read:
+    // a truncated settings file must cost the user their preferences, not
+    // their panel.
+    return defaults();
+  }
+  if (!raw || typeof raw !== 'object') return defaults();
+  return {
+    autostart: typeof raw.autostart === 'boolean' ? raw.autostart : DEFAULTS.autostart,
+    planLabel: typeof raw.planLabel === 'string' && raw.planLabel ? raw.planLabel : null,
+    // Validated at the boundary: whatever survives here is known ids only, so
+    // nothing downstream has to re-check it.
+    providerOrder: sanitizeOrder(raw.providerOrder),
+    // Same discipline, and the same fallback: an unknown id is dropped, a
+    // non-boolean value is ignored so that id keeps its default, and a value
+    // that is not an object at all degrades to defaults. Never to "nothing is
+    // enabled", which would be an empty panel with no visible cause.
+    enabledProviders: sanitizeEnabled(raw.enabledProviders),
+    // Same discipline again, and the same reason: a typo, a value from a
+    // future version or a non-string all become the shipped default here, so
+    // nothing downstream has to decide what to do with a theme it cannot draw.
+    theme: sanitizeTheme(raw.theme),
+  };
+}
+
+/**
+ * tmp + fsync + rename, the same sequence `store.js` and `claude-bridge.js`
+ * use. Without the fsync the rename can land before the data does, so a crash
+ * seconds later leaves a truncated settings.json — `load()` catches it and
+ * returns defaults, which means the user silently loses their autostart choice,
+ * their drag order and the providers they added.
+ */
+function save(userDataDir, settings) {
+  const target = file(userDataDir);
+  const tmp = `${target}.${process.pid}.tmp`;
+  try {
+    fs.mkdirSync(userDataDir, { recursive: true });
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeFileSync(fd, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, target);
+    return true;
+  } catch {
+    try { fs.unlinkSync(tmp); } catch { /* best effort */ }
+    return false;
+  }
+}
+
+module.exports = { load, save, DEFAULTS };

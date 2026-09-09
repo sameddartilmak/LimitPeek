@@ -1,0 +1,667 @@
+'use strict';
+const path = require('node:path');
+const { app, ipcMain, dialog, nativeTheme } = require('electron');
+
+const { IPC, IPC_EXT } = require('../shared/contract');
+const { Collector } = require('../core/collector');
+const { isProviderId, getProvider } = require('../core/providers');
+const { sanitizeOrder } = require('../core/order');
+const { withEnabled } = require('../core/enabled');
+const { isTheme, sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
+const { traySpecFromSnapshot, trayIconKey } = require('../core/tray-spec');
+const { buildTooltip } = require('../core/tray-tooltip');
+const paths = require('../core/paths');
+const log = require('../core/log');
+const security = require('./security');
+const settingsStore = require('./settings');
+const { PanelWindow } = require('./panel-window');
+const { TrayController } = require('./tray');
+const { buildTrayImage } = require('./tray-icon');
+const {
+  runClaudeSetup,
+  runAntigravitySetup,
+  materialiseBridge,
+  BRIDGE_SCRIPTS,
+} = require('./bridge-install');
+
+// Must run before `ready`: some of it is command-line switches.
+security.applyAll();
+
+// A second instance would fight over the tray icon and the store file.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  return;
+}
+
+let panel = null;
+let tray = null;
+let collector = null;
+let settings = null;
+let isQuitting = false;
+/** Last icon actually drawn, and last tooltip actually set. See updateTray(). */
+let trayIconDrawnKey = null;
+let trayTooltipShown = null;
+
+/**
+ * Upper bound on a SET_ORDER payload. The registry has six providers; anything
+ * an order of magnitude past that is a malformed or hostile message, not a
+ * user dragging rows, and there is no reason to sanitise a list of any length.
+ */
+const MAX_ORDER_LENGTH = 64;
+
+function userDataDir() {
+  return app.getPath('userData');
+}
+
+/* ------------------------------------------------------------------ panel */
+
+function anchorSender(anchor) {
+  if (panel) panel.sendAnchor(anchor);
+}
+
+/**
+ * Tray-click open: activated, but NOT pinned.
+ *
+ * Unpinned means the panel lives as long as the pointer is over it; the
+ * pointer bookkeeping is `PanelWindow`'s, because it is the only object that
+ * knows the window rect.
+ */
+function openPanel() {
+  if (!panel) return;
+  panel.open(tray ? tray.bounds() : null, anchorSender);
+  collector.setPanelOpen(true);
+  if (collector.snapshot) panel.send(IPC.SNAPSHOT, collector.snapshot);
+}
+
+/** Pinned open: stays until an explicit close or unpin, whatever has focus. */
+function openPinned() {
+  if (!panel) return;
+  panel.pin(tray ? tray.bounds() : null, anchorSender);
+  collector.setPanelOpen(true);
+  if (collector.snapshot) panel.send(IPC.SNAPSHOT, collector.snapshot);
+}
+
+/* ------------------------------------------------------------ preferences */
+
+/**
+ * The Preferences object the renderer is entitled to see.
+ *
+ * Re-sanitised on the way out rather than trusted from `settings`: the value
+ * came off disk, and an unrecognised one has to reach the renderer as the
+ * DEFAULT, never as itself. A renderer handed `theme: 'nocturne'` would match
+ * no palette and paint nothing — corruption tolerance that stops at the file
+ * boundary is corruption tolerance that ends in a blank UI.
+ */
+function preferences() {
+  return { theme: settings ? sanitizeTheme(settings.theme) : DEFAULT_THEME };
+}
+
+function pushPreferences() {
+  if (panel) panel.send(IPC.PREFERENCES, preferences());
+}
+
+/* -------------------------------------------------------------------- ipc */
+
+/** Every handler drops messages that did not come from our own panel. */
+function fromPanel(event) {
+  return Boolean(
+    panel && panel.win && !panel.win.isDestroyed() && event.sender === panel.win.webContents,
+  );
+}
+
+function registerIpc() {
+  // Synchronous, and answered from memory: the renderer calls this during its
+  // first paint, so it must never touch the disk or wait on a scan.
+  ipcMain.on(IPC_EXT.INITIAL_SNAPSHOT, (event) => {
+    // `returnValue` must be set on every path, including rejection — leaving
+    // it unset blocks the calling renderer.
+    event.returnValue = fromPanel(event) && collector ? (collector.snapshot || null) : null;
+  });
+
+  // Synchronous for the same reason INITIAL_SNAPSHOT is, and with more at
+  // stake: a theme applied after first paint is a visible flash of the wrong
+  // one. `returnValue` is assigned on every path, rejection included — an
+  // ipcMain listener that returns without setting it blocks the renderer
+  // forever, which on this channel would be a panel that never paints at all.
+  // A brand-new install with no settings.json yet returns a CONCRETE
+  // `{theme:'system'}`, never null: `settings` is loaded in bootstrap() before
+  // this window exists, and `load()` answers a missing file with defaults. The
+  // renderer would survive null — it falls back — but then two independent
+  // fallbacks would have to stay in step for ever, and the render fixture
+  // returns an object. null here means one thing only: this sender is not our
+  // panel.
+  ipcMain.on(IPC_EXT.INITIAL_PREFERENCES, (event) => {
+    event.returnValue = fromPanel(event) ? preferences() : null;
+  });
+
+  ipcMain.on(IPC.PANEL_OPENED, (event) => {
+    if (!fromPanel(event)) return;
+    log.trace('ipc.panelOpened', { visible: panel.isVisible() });
+    // A HINT ABOUT THE POINTER, not a statement about it. The renderer sends
+    // this on mount as well as on its own pointer events, and a renderer
+    // cannot see the OS cursor — so main verifies it against the cursor before
+    // it counts for anything. Believing it verbatim latched "the pointer has
+    // been inside" while the pointer was still on the tray icon, and the next
+    // poll then dismissed the panel the user had just opened. See
+    // `PanelWindow.notePointerInside`.
+    panel.notePointerInside();
+
+    // The contract calls this a HINT, and it has to be treated as one. The
+    // renderer sends it while mounting, which happens on did-finish-load —
+    // with the window still hidden, because it is created show:false and
+    // loaded at startup. Believing it there pins panelOpen true for the whole
+    // session: the 15s cadence never drops back to 60s and the watcher gating
+    // below never engages. Main owns the answer to "is the panel on screen",
+    // so main decides.
+    if (panel.isVisible()) collector.setPanelOpen(true);
+  });
+
+  ipcMain.on(IPC.PANEL_CLOSE, (event) => {
+    if (!fromPanel(event)) return;
+    panel.hide('ipc-close');
+    collector.setPanelOpen(false);
+  });
+
+  /**
+   * A TOGGLE, because the control in the panel is one.
+   *
+   * The renderer calls this `onPinToggle` and takes its answer from the next
+   * ANCHOR push (`mode: 'pin' | 'hover'`); it never assumes it succeeded. Main
+   * previously only ever pinned, so the button was a one-way door: once
+   * pressed, nothing short of closing the panel could undo it, and pinning is
+   * now the state that survives everything.
+   */
+  ipcMain.on(IPC.PANEL_PIN, (event) => {
+    if (!fromPanel(event)) return;
+    if (panel.pinned) panel.unpin(tray ? tray.bounds() : null, anchorSender);
+    else openPinned();
+  });
+
+  /**
+   * Persist-then-apply, and deliberately synchronous end to end.
+   *
+   * Order matters on the failure path: if the settings write fails, NOTHING
+   * has changed — not the file, not the collector, not the tray — and the
+   * renderer is told so, instead of the panel showing an order that silently
+   * reverts on the next launch. `settings` is restored before returning.
+   *
+   * Being synchronous is what makes two rapid drags safe: main's event loop
+   * runs this handler to completion before the next one starts, so there is no
+   * window in which two read-modify-write cycles interleave over the same
+   * settings object and file.
+   */
+  ipcMain.handle(IPC.SET_ORDER, (event, ids) => {
+    if (!fromPanel(event)) return { ok: false };
+    if (!Array.isArray(ids) || ids.length > MAX_ORDER_LENGTH) return { ok: false };
+
+    const applied = sanitizeOrder(ids);
+    const previous = settings.providerOrder;
+    settings.providerOrder = applied;
+    if (!settingsStore.save(userDataDir(), settings)) {
+      settings.providerOrder = previous;
+      log.warn('provider order could not be persisted; order unchanged');
+      return { ok: false };
+    }
+    // Emits an ordered snapshot, which pushes to the panel and re-renders the
+    // tray through the same listener every other update goes through.
+    //
+    // Wrapped because the contract promises that {ok:false} means the order
+    // changed NOWHERE. setOrder() rebuilds and emits synchronously, so a throw
+    // anywhere in a snapshot listener would reject this handler AFTER the file
+    // was written — the renderer would revert the rows while the settings file
+    // held the new order, and the two would disagree until the next launch.
+    // No input is known to make it throw; the point is that the guarantee
+    // should be structural rather than incidental.
+    try {
+      collector.setOrder(applied);
+    } catch (err) {
+      settings.providerOrder = previous;
+      // The rollback write can fail too, and then `{ok:false}` is only half
+      // true: memory and the panel are back to `previous`, but the FILE still
+      // holds the order we just tried to apply, so the next launch would come
+      // up with an order the user was told did not take. Not attacker
+      // reachable, but it must not pass in silence.
+      if (!settingsStore.save(userDataDir(), settings)) {
+        log.warn('provider order rollback could not be persisted; settings.json still holds the rejected order');
+      }
+      try { collector.setOrder(previous); } catch { /* already reported below */ }
+      log.warn(`provider order could not be applied: code=${(err && err.code) || 'UNKNOWN'}`);
+      return { ok: false };
+    }
+    return { ok: true };
+  });
+
+  /**
+   * Adds a provider to the main panel, or removes it.
+   *
+   * Same persist-then-apply discipline as SET_ORDER, and synchronous for the
+   * same reason: main runs this handler to completion before the next one
+   * starts, so two rapid toggles cannot interleave two read-modify-write
+   * cycles over one settings object and one file.
+   *
+   * The id is validated against the real registry rather than trusted, and the
+   * flag is required to be an actual boolean — a truthy string arriving here
+   * would otherwise be persisted as `true` and then dropped by
+   * `sanitizeEnabled()` on the next launch, so the row would silently revert.
+   */
+  ipcMain.handle(IPC.SET_ENABLED, (event, id, enabled) => {
+    if (!fromPanel(event)) return { ok: false };
+    if (!isProviderId(id)) return { ok: false };
+    if (typeof enabled !== 'boolean') return { ok: false };
+
+    const previous = settings.enabledProviders;
+    const applied = withEnabled(previous, id, enabled);
+    settings.enabledProviders = applied;
+    if (!settingsStore.save(userDataDir(), settings)) {
+      settings.enabledProviders = previous;
+      log.warn('provider enablement could not be persisted; nothing changed');
+      return { ok: false };
+    }
+    // Wrapped for the same reason SET_ORDER is: setEnabled() rebuilds and
+    // emits synchronously, so a throw in a snapshot listener would reject this
+    // handler AFTER the file was written. The renderer would revert its toggle
+    // while the settings file held the new value, and the two would disagree
+    // until the next launch. {ok:false} has to mean "nothing changed anywhere".
+    try {
+      collector.setEnabled(applied);
+    } catch (err) {
+      settings.enabledProviders = previous;
+      // Same half-truth as the SET_ORDER rollback above: a failed rollback
+      // write leaves settings.json holding a value the renderer has been told
+      // was rejected.
+      if (!settingsStore.save(userDataDir(), settings)) {
+        log.warn('provider enablement rollback could not be persisted; settings.json still holds the rejected value');
+      }
+      try { collector.setEnabled(previous); } catch { /* already reported below */ }
+      log.warn(`provider enablement could not be applied: code=${(err && err.code) || 'UNKNOWN'}`);
+      return { ok: false };
+    }
+    return { ok: true };
+  });
+
+  /**
+   * Persist-then-apply, exactly as SET_ORDER and SET_ENABLED do, and
+   * synchronous for the same reason: main runs this handler to completion
+   * before the next one starts, so two rapid taps on the switch cannot
+   * interleave two read-modify-write cycles over one settings object and one
+   * file.
+   *
+   * The value is checked against the three literals rather than coerced. A
+   * string that is not one of them is a bug or a hostile message, and
+   * persisting it would put the next launch's `load()` in charge of repairing
+   * it — which it would, silently, back to 'system', so the user's choice
+   * would appear to take and then revert.
+   *
+   * `{ok:false}` means the theme changed NOWHERE and the renderer must revert.
+   */
+  ipcMain.handle(IPC.SET_THEME, (event, theme) => {
+    if (!fromPanel(event)) return { ok: false };
+    if (!isTheme(theme)) return { ok: false };
+
+    const previous = settings.theme;
+    settings.theme = theme;
+    if (!settingsStore.save(userDataDir(), settings)) {
+      settings.theme = previous;
+      log.warn('theme could not be persisted; nothing changed');
+      return { ok: false };
+    }
+    // Best effort, and deliberately NOT a rollback trigger. Unlike SET_ORDER
+    // this applies nothing in main — there is no icon to redraw and no
+    // snapshot to rebuild — so a push that fails costs the renderer an echo of
+    // a value it already has, not a disagreement with the file.
+    pushPreferences();
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC.REQUEST_REFRESH, async (event) => {
+    if (!fromPanel(event)) return null;
+    try {
+      return await collector.refreshNow();
+    } catch (err) {
+      log.warn(`refresh failed: code=${(err && err.code) || 'UNKNOWN'}`);
+      return collector.snapshot;
+    }
+  });
+
+  ipcMain.handle(IPC.RUN_SETUP, async (event, providerId, confirmed) => {
+    if (!fromPanel(event)) return { ok: false, message: 'Geçersiz istek.' };
+    if (!isProviderId(providerId)) {
+      return { ok: false, message: 'Bilinmeyen sağlayıcı.' };
+    }
+    const provider = getProvider(providerId);
+
+    // The four passive providers: never throws, never writes anything.
+    if (provider.setupAction.kind === 'not-installed') {
+      return { ok: false, message: `${provider.displayName} bu sürümde henüz desteklenmiyor.` };
+    }
+
+    if (provider.id === 'claude') {
+      try {
+        // Pinned ONLY on the path that raises a modal, via a hook the setup
+        // calls immediately before `dialog.showMessageBox`. Four of its five
+        // branches return without showing anything — unconfirmed, already
+        // installed, a foreign statusLine, an unreadable settings file — and
+        // pinning up front put the panel into a sticky state the user never
+        // chose for a setup that turned out to be a no-op, with the pin
+        // control then reporting it.
+        //
+        // Where a modal IS raised the pin is required: an unpinned panel
+        // closes shortly after the pointer leaves it, and the pointer HAS to
+        // leave it to answer the dialog, which would tear the dialog's parent
+        // out from under it mid-consent.
+        //
+        // It stays pinned afterwards, deliberately: restoring the previous
+        // mode would let the panel vanish while the user is still reading the
+        // result, and the pin control already offers the way back.
+        const result = await runClaudeSetup({
+          confirmed,
+          parentWindow: panel.win,
+          beforePrompt: () => openPinned(),
+        });
+        if (result.ok) collector.rebuild();
+        return result;
+      } catch (err) {
+        log.warn(`setup failed: code=${(err && err.code) || 'UNKNOWN'}`);
+        return { ok: false, message: 'Kurulum tamamlanamadı; hiçbir değişiklik yapılmadı.' };
+      }
+    }
+
+    if (provider.id === 'antigravity') {
+      try {
+        // Same pinning contract as the Claude branch, and for the same reason:
+        // the hook fires only on the path that actually raises a modal, so a
+        // setup that turns out to be a no-op — no `agy` on this machine, a
+        // foreign statusLine, an unreadable settings file — does not leave the
+        // panel in a state the user never chose.
+        const result = await runAntigravitySetup({
+          confirmed,
+          parentWindow: panel.win,
+          beforePrompt: () => openPinned(),
+        });
+        if (result.ok) collector.rebuild();
+        return result;
+      } catch (err) {
+        log.warn(`antigravity setup failed: code=${(err && err.code) || 'UNKNOWN'}`);
+        return { ok: false, message: 'Kurulum tamamlanamadı; hiçbir değişiklik yapılmadı.' };
+      }
+    }
+
+    return { ok: false, message: 'Bu işlem bu sürümde desteklenmiyor.' };
+  });
+}
+
+/* ------------------------------------------------------------------ boot */
+
+function applyAutostart(enabled) {
+  // In a dev run the executable is node_modules/electron/dist/electron.exe, so
+  // registering it under HKCU\...\Run would leave the user with a login item
+  // that starts a bare Electron shell. Only a packaged build may touch it.
+  if (!app.isPackaged) {
+    log.info(`autostart ${enabled ? 'requested' : 'disabled'}; skipped in a dev run`);
+    return;
+  }
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: Boolean(enabled),
+      // Started by Windows: come up in the tray only, never flash a window.
+      args: ['--hidden'],
+    });
+  } catch (err) {
+    log.warn(`autostart update failed: code=${(err && err.code) || 'UNKNOWN'}`);
+  }
+}
+
+function bootstrap() {
+  // Anchors every later `+NNNNms` offset to something nameable in the log.
+  log.trace('app.bootstrap');
+  settings = settingsStore.load(userDataDir());
+  applyAutostart(settings.autostart);
+
+  // Refresh the copy of the bridge that Claude Code executes, on every launch.
+  // It was previously written only during install, which meant the one file
+  // this app causes another program to run could never be patched on a machine
+  // where it was already wired — and a tampered copy would keep running
+  // forever. The write is content-compared, so this is a no-op in the normal
+  // case, and it repairs the file if it was modified or truncated.
+  //
+  // Both bridges, unconditionally. Refreshing the Antigravity copy costs one
+  // content-compared write even on a machine with no `agy` installed, and
+  // skipping it would leave a wired user's script frozen at whatever version
+  // was current the day they pressed the button. It writes only inside this
+  // app's own userData, so it wires nothing and creates nothing in ~/.gemini.
+  for (const script of Object.values(BRIDGE_SCRIPTS)) {
+    if (!materialiseBridge(script)) log.warn(`bridge could not be refreshed on this launch: ${script}`);
+  }
+
+  // Order matters. The collector is built and started FIRST, because
+  // `start()` loads the persisted store synchronously and sets
+  // `collector.snapshot`. The renderer calls `initialSnapshot()` during its
+  // first paint, and that has to find a value already sitting there — a warm
+  // start must never flash skeleton rows.
+  collector = new Collector({
+    userDataDir: userDataDir(),
+    projectsRoot: paths.claudeProjectsDir(),
+    planLabel: settings.planLabel,
+    order: settings.providerOrder,
+    enabled: settings.enabledProviders,
+    workerPath: path.join(__dirname, '..', 'core', 'scan', 'worker.js'),
+  });
+
+  collector.on('snapshot', (snapshot) => {
+    if (panel) panel.send(IPC.SNAPSHOT, snapshot);
+    updateTray(snapshot);
+  });
+  collector.on('stats', (stats) => {
+    log.info(`scan: ${stats.filesParsed}/${stats.filesSeen} files, ${stats.records} events, ${stats.ms} ms`);
+  });
+
+  collector.start();
+
+  // Handlers are registered before the window exists, so the renderer cannot
+  // race a sendSync against a channel with no listener (which would hang it).
+  registerIpc();
+
+  panel = new PanelWindow({
+    onVisibilityChange: (visible) => {
+      if (!visible) collector.setPanelOpen(false);
+    },
+  });
+  panel.create();
+
+  // Hover opens NOTHING. The tray icon reacts to a click, and to a click only;
+  // its hover surface is the native tooltip, set in updateTray().
+  tray = new TrayController({
+    /**
+     * Single click toggles — but a panel with a PENDING DISMISSAL is not open
+     * for the purpose of deciding what a click means.
+     *
+     * This is the reported bug, and the trace named it. The measured sequence
+     * from one real click:
+     *
+     *   +576128  panel.scheduleHide reason=pointer-left ms=550
+     *   +576660  tray.click
+     *   +576660  tray.toggle visible=true pinned=false hidePending=true act=hide
+     *   +576663  panel.hide reason=tray-toggle
+     *   +577365  tray.click            <- the user clicking again
+     *   +577373  panel.show
+     *
+     * The user moved the pointer off the panel TOWARDS the tray icon, which
+     * armed the 550 ms leave grace, and clicked 530 ms later — inside it.
+     * `isVisible()` was still true because the timer had not fired, so the
+     * toggle read a live panel and closed it. From the user's side that is one
+     * intent producing close-then-open.
+     *
+     * Reaching for the tray icon while the panel is fading is asking to KEEP
+     * it, not to dismiss it. So `visible && hidePending` takes the open path:
+     * `open()` cancels the hide, re-measures the anchor and re-arms the
+     * pointer watch, leaving the panel on screen. Deliberately not a no-op —
+     * that would swallow the click and leave the timer running, so the panel
+     * would vanish anyway a moment later and the click would have done
+     * nothing at all.
+     */
+    onToggle: () => {
+      const visible = panel.isVisible();
+      const pending = panel.hidePending();
+      // 'keep' rather than 'open' when it was already on screen: the two are
+      // the same code path but very different events to read in a log.
+      const act = !visible ? 'open' : (pending ? 'keep' : 'hide');
+      log.trace('tray.toggle', { visible, pinned: panel.pinned, hidePending: pending, act });
+      if (act === 'hide') panel.hide('tray-toggle');
+      else openPanel();
+    },
+    /**
+     * Double click can only open. Windows delivers `click` then `double-click`
+     * for one gesture, so a second toggle would close what the first opened.
+     *
+     * It has to answer the pending-hide case too, and for a sharper reason
+     * than the toggle: "idempotent open" means the panel is on screen AND
+     * STAYING when this returns. Skipping on `isVisible()` alone would leave a
+     * panel that is visible and still counting down to its own dismissal,
+     * which is the one outcome this handler exists to rule out.
+     */
+    onOpen: () => {
+      const visible = panel.isVisible();
+      const pending = panel.hidePending();
+      const act = !visible ? 'open' : (pending ? 'keep' : 'noop');
+      log.trace('tray.open', { visible, hidePending: pending, act });
+      if (act !== 'noop') openPanel();
+    },
+  });
+  tray.create({
+    autostart: settings.autostart,
+    onToggleAutostart: (checked) => {
+      settings.autostart = Boolean(checked);
+      settingsStore.save(userDataDir(), settings);
+      applyAutostart(settings.autostart);
+    },
+    onQuit: () => {
+      isQuitting = true;
+      app.quit();
+    },
+  });
+
+  // The user flipping Windows between light and dark changes no snapshot
+  // field, so nothing else in this process would ever ask for a repaint. The
+  // ground is in the icon key, so this call finds a changed key and redraws;
+  // if the OS theme did not actually move, the key matches and it is free.
+  nativeTheme.on('updated', () => {
+    log.trace('os.theme', { ground: trayGround() });
+    if (collector && collector.snapshot) updateTray(collector.snapshot);
+  });
+
+  // The collector emitted its first snapshot inside start(), before the tray
+  // existed, and that emit was dropped by the `if (!tray)` guard. Without this
+  // the icon would stay the static PNG until the next sweep — up to a minute
+  // of a warm start showing no usage at all.
+  if (collector.snapshot) updateTray(collector.snapshot);
+
+  // Belt and braces alongside `initialSnapshot()`: push once the renderer can
+  // receive, so a panel that only subscribes still paints without waiting for
+  // the next sweep.
+  panel.win.webContents.on('did-finish-load', () => {
+    if (collector.snapshot) panel.send(IPC.SNAPSHOT, collector.snapshot);
+    // Belt and braces alongside `initialPreferences()`, and the restoration
+    // half as well: this event also fires after `render-process-gone`, and a
+    // revived renderer that never called the sync getter would come back in
+    // the default theme while settings.json holds the user's choice.
+    pushPreferences();
+    // The anchor is the other half of that restoration, not an extra. This
+    // event also fires when the renderer is revived after `render-process-gone`
+    // (panel-window.js), and the revived page derives `pinned` from
+    // `anchor.mode` — so without this it comes back saying "not pinned" while
+    // main is pinned, and the pin control reports a state that is not the
+    // panel's. Sends nothing when the panel is not on screen.
+    panel.sendCurrentAnchor(tray ? tray.bounds() : null, anchorSender);
+  });
+}
+
+/**
+ * Which taskbar the icon will sit on.
+ *
+ * `nativeTheme.shouldUseDarkColors`, NOT `settings.theme`. The icon lives in
+ * the Windows taskbar, which follows the OS setting regardless of what the
+ * user chose for the panel, so it matches what it sits on: a user on a light
+ * taskbar who prefers a dark panel still needs a legible icon. Painting the
+ * dark ramp onto a light taskbar left `spent` at 1.51:1 against the surface —
+ * the one state that most needs to be seen, effectively invisible.
+ *
+ * Falls back to 'dark' on a throw rather than propagating: an unreadable OS
+ * setting must cost the icon its optimal contrast, not its existence.
+ */
+function trayGround() {
+  try {
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  } catch {
+    return 'dark';
+  }
+}
+
+/**
+ * Repaints the tray, and only when something visible actually changed.
+ *
+ * Snapshots arrive every 15 s while the panel is open and on every transcript
+ * change. Everything the icon shows is in `trayIconKey()` — the provider, the
+ * rounded percentage, the state, the no-data flag — so anything the key does
+ * not mention (burn rate, token counts, generatedAt) cannot change a pixel and
+ * must not cost four rasterisations plus three PNG encodes in a process that
+ * runs all day.
+ */
+function updateTray(snapshot) {
+  if (!tray || !snapshot) return;
+
+  // ONE instant for all three surfaces below. They share a reset horizon
+  // (tray-spec.js, READING_HORIZON_MS), so reading the clock separately could
+  // put the tooltip on one side of it and the icon on the other — the tooltip
+  // saying the window is resetting beside a donut still drawing its sweep.
+  const now = Date.now();
+
+  // Built from the same leadProvider() the donut uses, so the two describe one
+  // row. It carries a live countdown, so it changes between snapshots that do
+  // not repaint a pixel — which is why it is compared and set separately from
+  // the icon key rather than folded into it.
+  const tooltip = buildTooltip(snapshot, now);
+  if (tooltip !== trayTooltipShown) {
+    tray.setTooltip(tooltip);
+    trayTooltipShown = tooltip;
+  }
+
+  // The ground is part of the key, or an OS theme flip would change nothing
+  // the key can see — it changes no snapshot field — and the early return
+  // below would leave the dark ramp on a light taskbar until the percentage
+  // happened to move.
+  const ground = trayGround();
+  const key = trayIconKey(snapshot, now, ground);
+  if (key === trayIconDrawnKey) return;
+
+  const image = buildTrayImage(traySpecFromSnapshot(snapshot, now), ground);
+  // A failed build leaves whatever is on screen — the static PNG on a cold
+  // start — and leaves the key unset, so the next snapshot retries.
+  if (!image || !tray.setIcon(image)) return;
+  trayIconDrawnKey = key;
+}
+
+// Launching the app again is the same request as clicking the tray icon, and
+// it gets the same answer: opened, activated, not pinned.
+app.on('second-instance', () => {
+  if (panel) openPanel();
+});
+
+// Tray app: an empty listener is what keeps Electron from quitting when the
+// panel window is hidden or closed.
+app.on('window-all-closed', () => { /* stay resident in the tray */ });
+
+app.on('before-quit', () => {
+  isQuitting = true;
+  if (collector) collector.stop();
+  if (tray) tray.destroy();
+  trayIconDrawnKey = null;
+  trayTooltipShown = null;
+});
+
+app.whenReady().then(bootstrap).catch((err) => {
+  log.error(`startup failed: code=${(err && err.code) || (err && err.name) || 'UNKNOWN'}`);
+  dialog.showErrorBox('Usage Notch', 'Uygulama başlatılamadı.');
+  app.quit();
+});
+
+module.exports = { isQuitting: () => isQuitting };

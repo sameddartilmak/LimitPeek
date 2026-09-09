@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+<title>Usage Notch</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; }
+  body { display: flex; align-items: flex-end; justify-content: center; }
+  main {
+    width: 100%; box-sizing: border-box; padding: 16px 18px;
+    font: 13px/1.45 "Segoe UI", system-ui, sans-serif; color: #ececec;
+    background: rgba(24,24,27,.94); border: 1px solid rgba(255,255,255,.10);
+    border-radius: 14px; max-height: 100%; overflow: auto;
+  }
+  h1 { font-size: 13px; margin: 0 0 4px; letter-spacing: .02em; }
+  p.note { margin: 0 0 12px; color: #9a9a9f; font-size: 11px; }
+  .row { display: grid; grid-template-columns: 3px 1fr auto; gap: 10px;
+         align-items: center; padding: 7px 0; border-top: 1px solid rgba(255,255,255,.06); }
+  .spine { width: 3px; height: 26px; border-radius: 2px; }
+  .name { font-weight: 600; }
+  .meta { color: #9a9a9f; font-size: 11px; }
+  .right { text-align: right; font-variant-numeric: tabular-nums; }
+  .pct { font-size: 15px; font-weight: 600; }
+  .unk { color: #7c7c82; font-size: 11px; }
+</style>
+</head>
+<body>
+  <main>
+    <h1>Usage Notch</h1>
+    <p class="note">Yer tutucu arayüz — asıl panel <code>src/renderer/</code> içinde.</p>
+    <div id="rows"></div>
+    <p class="note" id="stamp"></p>
+  </main>
+  <script src="./placeholder.js"></script>
+</body>
+</html>
