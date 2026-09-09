@@ -89,6 +89,52 @@ export interface ReorderHandle {
   destroy(): void;
 }
 
+/**
+ * Where a dragged row lands, given how far it has moved. Pure, and exported so
+ * it can be swept without a window (`test/reorder-target.test.js`).
+ *
+ * WHAT THIS REPLACED, AND WHY IT WAS WRONG
+ * ----------------------------------------
+ * The previous version compared the dragged row's centre — measured in the
+ * ORIGINAL layout — against thresholds built from a COMPACTED accumulator that
+ * summed only the non-dragged heights, i.e. the layout as if the row had
+ * already been lifted out. Two coordinate systems, one comparison. They agree
+ * only when every row is the same height, and this panel's rows are not: a
+ * connected row is 64px and a passive one 44px.
+ *
+ * The consequence was not subtle. On the real six-row shape
+ * [64, 64, 44, 44, 44, 44], picking up row 1 computed a target of 2 before the
+ * pointer had moved a single pixel — the row dropped a slot on pick-up and then
+ * fought every attempt to drag it back up. That is exactly the reported
+ * "I can drag it down but not up". Every row also switched slots after 1px of
+ * downward travel while needing a full row height upward.
+ *
+ * The rule now is one system and one sentence: another row is above me if my
+ * centre has passed its midpoint, both measured in the layout as drawn. It
+ * follows that at `dy === 0` every other row sorts to the side it started on,
+ * so the result is `from` — the invariant that actually broke, and one that now
+ * holds for ANY set of heights rather than by accident for equal ones.
+ *
+ * The returned index is into the list WITH THE DRAGGED ROW REMOVED, which is
+ * the space `moveId()` splices into.
+ *
+ * `dy` MUST NOT BE CLAMPED. See the note in `paint()`.
+ */
+export function targetIndexFor(
+  tops: readonly number[],
+  heights: readonly number[],
+  from: number,
+  dy: number,
+): number {
+  const centre = (tops[from] as number) + (heights[from] as number) / 2 + dy;
+  let to = 0;
+  for (let i = 0; i < heights.length; i++) {
+    if (i === from) continue;
+    if (centre > (tops[i] as number) + (heights[i] as number) / 2) to++;
+  }
+  return to;
+}
+
 /** Pure: `ids` with `id` moved to index `to`, clamped. */
 export function moveId(ids: readonly string[], id: string, to: number): string[] {
   const from = ids.indexOf(id);
@@ -162,19 +208,6 @@ export function createReorder(host: ReorderHost): ReorderHandle {
     host.list.removeAttribute('data-dragging');
   }
 
-  /** Where the dragged row would land, given the current pointer offset. */
-  function targetIndex(s: Session, dy: number): number {
-    const centre = s.tops[s.from] + s.heights[s.from] / 2 + dy;
-    let acc = s.tops[0];
-    let to = 0;
-    for (let i = 0; i < s.heights.length; i++) {
-      if (i === s.from) continue;
-      if (centre > acc + s.heights[i] / 2) to++;
-      acc += s.heights[i];
-    }
-    return to;
-  }
-
   function paint(s: Session, dy: number): void {
     const last = s.rows.length - 1;
     const span = s.tops[last] + s.heights[last] - s.tops[0];
@@ -182,7 +215,27 @@ export function createReorder(host: ReorderHost): ReorderHandle {
     const max = s.tops[0] + span - s.heights[s.from] - s.tops[s.from];
     const clamped = dy < min ? min : dy > max ? max : dy;
 
-    const to = targetIndex(s, clamped);
+    /**
+     * THE INDEX COMES FROM THE RAW OFFSET; ONLY THE PIXELS ARE CLAMPED.
+     *
+     * The clamp exists so the dragged row never paints outside the list. It is
+     * a rendering bound and it must not be a decision bound, because the two
+     * ask different questions: "where do I draw this" and "which slot does the
+     * user mean". Feeding the clamped value to the index conflates them, and
+     * the arithmetic then makes the end slots unreachable.
+     *
+     * Concretely, on the fixture's own [64, 64]: `max` is 64, so the top row's
+     * centre can reach 96 at most — exactly the second row's midpoint, and the
+     * test is strict — so `to` could never leave 0 and row 0 could not be
+     * dragged down at all. The same clamp cost the six-row shape its last slot
+     * for five of six rows. Both were swept before this line was written.
+     *
+     * With the raw offset the count is monotone in `dy` and saturates at 0 and
+     * at `rows.length - 1` on its own, because there are exactly that many
+     * other midpoints to pass. No clamp is needed on the index, and adding one
+     * would only reintroduce the same class of bug.
+     */
+    const to = targetIndexFor(s.tops, s.heights, s.from, dy);
     s.to = to;
 
     for (let i = 0; i < s.rows.length; i++) {

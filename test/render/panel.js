@@ -612,8 +612,10 @@ app.whenReady().then(async () => {
   const geom = await js(`(() => {
     const rows = [...document.querySelectorAll('li.row[data-provider]')];
     const g = rows[0].querySelector('.grip').getBoundingClientRect();
+    const listTop = rows[0].getBoundingClientRect().top;
     return { ids: rows.map(r=>r.dataset.provider),
              x: Math.round(g.left + g.width/2), y: Math.round(g.top + g.height/2),
+             t: rows.map(r => Math.round(r.getBoundingClientRect().top - listTop)),
              h: rows.map(r => Math.round(r.getBoundingClientRect().height)) };
   })()`);
   const wc = win.webContents;
@@ -623,11 +625,19 @@ app.whenReady().then(async () => {
   wc.sendInputEvent({ type: 'mouseDown', x: geom.x, y: geom.y, button: 'left', clickCount: 1 });
   await sleep(40);
 
-  // Two places down means the dragged row's CENTRE has to clear the midpoint of
-  // the row two below it. Rows are not uniform in height — a connected provider
-  // reporting two windows is three times a passive row — so the distance is
-  // derived from the measured heights rather than assumed to be "two rows".
-  const drop = Math.round(geom.h[1] + geom.h[2] / 2 - geom.h[0] / 2) + 10;
+  // Two places down means the dragged row's CENTRE has to clear the MIDPOINT OF
+  // ROW 2 AS IT IS DRAWN. Rows are not uniform — measured here as
+  // [88, 42, 139, 42, 42, 42] — so the distance is derived from the layout
+  // rather than assumed to be "two rows".
+  //
+  // This used to be `h[1] + h[2]/2 - h[0]/2`, which is the distance in the
+  // COMPACTED layout: the list as if the dragged row had already been lifted
+  // out. That is the same coordinate-system confusion that produced the bug in
+  // `targetIndex`, encoded a second time in the test that was supposed to
+  // catch it — which is why the check passed against the broken algorithm and
+  // would have failed against the correct one. The distance is now the plain
+  // difference between two midpoints in one coordinate system.
+  const drop = Math.round(geom.t[2] + geom.h[2] / 2 - (geom.t[0] + geom.h[0] / 2)) + 8;
   for (let i = 1; i <= 8; i++) {
     move(geom.x, geom.y + Math.round((drop * i) / 8));
     await sleep(25);
@@ -681,6 +691,91 @@ app.whenReady().then(async () => {
     JSON.stringify(esc.ids) === JSON.stringify(before2), [before2, esc.ids]);
   check('Escape during a drag does not close the panel', probe.close === 0, probe.close);
   check('the abort was announced', /iptal edildi/.test(esc.live), esc.live);
+
+  // ---- dragging UP, across a boundary between rows of different heights --
+  //
+  // The user's report was directional: "I can drag Antigravity down and get
+  // Claude to the top, but when Claude is lower down I can't drag it up — it
+  // throws it back down." Every drag check above this line drags DOWN, which
+  // is the half that worked, so the whole suite passed through the bug.
+  //
+  // The cause was `targetIndex` mixing an original-layout centre with
+  // compacted-layout thresholds. Those agree only when rows are all the same
+  // height, so the first thing asserted here is that the fixture is NOT
+  // uniform — otherwise this section would pass against the broken algorithm
+  // too, which is exactly how the defect survived.
+  await js(`window.__probe.setOrderDirect(${JSON.stringify(before2)})`);
+  await sleep(200);
+  const shape = await js(`(() => {
+    const rows = [...document.querySelectorAll('li.row[data-provider]')];
+    return { ids: rows.map(r => r.dataset.provider),
+             h: rows.map(r => Math.round(r.getBoundingClientRect().height)) };
+  })()`);
+  say('row shape: ' + JSON.stringify(shape));
+  check('the fixture has rows of DIFFERENT heights, or this section proves nothing',
+    new Set(shape.h).size > 1, shape.h);
+
+  // Pick the second row up and put it down again without crossing anything.
+  // `targetIndex(dy = 0) === from` is the invariant that actually broke: row 1
+  // of a [64, 64, 44, ...] panel computed a target of 2 before the pointer had
+  // moved, so the row fell a slot on pick-up. Through real input that shows up
+  // as an order change from a gesture that went nowhere.
+  const g3 = await js(`(() => {
+    const g = [...document.querySelectorAll('li.row[data-provider]')][1]
+      .querySelector('.grip').getBoundingClientRect();
+    return { x: Math.round(g.left + g.width / 2), y: Math.round(g.top + g.height / 2) };
+  })()`);
+  wc.sendInputEvent({ type: 'mouseMove', x: g3.x, y: g3.y });
+  await sleep(40);
+  wc.sendInputEvent({ type: 'mouseDown', x: g3.x, y: g3.y, button: 'left', clickCount: 1 });
+  await sleep(40);
+  // Past DRAG_THRESHOLD so a real drag starts, but nowhere near a midpoint.
+  for (const step of [6, 8, 6]) { move(g3.x, g3.y + step); await sleep(30); }
+  wc.sendInputEvent({ type: 'mouseUp', x: g3.x, y: g3.y + 6, button: 'left', clickCount: 1 });
+  await sleep(400);
+  const nudged = await js(`[...document.querySelectorAll('li.row[data-provider]')].map(r=>r.dataset.provider)`);
+  check('picking a row up and setting it back down does not reorder anything',
+    JSON.stringify(nudged) === JSON.stringify(shape.ids), [shape.ids, nudged]);
+
+  // Now the reported gesture: the second row, dragged up over the first.
+  // The distance is half my own height plus half of the row above me — the
+  // point at which my centre reaches their midpoint — derived from the
+  // measured heights rather than assumed, because they differ.
+  const up = Math.round(shape.h[1] / 2 + shape.h[0] / 2) + 8;
+  const g4 = await js(`(() => {
+    const g = [...document.querySelectorAll('li.row[data-provider]')][1]
+      .querySelector('.grip').getBoundingClientRect();
+    return { x: Math.round(g.left + g.width / 2), y: Math.round(g.top + g.height / 2) };
+  })()`);
+  wc.sendInputEvent({ type: 'mouseMove', x: g4.x, y: g4.y });
+  await sleep(40);
+  wc.sendInputEvent({ type: 'mouseDown', x: g4.x, y: g4.y, button: 'left', clickCount: 1 });
+  await sleep(40);
+  for (let i = 1; i <= 8; i++) { move(g4.x, g4.y - Math.round((up * i) / 8)); await sleep(25); }
+  const upMid = await js(`(() => {
+    const rows = [...document.querySelectorAll('li.row[data-provider]')];
+    return { dragging: document.querySelector('ul.rows:not([hidden])').getAttribute('data-dragging'),
+             lifted: rows[1].classList.contains('is-dragging'),
+             topShifted: /translateY/.test(rows[0].style.transform || '') };
+  })()`);
+  check('an upward drag starts a session too', upMid.dragging === 'true' && upMid.lifted, upMid);
+  check('the row above moves DOWN out of the way, which is the half that never worked',
+    upMid.topShifted === true, upMid);
+  wc.sendInputEvent({ type: 'mouseUp', x: g4.x, y: g4.y - up, button: 'left', clickCount: 1 });
+  await sleep(400);
+  const upDropped = await js(`(() => ({
+    ids: [...document.querySelectorAll('li.row[data-provider]')].map(r=>r.dataset.provider),
+    live: document.querySelector('p.rows__live[role="status"][aria-live="polite"]').textContent,
+  }))()`);
+  say('up-drag: ' + JSON.stringify([shape.ids, upDropped.ids]));
+  check('a drag up of one boundary lands the row exactly one slot higher',
+    upDropped.ids[0] === shape.ids[1] && upDropped.ids[1] === shape.ids[0],
+    [shape.ids, upDropped.ids]);
+  check('and it is announced as reaching the top, which the tray follows',
+    /1\. sıraya taşındı/.test(upDropped.live) && /Tepsi/.test(upDropped.live), upDropped.live);
+
+  await js(`window.__probe.setOrderDirect(${JSON.stringify(before2)})`);
+  await sleep(200);
 
   // ---- the settings view -----------------------------------------------
   // A user can add or remove PROVIDER ROWS here. Adding is not connecting:
