@@ -1,0 +1,425 @@
+'use strict';
+/**
+ * Fixture preload for the render suites. Implements `UsageNotchApi` exactly as
+ * contract.ts declares it, plus a `__probe` channel the suites drive.
+ *
+ * The cost fixtures are the ones that matter: the LIVE numbers measured on a
+ * real machine, and then every state that is zero or absent there and would
+ * therefore never be looked at — an all-unpriced week, a partly-broken
+ * payload, a sub-cent total and both caveats.
+ */
+const { contextBridge } = require('electron');
+
+const now = new Date();
+const iso = (ms) => new Date(now.getTime() + ms).toISOString();
+
+function win(pct, certainty) {
+  return { usedPercentage: pct, certainty, resetsAt: iso(90 * 60000), capturedAt: null };
+}
+function tok(b) {
+  return { input: b * 0.2, output: b * 0.1, cacheWrite: b * 0.7, cacheRead: b * 12, billable: b };
+}
+const ADD = {
+  kind: 'not-installed',
+  label: 'Ekle',
+  detail: 'Bu araç bu makinede bulunamadı.',
+};
+
+function p(id, name, accent, connected, status, extra) {
+  return Object.assign(
+    {
+      id,
+      displayName: name,
+      accent,
+      // Every fixture row starts ADDED; the settings checks flip these at
+      // runtime through __probe so the earlier structural checks still see
+      // all six rows.
+      enabled: true,
+      connected,
+      status,
+      planLabel: null,
+      fiveHour: null,
+      sevenDay: null,
+      tokens: null,
+      burnRatePerHour: null,
+      byModel: [],
+      weeklyCost: null,
+      setupAction: null,
+    },
+    extra || {},
+  );
+}
+
+
+const LIVE_COST = {
+  totalUsd: 226.8116,
+  byClass: { input: 0.0172, output: 32.8177, cacheWrite5m: 20.2495, cacheWrite1h: 26.6909, cacheRead: 147.0362 },
+  byModel: [
+    { model: 'claude-opus-5', speed: 'standard', pricedAs: 'claude-opus-5|standard', usd: 226.7641,
+      tokens: { input: 3438, output: 1312553, cacheWrite: 5904684, cacheRead: 294059426, billable: 7220675 } },
+    { model: 'claude-haiku-4-5-20251001', speed: 'standard', pricedAs: 'claude-haiku-4-5|standard', usd: 0.0475,
+      tokens: { input: 39, output: 768, cacheWrite: 21664, cacheRead: 65260, billable: 22471 } },
+  ],
+  unpricedModels: [],
+  fallbackWriteEvents: 0,
+  cacheWriteEvents: 1781,
+  pricesAsOf: '2026-06-24',
+  windowStart: '2026-09-03T03:00:00.000Z',
+  windowEnd: '2026-09-10T03:00:00.000Z',
+  windowAnchored: true,
+};
+const CAVEAT_COST = {
+  ...LIVE_COST,
+  byModel: [
+    LIVE_COST.byModel[0],
+    { model: 'claude-opus-4-8', speed: 'standard', pricedAs: 'claude-opus-4-8|standard', usd: 12.4,
+      tokens: { input: 10, output: 900, cacheWrite: 4000, cacheRead: 900000, billable: 480000 } },
+    { model: 'claude-opus-4-8', speed: 'fast', pricedAs: null, usd: null,
+      tokens: { input: 20, output: 1800, cacheWrite: 9000, cacheRead: 1800000, billable: 1180000 } },
+  ],
+  unpricedModels: ['claude-opus-4-8'],
+  fallbackWriteEvents: 1412,
+  cacheWriteEvents: 1781,
+  windowAnchored: false,
+  windowStart: new Date(Date.now() - 7 * 864e5).toISOString(),
+  windowEnd: new Date(Date.now() - 1000).toISOString(),
+};
+// An older or partly-broken main: the figure is there, everything ABOUT the
+// figure is missing. Must degrade, never vanish.
+const PARTIAL_COST = {
+  totalUsd: 41.5,
+  byModel: [],
+  unpricedModels: [],
+  fallbackWriteEvents: 0,
+  cacheWriteEvents: 0,
+  windowAnchored: true,
+};
+// qa F1. Every model unpriced: totalUsd is 0 and byClass is all zeros, which
+// is a truthful "nothing could be priced" — and used to render "en az $0,00".
+// Reachable the first time Claude Code ships a model family the hand-copied
+// 2026-06-24 price table does not name.
+const ALL_UNPRICED_COST = {
+  totalUsd: 0,
+  byClass: { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
+  byModel: [
+    { model: 'claude-opus-6-20270105', speed: 'standard', pricedAs: null, usd: null,
+      tokens: { input: 4100, output: 980000, cacheWrite: 3100000, cacheRead: 88000000, billable: 4084100 } },
+    { model: 'claude-opus-6-20270105', speed: 'fast', pricedAs: null, usd: null,
+      tokens: { input: 200, output: 41000, cacheWrite: 90000, cacheRead: 2100000, billable: 131200 } },
+  ],
+  unpricedModels: ['claude-opus-6-20270105'],
+  fallbackWriteEvents: 0,
+  cacheWriteEvents: 902,
+  pricesAsOf: '2026-06-24',
+  windowStart: '2026-09-03T03:00:00.000Z',
+  windowEnd: '2026-09-10T03:00:00.000Z',
+  windowAnchored: true,
+};
+const TINY_COST = {
+  ...LIVE_COST,
+  totalUsd: 0.004,
+  byClass: { input: 0.0009, output: 0.002, cacheWrite5m: 0.0006, cacheWrite1h: 0.0004, cacheRead: 0.0001 },
+  byModel: [LIVE_COST.byModel[1]],
+};
+
+/**
+ * Two fixtures, selected by RENDER_FIXTURE.
+ *
+ * They are separate on purpose. The panel suite drives OS-level mouse input at
+ * measured pixel coordinates, so it needs SHORT rows and a list that does not
+ * scroll; the cost suite needs rows carrying every cost state, which makes them
+ * four times taller. One shared fixture made each suite's geometry depend on
+ * the other's data, and the drag tests failed for reasons that had nothing to
+ * do with dragging.
+ */
+const FIXTURES = {
+  // Identity marks and reordering: two connected, four passive, no cost blocks.
+  panel: () => [
+    p('claude', 'Claude Code', '#C96442', true, 'ok', {
+      planLabel: 'Max 20x',
+      fiveHour: win(62, 'known'),
+      sevenDay: win(24, 'known'),
+      tokens: tok(1_240_000),
+      burnRatePerHour: 240_000,
+    }),
+    p('codex', 'Codex', '#10A37F', true, 'ok', {
+      fiveHour: win(91, 'known'),
+      tokens: tok(410_000),
+      burnRatePerHour: 90_000,
+    }),
+    p('gemini', 'Gemini CLI', '#4386F5', false, 'passive', { setupAction: ADD }),
+    p('copilot', 'Copilot', '#8B5CF6', false, 'passive', { setupAction: ADD }),
+    p('antigravity', 'Antigravity', '#E8B84B', false, 'passive', { setupAction: ADD }),
+    p('kimi', 'Kimi', '#2B6BE8', false, 'passive', { setupAction: ADD }),
+  ],
+
+  // Every cost state at once. Each of these is zero, absent or impossible on a
+  // real machine today, which is exactly why they need a fixture.
+  cost: () => [
+    p('claude', 'Claude Code', '#C96442', true, 'ok', {
+      planLabel: 'Max 20x',
+      weeklyCost: LIVE_COST,
+      fiveHour: win(62, 'known'),
+      sevenDay: win(24, 'known'),
+      tokens: tok(1_240_000),
+      burnRatePerHour: 240_000,
+    }),
+    p('codex', 'Codex', '#10A37F', true, 'ok', {
+      weeklyCost: CAVEAT_COST,
+      fiveHour: win(91, 'known'),
+      tokens: tok(410_000),
+      burnRatePerHour: 90_000,
+    }),
+    // A stale row: the meter dims, and the cost figure must become a bound.
+    p('gemini', 'Gemini CLI', '#4386F5', true, 'stale', {
+      weeklyCost: TINY_COST,
+      fiveHour: win(31, 'known'),
+      tokens: tok(120_000),
+      lastGoodAt: new Date(Date.now() - 40 * 60_000).toISOString(),
+    }),
+    // A payload from a main process that produced the figure and nothing else.
+    p('copilot', 'Copilot', '#8B5CF6', false, 'passive', {
+      weeklyCost: PARTIAL_COST,
+      setupAction: ADD,
+    }),
+    // Nothing in the window could be priced at all.
+    p('antigravity', 'Antigravity', '#E8B84B', true, 'ok', {
+      weeklyCost: ALL_UNPRICED_COST,
+      fiveHour: win(12, 'known'),
+      tokens: tok(4_215_300),
+    }),
+    p('kimi', 'Kimi', '#2B6BE8', false, 'passive', { setupAction: ADD }),
+  ],
+};
+
+const which = process.env.RENDER_FIXTURE === 'cost' ? 'cost' : 'panel';
+const snapshot = { generatedAt: now.toISOString(), providers: FIXTURES[which]() };
+
+const calls = { setOrder: [], setEnabled: [], setTheme: [], panelOpened: 0, pin: 0, close: 0 };
+let snapshotCb = null;
+let anchorCb = null;
+let failOrder = false;
+let failEnabled = false;
+let failTheme = false;
+/** How long requestRefresh() takes, so the in-flight state can be observed. */
+let refreshDelay = 0;
+/**
+ * What a setup attempt answers with.
+ *
+ * The notice box is the only surface that renders these, and the message that
+ * exposed both of its defects — no way to dismiss it, and a cut that landed
+ * mid-word — was a real `runSetup` failure. So the suite has to be able to
+ * hand the renderer an arbitrary message, including one over the 160-character
+ * notice cap.
+ */
+let setupResult = { ok: false, message: '' };
+/**
+ * Main's persisted preferences. 'dark' rather than 'system' so the suite's
+ * baseline does not depend on whatever the machine running it is set to.
+ */
+let prefs = { theme: 'dark' };
+let prefsCb = null;
+/** Main owns the mode; the renderer only asks. Mirrored here. */
+let mode = 'hover';
+
+/** Geometry good enough to place the panel inside the 420x700 test window. */
+function anchorPayload(mode, anchorSource) {
+  return {
+    tray: { x: 200, y: 660, width: 24, height: 24 },
+    anchorSource: anchorSource || 'tray',
+    display: {
+      id: 1,
+      scaleFactor: 1,
+      bounds: { x: 0, y: 0, width: 420, height: 700 },
+      workArea: { x: 0, y: 0, width: 420, height: 700 },
+    },
+    window: { x: 0, y: 0, width: 420, height: 700 },
+    edge: 'bottom',
+    mode,
+  };
+}
+
+contextBridge.exposeInMainWorld('usageNotch', {
+  initialSnapshot: () => snapshot,
+  onSnapshot: (cb) => {
+    snapshotCb = cb;
+    return () => {
+      snapshotCb = null;
+    };
+  },
+  onAnchor: (cb) => {
+    anchorCb = cb;
+    return () => {
+      anchorCb = null;
+    };
+  },
+  panelOpened: () => {
+    calls.panelOpened++;
+  },
+  requestRefresh: async () => {
+    if (refreshDelay > 0) await new Promise((r) => setTimeout(r, refreshDelay));
+    return snapshot;
+  },
+  runSetup: async () => ({ ...setupResult }),
+  setOrder: async (ids) => {
+    calls.setOrder.push(ids.slice());
+    if (failOrder) {
+      await new Promise((r) => setTimeout(r, 400));
+      return { ok: false };
+    }
+    const byId = new Map(snapshot.providers.map((x) => [x.id, x]));
+    snapshot.providers = ids.map((id) => byId.get(id));
+    snapshot.generatedAt = new Date(Date.now() + 1000).toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+    return { ok: true };
+  },
+  setEnabled: async (id, enabled) => {
+    calls.setEnabled.push([id, enabled]);
+    if (failEnabled) {
+      await new Promise((r) => setTimeout(r, 300));
+      return { ok: false };
+    }
+    snapshot.providers = snapshot.providers.map((p) =>
+      p.id === id ? { ...p, enabled } : p,
+    );
+    snapshot.generatedAt = new Date(Date.now() + 1000).toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+    return { ok: true };
+  },
+  /** Synchronous, exactly as the contract requires: the theme has to be on
+   *  the document in frame one. */
+  initialPreferences: () => prefs,
+  onPreferences: (cb) => {
+    prefsCb = cb;
+    return () => {
+      prefsCb = null;
+    };
+  },
+  setTheme: async (theme) => {
+    calls.setTheme.push(theme);
+    if (failTheme) {
+      await new Promise((r) => setTimeout(r, 300));
+      return { ok: false };
+    }
+    prefs = { theme };
+    if (prefsCb) prefsCb({ ...prefs });
+    return { ok: true };
+  },
+  close: () => {
+    calls.close++;
+  },
+  /**
+   * A real TOGGLE, as main is. Pressing while pinned unpins and pushes
+   * mode:'hover' with the panel still open — the direction that had never
+   * been exercised, and the one that traps the panel on screen if the button
+   * cannot make it.
+   */
+  pin: () => {
+    calls.pin++;
+    mode = mode === 'pin' ? 'hover' : 'pin';
+    if (anchorCb) anchorCb(anchorPayload(mode));
+  },
+});
+
+contextBridge.exposeInMainWorld('__probe', {
+  calls: () => JSON.parse(JSON.stringify(calls)),
+  /**
+   * The FULL provider order main currently holds, added or not.
+   *
+   * The panel only draws the added ones, so a suite checking that a reorder of
+   * the visible subset was expanded back into a whole permutation cannot read
+   * its own expectation off the DOM.
+   */
+  providers: () => snapshot.providers.map((x) => x.id),
+  /** Put the fixture back where a section found it, without logging a call. */
+  setOrderDirect: (ids) => {
+    const byId = new Map(snapshot.providers.map((x) => [x.id, x]));
+    snapshot.providers = ids.map((id) => byId.get(id)).filter(Boolean);
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
+  /** The answer the next setup attempt gets. See `setupResult` above. */
+  setSetupResult: (r) => {
+    setupResult = { ok: !!r.ok, message: String(r.message || '') };
+  },
+  setFailOrder: (v) => {
+    failOrder = v;
+  },
+  setFailEnabled: (v) => {
+    failEnabled = v;
+  },
+  setFailTheme: (v) => {
+    failTheme = v;
+  },
+  /** What main currently holds, so a revert can be checked against it. */
+  prefs: () => ({ ...prefs }),
+  setRefreshDelay: (ms) => {
+    refreshDelay = ms;
+  },
+  /**
+   * Re-stamp the snapshot as if it had been generated `ms` ago and push it.
+   *
+   * The renderer derives staleness from `Snapshot.generatedAt` and a local
+   * clock — deliberately, so a main process that stops pushing degrades
+   * visibly instead of freezing a confident number on screen. That means the
+   * only way to exercise the aging/stale marker is to hand it an old stamp,
+   * which is exactly what a wedged collector looks like.
+   */
+  setGeneratedAgo: (ms) => {
+    snapshot.generatedAt = new Date(Date.now() - ms).toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
+  /** Main owns pinned mode and announces it with an anchor. Mirror that. */
+  setMode: (next, source) => {
+    mode = next;
+    if (anchorCb) anchorCb(anchorPayload(next, source));
+  },
+  /**
+   * Put the whole fixture back, exactly as the suite found it.
+   *
+   * `setEmpty()` and `setEnabledDirect()` are one-way: they leave
+   * `snapshot.providers` empty or all-disabled, so any section running AFTER
+   * them has no row to act on. `setOrderDirect` cannot undo that — it maps ids
+   * onto the providers that are still there, and there are none.
+   */
+  restore: () => {
+    snapshot.providers = FIXTURES[which]();
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
+  /** No providers at all — the OTHER empty panel. */
+  setEmpty: () => {
+    snapshot.providers = [];
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
+  /**
+   * The usage windows a provider currently reports, so a suite that swaps one
+   * out for an unknown-certainty window can put the exact original back rather
+   * than rebuild it from a remembered literal.
+   */
+  windowsOf: (id) => {
+    const found = snapshot.providers.find((x) => x.id === id);
+    return found ? JSON.parse(JSON.stringify({ fiveHour: found.fiveHour, sevenDay: found.sevenDay })) : null;
+  },
+  /** Swap a provider's usage windows, without logging a call. */
+  setWindowsDirect: (id, windows) => {
+    snapshot.providers = snapshot.providers.map((x) =>
+      x.id === id ? { ...x, ...windows } : x,
+    );
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
+  /** Set `enabled` on the fixture directly, without going through setEnabled. */
+  setEnabledDirect: (map) => {
+    snapshot.providers = snapshot.providers.map((p) =>
+      Object.prototype.hasOwnProperty.call(map, p.id) ? { ...p, enabled: map[p.id] } : p,
+    );
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
+  push: () => {
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
+});
