@@ -736,3 +736,137 @@
   font-size: var(--fs-micro);
   color: var(--ink-500);
 }
+
+/* ------------------------------------------------- per-model quota detail */
+/* One figure per model family, behind a disclosure. It borrows the cost
+ * block's chrome deliberately — same toggle, same caret, same detail panel —
+ * because two collapsible blocks in one row that opened differently would read
+ * as two unrelated mechanisms rather than one idiom the user learns once.
+ *
+ * What it does NOT borrow is the ramp rule. The cost block keeps its
+ * composition bar off the state ramp because a share of a whole has no limit
+ * in it. A quota group DOES: it is distance to a limit, the same claim the
+ * meter above makes, so its figure takes the ramp and reads consistently with
+ * the bar it sits under. */
+
+.quota {
+  margin-top: var(--s-1);
+  padding-top: var(--s-1);
+  border-top: 1px dashed var(--ink-700);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.quota[hidden] { display: none !important; }
+
+.quota__toggle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-300);
+  font: inherit;
+  font-size: var(--fs-meta);
+  text-align: left;
+  cursor: pointer;
+}
+.quota__toggle:hover { color: var(--ink-100); }
+.quota__summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.quota__chev {
+  flex: 0 0 auto;
+  width: 0; height: 0;
+  align-self: center;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 120ms var(--ease-open);
+}
+.quota[data-expanded="true"] .quota__chev { transform: rotate(90deg); }
+
+.quota__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-1);
+  padding: var(--s-2) 0 var(--s-1);
+  border-top: 1px solid var(--ink-700);
+}
+.quota__detail[hidden] { display: none !important; }
+
+.quota__lead {
+  margin: 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-100);
+}
+/* Not a footnote, and not under the names it qualifies. Same treatment as the
+ * cost block's denial and for the same reason: a caveat placed after the thing
+ * it qualifies has already been misread by the time it is reached. */
+.quota__denial {
+  margin: -4px 0 0;
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-300);
+}
+
+.quota__groups { display: flex; flex-direction: column; gap: var(--s-2); }
+.quota__group { display: flex; flex-direction: column; gap: 2px; }
+
+/* The figure, and the only place in this block a percentage appears. Model
+ * names never carry one — see components/quotas.ts. */
+.quota__head {
+  margin: 0;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--state, var(--ink-200));
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.quota__head[data-state="calm"]  { --state: var(--calm); }
+.quota__head[data-state="watch"] { --state: var(--watch); }
+.quota__head[data-state="ember"] { --state: var(--ember); }
+.quota__head[data-state="spent"] { --state: var(--spent); }
+
+/* Names only. No numeric column exists here, so none can be filled in. */
+.quota__models {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.quota__models > li {
+  position: relative;
+  padding-left: var(--s-3);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-300);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quota__models > li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: .62em;
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: var(--ink-500);
+}
+
+.quota__notes { display: flex; flex-direction: column; gap: var(--s-1); }
+.quota__note {
+  margin: 0;
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-400);
+}
+.quota__note--asof {
+  color: var(--ink-500);
+  font-variant-numeric: tabular-nums lining-nums;
+}

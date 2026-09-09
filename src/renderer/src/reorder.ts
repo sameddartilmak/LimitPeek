@@ -90,6 +90,18 @@ export interface ReorderHandle {
 }
 
 /**
+ * How much of a decision has to be undone before it is undone.
+ *
+ * A fraction of the SMALLER of the two rows involved, so the deadband is
+ * always a real distance on screen and never wider than the smaller row can
+ * afford. At 0.25 it is ~10px between two passive rows and ~35px between two
+ * connected ones: comfortably more than a hand tremor, comfortably less than a
+ * deliberate move. Kept at half of `reach` so a threshold can never leave the
+ * row it belongs to — see the prefix note in `targetIndexFor`.
+ */
+export const STICK = 0.25;
+
+/**
  * Where a dragged row lands, given how far it has moved. Pure, and exported so
  * it can be swept without a window (`test/reorder-target.test.js`).
  *
@@ -109,11 +121,56 @@ export interface ReorderHandle {
  * "I can drag it down but not up". Every row also switched slots after 1px of
  * downward travel while needing a full row height upward.
  *
- * The rule now is one system and one sentence: another row is above me if my
+ * The rule became one system and one sentence: another row is above me if my
  * centre has passed its midpoint, both measured in the layout as drawn. It
  * follows that at `dy === 0` every other row sorts to the side it started on,
- * so the result is `from` — the invariant that actually broke, and one that now
+ * so the result is `from` — the invariant that actually broke, and one that
  * holds for ANY set of heights rather than by accident for equal ones.
+ *
+ * TWO THINGS THE MIDPOINT RULE STILL GOT WRONG
+ * --------------------------------------------
+ * 1. A row should give way when it has been COVERED, not when it has been
+ *    halved.
+ *
+ *    For two rows of EQUAL height the midpoint crossing is already the moment
+ *    the dragged row's leading edge reaches the other row's leading edge — it
+ *    has been carried all the way over — so for the case the user actually hit
+ *    (two connected rows, same height) the commit point was already right.
+ *    But when the dragged row is SHORTER than its neighbour, half is not yet
+ *    all: a 42px row passing a 139px one swapped after 91px having covered
+ *    less than a third of it.
+ *
+ *    The commit point is now the LATER of the two readings — midpoint crossing
+ *    or leading-edge alignment. It reduces to the midpoint when the heights
+ *    match, comes later when the dragged row is shorter, and deliberately does
+ *    NOT come later when the dragged row is taller: the neighbour is already
+ *    fully covered by then, and asking for more travel would mean dragging
+ *    PAST the slot being aimed at, which is worse feel than arriving early.
+ *
+ *    With `reach = min(myHeight, theirHeight) / 2`, the neighbour is passed
+ *    downward at `theirTop + theirHeight - reach` and upward at
+ *    `theirTop + reach`. Equal heights put both at the midpoint.
+ *
+ * 2. Undoing a swap must cost more than making it.
+ *
+ *    Sitting exactly on a boundary, one pixel of tremor flipped the target
+ *    back and forth, and `paint()` slides a full row height with a transition
+ *    on every flip. Measured: a ±2px tremble produced two distinct targets
+ *    under the plain midpoint rule and produces one now.
+ *
+ *    The stickiness is applied ONLY to a row that has ALREADY given way. A row
+ *    still sitting where the gesture found it transitions at the plain commit
+ *    point, so the first swap costs exactly rule 1 and not a pixel more. That
+ *    asymmetry is the whole difference between "this move was deliberate" and
+ *    "every move is sluggish" — a symmetric deadband would have pushed the
+ *    first commit past the natural landing point, which is the overshoot
+ *    rule 1 exists to avoid.
+ *
+ * `current` is the target index from the previous frame, and it is what makes
+ * rule 2 expressible. It is a PARAMETER rather than hidden state so this stays
+ * a pure function that can be swept exhaustively; the drag session owns the
+ * feedback loop and hands `s.to` back in. It defaults to `from`, which is the
+ * state at pick-up.
  *
  * The returned index is into the list WITH THE DRAGGED ROW REMOVED, which is
  * the space `moveId()` splices into.
@@ -125,12 +182,33 @@ export function targetIndexFor(
   heights: readonly number[],
   from: number,
   dy: number,
+  current: number = from,
 ): number {
-  const centre = (tops[from] as number) + (heights[from] as number) / 2 + dy;
+  const myHeight = heights[from] as number;
+  const centre = (tops[from] as number) + myHeight / 2 + dy;
   let to = 0;
+
   for (let i = 0; i < heights.length; i++) {
     if (i === from) continue;
-    if (centre > (tops[i] as number) + (heights[i] as number) / 2) to++;
+    const top = tops[i] as number;
+    const height = heights[i] as number;
+    const shared = Math.min(myHeight, height);
+    const reach = shared / 2;
+    const stick = STICK * shared;
+
+    // Both thresholds stay strictly inside row i's own band — `stick` is half
+    // of `reach`, so neither can escape it. Row bands are disjoint and
+    // ordered, which is what keeps the counted set a PREFIX and therefore
+    // makes counting a valid index rather than a tally of unrelated tests.
+    const rank = i < from ? i : i - 1;
+    const isAbove = rank < current; // where this row sits right now
+    const wasAbove = i < from; // where it sat before the gesture began
+    const gaveWay = isAbove !== wasAbove ? stick : 0;
+
+    const above = isAbove
+      ? centre >= top + reach - gaveWay
+      : centre > top + height - reach + gaveWay;
+    if (above) to++;
   }
   return to;
 }
@@ -235,7 +313,11 @@ export function createReorder(host: ReorderHost): ReorderHandle {
      * other midpoints to pass. No clamp is needed on the index, and adding one
      * would only reintroduce the same class of bug.
      */
-    const to = targetIndexFor(s.tops, s.heights, s.from, dy);
+    // `s.to` goes in as well as out: it is the previous frame's decision, and
+    // it is what lets the threshold ask for more travel to UNDO a swap than it
+    // asked for to make one. Without the feedback there is no hysteresis and a
+    // pointer resting on a boundary flips a whole row height back and forth.
+    const to = targetIndexFor(s.tops, s.heights, s.from, dy, s.to);
     s.to = to;
 
     for (let i = 0; i < s.rows.length; i++) {
