@@ -1,0 +1,61 @@
+{
+  "name": "usage-notch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows tray monitor for AI coding tool usage limits.",
+  "main": "src/main/index.js",
+  "scripts": {
+    "build": "node src/renderer/build.mjs --prod",
+    "prestart": "node src/renderer/build.mjs",
+    "start": "electron .",
+    "test": "npm run typecheck && node --test \"test/**/*.test.js\"",
+    "verify:render": "electron test/render/run.js",
+    "icon": "node scripts/make-icon.js",
+    "scan": "node scripts/scan-once.js",
+    "smoke": "electron scripts/smoke-ipc.js",
+    "typecheck": "tsc -p src/renderer/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "electron": "^44.2.0",
+    "typescript": "^5.9.2"
+  },
+  "build": {
+    "appId": "com.usagenotch.app",
+    "productName": "Usage Notch",
+    "asar": true,
+    "_comment": "electron-builder config. Inert until a packager is installed on purpose: adding one is an operational commitment, so it is not a devDependency yet. Run with `npx electron-builder`.",
+    "asarUnpack": [
+      "bridge/**"
+    ],
+    "files": [
+      "package.json",
+      "src/main/**",
+      "src/core/**",
+      "src/shared/**",
+      "src/renderer/index.html",
+      "src/renderer/dist/**",
+      "src/renderer/styles/**",
+      "src/renderer/assets/**",
+      "bridge/**",
+      "assets/**",
+      "!src/renderer/dev/**",
+      "!src/renderer/dist/renderer/dev/**",
+      "!src/renderer/dist/**/dev/**",
+      "!src/renderer/src/**",
+      "!src/renderer/build.mjs",
+      "!src/renderer/tsconfig.json",
+      "!**/*.ts",
+      "!test/**",
+      "!scripts/**"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false
+    }
+  }
+}

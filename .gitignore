@@ -1,0 +1,20 @@
+# Bağımlılıklar. 405 MB, ve package-lock.json zaten sürümleri sabitliyor.
+node_modules/
+
+# Derleme çıktısı. `npm start` bunu `prestart` ile kendisi üretir. Depoda bayat
+# bir kopya tutmak hiç tutmamaktan kötüdür: `renderer-build.test.js` tam olarak
+# "kaynak düzenlendi ama yeniden derlenmedi" halini yakalamak için var.
+src/renderer/dist/
+
+# Paketleyici çıktısı (electron-builder temizleyip yeniden üretir).
+dist/
+
+# Makineye özel. Köprü kurucusu buraya MUTLAK bir yol yazıyor, yani commit'lenen
+# bir kopya tek bir geliştiricinin ev dizinini gösterir ve herkeste bozulur.
+.claude/settings.json
+.claude/settings.local.json
+
+# Orkestratör koşu günlükleri: oturuma özel, ve komut metni içeriyorlar.
+agent-orchestrator/logs/
+
+*.log
