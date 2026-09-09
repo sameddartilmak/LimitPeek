@@ -1,0 +1,743 @@
+/* Panel chrome: shell, header, freshness marker, footer, settings, motion. */
+
+/* The OS window is created once at a fixed size and is never moved or resized
+ * while the panel animates. .anchor carries the absolute placement computed in
+ * src/anchor.ts from the tray geometry, and it is the only thing that
+ * transforms, so panel and tail move together on the compositor. */
+#app {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.anchor {
+  position: absolute;
+  width: var(--panel-w);
+  /* transform-origin is set inline from the tail position, so the panel grows
+   * out of the tray icon rather than out of its own centre. */
+  transform-origin: 50% 100%;
+  /* Less travel than the old .94: at the shorter click-open duration a large
+   * scale delta reads as a snap rather than as a growth. */
+  transform: scaleY(.965);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.anchor[data-open="true"] {
+  transform: scaleY(1);
+  opacity: 1;
+  transition:
+    transform var(--dur-open) var(--ease-open),
+    opacity calc(var(--dur-open) - 40ms) linear;
+}
+
+.anchor[data-open="false"] {
+  transform: scaleY(.96);
+  opacity: 0;
+  transition:
+    transform var(--dur-close) ease-in,
+    opacity var(--dur-close) linear;
+}
+
+/* A side taskbar means the panel grows sideways, so scale the other axis. */
+.anchor[data-axis="horizontal"] { transform: scaleX(.965); }
+.anchor[data-axis="horizontal"][data-open="true"] { transform: scaleX(1); }
+.anchor[data-axis="horizontal"][data-open="false"] { transform: scaleX(.96); }
+
+.panel {
+  position: relative;
+  width: 100%;
+  background: linear-gradient(180deg, var(--ink-850) 0%, var(--ink-900) 100%);
+  border: 1px solid var(--ink-700);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-inset), var(--shadow-panel);
+  overflow: hidden;
+}
+
+/* The tail lives outside the panel's overflow clip, hence the wrapper.
+ *
+ * The box is sized per side and the glyph is rotated INSIDE it, centred on the
+ * box. Rotating the box itself would invalidate the offset that centres it on
+ * the tray icon, because CSS resolves left/top before transforms.
+ * It overlaps the panel border by 1px so the join has no seam. */
+.panel__tail {
+  position: absolute;
+  pointer-events: none;
+  filter: drop-shadow(var(--shadow-tail));
+}
+.panel__tail svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--tail-w);
+  height: var(--tail-h);
+  transform: translate(-50%, -50%) rotate(var(--tail-rot, 0deg));
+}
+
+/* Bottom taskbar: panel above it, tail hanging down at the icon. */
+.anchor[data-tail="bottom"] .panel__tail {
+  width: var(--tail-w);
+  height: var(--tail-h);
+  top: calc(100% - 1px);
+  left: var(--tail-offset, 50%);
+  margin-left: calc(var(--tail-w) / -2);
+  --tail-rot: 0deg;
+}
+.anchor[data-tail="top"] .panel__tail {
+  width: var(--tail-w);
+  height: var(--tail-h);
+  bottom: calc(100% - 1px);
+  left: var(--tail-offset, 50%);
+  margin-left: calc(var(--tail-w) / -2);
+  --tail-rot: 180deg;
+}
+/* Side taskbars swap the box axes; the glyph rotates a quarter turn. */
+.anchor[data-tail="left"] .panel__tail {
+  width: var(--tail-h);
+  height: var(--tail-w);
+  right: calc(100% - 1px);
+  top: var(--tail-offset, 50%);
+  margin-top: calc(var(--tail-w) / -2);
+  --tail-rot: 90deg;
+}
+.anchor[data-tail="right"] .panel__tail {
+  width: var(--tail-h);
+  height: var(--tail-w);
+  left: calc(100% - 1px);
+  top: var(--tail-offset, 50%);
+  margin-top: calc(var(--tail-w) / -2);
+  --tail-rot: -90deg;
+}
+
+/* The tail stops pointing at the icon once it clamps to the panel corner.
+ * Softening it is honest: it is no longer telling the truth about position. */
+.anchor[data-tail-clamped="true"] .panel__tail,
+.anchor[data-anchor-source="cursor"] .panel__tail { opacity: .55; }
+
+/* Content stagger: each band enters +40ms after the shell starts. */
+.panel__band {
+  opacity: 0;
+  transform: translateY(3px);
+}
+.panel[data-open="true"] .panel__band {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--dur-open) var(--ease-open) var(--band-delay, 0ms),
+    transform var(--dur-open) var(--ease-open) var(--band-delay, 0ms);
+}
+
+/* ---------------------------------------------------------------- header */
+
+.hdr { padding: var(--s-4) var(--s-4) var(--s-3); }
+
+.hdr__top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+
+.hdr__title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: .01em;
+  color: var(--ink-100);
+}
+
+.hdr__sub {
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+}
+
+.hdr__spacer { flex: 1 1 auto; }
+
+.hdr__actions { display: flex; align-items: center; gap: var(--s-1); }
+
+.iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-400);
+  font: inherit;
+  cursor: pointer;
+  transition: color 120ms linear, background-color 120ms linear;
+}
+.iconbtn:hover { color: var(--ink-100); background: var(--ink-700); }
+.iconbtn[aria-pressed="true"],
+.iconbtn[aria-expanded="true"] {
+  color: var(--ink-100);
+  background: var(--ink-700);
+  border-color: var(--ink-600);
+}
+.iconbtn svg { width: 14px; height: 14px; display: block; }
+
+/* PINNED vs. NOT PINNED, at a glance.
+ *
+ * The two states differ in what they PROMISE — pinned survives blur and app
+ * switching, unpinned closes as soon as the pointer leaves — so they must not
+ * differ by a shade of grey. Pinned inverts the button outright: brightest ink
+ * as the ground, panel base as the glyph. The pin also stands upright instead
+ * of tilting out of the board (see pinIcon() in components/header.ts), so the
+ * distinction survives a greyscale screenshot. No state-ramp colour is used:
+ * that ramp belongs to meters and percentages, which are compared across rows.
+ */
+.iconbtn--pin[aria-pressed="true"] {
+  background: var(--ink-100);
+  border-color: var(--ink-100);
+  color: var(--ink-900);
+}
+.iconbtn--pin[aria-pressed="true"]:hover {
+  background: var(--ink-max);
+  border-color: var(--ink-max);
+  color: var(--ink-900);
+}
+
+/* --------------------------------------------------- freshness marker */
+/* Quiet when there is nothing to say, unmissable when there is.
+ *
+ * The old chip was a bordered pill that always carried a dot AND the words
+ * "şimdi güncellendi" — the state it is in almost all the time. Two carriers
+ * for one signal, in the header's best real estate, saying "fine". This
+ * escalates instead:
+ *
+ *   live     6px dot, no ground, no words       (~14px wide)
+ *   pending  dot pulses, words return
+ *   aging    dot turns watch, words return
+ *   stale    filled ember block, words          (the row list dims with it)
+ *   offline  same filled treatment, other words
+ *
+ * The filled tiers use --ink-900 as their ink: in BOTH themes that is the
+ * panel base, which is what a state colour is guaranteed to contrast with.
+ * That is the whole reason the tokens are named for role and not brightness. */
+
+.fresh {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: var(--s-1);
+  min-width: 0;
+  height: 18px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+
+.fresh__dot {
+  flex: 0 0 auto;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--fresh-color, var(--ink-500));
+}
+
+/* Absent from the layout entirely at the quiet level, rather than present and
+ * empty: an empty inline box still takes the gap before it. */
+.fresh__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fresh__text:empty { display: none; }
+
+.fresh[data-fresh="live"]    { --fresh-color: var(--calm); }
+.fresh[data-fresh="aging"]   { --fresh-color: var(--watch); color: var(--ink-300); }
+.fresh[data-fresh="pending"] { --fresh-color: var(--ink-400); }
+
+/* The alarm tier. A filled block, not a tinted border: at 10px a border is a
+ * shade and a shade is what the eye has been trained to skip. */
+.fresh[data-fresh="stale"],
+.fresh[data-fresh="offline"] {
+  --fresh-color: var(--ink-900);
+  padding: 0 var(--s-2);
+  background: var(--ember);
+  border-color: var(--ember);
+  color: var(--ink-900);
+  font-weight: 600;
+}
+
+/* A refresh in flight, at ANY level. Motion only: the footer button already
+ * says "Yenileniyor" in words and a second copy is the noise this redesign
+ * removed. */
+.fresh[data-busy="true"] .fresh__dot,
+.fresh[data-fresh="pending"] .fresh__dot {
+  animation: fresh-pulse 1400ms ease-in-out infinite;
+}
+@keyframes fresh-pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+
+/* ------------------------------------------------------------- sections */
+
+.rule {
+  height: 1px;
+  background: var(--ink-700);
+  border: 0;
+  margin: 0;
+}
+
+.section__label {
+  padding: var(--s-3) var(--s-4) var(--s-1);
+  font-size: var(--fs-micro);
+  letter-spacing: .04em;
+  color: var(--ink-400);
+}
+
+.rows { list-style: none; margin: 0; padding: 0; }
+
+/* The OS window never grows, so the list scrolls rather than clipping its
+ * last row. --list-max is written from the anchored window height. */
+.panel__band--list {
+  max-height: var(--list-max, none);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-600) transparent;
+}
+.panel__band--list::-webkit-scrollbar { width: 8px; }
+.panel__band--list::-webkit-scrollbar-thumb {
+  background: var(--ink-600);
+  border-radius: 4px;
+}
+
+/* --------------------------------------------------------------- footer */
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-4) var(--s-3);
+  font-size: var(--fs-micro);
+  color: var(--ink-500);
+}
+.foot__spacer { flex: 1 1 auto; }
+
+/* The pin promise in words. Truncates rather than pushing the refresh button
+ * out of a 360px panel. */
+.foot__mode {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-400);
+}
+
+/* Tray-icon coaching. Only shown when the anchor came from the cursor, i.e.
+ * when main could not measure a tray rect — on Win11 that is usually the
+ * hidden-icons overflow flyout. */
+.coach {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0 var(--s-4) var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-left: 2px solid var(--ink-400);
+  border-radius: 8px;
+  background: var(--ink-800);
+}
+.coach__text {
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-300);
+}
+.coach__actions { display: flex; justify-content: flex-end; }
+
+/* Consent prompt. Reads as a distinct surface, not a toast: it is asking a
+ * question and nothing happens until it is answered. */
+.consent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0 var(--s-4) var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--ink-600);
+  border-left: 2px solid var(--calm);
+  border-radius: 8px;
+  background: var(--ink-800);
+}
+.consent[hidden] { display: none !important; }
+.consent__title {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-100);
+}
+.consent__detail {
+  font-size: var(--fs-meta);
+  color: var(--ink-300);
+  line-height: 1.45;
+}
+.consent__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-2);
+}
+
+/* The notice is a row now, not a paragraph: the message, then the close.
+ * `align-items: flex-start` rather than centre, because a three-line message
+ * with a vertically centred cross puts the control halfway down the box and
+ * the user's eye looks for it in the corner. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin: 0 var(--s-4) var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-left: 2px solid var(--watch);
+  border-radius: 6px;
+  background: var(--ink-800);
+  font-size: var(--fs-meta);
+  color: var(--ink-300);
+}
+.notice__text { margin: 0; flex: 1 1 auto; min-width: 0; }
+
+/* Reuses .iconbtn wholesale — same grey (--ink-400), same hover, same focus
+ * ring, and both track the theme through the ink scale rather than a hex.
+ * Only the box shrinks: 24px is right in the header's control strip and too
+ * loud beside a two-line sentence. The negative margins pull it back into the
+ * box padding so the glyph sits in the corner rather than indented from it. */
+.notice__close {
+  flex: 0 0 auto;
+  width: 20px; height: 20px;
+  /* Pulled back through the box's own padding so the glyph sits 4px inside the
+   * corner rather than 7px inside the text column. The user asked for a cross
+   * "in the corner", and a control indented from the corner by a full padding
+   * step reads as part of the paragraph. */
+  margin: calc(var(--s-2) * -1 + 3px) calc(var(--s-3) * -1 + 3px) -2px 0;
+  border-radius: 4px;
+}
+.notice__close[hidden] { display: none !important; }
+.notice__close svg { width: 12px; height: 12px; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--ink-600);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-200);
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms linear, color 120ms linear,
+    border-color 120ms linear, transform 120ms var(--ease-open);
+}
+.btn:hover { color: var(--ink-100); border-color: var(--ink-500); background: var(--ink-700); }
+.btn:active { transform: scale(.97); }
+.btn[disabled] { color: var(--ink-500); border-color: var(--ink-700); cursor: default; transform: none; }
+
+/* The passive row's call to action is the brightest ink in the panel. */
+.btn--primary {
+  background: var(--ink-100);
+  border-color: var(--ink-100);
+  color: var(--ink-900);
+  font-weight: 600;
+}
+.btn--primary:hover { background: var(--ink-max); border-color: var(--ink-max); color: var(--ink-900); }
+.btn--primary[disabled] { background: var(--ink-500); border-color: var(--ink-500); color: var(--ink-800); }
+
+.btn__spin {
+  width: 10px; height: 10px;
+  margin-right: var(--s-1);
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Section wrappers hide as a unit. */
+[hidden] { display: none !important; }
+
+.notice[hidden], .rows[hidden] { display: none !important; }
+
+/* ------------------------------------------------------------- empty state */
+/* A blank list is ambiguous: "nothing found on this machine" and "you removed
+ * every row" look identical and only one of them has a fix. The box always
+ * says which, and when the fix is in settings it offers the door. */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-5) var(--s-4);
+}
+.empty__title {
+  font-size: var(--fs-name);
+  font-weight: 600;
+  color: var(--ink-200);
+}
+.empty__detail {
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-400);
+}
+
+/* ---------------------------------------------------------------- settings */
+/* In-panel view, not a second window. It reuses the panel's own bands, so the
+ * shell, the header and the footer never move when the view changes. */
+
+.settings { display: block; }
+
+.settings__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4) var(--s-1);
+}
+.settings__title {
+  margin: 0;
+  font-size: var(--fs-name);
+  font-weight: 600;
+  color: var(--ink-100);
+}
+/* Section headings inside the view: "Araçlar" and "Görünüm". One step quieter
+ * than the view title, so the hierarchy is carried by size and ink rather than
+ * by text-transform, which maps i -> I and is wrong in Turkish. */
+.settings__section {
+  margin: 0;
+  padding: var(--s-3) var(--s-4) 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-300);
+}
+.settings__help {
+  margin: 0;
+  padding: 0 var(--s-4) var(--s-3);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-400);
+}
+.settings__status {
+  margin: 0;
+  padding: var(--s-4);
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+}
+
+.settings__list { list-style: none; margin: 0; padding: 0; }
+
+.settings__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--row-passive-h);
+  padding: var(--s-2) var(--s-4);
+  border-top: 1px solid var(--ink-700);
+}
+.settings__list > .settings__item:first-child { border-top: 0; }
+
+/* The mark is the same geometry the row uses, at the same two weights: brand
+ * hue while the provider is connected, ink otherwise. Adding a row does not
+ * connect it, so this column must not change when the switch moves. */
+.settings__mark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: var(--tile); height: var(--tile);
+  border-radius: var(--radius-tile);
+  border: 1px solid transparent;
+  color: var(--ink-400);
+}
+.settings__item[data-connected="true"] .settings__mark {
+  background: color-mix(in srgb, var(--accent, #666666) var(--accent-tint), var(--ink-800));
+  border-color: color-mix(in srgb, var(--accent, #666666) 40%, transparent);
+  color: var(--accent, var(--ink-200));
+}
+/* Same per-theme shading as the row grip; see row.css and --accent-shade. */
+:root[data-theme="light"] .settings__item[data-connected="true"] .settings__mark {
+  color: color-mix(in srgb, var(--accent, #666666) var(--accent-shade), #000000);
+}
+.settings__item[data-connected="true"] .mark { stroke-width: 2; opacity: 1; }
+
+.settings__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings__name {
+  font-size: var(--fs-name);
+  color: var(--ink-200);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings__item[data-enabled="true"] .settings__name { color: var(--ink-100); }
+.settings__meta {
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The add/remove switch. A real button[role=switch]; the track is decoration.
+ * The knob moves AND the track fills, so the state is not carried by fill
+ * alone — a 34px pill at one shade of grey is unreadable at a glance. */
+.switch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  width: 36px; height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.switch__track {
+  position: relative;
+  display: block;
+  width: 36px; height: 20px;
+  border-radius: 10px;
+  border: 1px solid var(--ink-600);
+  background: var(--ink-800);
+  transition: background-color 140ms linear, border-color 140ms linear;
+}
+.switch__track::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--ink-400);
+  transition: transform 140ms var(--ease-open), background-color 140ms linear;
+}
+.switch[aria-checked="true"] .switch__track {
+  background: var(--ink-100);
+  border-color: var(--ink-100);
+}
+.switch[aria-checked="true"] .switch__track::after {
+  transform: translateX(16px);
+  background: var(--ink-900);
+}
+.switch:hover .switch__track { border-color: var(--ink-500); }
+.switch[aria-checked="true"]:hover .switch__track {
+  background: var(--ink-max);
+  border-color: var(--ink-max);
+}
+.switch:active .switch__track { transform: scale(.97); }
+
+/* In flight: the switch stays operable, but it says it is waiting. */
+.switch[aria-busy="true"] .switch__track { opacity: .6; }
+
+/* Main refused, so the switch went back. The flash is what makes the revert
+ * something the user SAW happen rather than something they have to infer from
+ * a sentence in the footer. */
+.settings__item[data-revert="true"] {
+  animation: settings-revert 1600ms ease-out 1;
+}
+@keyframes settings-revert {
+  0%, 45% { background: color-mix(in srgb, var(--watch) 22%, transparent); }
+  100% { background: transparent; }
+}
+
+/* ---------------------------------------------------------------- theme */
+/* Three choices, one selection: a native radio group in a fieldset, so arrow
+ * keys, the single tab stop and the group name all come from the platform.
+ * The inputs are visually replaced rather than hidden — `display:none` would
+ * take them out of the focus order and out of the accessibility tree, which is
+ * the usual way a "custom radio" stops being a radio at all. */
+
+.theme {
+  margin: 0;
+  padding: 0 0 var(--s-3);
+  border: 0;
+  border-top: 1px solid var(--ink-700);
+  /* A fieldset defaults to min-inline-size:min-content, which stops its flex
+   * children shrinking inside a 360px panel. */
+  min-inline-size: 0;
+}
+
+.theme__help {
+  margin: 0;
+  padding: 0 var(--s-4) var(--s-2);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-400);
+}
+
+.theme__opts {
+  display: flex;
+  gap: var(--s-1);
+  padding: 0 var(--s-4);
+}
+
+/* Off-screen but focusable and hit-testable — the label is what is drawn. */
+.theme__radio {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.theme__opt {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--ink-600);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-300);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms linear, color 120ms linear,
+    border-color 120ms linear;
+}
+.theme__opt:hover { color: var(--ink-100); border-color: var(--ink-500); background: var(--ink-700); }
+
+/* Selected inverts, the same way the pin and the primary button do: the
+ * distinction survives greyscale, and no state-ramp colour is borrowed for a
+ * control that has nothing to do with a limit. */
+.theme__radio:checked + .theme__opt {
+  background: var(--ink-100);
+  border-color: var(--ink-100);
+  color: var(--ink-900);
+  font-weight: 600;
+}
+
+/* The focus ring belongs on the drawn control, because the input itself is
+ * one pixel wide and off-screen. */
+.theme__radio:focus-visible + .theme__opt {
+  outline: 2px solid var(--ink-100);
+  outline-offset: 2px;
+}
+.theme__radio:checked:focus-visible + .theme__opt {
+  outline-color: var(--ink-400);
+}
+
+/* In flight. The group stays operable — a control that goes dead for one round
+ * trip is worse than one that accepts a second press, and the app already lets
+ * the newest request win. */
+.theme[data-pending="true"] .theme__opts { opacity: .7; }
+
+/* Main refused, so the choice went back. The flash is what makes the revert
+ * something the user SAW happen rather than something they infer from the
+ * sentence in the footer. */
+.theme[data-revert="true"] .theme__opts {
+  animation: settings-revert 1600ms ease-out 1;
+  border-radius: 6px;
+}

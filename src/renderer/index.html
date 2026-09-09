@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      Strict CSP. `connect-src 'none'` is the load-bearing one: this app makes
+      zero network requests and must work fully offline. No CDN, no remote
+      fonts, no analytics. Everything it renders came from the local machine.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <!--
+      Both schemes are declared; which one is live is decided by
+      `color-scheme` in tokens.css, keyed off the `data-theme` attribute that
+      src/theme.ts writes from initialPreferences() before first paint.
+    -->
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" href="data:," />
+    <title>Kullanım</title>
+    <link rel="stylesheet" href="./styles/tokens.css" />
+    <link rel="stylesheet" href="./styles/panel.css" />
+    <link rel="stylesheet" href="./styles/row.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./dist/renderer/src/main.js"></script>
+  </body>
+</html>
