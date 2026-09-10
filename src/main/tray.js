@@ -21,6 +21,18 @@ const log = require('../core/log');
  */
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'tray-icon.png');
 
+/**
+ * How long, after ONE tray gesture acts, further tray `click`/`double-click`
+ * events are treated as the same physical gesture and swallowed.
+ *
+ * Sized against a real trace: this machine delivers BOTH `click` and
+ * `double-click` for a single physical click, 46-53 ms apart (measured gap; the
+ * captured pair was 49 ms). 250 ms clears that with wide margin, yet stays well
+ * under any deliberate open-then-reclose a human performs by hand — a real
+ * second click lands hundreds of ms later and still toggles.
+ */
+const GESTURE_COALESCE_MS = 250;
+
 function createTrayIcon() {
   const image = nativeImage.createFromPath(ICON_PATH);
   // Let Windows use the 2x/4x representations on a HiDPI taskbar.
@@ -35,33 +47,71 @@ class TrayController {
   constructor(handlers) {
     this.tray = null;
     this.handlers = handlers;
+    // Leading-edge gesture coalescing. `_lastGestureAt` is the timestamp of the
+    // last gesture we ACTED on; anything within `GESTURE_COALESCE_MS` of it is
+    // the shell's redundant second event for the same physical press and is
+    // swallowed. Injectable clock so the suppression window is testable without
+    // real waiting; `performance.now()` is monotonic, the same source the trace
+    // uses, so its offsets and these are subtractable.
+    this._lastGestureAt = -Infinity;
+    this._clock = () => performance.now();
+  }
+
+  /**
+   * Leading edge of one physical gesture: the FIRST event acts immediately (no
+   * added latency before the panel opens), every further tray event inside the
+   * coalescing window is the same press and is swallowed. This is what makes the
+   * app robust to a shell that fires `click` AND `double-click` for one click.
+   */
+  handleGesture() {
+    const now = this._clock();
+    const since = now - this._lastGestureAt;
+    if (since < GESTURE_COALESCE_MS) {
+      // Logged so the next trace shows the coalescing working, not a silent gap.
+      log.trace('tray.suppressed', { sinceMs: since });
+      return;
+    }
+    this._lastGestureAt = now;
+    this.handlers.onToggle(this.bounds());
   }
 
   create({ autostart, onToggleAutostart, onQuit }) {
     this.tray = new Tray(createTrayIcon());
     this.tray.setToolTip('Usage Notch');
 
-    // The two bindings are NOT the same handler. Windows delivers `click` and
-    // then `double-click` for one double-click gesture — measured here with
-    // synthetic input on a real tray icon: a single click fired the handler
-    // once, a double-click fired it twice, 77 ms apart. Pointing both at a
-    // TOGGLE therefore opened and immediately closed the panel, so the
-    // habitual double-click a tray app invites left it shut after a flash.
+    // BOTH events funnel into the SAME coalesced toggle. Windows delivers
+    // `click` and then `double-click` for one physical press on the reporting
+    // machine — the real trace shows the pair 49 ms apart, far faster than any
+    // human double-click (a chattering switch or a driver, irrelevant: the app
+    // has to be robust to it). The previous design bound `double-click` to an
+    // idempotent-OPEN to stop the second event closing what the first opened,
+    // but that only converts the failure: from a HIDDEN panel it read clean,
+    // yet from a VISIBLE panel the click hid and the double-click re-opened
+    // 49 ms later — the reported hide-then-show FLASH on the 2nd+ open.
     //
-    // `double-click` is idempotent-open instead: it can only ever end with the
-    // panel on screen, whichever order the two events arrive in.
+    // The fix is not a second special handler; it is to recognise the two
+    // shell events as ONE gesture. `handleGesture` acts on the leading edge and
+    // swallows anything within GESTURE_COALESCE_MS. So one physical click = one
+    // toggle whether the shell sends `click`, `double-click`, or both.
     //
-    // That measurement was SYNTHETIC (`SendInput`), and a user reports a flash
-    // on one real physical click. The trace line goes in before the handler so
-    // the log shows what the shell delivered, not what we did about it — if
-    // Windows sends `click` twice for one press, only this can say so.
+    // The `double-click`->onOpen binding is therefore DROPPED, not kept. Once
+    // suppression lands it would be dead anyway: a `double-click` always trails
+    // a `click` inside the window, so it is always the suppressed second event
+    // and its handler would never run. Routing it through the same toggle is
+    // also more robust — a machine that somehow emitted `double-click` alone
+    // would still get one clean toggle instead of an open-only. (`onOpen` is
+    // still provided by the caller; it is simply no longer wired here.)
+    //
+    // The `log.trace` line stays BEFORE the suppression check on purpose: the
+    // trace must show what the SHELL delivered, not what we decided — that
+    // transparency is the only reason this bug was diagnosable at all.
     this.tray.on('click', () => {
       log.trace('tray.click');
-      this.handlers.onToggle(this.bounds());
+      this.handleGesture();
     });
     this.tray.on('double-click', () => {
       log.trace('tray.double-click');
-      this.handlers.onOpen(this.bounds());
+      this.handleGesture();
     });
 
     // Hover is OBSERVED, never acted on. It used to open the panel through

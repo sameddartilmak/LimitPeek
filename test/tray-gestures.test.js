@@ -16,25 +16,36 @@ const { PanelWindow } = require('../src/main/panel-window');
 /**
  * What the tray icon does when it is clicked.
  *
- * Windows delivers `click` AND THEN `double-click` for one double-click
- * gesture. Measured here on a real tray icon with synthetic OS input: a single
- * click fired the handler once; a double-click fired it twice, 77 ms apart
- * (`click` at +752 ms, `double-click` at +829 ms). Never three times.
+ * Windows delivers `click` AND THEN `double-click` for ONE physical click on
+ * the reporting machine — the real trace caught the pair 49 ms apart, far
+ * faster than any human double-click. Binding `click`->toggle and
+ * `double-click`->open turned that into a VISIBLE hide-then-show FLASH on the
+ * 2nd+ open: the click hid the panel, the double-click re-opened it 49 ms later.
  *
- * Both events were bound to the same handler, and that handler became a
- * TOGGLE when hover-open was removed — so the habitual double-click a tray app
- * invites opened the panel and immediately closed it again. The two events are
- * therefore no longer the same handler: the second can only ever open.
+ * The tray now coalesces the two shell events into one physical gesture: the
+ * leading edge toggles, anything within GESTURE_COALESCE_MS is swallowed. One
+ * physical click = one toggle, whichever events the shell sends. The
+ * `double-click`->onOpen binding is dropped; both events run the same toggle.
  */
 
 function harness() {
   const calls = [];
+  // Injected clock so the coalescing window is exercised without real waiting.
+  // Fires do not advance it, so two synchronous fires read as the same instant
+  // (as one physical press does); `setClock` steps it for a deliberate reclick.
+  let clock = 1000;
   const tray = new TrayController({
     onToggle: () => calls.push('toggle'),
     onOpen: () => calls.push('open'),
   });
+  tray._clock = () => clock;
   tray.create({ autostart: false, onToggleAutostart: () => {}, onQuit: () => {} });
-  return { tray, calls, fire: (event) => tray.tray.emit(event) };
+  return {
+    tray,
+    calls,
+    fire: (event) => tray.tray.emit(event),
+    setClock: (ms) => { clock = ms; },
+  };
 }
 
 test.describe('tray gestures', () => {
@@ -44,12 +55,45 @@ test.describe('tray gestures', () => {
     assert.deepEqual(calls, ['toggle']);
   });
 
-  test('a double click never toggles twice', () => {
-    // The measured sequence for one gesture.
+  test('one physical click (click + double-click 49ms apart) is a single toggle', () => {
+    // The reported double-fire: the shell sends BOTH events for one press. The
+    // second must be swallowed, not converted into a second handler call.
     const { calls, fire } = harness();
     fire('click');
     fire('double-click');
-    assert.deepEqual(calls, ['toggle', 'open'], 'the second event must not flip the state back');
+    assert.deepEqual(calls, ['toggle'], 'the redundant double-click must be suppressed');
+  });
+
+  test('a VISIBLE panel + one physical click does NOT hide-then-show', () => {
+    // The exact user complaint. `visible` starts true; the coalesced pair must
+    // produce ONE transition (hide), never hide followed by re-show. Reverting
+    // the fix (re-adding the double-click->onOpen call) makes this ['hide',
+    // 'show'] and the test fails — the mutation check for the whole fix.
+    const states = [];
+    let visible = true;
+    let clock = 5000;
+    const tray = new TrayController({
+      onToggle: () => { visible = !visible; states.push(visible ? 'show' : 'hide'); },
+      onOpen: () => { if (!visible) { visible = true; states.push('show'); } },
+    });
+    tray._clock = () => clock;
+    tray.create({ autostart: false, onToggleAutostart: () => {}, onQuit: () => {} });
+    tray.tray.emit('click');
+    tray.tray.emit('double-click'); // same instant: within the coalescing window
+    assert.deepEqual(states, ['hide'], 'one physical click on an open panel just hides it');
+  });
+
+  test('a deliberate separate re-click after the window still toggles', () => {
+    // Coalescing must not eat a genuine second gesture. Step the clock past the
+    // window: the re-click has to act, or a real open-then-close would be lost.
+    const { calls, fire, setClock } = harness();
+    setClock(1000);
+    fire('click');          // acts
+    setClock(1049);
+    fire('double-click');   // 49 ms later: same physical press, suppressed
+    setClock(1400);
+    fire('click');          // 351 ms after the first: a new gesture, acts
+    assert.deepEqual(calls, ['toggle', 'toggle']);
   });
 
   test('hover is observed but never acted on', () => {
@@ -67,12 +111,12 @@ test.describe('tray gestures', () => {
     assert.equal(tray.tray.listenerCount('mouse-leave'), 1);
   });
 
-  test('every tray event is traced before its handler runs', () => {
-    // The measurement that said "one click, one handler call" was synthetic.
-    // A real click is reported to produce a flash, so the log has to show what
-    // the SHELL delivered, not what we did about it: if Windows sends `click`
-    // twice for one physical press, only a line emitted before the handler can
-    // say so.
+  test('every tray event is traced as the SHELL delivered it, before coalescing', () => {
+    // The log has to show what the shell sent, not what we did about it: if
+    // Windows sends `click` twice for one press, only a line emitted before the
+    // suppression check can say so. The redundant `double-click` is still
+    // traced, and its swallowing is traced too, so a later capture shows the
+    // coalescing working rather than an unexplained missing handler call.
     const lines = [];
     log.setSink((_level, msg) => lines.push(msg));
     log.setTrace(true);
@@ -83,20 +127,34 @@ test.describe('tray gestures', () => {
       log.setTrace(false);
       log.setSink(null);
     }
-    const seen = lines.filter((l) => l.startsWith('trace ')).map((l) => l.split(' ').pop());
-    assert.deepEqual(seen, ['tray.click', 'tray.double-click', 'tray.mouse-enter', 'tray.mouse-leave']);
+    // The event name is the token after `+<ms>ms`: `trace +N ms <name> ...`.
+    const seen = lines.filter((l) => l.startsWith('trace ')).map((l) => l.split(' ')[2]);
+    assert.deepEqual(seen, [
+      'tray.click',        // delivered, acts on the leading edge
+      'tray.double-click', // delivered by the shell, still traced
+      'tray.suppressed',   // ...then swallowed as the same physical gesture
+      'tray.mouse-enter',
+      'tray.mouse-leave',
+    ]);
   });
 
-  test('the panel ends OPEN after a double click, whatever the panel state was', () => {
-    // Replays both events against a stand-in for the real wiring in
-    // src/main/index.js, from both starting states.
+  test('one physical double-click is a single toggle from either state', () => {
+    // The `double-click`->onOpen binding is gone: both shell events run the
+    // coalesced toggle, so one physical press flips the state exactly once.
+    // From hidden that opens; from visible that closes. Routed through the real
+    // tray wiring, not a hand-rolled stand-in, so the assertion tracks the code.
     for (const startVisible of [false, true]) {
       let visible = startVisible;
-      const onToggle = () => { visible = !visible; };
-      const onOpen = () => { if (!visible) visible = true; };
-      onToggle();
-      onOpen();
-      assert.equal(visible, true, `double click starting from visible=${startVisible} left it shut`);
+      let clock = 2000;
+      const tray = new TrayController({
+        onToggle: () => { visible = !visible; },
+        onOpen: () => { visible = true; },
+      });
+      tray._clock = () => clock;
+      tray.create({ autostart: false, onToggleAutostart: () => {}, onQuit: () => {} });
+      tray.tray.emit('click');
+      tray.tray.emit('double-click'); // suppressed
+      assert.equal(visible, !startVisible, `one press from visible=${startVisible} must flip once`);
     }
   });
 
