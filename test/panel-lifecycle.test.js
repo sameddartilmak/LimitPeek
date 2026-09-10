@@ -176,6 +176,39 @@ test.describe('an unpinned panel follows the pointer, not the focus', () => {
     assert.equal(panel.pinned, false);
   });
 
+  test('a click-open re-asserts top-of-z-order right after showing, without activating', () => {
+    // The reported open flicker: `showInactive()` shows the transparent topmost
+    // panel WITHOUT taking the foreground, so the app the user was in keeps it
+    // and repaints over the panel for a few frames before the shell settles the
+    // z-order (present->gone->present in the capture). `moveTop()` re-inserts
+    // the panel at the top of the topmost band in the same tick, and does so
+    // without activation, so the fix must not cost the no-focus-steal property.
+    const { panel, send, trayRect } = build();
+    panel.open(trayRect, send);
+    assert.deepEqual(
+      panel.win.activations,
+      ['showInactive', 'moveTop'],
+      'moveTop must run, and run AFTER the show — before it there is nothing on top to raise',
+    );
+    assert.equal(panel.win.isFocused(), false, 'moveTop must not steal focus');
+    assert.equal(panel.isVisible(), true);
+  });
+
+  test('a second open (panel buried behind another window) re-raises it again', () => {
+    // The OTHER second click — not the toggle-closed path, but a re-open of a
+    // still-visible panel that has been covered. Each open must re-assert
+    // z-order, or a panel buried since the first open never resurfaces.
+    const { panel, send, trayRect } = build();
+    panel.open(trayRect, send);
+    panel.open(trayRect, send);
+    assert.deepEqual(
+      panel.win.activations,
+      ['showInactive', 'moveTop', 'showInactive', 'moveTop'],
+      'every open pairs a show with a z-order re-assert',
+    );
+    assert.equal(panel.isVisible(), true);
+  });
+
   test('the transit gap does not close it while the pointer is still travelling', (t) => {
     // The user clicked the tray and is moving towards the panel: for this
     // moment the pointer is over neither. Closing here would be the whole bug.
