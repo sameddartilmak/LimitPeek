@@ -5,9 +5,11 @@ const { app, dialog } = require('electron');
 const { installClaudeStatusLine, statusLineState } = require('../core/setup/claude-bridge');
 const {
   installAntigravityStatusLine,
+  removeAntigravityStatusLine,
   antigravityStatusLineState,
 } = require('../core/setup/antigravity-bridge');
-const { claudeSettingsPath, antigravitySettingsPath, antigravityHome } = require('../core/paths');
+const { installAgy, isAgyInstalled } = require('../core/antigravity/cli-install');
+const { claudeSettingsPath, antigravitySettingsPath } = require('../core/paths');
 const messages = require('../core/setup/messages');
 const log = require('../core/log');
 
@@ -134,19 +136,17 @@ async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
  * settings.json for a CLI that is not on the machine would leave a file in the
  * user's home directory that nothing will ever read.
  */
-async function runAntigravitySetup({ confirmed, parentWindow, beforePrompt }) {
+async function runAntigravitySetup({ confirmed, parentWindow, beforePrompt, installFn }) {
   if (confirmed !== true) {
     return { ok: false, message: 'Onayınız olmadan Antigravity ayar dosyanıza yazmıyoruz.' };
   }
 
   const state = antigravityStatusLineState();
   if (state === 'not-installed') {
-    // ONE source for this sentence. It previously existed here and in
-    // `setup/antigravity-bridge.js`, which meant a fix to either left the
-    // other one wrong — and this is the copy the user actually sees, because
-    // this branch returns before the installer is ever called.
-    log.info(`antigravity cli not found under ${antigravityHome()}`);
-    return { ok: false, message: messages.cliNotFound(antigravityHome()) };
+    // The one-click path. Where this used to hand the user a manual install
+    // command, it now offers to download and install agy for them — behind an
+    // explicit consent dialog that says so — and then configures the hook.
+    return runAntigravityInstall({ confirmed, parentWindow, beforePrompt, installFn });
   }
   if (state === 'ours') {
     return {
@@ -189,22 +189,140 @@ async function runAntigravitySetup({ confirmed, parentWindow, beforePrompt }) {
     return { ok: false, message: 'İşlem iptal edildi. Hiçbir değişiklik yapılmadı.' };
   }
 
+  return configureAntigravityBridge();
+}
+
+/**
+ * Materialises the bridge and writes the statusLine hook. The shared tail of
+ * both the "agy already installed" path and the one-click install path.
+ */
+function configureAntigravityBridge() {
   const bridgePath = materialiseBridge(BRIDGE_SCRIPTS.antigravity);
   if (!bridgePath) {
     return { ok: false, message: 'Köprü betiği hazırlanamadı.' };
   }
-
-  const result = installAntigravityStatusLine({
+  return installAntigravityStatusLine({
     confirmed: true,
     bridgePath,
-    settingsPath: settingsFile,
+    settingsPath: antigravitySettingsPath(),
   });
+}
+
+/** Fits the 160-char notice budget the renderer trims at. */
+const INSTALLED_AND_LOGIN =
+  'Antigravity CLI kuruldu ve köprü eklendi. Haftalık limit için CLI\'ı bir kez '
+  + 'çalıştırıp oturum açın.';
+
+/**
+ * One-click install of the `agy` CLI, then configure the statusline hook.
+ *
+ * The consent gate is the dialog raised here, and the SINGLE network operation
+ * in the whole app sits immediately after it, in
+ * `core/antigravity/cli-install.js`. The dialog states plainly that a download
+ * from antigravity.google will run — this is a consented, one-time setup step,
+ * not a runtime call.
+ *
+ * Fail-safe throughout: a decline, a failed download or a failed install all
+ * leave the machine as it was and say so. Only a genuinely installed binary
+ * proceeds to the hook.
+ *
+ * `installFn` is injected in tests so the suite never reaches the network.
+ *
+ * A known, honest limitation: agy authenticates SEPARATELY from the IDE (its
+ * own keyring / browser sign-in, per the vendor docs), and its login state
+ * cannot be read without touching a credential store — which this app never
+ * does. So the flow cannot verify sign-in; it installs, configures, and tells
+ * the user to run agy once and sign in. The weekly figure appears after that.
+ */
+async function runAntigravityInstall({ confirmed, parentWindow, beforePrompt, installFn }) {
+  if (confirmed !== true) {
+    return { ok: false, message: 'Onayınız olmadan indirme yapmıyoruz.' };
+  }
+
+  // Idempotent: if the binary is somehow already here, skip the download and
+  // go straight to configuring the hook.
+  //
+  // Security residual (reviewed, INFO): a binary or symlink PLANTED at the agy
+  // path only makes this skip the download and configure the hook — it is
+  // never executed. Nothing in this app runs agy.exe; the only process it ever
+  // launches is tasklist.exe (core/antigravity/process.js). A planted file is a
+  // no-op here, not a code-execution vector.
+  if (isAgyInstalled()) {
+    log.info('antigravity cli already installed; skipping download');
+    if (typeof beforePrompt === 'function') beforePrompt();
+    const configured = configureAntigravityBridge();
+    return { ok: configured.ok, message: configured.message };
+  }
+
+  if (typeof beforePrompt === 'function') beforePrompt();
+  const choice = await dialog.showMessageBox(parentWindow || undefined, {
+    type: 'question',
+    buttons: ['Vazgeç', 'İndir ve kur'],
+    defaultId: 1,
+    cancelId: 0,
+    noLink: true,
+    title: 'Antigravity CLI kurulsun mu?',
+    message: 'Antigravity CLI (agy) indirilip kurulsun mu?',
+    // Explicit about the MECHANISM, not just the destination. This step is
+    // deliberate remote-code-execution and the app's sole network egress, so
+    // the consent surface names it as plainly as the README does: it fetches
+    // and runs the vendor's install script via PowerShell.
+    detail: 'Bu adım, Antigravity\'nin resmi kurulum betiğini (install.ps1) '
+      + 'antigravity.google adresinden indirip PowerShell ile çalıştırır — uygulamanın tek '
+      + 'ağ erişimi budur ve yalnızca şimdi, sizin onayınızla olur. Kurulumdan sonra durum '
+      + 'satırı köprüsü eklenir; köprü yalnızca kalan kota oranını ve sıfırlanma '
+      + 'zamanını okur.',
+  });
+  if (choice.response !== 1) {
+    return { ok: false, message: 'İşlem iptal edildi. Hiçbir değişiklik yapılmadı.' };
+  }
+
+  const install = await (installFn || installAgy)();
+  if (!install.ok && install.code !== 'already') {
+    log.warn(`agy install failed: code=${install.code}${install.detail ? ` detail=${install.detail}` : ''}`);
+    if (install.code === 'unsupported') {
+      return { ok: false, message: 'Otomatik kurulum yalnızca Windows\'ta destekleniyor.' };
+    }
+    return {
+      ok: false,
+      message: 'Antigravity CLI indirilemedi veya kurulamadı; hiçbir değişiklik yapılmadı. '
+        + 'İnternet bağlantınızı kontrol edip tekrar deneyin.',
+    };
+  }
+
+  const configured = configureAntigravityBridge();
+  if (!configured.ok) {
+    // The binary is installed but the hook write failed. Honest: the install
+    // half happened, the configure half did not.
+    log.warn(`agy installed but hook config failed: code=${configured.code || 'UNKNOWN'}`);
+    return {
+      ok: false,
+      message: 'Antigravity CLI kuruldu ama köprü eklenemedi. Panelden tekrar deneyin.',
+    };
+  }
+
+  return { ok: true, message: INSTALLED_AND_LOGIN };
+}
+
+/**
+ * The "way back": remove the statusLine hook we installed. Reversible half of
+ * the one-click setup. Leaves the agy binary in place — uninstalling a program
+ * the user may use elsewhere is not ours to do; disconnecting our hook is.
+ */
+async function runAntigravityDisconnect({ confirmed }) {
+  if (confirmed !== true) {
+    return { ok: false, message: 'Onayınız olmadan ayar dosyanıza dokunmuyoruz.' };
+  }
+  const result = removeAntigravityStatusLine({ settingsPath: antigravitySettingsPath() });
   return { ok: result.ok, message: result.message };
 }
 
 module.exports = {
   runClaudeSetup,
   runAntigravitySetup,
+  runAntigravityInstall,
+  runAntigravityDisconnect,
+  configureAntigravityBridge,
   materialiseBridge,
   bridgeInstallPath,
   bridgeSourcePath,

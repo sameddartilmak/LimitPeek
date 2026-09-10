@@ -82,8 +82,8 @@ const PROVIDERS = [
     setupAction: {
       kind: 'install-bridge',
       label: 'Bağla',
-      detail: 'Antigravity CLI durum satırına bir köprü eklenir; yalnızca kalan kota oranı ve '
-        + 'sıfırlanma zamanı okunur.',
+      detail: 'Antigravity CLI kurulu değilse indirilip kurulur (onayınızla), sonra durum '
+        + 'satırına köprü eklenir; yalnızca kalan kota oranı ve sıfırlanma zamanı okunur.',
     },
   },
   {
