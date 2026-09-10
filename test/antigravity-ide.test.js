@@ -616,187 +616,88 @@ test.describe('the reader is cheap and reads exactly one key', () => {
 
 /* --------------------------------------------------- the model they picked */
 
-test.describe('the selected model, read from the preferences key', () => {
-  /** Ids taken from the live store, so the fixtures match reality. */
+test.describe('the picker selection is NOT on disk, so no model is marked selected', () => {
+  // Reverted feature. We once read `modelPreferences`
+  // (`last_selected_agent_model_sentinel_key` = a model id) and marked that
+  // model as the user's selection, with the row headline following it. It was
+  // wrong: that key does not track Antigravity's picker. Verified directly —
+  // the user had Gemini 3.1 Pro selected in the picker while the key held 1026
+  // (Claude Opus 4.6), and the Gemini ids appear nowhere on disk as a
+  // selection. So the reader now claims no selection, ever, and the headline
+  // is the honest most-consumed group again.
   const OPUS = 1026;
-  const SONNET = 1035;
   const GEM_HIGH = 1016;
 
-  function withIds(over = {}) {
+  /** Writes a store that DOES carry a modelPreferences key, so these tests
+   *  prove the reader ignores it rather than merely lacks it. */
+  function withPrefs(selectedId, models) {
     return {
-      models: [
+      models: models || [
         { ...model('Claude Opus 4.6 (Thinking)', 0.4), id: OPUS },
-        { ...model('Claude Sonnet 4.6 (Thinking)', 0.4), id: SONNET },
         { ...model('Gemini 3.1 Pro (High)', 1), id: GEM_HIGH },
       ],
       mtimeMs: NOW - 1000,
-      ...over,
+      selectedId,
     };
   }
 
-  test('names the model the preferences key points at, and its group', () => {
-    // 1026 is what the live store had selected, and it decoded to Claude Opus
-    // 4.6 (Thinking) — the same answer this fixture asserts.
-    const base = appData({ 'Antigravity IDE': withIds({ selectedId: OPUS }) });
+  test('even WITH a modelPreferences key present, no selection is claimed', () => {
+    const base = appData({ 'Antigravity IDE': withPrefs(OPUS) });
     const q = read(base);
-    assert.equal(q.selectedModel, 'Claude Opus 4.6 (Thinking)');
-    // Group 0 is the most consumed one, which is where both Claude entries sit.
-    assert.equal(q.selectedGroupIndex, 0);
-    assert.deepEqual(q.groups[q.selectedGroupIndex].members, [
-      'Claude Opus 4.6 (Thinking)', 'Claude Sonnet 4.6 (Thinking)',
-    ]);
+    assert.equal(q.selectedModel, null);
+    assert.equal(q.selectedGroupIndex, null);
+    assert.equal(q.selectionError, null, 'not an error either — there is simply no selection to read');
+    // And the quota is entirely unaffected.
+    assert.equal(q.fiveHour.usedPercentage, 60);
+    assert.equal(q.groups.length, 2);
   });
 
-  test('switching model moves the selection to the other group', () => {
-    // "It updates when they switch model": the same store, one id different.
-    const base = appData({ 'Antigravity IDE': withIds({ selectedId: GEM_HIGH }) });
-    const q = read(base);
-    assert.equal(q.selectedModel, 'Gemini 3.1 Pro (High)');
-    assert.equal(q.selectedGroupIndex, 1, 'the roomier group, which is where it lives');
-    assert.equal(q.groups[1].usedPercentage, 0);
-  });
-
-  test('the row carries the selection, and no member carries a figure', () => {
-    // The contract's pairing rule survives the addition: the figure is on the
-    // group, the selection is an index plus a name. Nothing here can be joined
-    // into "Claude Opus 4.6 (Thinking) · %60" without the renderer choosing to.
-    const base = appData({ 'Antigravity IDE': withIds({ selectedId: OPUS }) });
+  test('the row headline is the MOST-CONSUMED group, never a followed selection', () => {
+    // Claude at 60% used, Gemini at 0%, and the on-disk key names Gemini (0%).
+    // Following it would headline 0% — an optimistic figure the user cannot
+    // trust. The headline is the worst case, 60%.
+    const base = appData({ 'Antigravity IDE': withPrefs(GEM_HIGH) });
     const ag = agRow(read(base));
-    assert.equal(ag.modelQuotas.selectedModel, 'Claude Opus 4.6 (Thinking)');
-    assert.equal(ag.modelQuotas.selectedGroupIndex, 0);
+    assert.equal(ag.fiveHour.usedPercentage, 60, 'the honest worst case, not the on-disk id');
+    assert.equal(ag.modelQuotas.selectedModel, null, 'and nothing is marked selected');
+    assert.equal(ag.modelQuotas.selectedGroupIndex, null);
+    assert.equal(ag.modelQuotas.groups[0].usedPercentage, 60, 'most-consumed leads the breakdown');
+  });
+
+  test('the per-model breakdown survives, and no member carries a figure', () => {
+    // The breakdown was asked for and is TRUE; only the selection marker was
+    // wrong. The pairing invariant stands: figures on group headings, members
+    // are bare names — nothing joinable into "Model · %60".
+    const base = appData({ 'Antigravity IDE': withPrefs(OPUS) });
+    const ag = agRow(read(base));
+    assert.ok(ag.modelQuotas.groups.length >= 1);
     for (const group of ag.modelQuotas.groups) {
+      assert.equal(typeof group.usedPercentage, 'number');
       for (const member of group.members) {
+        assert.equal(typeof member, 'string');
         assert.equal(/[0-9]+\s*%|%\s*[0-9]+/.test(member), false, member);
       }
     }
   });
 
-  test('F7: the row HEADLINE is the selected model group, not the most-consumed one', () => {
-    // The user has Gemini selected (0% used), while the Claude models sit at
-    // 60%. The renderer labels the headline "the selected model", so it must
-    // BE that model's figure or the label lies. The most-consumed group still
-    // leads `groups`, for the tray and for the breakdown.
-    const base = appData({
-      'Antigravity IDE': {
-        models: [
-          { ...model('Claude Opus 4.6 (Thinking)', 0.4), id: OPUS },
-          { ...model('Gemini 3.1 Pro (High)', 1), id: GEM_HIGH },
-        ],
-        mtimeMs: NOW - 1000,
-        selectedId: GEM_HIGH,
-      },
-    });
-    const ag = agRow(read(base));
-    assert.equal(ag.modelQuotas.selectedModel, 'Gemini 3.1 Pro (High)');
-    assert.equal(ag.modelQuotas.selectedGroupIndex, 1, 'selected sits in the roomier group');
-    assert.equal(ag.fiveHour.usedPercentage, 0, 'the headline is the SELECTED figure');
-    assert.equal(ag.modelQuotas.groups[0].usedPercentage, 60, 'most-consumed still leads the breakdown');
-  });
-
-  test('F7: a refused selection falls the headline back to most-consumed, never blank', () => {
-    // The safety rule: a bad preferences read must cost only the highlight,
-    // never the number. Selected id names no listed model -> no selection ->
-    // headline is the most-consumed group, and the row still reads.
-    const base = appData({
-      'Antigravity IDE': {
-        models: [
-          { ...model('Claude Opus 4.6 (Thinking)', 0.4), id: OPUS },
-          { ...model('Gemini 3.1 Pro (High)', 1), id: GEM_HIGH },
-        ],
-        mtimeMs: NOW - 1000,
-        selectedId: 999999,
-      },
-    });
-    const ag = agRow(read(base));
-    assert.equal(ag.modelQuotas.selectedGroupIndex, null, 'no selection');
-    assert.equal(ag.fiveHour.usedPercentage, 60, 'headline falls back to most-consumed');
-  });
-
-  test('a store with no preferences key has no selection, and still has quota', () => {
-    // A user who has never switched model. Missing is not broken.
-    const base = appData({ 'Antigravity IDE': withIds({ selectedId: null }) });
+  test('a store with NO modelPreferences key reads exactly the same', () => {
+    const base = appData({ 'Antigravity IDE': withPrefs(null) });
     const q = read(base);
     assert.equal(q.selectedModel, null);
     assert.equal(q.selectedGroupIndex, null);
     assert.equal(q.fiveHour.usedPercentage, 60, 'the figures are untouched');
   });
 
-  test('an id that matches no listed model is refused, not guessed at', () => {
-    // A stale preference, or an id space that moved under us. Naming the
-    // nearest model would be inventing the answer.
-    const base = appData({ 'Antigravity IDE': withIds({ selectedId: 999999 }) });
+  test('a garbled modelPreferences key changes nothing — it is never read', () => {
+    // Whatever shape the key is in, it does not touch the quota, because the
+    // reader does not open it at all.
+    const base = appData({ 'Antigravity IDE': withPrefs(OPUS, [
+      { ...model('Claude Opus 4.6 (Thinking)', 0.4), id: OPUS, idExtra: 7 },
+    ]) });
     const q = read(base);
     assert.equal(q.selectedModel, null);
-    assert.equal(q.fiveHour.usedPercentage, 60, 'and the quota is unaffected');
-  });
-
-  test('an id shared by two models is refused: it is not an identifier', () => {
-    const base = appData({
-      'Antigravity IDE': {
-        models: [
-          { ...model('One', 0.4), id: OPUS },
-          { ...model('Two', 0.4), id: OPUS },
-        ],
-        mtimeMs: NOW - 1000,
-        selectedId: OPUS,
-      },
-    });
-    assert.equal(read(base).selectedModel, null);
-  });
-
-  test('a preferences payload with an unexpected shape refuses the selection only', () => {
-    // Same strictness as the quota: full expected shape or nothing. The blast
-    // radius is deliberately the selection — a store whose preferences moved
-    // is still a store whose figures we can read.
-    const base = appData({ 'Antigravity IDE': withIds({ selectedId: OPUS, selectedField: 4 }) });
-    const q = read(base);
-    assert.equal(q.selectedModel, null);
-    assert.match(q.selectionError, /schema/);
-    assert.equal(q.fiveHour.usedPercentage, 60, 'the quota is not taken down with it');
-    assert.equal(q.groups.length, 2);
-  });
-
-  test('a renamed preferences sentinel refuses the selection only', () => {
-    const base = appData({
-      'Antigravity IDE': withIds({ selectedId: OPUS, prefsSentinel: 'something_else_key' }),
-    });
-    const q = read(base);
-    assert.equal(q.selectedModel, null);
+    assert.equal(q.selectionError, null);
     assert.equal(q.fiveHour.usedPercentage, 60);
-  });
-
-  test('a malformed model id block refuses the selection, never the figures', () => {
-    // An extra field inside the id block: the id space is no longer one we can
-    // match against, so no selection is claimed — but the quota is untouched.
-    const base = appData({
-      'Antigravity IDE': {
-        models: [{ ...model('Claude Opus 4.6 (Thinking)', 0.4), id: OPUS, idExtra: 7 }],
-        mtimeMs: NOW - 1000,
-        selectedId: OPUS,
-      },
-    });
-    const q = read(base);
-    assert.equal(q.selectedModel, null);
-    assert.match(q.selectionError, /model id/);
-    assert.equal(q.fiveHour.usedPercentage, 60);
-  });
-
-  test('models with no id at all are still quoted, just never selected', () => {
-    const base = appData({
-      'Antigravity IDE': { models: [model('No id', 0.4)], mtimeMs: NOW - 1000, selectedId: OPUS },
-    });
-    const q = read(base);
-    assert.equal(q.selectedModel, null);
-    assert.equal(q.fiveHour.usedPercentage, 60);
-  });
-
-  test('a selection survives the mtime cache, and changes with the store', () => {
-    // The cache is keyed by mtime and now holds the selection too; a switch
-    // that rewrites the store must not be served the previous answer.
-    const dirA = appData({ 'Antigravity IDE': withIds({ selectedId: OPUS }) });
-    assert.equal(read(dirA).selectedModel, 'Claude Opus 4.6 (Thinking)');
-    const dirB = appData({ 'Antigravity IDE': withIds({ selectedId: GEM_HIGH, mtimeMs: NOW - 2000 }) });
-    assert.equal(read(dirB).selectedModel, 'Gemini 3.1 Pro (High)');
   });
 });
 
