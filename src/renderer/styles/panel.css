@@ -55,6 +55,32 @@
   overflow: hidden;
 }
 
+/* THE DIALOG ROOT NEVER DRAWS A FOCUS RING.
+ *
+ * It is focusable only so script can put focus on it — on open, on pinning,
+ * and after a notice closes (tabindex="-1": reachable by script, never by
+ * Tab). It is a container, not a control, so a ring around it tells a
+ * keyboard user nothing about where they are.
+ *
+ * And it was drawn on every open. The tray click happens OUTSIDE this
+ * document, so Chromium has no pointer interaction to go on, treats the
+ * programmatic focus as keyboard-origin, and :focus-visible matches — the
+ * global rule in tokens.css then paints a 2px --ink-100 outline 2px outside
+ * the panel's own 1px --ink-700 border. Measured on a real open: a 2px line at
+ * brightness 240 around the whole window. The user reported it as a white
+ * frame, which is exactly what it was.
+ *
+ * Scoped to the root and nothing else. It is the only tabindex="-1" element in
+ * the renderer, and every real control keeps the global :focus-visible ring —
+ * that half is an accessibility requirement, and test/render/cost.js pins it
+ * on a real button in the same focus state that used to paint the frame.
+ *
+ * Depends on nothing about WINDOW focus: whether main opens the panel
+ * activated or with showInactive(), the root either has document focus or it
+ * does not, and in neither case does it draw.
+ */
+.panel:focus-visible { outline: none; }
+
 /* The tail lives outside the panel's overflow clip, hence the wrapper.
  *
  * The box is sized per side and the glyph is rotated INSIDE it, centred on the

@@ -479,13 +479,22 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   requestAnimationFrame(() => {
     panel.setOpen(true);
     store.set({ open: true });
-    // Focus in BOTH modes. `mode` used to double as "was the window
-    // activated" — hover-open created the window with showInactive, so taking
-    // focus would either fail or steal it from whatever the user was doing.
-    // Hover-open is gone: every open is now a deliberate tray click and main
-    // activates the window either way, so `mode` says only whether the panel
-    // is pinned. Skipping focus here would leave a click-opened panel with
-    // nothing focused and no keyboard path into the settings view.
+    // Focus the dialog root on open. NOT for the keyboard path: the panel is
+    // the only thing in the document (index.html mounts #app and nothing
+    // else), so Tab from <body> already reaches the first control. It is so
+    // assistive technology lands on the named dialog when the window IS
+    // activated.
+    //
+    // When main opens the window inactive (showInactive), this only sets
+    // document.activeElement; nothing depends on it, and the user's first
+    // click moves focus to whatever they clicked. Nothing here may assume the
+    // window has OS focus.
+    //
+    // It must never DRAW anything. A tray click happens outside this document,
+    // so Chromium treats this programmatic focus as keyboard-origin and
+    // :focus-visible matches — which painted a 2px white frame around the
+    // whole window on every open. `.panel:focus-visible` in panel.css turns
+    // that off for the root alone; real controls keep their ring.
     panel.focus();
     requestAnimationFrame(() => panel.enableAnimation());
   });
