@@ -122,18 +122,18 @@ Okunan **tek anahtar** `antigravityUnifiedStateSync.userStatus`, veritabanı
 **salt okunur** açılır. Aynı tabloda duran `antigravityUnifiedStateSync.oauthToken`
 hiç adlandırılmaz, seçilmez, listelenmez; kodda `SELECT *` yoktur.
 
-**Seçili model.** Antigravity'de o an hangi modeli seçtiyseniz, satır onu
-işaretler. `antigravityUnifiedStateSync.modelPreferences` anahtarı — kota ile
-tamamen aynı çift-base64 zarfını kullanıyor — seçili model kimliğini taşıyor
-(canlı doğrulandı: `EIII` → `10 82 08` → 1026 → "Claude Opus 4.6 (Thinking)").
-Kimlik, model listesindeki kimliklerle eşleştiriliyor; **tam olarak bir**
-modele karşılık gelmiyorsa seçim gösterilmez. Sözleşmedeki alanlar:
-`ModelQuotaDetail.selectedModel` (ad) ve `selectedGroupIndex` (hangi grupta).
-
-Seçim çözümlemesi **yalnızca seçimi** reddeder: tercih anahtarı beklenmedik
-bir şekle bürünürse ya da model kimlikleri okunamazsa yüzdeler etkilenmez.
-Yanlış modeli işaretlemek, yanındaki sayı hakkında yanlış bir iddiadır; "hangi
-model olduğunu bilmiyoruz" ise değildir.
+**Seçili model gösterilmiyor — kaldırıldı.** Bir süre, IDE'nin
+`modelPreferences` anahtarını okuyup "o an seçili model" olarak işaretliyorduk.
+**Yanlıştı.** O anahtar Antigravity'nin model seçiciyle uyumlu değil: canlı store
+üzerinde doğrulandı — kullanıcı seçicide Gemini 3.1 Pro seçiliyken anahtarda 1026
+(Claude Opus 4.6) yazıyordu, ve Gemini kimlikleri (1016/1036) diskte hiçbir yerde
+seçim olarak geçmiyor. `last_selected_agent_model` ayrı, daha eski bir kavram
+(ajan/Cascade modunda son kullanılan model); seçicinin tercihi `state.vscdb`'ye
+hiç yazılmıyor. Diskten savunulamayan bir "seçili" işareti tam da bu uygulamanın
+reddettiği "emin ama yanlış" iddiası olduğu için kaldırıldı. Sözleşme alanları
+(`selectedModel` / `selectedGroupIndex`) duruyor ama okuyucu artık her zaman null
+döndürüyor; arayüz null için işaret çizmiyor. Model dökümü kalıyor — o doğru ve
+istenen şeydi.
 
 **IDE kapalıyken.** Depoyu yazan program kapalıysa yeni sayı gelmez, ama son
 bilinen sayı kendi penceresi hâlâ açıkken **doğru bir ifadedir**. O yüzden
@@ -246,7 +246,7 @@ gösteriliyor: ayrı kaynaklı iki pencere, her biri geldiği alanla etiketli.
 ## Geliştirme
 
 ```bash
-npm test     # tip kontrolü + 795 test
+npm test     # tip kontrolü + 787 test
 npm run scan # gerçek corpus üzerinde tarama ölçümü
 npm run build # paketleme derlemesi (dist/ temizlenip yeniden üretilir)
 npm run smoke # Electron IPC duman testi

@@ -39,10 +39,11 @@ function snapshot(providers) {
 }
 
 /**
- * An Antigravity-shaped row: a headline `fiveHour` (the SELECTED model) plus a
- * `modelQuotas` breakdown whose `groups[0]` is the most-consumed one. F7 made
- * these diverge, and the tray must read the breakdown's most-consumed group,
- * never the headline.
+ * An Antigravity-shaped row with a deliberately DIVERGENT headline `fiveHour`
+ * and `modelQuotas` breakdown (headline 5, worst group 92). In production the
+ * headline is the most-consumed group, so these agree; the divergence here is
+ * synthetic, to prove the tray reads the breakdown's worst group explicitly
+ * and does not just echo whatever `fiveHour` happens to hold.
  */
 function antigravityRow(over = {}) {
   return {
@@ -97,13 +98,13 @@ function isColour(px, hex) {
 
 /* -------------------------------------------- state from ROUNDED percent */
 
-test.describe('the tray follows the most-consumed model, not the selected one', () => {
-  // F7 split the surfaces: the panel headline names the selected model, the
-  // 16px tray cannot, so the tray shows the binding constraint — the worst
-  // group. These assert the tray reads the breakdown, not the headline.
-  test('the donut draws the most-consumed group, not the headline', () => {
+test.describe('the tray draws the most-consumed model group, the binding constraint', () => {
+  // The tray shows the worst group by reading the breakdown directly, so it
+  // stays on the binding constraint whatever the panel headline is made to
+  // show. These use a synthetically divergent row to prove that read.
+  test('the donut draws the most-consumed group, not the headline window', () => {
     const spec = traySpecFromSnapshot(snapshot([antigravityRow()]));
-    assert.equal(spec.usedPercentage, 92, 'the worst group, not the selected 5');
+    assert.equal(spec.usedPercentage, 92, 'the worst group, not the divergent 5');
     assert.equal(spec.state, 'ember', '92 is ember; spent is 100');
   });
 

@@ -55,19 +55,28 @@ const STORE_KEY = 'antigravityUnifiedStateSync.userStatus';
  */
 const SENTINEL_KEY = 'userStatusSentinelKey';
 
-/**
- * The user's currently selected model, in a SECOND key with the SAME envelope.
+/*
+ * REMOVED: the "selected model" resolver.
  *
- *   value -> message { 1: entry }
- *     entry { 1: 'last_selected_agent_model_sentinel_key', 2: { 1: bytes } }
- *       bytes are base64 TEXT again -> message { 2: varint model id }
+ * We once read `antigravityUnifiedStateSync.modelPreferences`
+ * (`last_selected_agent_model_sentinel_key` = a varint model id) and marked the
+ * matching model as the user's selection, and the row headline followed it.
  *
- * Verified live: the four bytes are the ASCII `EIII`, which base64-decodes to
- * `10 82 08` — field 2, varint 1026 — and 1026 is the id the model list gives
- * to the entry the user had selected.
+ * It was WRONG, and this is a note so nobody re-adds it. That key does NOT
+ * track Antigravity's model picker. Verified directly against a live store: the
+ * user had Gemini 3.1 Pro selected in the picker, yet the key held 1026
+ * (Claude Opus 4.6), and a full scan of every non-credential key found the
+ * Gemini ids (1016/1036) nowhere as a selection — only inside the model list.
+ * `last_selected_agent_model` is a different, staler concept (the last model
+ * used in agent/Cascade mode); the picker's choice is not persisted to
+ * `state.vscdb` at all.
+ *
+ * So a "selected" marker cannot be defended from disk — it is exactly the
+ * confident-but-wrong claim this app refuses. The contract fields survive
+ * (`selectedModel` / `selectedGroupIndex`, optional and nullable) but the
+ * reader now returns them null unconditionally, and the renderer draws no
+ * marker for null. The per-model breakdown stays: it is TRUE and was asked for.
  */
-const PREFS_KEY = 'antigravityUnifiedStateSync.modelPreferences';
-const PREFS_SENTINEL = 'last_selected_agent_model_sentinel_key';
 
 /** Field numbers, all verified against a live store on 2026-09-09. */
 const F = {
@@ -78,11 +87,8 @@ const F = {
   MODEL_LIST: 33,      // inside userStatus: the container holding the models
   MODEL: 1,            // inside the container: repeated model entry
   MODEL_NAME: 1,
-  MODEL_ID_BLOCK: 2,   // inside a model entry: a message holding its id
-  MODEL_ID: 1,         // varint, matches the id in modelPreferences
   MODEL_QUOTA: 15,
   MODEL_TIER: 16,
-  SELECTED_ID: 2,      // modelPreferences payload: varint, the selected model
   QUOTA_FRACTION: 1,   // float32
   QUOTA_RESET: 2,      // message
   RESET_SECONDS: 1,    // varint, unix seconds
@@ -169,18 +175,13 @@ function absent(reason, extra = {}) {
 }
 
 /**
- * The two queries. Named keys, read-only handle, no enumeration.
+ * The one query. Named key, read-only handle, no enumeration.
  *
- * Two named keys rather than one is still not a scan: each is fetched by
- * literal key through a bound parameter, and `antigravityUnifiedStateSync
- * .oauthToken` sits in this same table without ever being named. One open for
- * both, because opening the database twice per rebuild would double the cost
- * of the thing the mtime cache exists to avoid.
+ * `antigravityUnifiedStateSync.oauthToken` sits in this same table and is never
+ * named. (This once also read `modelPreferences` for a selected-model marker;
+ * that was removed — see the note above SENTINEL_KEY.)
  *
- * The preferences key is OPTIONAL: a user who has never switched model may not
- * have one, and that is a missing selection, not a broken store.
- *
- * @returns {{value:string, prefs:string|null}|{err:string}}
+ * @returns {{value:string}|{err:string}}
  */
 function readStoreValues(file) {
   const sqlite = loadSqlite();
@@ -188,14 +189,9 @@ function readStoreValues(file) {
   let db = null;
   try {
     db = new sqlite.DatabaseSync(file, { readOnly: true });
-    const query = db.prepare('SELECT value FROM ItemTable WHERE key = ?');
-    const row = query.get(STORE_KEY);
+    const row = db.prepare('SELECT value FROM ItemTable WHERE key = ?').get(STORE_KEY);
     if (!row || row.value == null) return { err: 'no-key' };
-    const prefsRow = query.get(PREFS_KEY);
-    return {
-      value: String(row.value),
-      prefs: prefsRow && prefsRow.value != null ? String(prefsRow.value) : null,
-    };
+    return { value: String(row.value) };
   } catch (err) {
     // A locked, corrupt or schema-less store. Never propagate the message: it
     // can quote file contents.
@@ -230,52 +226,6 @@ function unwrap(value, sentinel = SENTINEL_KEY) {
   return decodeMessage(Buffer.from(payload, 'base64'));
 }
 
-/**
- * The model id carried by one model entry, or null when it carries none.
- *
- * Strict for the same reason the quota block is: this id is what decides
- * WHICH model we tell the user they have selected, and naming the wrong one is
- * a false statement, not a missing one.
- *
- * @throws {WireError} on any structural surprise.
- */
-function idOf(modelFields) {
-  const blocks = modelFields.filter((f) => f.field === F.MODEL_ID_BLOCK);
-  if (blocks.length === 0) return null;
-  if (blocks.length > 1) throw new WireError('model carries more than one id block');
-  if (blocks[0].wire !== 2) throw new WireError('id block wire type');
-  const inner = decodeMessage(blocks[0].value);
-  exactly(inner, [F.MODEL_ID]);
-  const id = Number(one(inner, F.MODEL_ID, 0).value);
-  if (!Number.isSafeInteger(id) || id < 0) throw new WireError('model id not a plausible integer');
-  return id;
-}
-
-/**
- * The selected model id from the preferences key.
- *
- * Refuses rather than guesses, and refuses ONLY the selection: a store whose
- * preferences moved is still a store whose quota we can read, so this never
- * takes the figures down with it. The blast radius of being wrong here is a
- * highlight on the wrong model, which is why it is `exactly` rather than a
- * lenient lookup — and why the id is cross-checked against the model list
- * before it is believed.
- *
- * @returns {{id:number}|{err:string}}
- */
-function selectedIdFrom(prefsValue) {
-  if (prefsValue === null) return { err: 'no-preference' };
-  try {
-    const payload = unwrap(prefsValue, PREFS_SENTINEL);
-    exactly(payload, [F.SELECTED_ID]);
-    const id = Number(one(payload, F.SELECTED_ID, 0).value);
-    if (!Number.isSafeInteger(id) || id < 0) throw new WireError('selected id not a plausible integer');
-    return { id };
-  } catch (err) {
-    if (!(err instanceof WireError)) throw err;
-    return { err: `schema: ${err.message}` };
-  }
-}
 
 /**
  * The quota block for one model, or null when the model carries none.
@@ -459,17 +409,16 @@ function readAntigravityIdeQuota(options = {}) {
   // forever, because `now >= resetsAt` never becomes true.
   const resetsAtMs = Math.abs(lead.resetMs - now) <= RESET_SKEW_MS.fiveHour ? lead.resetMs : null;
 
-  const { selectedModel, selectedGroupIndex } = resolveSelection(
-    models, groups, decodedStore.selectedId,
-  );
-
+  // Selection is deliberately always null — the picker's choice is not on disk;
+  // see the note above SENTINEL_KEY. The contract fields stay so the renderer's
+  // existing null path (no marker, no label) handles it with no change.
   const state = (ageMs > maxAgeMs || ageMs < -maxAgeMs) ? 'stale' : 'fresh';
   return {
     state,
     reason: null,
-    selectedModel,
-    selectedGroupIndex,
-    selectionError: decodedStore.selectionError || null,
+    selectedModel: null,
+    selectedGroupIndex: null,
+    selectionError: null,
     capturedAt,
     capturedAtMs,
     ageMs,
@@ -504,10 +453,6 @@ function decodeStore(file, mtimeMs) {
   if (read.err) return { err: read.err };
 
   let models;
-  // Set when a model's id block is malformed. It does NOT refuse the quota —
-  // the figures are independently valid — but it does refuse the SELECTION,
-  // because an id space we cannot decode is one we must not match against.
-  let idFailure = null;
   try {
     const status = unwrap(read.value);
     const list = one(status, F.MODEL_LIST, 2);
@@ -522,14 +467,7 @@ function decodeStore(file, mtimeMs) {
       const name = safeName(one(fields, F.MODEL_NAME, 2).value.toString('utf8'));
       const quota = quotaOf(fields);
       if (name === null || quota === null) continue;
-      let id = null;
-      try {
-        id = idOf(fields);
-      } catch (err) {
-        if (!(err instanceof WireError)) throw err;
-        idFailure = idFailure || err.message;
-      }
-      models.push({ name, id, fraction: quota.fraction, resetMs: quota.resetMs });
+      models.push({ name, fraction: quota.fraction, resetMs: quota.resetMs });
     }
   } catch (err) {
     if (!(err instanceof WireError)) throw err;
@@ -538,47 +476,15 @@ function decodeStore(file, mtimeMs) {
     return { err: 'schema', schemaError: err.message };
   }
 
-  const selection = selectedIdFrom(read.prefs);
-  const decoded = {
-    models,
-    // An unreadable id space poisons the match, so the selection is dropped
-    // rather than made against ids we do not trust.
-    selectedId: (selection.err || idFailure) ? null : selection.id,
-    selectionError: selection.err || (idFailure ? `model id: ${idFailure}` : null),
-  };
+  const decoded = { models };
   remember(file, mtimeMs, decoded);
   return decoded;
-}
-
-/**
- * Which model the user has selected, and which group holds it.
- *
- * Three ways to refuse, all of them ending in "no selection" rather than in a
- * guess. Naming the wrong model would put a highlight on someone else's
- * figure, which is a false statement about the number beside it.
- */
-function resolveSelection(models, groups, selectedId) {
-  const none = { selectedModel: null, selectedGroupIndex: null };
-  if (!Number.isSafeInteger(selectedId)) return none;
-  const matches = models.filter((m) => m.id === selectedId);
-  // Zero: the id names a model this store does not list — a stale preference,
-  // or an id space that moved. More than one: the id is not an identifier.
-  if (matches.length !== 1) return none;
-  const name = matches[0].name;
-  if (models.filter((m) => m.name === name).length !== 1) return none;
-  const index = groups.findIndex((g) => g.members.includes(name));
-  return { selectedModel: name, selectedGroupIndex: index >= 0 ? index : null };
 }
 
 module.exports = {
   readAntigravityIdeQuota,
   clearDecodeCache,
-  resolveSelection,
-  selectedIdFrom,
-  idOf,
   IDE_MAX_AGE_MS,
-  PREFS_KEY,
-  PREFS_SENTINEL,
   groupByValue,
   quotaOf,
   unwrap,

@@ -142,15 +142,18 @@ function windowPercentage(provider, key, now = Date.now()) {
 }
 
 /**
- * The five-hour window the TRAY draws — the MOST-CONSUMED model group, not the
- * selected one the panel headline shows (snapshot.js, `headlineWindow`).
+ * The five-hour window the TRAY draws — the MOST-CONSUMED model group, the
+ * binding constraint, which is `modelQuotas.groups[0]` (the reader sorts
+ * most-consumed first).
  *
- * The split is deliberate and the coordinator ruled it: the panel headline can
- * name the model it belongs to, so it follows the user's selection; a 16px
- * donut cannot, so a figure that silently changed meaning when the user
- * switched model would be unreadable. The tray therefore always shows the
- * binding constraint — the worst group — which is `modelQuotas.groups[0]`
- * (the reader sorts most-consumed first).
+ * Today the panel headline shows the same group, so this reads the same figure
+ * `provider.fiveHour` carries. It is kept as an explicit read of the worst
+ * group rather than folded into `fiveHour` on purpose: the tray's job is to
+ * show the binding constraint, and reading the breakdown directly keeps that
+ * true regardless of what the headline is later made to show. (An earlier
+ * version followed a per-user "selected model" for the headline; that was
+ * removed because the selection is not on disk — see the note in
+ * ide-quota.js.)
  *
  * Providers with no per-model breakdown (Claude) fall straight through to
  * their own `fiveHour`, unchanged.
