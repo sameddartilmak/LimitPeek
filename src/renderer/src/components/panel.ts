@@ -68,6 +68,8 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   /** The user closed the notice. Clears `state.notice`; see the notice block
    *  below for why the offline banner never reaches this. */
   onNoticeDismiss(): void;
+  /** The user closed the refresh bubble ("Antigravity açık değil"). */
+  onRefreshNoticeDismiss(): void;
 }
 
 export interface PanelHandle {
@@ -337,10 +339,37 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     coach.hidden = true;
   });
 
+  // The refresh bubble. A CALM message, not the error row: the user pressed
+  // Yenile while the Antigravity IDE was closed, so its store cannot be
+  // updating. It says the tool is not open and that the figures are the last
+  // known ones — deliberately not that anything is broken. It borrows the
+  // coach's bubble chrome so the two read as one friendly-notice idiom, and it
+  // is shown ONLY on an explicit refresh reply carrying the notice, never on a
+  // push (app.ts reads it off the invoke reply alone).
+  const refreshBubbleDismiss = el(
+    'button',
+    { type: 'button', class: 'btn', 'aria-label': 'Bu mesajı kapat' },
+    'Tamam',
+  ) as HTMLButtonElement;
+  const refreshBubble = el(
+    'div',
+    { class: 'coach coach--calm', role: 'status' },
+    el(
+      'span',
+      { class: 'coach__text' },
+      'Antigravity açık değil. Aşağıdaki Antigravity değerleri, aracı en son ' +
+        'açtığınızdaki ölçüm — bir sorun yok. Güncel oran için Antigravity’yi açın.',
+    ),
+    el('div', { class: 'coach__actions' }, refreshBubbleDismiss),
+  );
+  refreshBubble.hidden = true;
+  on(refreshBubbleDismiss, 'click', () => ctx.onRefreshNoticeDismiss());
+
   const footBand = el(
     'div',
     { class: 'panel__band' },
     coach,
+    refreshBubble,
     consentBox,
     notice,
     liveRegion,
@@ -750,6 +779,10 @@ export function createPanel(ctx: PanelContext): PanelHandle {
 
     // Only when we know we are NOT pointing at a measured tray icon.
     coach.hidden = coachDismissed || state.anchor?.anchorSource !== 'cursor';
+
+    // Driven purely by the store flag, which app.ts sets only from a refresh
+    // reply and clears at the next refresh or on dismissal — never from a push.
+    refreshBubble.hidden = state.refreshNotice !== 'ANTIGRAVITY_NOT_RUNNING';
 
     // Moving focus onto the affirmative control would be a trap for anyone
     // pressing Enter twice; focus the cancel side and let them choose.

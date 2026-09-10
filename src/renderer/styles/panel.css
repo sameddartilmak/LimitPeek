@@ -375,6 +375,12 @@
 }
 .coach__actions { display: flex; justify-content: flex-end; }
 
+/* The calm refresh bubble. A "this is fine" tone, so its left accent is the
+ * calm ramp step rather than the neutral ink the tray-coaching note uses — the
+ * one place the ramp reads as reassurance instead of pressure, because it is
+ * saying nothing is wrong, only that the tool is not open. */
+.coach--calm { border-left-color: var(--calm); }
+
 /* Consent prompt. Reads as a distinct surface, not a toast: it is asking a
  * question and nothing happens until it is answered. */
 .consent {

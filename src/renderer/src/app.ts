@@ -83,6 +83,9 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     // STORE owns: the offline banner is a live condition, not an outcome, and
     // the panel does not offer a control that would clear it (panel.ts).
     onNoticeDismiss: () => store.set({ notice: null }),
+    // The refresh bubble ("Antigravity açık değil") is an outcome, not a live
+    // condition, so unlike the offline banner it is dismissible.
+    onRefreshNoticeDismiss: () => store.set({ refreshNotice: null }),
     onConsentConfirm: () => {
       const id = awaitingConsent;
       awaitingConsent = null;
@@ -124,12 +127,23 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
 
   async function runRefresh(providerId: string | null): Promise<void> {
     if (store.get().refreshing) return;
-    store.set({ refreshing: true, notice: null });
+    // Clear the previous refresh's notice up front: this attempt owns the
+    // answer now, and a stale bubble outliving the press it described would be
+    // the standing claim the contract keeps refreshNotices off pushes to avoid.
+    store.set({ refreshing: true, notice: null, refreshNotice: null });
     if (providerId) store.markBusy(providerId, true);
     try {
       const snapshot = await bridge.requestRefresh();
       if (snapshot) {
         acceptSnapshot(snapshot);
+        // `refreshNotices` rides only on a refresh reply (contract), so this is
+        // the one place it can be read — and reading it from the RETURNED
+        // snapshot rather than the stored one keeps it from riding later
+        // pushes. One notice today; a set leaves the door open without a
+        // rewrite.
+        if (snapshot.refreshNotices?.includes('ANTIGRAVITY_NOT_RUNNING')) {
+          store.set({ refreshNotice: 'ANTIGRAVITY_NOT_RUNNING' });
+        }
       } else if (bridge.available) {
         store.set({ notice: 'Yenilenemedi. Birazdan yeniden denenecek.' });
       }

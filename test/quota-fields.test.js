@@ -343,3 +343,107 @@ test.describe('the flags a renderer would otherwise have to infer', () => {
     assert.equal(quotasOf({ provenance: undefined }).provenance, 'derived');
   });
 });
+
+// ------------------------------------------------- selected model marker
+
+test.describe('the selected model, validated against the SANITISED groups', () => {
+  test('a valid selection passes through with its group index', () => {
+    const q = quotasOf({
+      selectedModel: 'Claude Opus 4.6 (Thinking)',
+      selectedGroupIndex: 0,
+    });
+    assert.equal(q.selectedModel, 'Claude Opus 4.6 (Thinking)');
+    assert.equal(q.selectedGroupIndex, 0);
+  });
+
+  test('no selection reads as null on both fields', () => {
+    for (const bad of [null, undefined, '', 42, {}]) {
+      const q = quotasOf({ selectedModel: bad, selectedGroupIndex: 0 });
+      assert.equal(q.selectedModel, null, JSON.stringify(bad));
+      assert.equal(q.selectedGroupIndex, null, JSON.stringify(bad));
+    }
+  });
+
+  test('a selection main placed in the WRONG group is not carried', () => {
+    // The name is real and in group 0, but main said group 1. Trusting the
+    // index would mark a member of the Gemini group as the selection — a false
+    // statement about the figure beside it. Keep the name, drop the index.
+    const q = quotasOf({ selectedModel: 'Claude Opus 4.6 (Thinking)', selectedGroupIndex: 1 });
+    assert.equal(q.selectedModel, 'Claude Opus 4.6 (Thinking)');
+    assert.equal(q.selectedGroupIndex, null);
+  });
+
+  test('an out-of-range index is dropped, the name kept', () => {
+    for (const idx of [-1, 2, 99, 1.5, NaN, '0', null]) {
+      const q = quotasOf({ selectedModel: 'GPT-OSS 120B (Medium)', selectedGroupIndex: idx });
+      assert.equal(q.selectedModel, 'GPT-OSS 120B (Medium)', JSON.stringify(idx));
+      // Only index 0 legitimately contains it; everything else is unplaceable.
+      if (idx !== 0) assert.equal(q.selectedGroupIndex, null, JSON.stringify(idx));
+    }
+  });
+
+  test('a selected member truncated out of the group is unplaceable', () => {
+    // 13 members: the sanitiser caps at 12, so the 13th is dropped. If the
+    // selection was that member, the index cannot point at it truthfully.
+    const many = Array.from({ length: 13 }, (_, i) => 'Model ' + i);
+    const q = quotasOf({
+      groups: [{ ...GROUP_A, members: many }],
+      selectedModel: 'Model 12',
+      selectedGroupIndex: 0,
+    });
+    assert.equal(q.groups[0].members.length, 12);
+    assert.equal(q.selectedModel, 'Model 12');
+    assert.equal(q.selectedGroupIndex, null);
+  });
+
+  test('the selected name gets the same text() treatment as the members', () => {
+    // Control/bidi stripping and the 64-cap apply identically, so a name that
+    // survives as a member also matches as the selection.
+    const q = quotasOf({
+      groups: [{ ...GROUP_A, members: ['Nor\u200Bmal Model', 'Other'] }],
+      selectedModel: 'Nor\u200Bmal Model',
+      selectedGroupIndex: 0,
+    });
+    assert.deepEqual(q.groups[0].members[0], 'Normal Model');
+    assert.equal(q.selectedModel, 'Normal Model');
+    assert.equal(q.selectedGroupIndex, 0);
+  });
+});
+
+// ---------------------------------------------------- refresh notices
+
+const refreshOf = (notices) =>
+  s.sanitizeSnapshot({
+    generatedAt: '2026-09-08T15:00:00.000Z',
+    providers: [],
+    refreshNotices: notices,
+  }).refreshNotices;
+
+test.describe('refreshNotices: a closed set, present only when non-empty', () => {
+  test('the one known notice passes', () => {
+    assert.deepEqual(refreshOf(['ANTIGRAVITY_NOT_RUNNING']), ['ANTIGRAVITY_NOT_RUNNING']);
+  });
+
+  test('unknown values are dropped, so a bubble never renders with no copy', () => {
+    assert.equal(refreshOf(['SOMETHING_ELSE']), undefined);
+    assert.equal(refreshOf([42, null, {}, 'nope']), undefined);
+  });
+
+  test('a mixed array keeps only what is recognised', () => {
+    assert.deepEqual(
+      refreshOf(['x', 'ANTIGRAVITY_NOT_RUNNING', 7]),
+      ['ANTIGRAVITY_NOT_RUNNING'],
+    );
+  });
+
+  test('absent or non-array leaves the field off entirely', () => {
+    assert.equal(refreshOf(undefined), undefined);
+    assert.equal(refreshOf('ANTIGRAVITY_NOT_RUNNING'), undefined);
+    assert.equal(refreshOf([]), undefined);
+  });
+
+  test('a normal snapshot never invents the field', () => {
+    const out = s.sanitizeSnapshot({ generatedAt: '2026-09-08T15:00:00.000Z', providers: [] });
+    assert.equal('refreshNotices' in out, false);
+  });
+});

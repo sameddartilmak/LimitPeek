@@ -146,6 +146,11 @@ const LIVE_QUOTAS = {
   source: 'antigravity.ide.quota_info.remaining_fraction',
   provenance: 'derived',
   capturedAt: new Date(now.getTime() - 12 * 60000).toISOString(),
+  // The model the user has selected in Antigravity — the real one, per the
+  // brief. In the single-group shape it lives in group 0. The headline
+  // five-hour figure follows this group, which is why the row labels it.
+  selectedModel: 'Claude Opus 4.6 (Thinking)',
+  selectedGroupIndex: 0,
 };
 
 const TINY_COST = {
@@ -238,6 +243,12 @@ let failTheme = false;
 /** How long requestRefresh() takes, so the in-flight state can be observed. */
 let refreshDelay = 0;
 /**
+ * What the NEXT refresh reply carries in `refreshNotices` — the field main
+ * builds onto the invoke reply alone, never onto a push. The suite drives it
+ * to exercise the "Antigravity açık değil" bubble.
+ */
+let refreshNotices = null;
+/**
  * What a setup attempt answers with.
  *
  * The notice box is the only surface that renders these, and the message that
@@ -292,7 +303,9 @@ contextBridge.exposeInMainWorld('usageNotch', {
   },
   requestRefresh: async () => {
     if (refreshDelay > 0) await new Promise((r) => setTimeout(r, refreshDelay));
-    return snapshot;
+    // A COPY carries refreshNotices, so the notice rides only this reply and
+    // never the pushed object — exactly as main is specified to build it.
+    return refreshNotices ? { ...snapshot, refreshNotices: refreshNotices.slice() } : snapshot;
   },
   runSetup: async () => ({ ...setupResult }),
   setOrder: async (ids) => {
@@ -389,6 +402,10 @@ contextBridge.exposeInMainWorld('__probe', {
   prefs: () => ({ ...prefs }),
   setRefreshDelay: (ms) => {
     refreshDelay = ms;
+  },
+  /** What the next requestRefresh() reply carries in refreshNotices. */
+  setRefreshNotices: (n) => {
+    refreshNotices = n;
   },
   /**
    * Re-stamp the snapshot as if it had been generated `ms` ago and push it.
