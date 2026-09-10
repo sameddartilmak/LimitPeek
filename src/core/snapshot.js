@@ -258,6 +258,30 @@ function lastGoodAtFor(scanGoodAtMs, capturedAtMs, rateLimitState) {
  *        telling the panel and the tray which rows the user actually added.
  * @returns {{generatedAt:string, providers:Array}}
  */
+/**
+ * The window the Antigravity ROW headline should show: the group holding the
+ * model the user has selected, falling back to the most-consumed group.
+ *
+ * The fallback is the safety rule the coordinator asked for explicitly — a
+ * refused or absent selection (`selectedGroupIndex === null`) must never blank
+ * the row, only cost it the highlight. `agIde.fiveHour` already IS the
+ * most-consumed group (the reader's `lead`), so it is the fallback by name.
+ *
+ * Shape returned matches `agIde.fiveHour`: `{ usedPercentage, resetsAtMs }`,
+ * which is what `windowFrom` consumes. The selected group carries its own
+ * `resetsAtMs`, so rollover and staleness are judged against the window the
+ * user is actually looking at, not against a neighbour's.
+ */
+function headlineWindow(agIde) {
+  const groups = Array.isArray(agIde.groups) ? agIde.groups : [];
+  const idx = agIde.selectedGroupIndex;
+  if (Number.isInteger(idx) && idx >= 0 && idx < groups.length) {
+    const g = groups[idx];
+    return { usedPercentage: g.usedPercentage, resetsAtMs: g.resetsAtMs };
+  }
+  return agIde.fiveHour;
+}
+
 function buildSnapshot(input) {
   const now = Number.isFinite(input.now) ? input.now : Date.now();
   const rl = input.rateLimits || { state: 'missing', fiveHour: null, sevenDay: null };
@@ -347,7 +371,15 @@ function buildSnapshot(input) {
 
   // `sinceCapture` is deliberately null on both: Claude's measured floor comes
   // from Claude transcripts and would describe the wrong provider entirely.
-  const agFive = windowFrom(agIde.fiveHour, agIdeFresh, agIdeCapturedAtMs, now, null, {
+  //
+  // F7: the row HEADLINE follows the model the user currently has selected in
+  // Antigravity, not the most-consumed one. `headlineWindow` picks the
+  // selected group; the full per-group breakdown (most-consumed first) still
+  // rides in `modelQuotas`. The TRAY deliberately stays on the most-consumed
+  // group (see `drawablePercentage` in tray-spec.js): a 16px icon cannot say
+  // which model it describes, so a figure that changed meaning on a model
+  // switch would be unreadable there.
+  const agFive = windowFrom(headlineWindow(agIde), agIdeFresh, agIdeCapturedAtMs, now, null, {
     source: 'antigravity.ide.quota_info.remaining_fraction',
     provenance: 'derived',
     absence: absenceOf(agIde, agIde.fiveHour, true, now),
