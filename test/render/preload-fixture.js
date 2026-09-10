@@ -64,8 +64,8 @@ const LIVE_COST = {
   fallbackWriteEvents: 0,
   cacheWriteEvents: 1781,
   pricesAsOf: '2026-06-24',
-  windowStart: '2026-09-03T03:00:00.000Z',
-  windowEnd: '2026-09-10T03:00:00.000Z',
+  windowStart: iso(-4 * 864e5),
+  windowEnd: iso(3 * 864e5),
   windowAnchored: true,
 };
 const CAVEAT_COST = {
@@ -111,8 +111,8 @@ const ALL_UNPRICED_COST = {
   fallbackWriteEvents: 0,
   cacheWriteEvents: 902,
   pricesAsOf: '2026-06-24',
-  windowStart: '2026-09-03T03:00:00.000Z',
-  windowEnd: '2026-09-10T03:00:00.000Z',
+  windowStart: iso(-4 * 864e5),
+  windowEnd: iso(3 * 864e5),
   windowAnchored: true,
 };
 /**

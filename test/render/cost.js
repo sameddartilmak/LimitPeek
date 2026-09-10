@@ -40,6 +40,88 @@ app.whenReady().then(async () => {
 
   const q = (id) => `document.querySelector('li.row[data-provider="${id}"]')`;
 
+  // ---- no white frame around the panel on open --------------------------
+  //
+  // User report: "when it opens there is a white frame around it". Measured on
+  // a real tray-click capture as a 2px line at brightness 240 around the whole
+  // window — the global :focus-visible outline (2px --ink-100, offset 2px)
+  // drawn on the dialog ROOT, which app.ts focuses programmatically on every
+  // open. The tray click happens outside the document, so Chromium sees no
+  // pointer interaction and treats that focus as keyboard-origin.
+  //
+  // This suite drives no pointer input at all before this point, which is
+  // precisely the condition of a real open. So the first check proves the
+  // condition is reproduced — without it the outline check would pass
+  // vacuously — and the second proves the root no longer draws in it.
+  const ring = await js(`(() => {
+    const root = document.querySelector('.panel');
+    const cs = getComputedStyle(root);
+    return {
+      open: root.getAttribute('data-open'),
+      focused: document.activeElement === root,
+      visibleMatch: root.matches(':focus-visible'),
+      outlineStyle: cs.outlineStyle,
+      outlineWidth: cs.outlineWidth,
+      border: cs.borderTopWidth,
+    };
+  })()`);
+  say('root ring on open: ' + JSON.stringify(ring));
+  check('the panel opened and took focus, as app.ts does on every open',
+    ring.open === 'true' && ring.focused === true, ring);
+  check('the condition that painted the white frame is reproduced here',
+    ring.visibleMatch === true, ring);
+  check('and in it the dialog root draws no outline at all',
+    ring.outlineStyle === 'none', ring);
+  // Measured as a RATIO, not in pixels. This window renders at a non-1 scale
+  // (0.8 as measured), so a 1px border computes to "0.8px" and the 2px ring to
+  // "1.6px". Pinning literals here would assert the test environment's zoom,
+  // not the design. The design intent is scale-free: the ring is twice the
+  // panel's own border.
+  check('its own border is untouched — that is the edge the design intends',
+    parseFloat(ring.border) > 0, ring.border);
+
+  // The accessibility half. The fix must be scoped to the root: a real control
+  // focused in the SAME state must still show the ring, or keyboard users lose
+  // sight of where they are.
+  const ctl = await js(`(() => {
+    const b = [...document.querySelectorAll('.foot button')].pop();
+    b.focus();
+    const cs = getComputedStyle(b);
+    return {
+      label: b.getAttribute('aria-label'),
+      focused: document.activeElement === b,
+      visibleMatch: b.matches(':focus-visible'),
+      outlineStyle: cs.outlineStyle,
+      outlineWidth: cs.outlineWidth,
+    };
+  })()`);
+  say('control ring: ' + JSON.stringify(ctl));
+  check('a real control focused in the same state still shows the ring',
+    ctl.focused === true && ctl.visibleMatch === true && ctl.outlineStyle === 'solid'
+      && Math.abs(parseFloat(ctl.outlineWidth) / parseFloat(ring.border) - 2) < 0.1,
+    [ctl, ring.border]);
+
+  // The second call site: pinning re-focuses the root when nothing inside the
+  // panel holds focus (app.ts onAnchor). Same element, same rule, but a
+  // different path to it, and the one a pinned user sees.
+  await js(`document.activeElement && document.activeElement.blur()`);
+  await js(`window.__probe.setMode('pin')`);
+  await sleep(160);
+  const pinRing = await js(`(() => {
+    const root = document.querySelector('.panel');
+    const cs = getComputedStyle(root);
+    return {
+      focused: document.activeElement === root,
+      visibleMatch: root.matches(':focus-visible'),
+      outlineStyle: cs.outlineStyle,
+    };
+  })()`);
+  say('root ring on pin: ' + JSON.stringify(pinRing));
+  check('pinning re-focuses the root, and that path draws no frame either',
+    pinRing.focused === true && pinRing.outlineStyle === 'none', pinRing);
+  await js(`window.__probe.setMode('hover')`);
+  await sleep(120);
+
   // ---- the figure never appears without its frame ----------------------
   const framing = await js(`(() => {
     const rows = [...document.querySelectorAll('li.row[data-provider]')];
