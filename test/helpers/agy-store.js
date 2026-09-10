@@ -92,6 +92,14 @@ function quotaBlock(o) {
  */
 function modelEntry(o) {
   const parts = [lenField(1, o.name)];
+  // The id block, field 2: a message whose field 1 is the varint the
+  // preferences key points at. Omitted when the fixture wants a model that
+  // carries no id at all.
+  if (o.id !== undefined && o.id !== null) {
+    const inner = [varintField(o.idField ?? 1, o.id)];
+    if (o.idExtra !== undefined) inner.push(varintField(9, o.idExtra));
+    parts.push(lenField(o.idBlockField ?? 2, Buffer.concat(inner)));
+  }
   if (!o.noQuota) parts.push(lenField(o.quotaField ?? 15, quotaBlock(o)));
   if (o.tier) parts.push(lenField(16, o.tier));
   // A couple of the unrelated siblings a real entry carries, so the tests
@@ -116,6 +124,23 @@ function userStatus(models, o = {}) {
   ];
   if (!o.omitList) parts.push(lenField(o.listField ?? 33, container));
   return Buffer.concat(parts);
+}
+
+/**
+ * The preferences value: the SAME double-base64 envelope as userStatus, with
+ * its own sentinel key, wrapping a message whose field 2 is the selected id.
+ *
+ * Verified against a live store, where the inner bytes are the ASCII `EIII` —
+ * base64 for `10 82 08`, field 2 varint 1026.
+ */
+function prefsEnvelope(selectedId, o = {}) {
+  const payload = Buffer.concat([varintField(o.selectedField ?? 2, selectedId)]);
+  const inner = lenField(1, Buffer.from(payload.toString('base64'), 'utf8'));
+  const entry = Buffer.concat([
+    lenField(1, o.prefsSentinel ?? 'last_selected_agent_model_sentinel_key'),
+    lenField(2, inner),
+  ]);
+  return Buffer.concat([lenField(1, entry)]).toString('base64');
 }
 
 /** The double-base64 envelope the store actually holds. */
@@ -156,6 +181,10 @@ function writeStore(root, value, o = {}) {
     db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)')
       .run('antigravityUnifiedStateSync.userStatus', value);
   }
+  if (o.prefs != null) {
+    db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)')
+      .run('antigravityUnifiedStateSync.modelPreferences', o.prefs);
+  }
   db.close();
 
   if (o.mtimeMs !== undefined) {
@@ -167,10 +196,18 @@ function writeStore(root, value, o = {}) {
 
 /** The common case: an install with these models, stamped at `mtimeMs`. */
 function writeInstall(root, models, o = {}) {
-  return writeStore(root, envelope(userStatus(models, o), o), o);
+  const opts = { ...o };
+  // `selectedId: null` means "a store with no preferences key at all", which
+  // is what a user who has never switched model has.
+  if (o.selectedId !== undefined && o.selectedId !== null) {
+    opts.prefs = prefsEnvelope(o.selectedId, o);
+  } else if (o.prefsRaw !== undefined) {
+    opts.prefs = o.prefsRaw;
+  }
+  return writeStore(root, envelope(userStatus(models, o), o), opts);
 }
 
 module.exports = {
   varint, tag, lenField, varintField, floatField, doubleField,
-  quotaBlock, modelEntry, userStatus, envelope, writeStore, writeInstall,
+  quotaBlock, modelEntry, userStatus, envelope, prefsEnvelope, writeStore, writeInstall,
 };

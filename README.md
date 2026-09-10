@@ -42,7 +42,23 @@ npm install
 npm start
 ```
 
-Görev çubuğunda simge belirir. Üzerine gelince panel açılır, tıklayınca sabitlenir.
+Görev çubuğunda simge belirir. Simgeye tıklayınca panel açılır; paneldeki
+raptiye düğmesi onu sabitler.
+
+Panel **odağı almadan** açılır (`showInactive`). Yazmakta olduğunuz pencere
+odağını korur; panele tıkladığınızda odağı Windows'un kendisi verir. Sebebi:
+odak alındığında kabuğun odak devrini panelin yaşam döngüsüne sokuyorduk ve
+bu, kazanılamayacak bir yarıştı — gerçek tıklamalarda ölçülen devir süreleri
+414 ms ile 1355 ms arasında dağılıyordu, dolayısıyla "N ms boyunca odak
+kaybını yok say" biçimindeki her sabit eşik arkasında bir kuyruk bırakıyor ve
+panel kullanıcının eli daha simgedeyken kapanıyordu.
+
+Kapanma kuralı artık tamamen **imleç** üzerinden: panele hiç girilmediyse
+imleç, simge ile panel arasındaki koridordan çıkınca kapanır; panele
+girildiyse ayrıldıktan kısa süre sonra kapanır; sabitlenmişse yalnızca açık
+bir kapatma ya da raptiyeyi kaldırma kapatır. Hiç etkileşilmemiş bir panel
+için son çare olarak bir dakikalık üst sınır var — imleç hiç kımıldamadan
+klavyeye dönülen durum için.
 
 ### Claude'u bağlamak
 
@@ -105,6 +121,39 @@ bir sayı, bu projenin var oluş sebebi olan tek hatadır.
 Okunan **tek anahtar** `antigravityUnifiedStateSync.userStatus`, veritabanı
 **salt okunur** açılır. Aynı tabloda duran `antigravityUnifiedStateSync.oauthToken`
 hiç adlandırılmaz, seçilmez, listelenmez; kodda `SELECT *` yoktur.
+
+**Seçili model.** Antigravity'de o an hangi modeli seçtiyseniz, satır onu
+işaretler. `antigravityUnifiedStateSync.modelPreferences` anahtarı — kota ile
+tamamen aynı çift-base64 zarfını kullanıyor — seçili model kimliğini taşıyor
+(canlı doğrulandı: `EIII` → `10 82 08` → 1026 → "Claude Opus 4.6 (Thinking)").
+Kimlik, model listesindeki kimliklerle eşleştiriliyor; **tam olarak bir**
+modele karşılık gelmiyorsa seçim gösterilmez. Sözleşmedeki alanlar:
+`ModelQuotaDetail.selectedModel` (ad) ve `selectedGroupIndex` (hangi grupta).
+
+Seçim çözümlemesi **yalnızca seçimi** reddeder: tercih anahtarı beklenmedik
+bir şekle bürünürse ya da model kimlikleri okunamazsa yüzdeler etkilenmez.
+Yanlış modeli işaretlemek, yanındaki sayı hakkında yanlış bir iddiadır; "hangi
+model olduğunu bilmiyoruz" ise değildir.
+
+**IDE kapalıyken.** Depoyu yazan program kapalıysa yeni sayı gelmez, ama son
+bilinen sayı kendi penceresi hâlâ açıkken **doğru bir ifadedir**. O yüzden
+gösterilir: satır `stale` işaretlenir ve `capturedAt` ile birlikte gelir
+("… önce güncellendi"). Pencerenin sıfırlanma anı geçtiğinde sayı eski değil
+**yanlış** olur; o noktada `rolled-over` denir ve sayı düşürülür. Terk edilmiş
+bir kurulumun asla güncel sanılmaması için ayrıca **bir haftalık sert üst
+sınır** var: bunun ötesinde hiçbir şey gösterilmez.
+
+**Yenile'ye basıldığında.** Okuma eskiyse ve Antigravity IDE süreci
+çalışmıyorsa, yenileme yanıtı `refreshNotices: ['ANTIGRAVITY_NOT_RUNNING']`
+taşır; arayüz bunu "Antigravity açık değil…" baloncuğuna çevirir. Süreç
+listesi `tasklist.exe` ile mutlak yoldan okunur (ağ yok, kabuk yok); okunamazsa
+cevap `unknown` olur ve **hiçbir şey söylenmez** — editörünüz açıkken "kapalı"
+demek yanlış bir ifade olurdu. Sonda yalnızca okuma zaten eskiyken çalışır, ki
+gereksiz yere yarım saniye harcanmasın.
+
+**Anında güncelleme.** Toplayıcı, seçilen kurulumun `state.vscdb` klasörünü
+izliyor; model değiştirdiğinizde 15 saniyelik taramayı beklemeden (400 ms
+gecikmeyle) satır yeniden kuruluyor.
 
 Model başına kotalar, **aynı (oran, sıfırlanma) çiftleri tekilleştirilerek**
 gruplanır. Bu, modeller arasında bir ilişki iddia etmez — sadece iki sayının
@@ -191,7 +240,7 @@ gösteriliyor: ayrı kaynaklı iki pencere, her biri geldiği alanla etiketli.
 ## Geliştirme
 
 ```bash
-npm test     # tip kontrolü + 667 test
+npm test     # tip kontrolü + 756 test
 npm run scan # gerçek corpus üzerinde tarama ölçümü
 npm run build # paketleme derlemesi (dist/ temizlenip yeniden üretilir)
 npm run smoke # Electron IPC duman testi
@@ -213,7 +262,8 @@ sunucusu dinleyen bir soket açar ve yayınlanan uygulamada böyle bir şey yokt
 - `src/shared/contract.ts` — iki taraf arasındaki sözleşme. Renderer kullanım
   verisi üzerinde **hiç aritmetik yapmaz**; ana süreç çözülmüş değerler gönderir.
 - `src/core/antigravity/**` — IDE durum deposu okuyucusu: kurulum çözümleme
-  (koruma 1), katı protobuf çözücü (koruma 3a) ve `node:sqlite` sarmalayıcısı.
+  (koruma 1), katı protobuf çözücü (koruma 3a), `node:sqlite` sarmalayıcısı ve
+  süreç sondası (`process.js`).
 - `bridge/claude-statusline.mjs`, `bridge/antigravity-statusline.mjs` —
   statusline köprüleri. Aynı disiplin: stdin'den oku, yalnızca sayısal kota
   alanlarını küçük bir dosyaya yaz, başka hiçbir şeyi kaydetme, ağ açma.
@@ -231,6 +281,14 @@ hover paneli, altı sağlayıcı satırı, Bağla/Ekle düğmeleri.
 bir mekanizma gerektiriyor (Codex bir JSON-RPC el sıkışması ve SQLite; Gemini
 hiç yüzde vermiyor) — "yerel dosya oku" ortak bir soyutlama değil. Satırlar
 pasif duruyor ve hiçbiri uydurma sayı göstermiyor.
+
+**Haftalık limit neden yok:** Depodaki 130 anahtarın tamamı tarandı, her
+base64 protobuf değeri çözüldü: tek bir kota yapısı var ve hiçbir yerde
+"week"/"weekly" geçmiyor. Bilinen tek kaynak, Antigravity'nin yerel dil
+sunucusuyla loopback RPC — ki bu, başka bir sürecin komut satırından CSRF
+belirteci okumayı gerektiriyor ve uygulamanın "kimlik bilgisi okumaz"
+duruşuyla çelişiyor. Bu yüzden **yapılmadı**; haftalık pencere
+`bildirilmiyor` demeye devam ediyor.
 
 **Antigravity'de eksik olan:** `agy` CLI kurulu değilse haftalık pencere.
 IDE'nin durum deposu haftalık figürü saklamıyor, biz de uydurmuyoruz; o satır

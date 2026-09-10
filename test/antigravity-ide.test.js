@@ -15,6 +15,9 @@ const {
 } = require('../src/core/antigravity/install');
 const { buildSnapshot } = require('../src/core/snapshot');
 const { MAX_AGE_MS } = require('../src/core/ratelimits');
+const { IDE_MAX_AGE_MS } = require('../src/core/antigravity/ide-quota');
+const { isAntigravityRunning, anyAntigravityImage } = require('../src/core/antigravity/process');
+const { Collector, DEBOUNCE_MS } = require('../src/core/collector');
 const { buildTooltip } = require('../src/core/tray-tooltip');
 const store = require('./helpers/agy-store');
 
@@ -140,27 +143,109 @@ test.describe('GUARD 1 — the install is resolved, never named', () => {
 
 /* ---------------------------------------------------- GUARD 2: staleness */
 
-test.describe('GUARD 2 — a stale store yields no percentage, ever', () => {
-  test('the 112-day-old store produces words, not a number', () => {
-    // Read on its own, as if it were the only install. This is the precise
-    // shape of the original defect: a real figure, correctly decoded, from a
-    // window that closed sixteen weeks ago.
+test.describe('GUARD 2 — a stale store keeps its figure; an abandoned one shows nothing', () => {
+  // The rule this block used to state was "a stale store yields no percentage,
+  // ever". That overstated it in the direction that costs the user something
+  // real: with the IDE closed, the last five-hour figure is still a TRUE
+  // statement about its window until that window resets, and refusing to show
+  // it threw away the only number they had. What must never happen is an
+  // ABANDONED install being read as current — which is a different thing, and
+  // is what the age ceiling and the newest-store resolver are for.
+
+  test('the 112-day-old store is refused outright, figure and all', () => {
+    // The original defect: a real figure, correctly decoded, from a window
+    // that closed sixteen weeks ago. Past the ceiling nothing is shown — not
+    // the figure, not a stale label, nothing to reason about.
     const base = appData({
       Antigravity: { models: [model('Gemini 3.1 Pro (High)', 0.4, Math.floor((NOW - 112 * DAY + 4 * HOUR) / 1000))], mtimeMs: NOW - 112 * DAY },
     });
     const q = read(base);
-    assert.equal(q.state, 'stale');
-    // The reader still carries what the file said — it is a faithful reading
-    // of an old file — and the row is where the refusal happens.
-    assert.equal(q.fiveHour.usedPercentage, 60);
-    assert.equal(q.fiveHour.resetsAtMs, null, 'a 112-day-old reset instant is not credible');
+    assert.equal(q.state, 'absent');
+    assert.equal(q.reason, 'abandoned');
+    assert.equal(q.fiveHour, null, 'the reader does not even carry it');
+    assert.deepEqual(q.groups, []);
 
     const ag = agRow(q);
     assert.equal(ag.fiveHour.usedPercentage, null, 'no number reaches the row');
     assert.equal(ag.fiveHour.certainty, 'unknown');
-    assert.equal(ag.fiveHour.absence, 'stale');
-    assert.equal(ag.status, 'stale', 'and the chrome does not read as a current, healthy row');
     assert.equal(ag.modelQuotas, null, 'nor does the detail block smuggle the same numbers back in');
+  });
+
+  test('the ceiling is a week, which no five-hour window can reach', () => {
+    // Sized so that nothing inside it could still be describing an open
+    // window by accident: the longest window this source has is five hours.
+    assert.ok(IDE_MAX_AGE_MS > 5 * HOUR * 2, `${IDE_MAX_AGE_MS} must dwarf the window it guards`);
+
+    const justInside = appData({
+      'Antigravity IDE': {
+        models: [model('A', 0.25, Math.floor((NOW + HOUR) / 1000))],
+        mtimeMs: NOW - (IDE_MAX_AGE_MS - HOUR),
+      },
+    });
+    assert.equal(read(justInside).state, 'stale', 'inside the ceiling it is merely old');
+
+    const justOutside = appData({
+      'Antigravity IDE': {
+        models: [model('A', 0.25, Math.floor((NOW + HOUR) / 1000))],
+        mtimeMs: NOW - (IDE_MAX_AGE_MS + HOUR),
+      },
+    });
+    const out = read(justOutside);
+    assert.equal(out.state, 'absent');
+    assert.equal(out.reason, 'abandoned');
+  });
+
+  test('a clock that jumped backwards cannot resurrect an old store', () => {
+    // A capture from the far future is as untrustworthy as one from the far
+    // past, and the ceiling is applied in both directions for that reason.
+    const base = appData({
+      'Antigravity IDE': { models: [model('A', 0.25)], mtimeMs: NOW + IDE_MAX_AGE_MS + HOUR },
+    });
+    const q = read(base);
+    assert.equal(q.state, 'absent');
+    assert.equal(q.reason, 'abandoned');
+  });
+
+  test('IDE closed for hours: the last figure is kept, labelled with its age', () => {
+    // What the user asked for, and the condition under which it is honest.
+    // The IDE is shut, so nothing is writing the store; the window it
+    // describes is still open, so the number is still true of it.
+    const captured = NOW - 3 * HOUR;
+    const base = appData({
+      'Antigravity IDE': {
+        models: [model('Claude Opus 4.6 (Thinking)', 0.35, Math.floor((NOW + 90 * 60 * 1000) / 1000))],
+        mtimeMs: captured,
+      },
+    });
+    const q = read(base);
+    assert.equal(q.state, 'stale');
+
+    const ag = agRow(q);
+    assert.equal(ag.fiveHour.usedPercentage, 65, 'the last known figure survives');
+    assert.equal(ag.fiveHour.certainty, 'known');
+    assert.equal(ag.status, 'stale', 'never presented as current');
+    assert.equal(
+      ag.fiveHour.capturedAt, new Date(captured).toISOString(),
+      'and it says WHEN, which is what the row prints as "… önce güncellendi"',
+    );
+    // The per-model block is the same reading seen a second way, so it rides
+    // along — with the same capturedAt, not a fresher-looking one.
+    assert.equal(ag.modelQuotas.capturedAt, new Date(captured).toISOString());
+  });
+
+  test('IDE closed past the reset: the old figure is dropped, not re-printed', () => {
+    // The moment it stops being true. An hour after the window closed, the
+    // number describes a window that no longer exists.
+    const base = appData({
+      'Antigravity IDE': {
+        models: [model('A', 0.35, Math.floor((NOW - HOUR) / 1000))],
+        mtimeMs: NOW - 3 * HOUR,
+      },
+    });
+    const ag = agRow(read(base));
+    assert.equal(ag.fiveHour.usedPercentage, null);
+    assert.equal(ag.fiveHour.absence, 'rolled-over', 'the window reset; say so');
+    assert.equal(ag.modelQuotas, null);
   });
 
   test('the store mtime IS the capture instant, so there is one staleness rule', () => {
@@ -525,5 +610,316 @@ test.describe('the reader is cheap and reads exactly one key', () => {
     assert.equal(res.status, 0);
     assert.equal(/SQLite is an experimental feature/.test(res.stderr), false, res.stderr);
     assert.match(res.stderr, /keep me/, 'the filter is scoped, not a blanket --no-warnings');
+  });
+});
+
+
+/* --------------------------------------------------- the model they picked */
+
+test.describe('the selected model, read from the preferences key', () => {
+  /** Ids taken from the live store, so the fixtures match reality. */
+  const OPUS = 1026;
+  const SONNET = 1035;
+  const GEM_HIGH = 1016;
+
+  function withIds(over = {}) {
+    return {
+      models: [
+        { ...model('Claude Opus 4.6 (Thinking)', 0.4), id: OPUS },
+        { ...model('Claude Sonnet 4.6 (Thinking)', 0.4), id: SONNET },
+        { ...model('Gemini 3.1 Pro (High)', 1), id: GEM_HIGH },
+      ],
+      mtimeMs: NOW - 1000,
+      ...over,
+    };
+  }
+
+  test('names the model the preferences key points at, and its group', () => {
+    // 1026 is what the live store had selected, and it decoded to Claude Opus
+    // 4.6 (Thinking) — the same answer this fixture asserts.
+    const base = appData({ 'Antigravity IDE': withIds({ selectedId: OPUS }) });
+    const q = read(base);
+    assert.equal(q.selectedModel, 'Claude Opus 4.6 (Thinking)');
+    // Group 0 is the most consumed one, which is where both Claude entries sit.
+    assert.equal(q.selectedGroupIndex, 0);
+    assert.deepEqual(q.groups[q.selectedGroupIndex].members, [
+      'Claude Opus 4.6 (Thinking)', 'Claude Sonnet 4.6 (Thinking)',
+    ]);
+  });
+
+  test('switching model moves the selection to the other group', () => {
+    // "It updates when they switch model": the same store, one id different.
+    const base = appData({ 'Antigravity IDE': withIds({ selectedId: GEM_HIGH }) });
+    const q = read(base);
+    assert.equal(q.selectedModel, 'Gemini 3.1 Pro (High)');
+    assert.equal(q.selectedGroupIndex, 1, 'the roomier group, which is where it lives');
+    assert.equal(q.groups[1].usedPercentage, 0);
+  });
+
+  test('the row carries the selection, and no member carries a figure', () => {
+    // The contract's pairing rule survives the addition: the figure is on the
+    // group, the selection is an index plus a name. Nothing here can be joined
+    // into "Claude Opus 4.6 (Thinking) · %60" without the renderer choosing to.
+    const base = appData({ 'Antigravity IDE': withIds({ selectedId: OPUS }) });
+    const ag = agRow(read(base));
+    assert.equal(ag.modelQuotas.selectedModel, 'Claude Opus 4.6 (Thinking)');
+    assert.equal(ag.modelQuotas.selectedGroupIndex, 0);
+    for (const group of ag.modelQuotas.groups) {
+      for (const member of group.members) {
+        assert.equal(/[0-9]+\s*%|%\s*[0-9]+/.test(member), false, member);
+      }
+    }
+  });
+
+  test('a store with no preferences key has no selection, and still has quota', () => {
+    // A user who has never switched model. Missing is not broken.
+    const base = appData({ 'Antigravity IDE': withIds({ selectedId: null }) });
+    const q = read(base);
+    assert.equal(q.selectedModel, null);
+    assert.equal(q.selectedGroupIndex, null);
+    assert.equal(q.fiveHour.usedPercentage, 60, 'the figures are untouched');
+  });
+
+  test('an id that matches no listed model is refused, not guessed at', () => {
+    // A stale preference, or an id space that moved under us. Naming the
+    // nearest model would be inventing the answer.
+    const base = appData({ 'Antigravity IDE': withIds({ selectedId: 999999 }) });
+    const q = read(base);
+    assert.equal(q.selectedModel, null);
+    assert.equal(q.fiveHour.usedPercentage, 60, 'and the quota is unaffected');
+  });
+
+  test('an id shared by two models is refused: it is not an identifier', () => {
+    const base = appData({
+      'Antigravity IDE': {
+        models: [
+          { ...model('One', 0.4), id: OPUS },
+          { ...model('Two', 0.4), id: OPUS },
+        ],
+        mtimeMs: NOW - 1000,
+        selectedId: OPUS,
+      },
+    });
+    assert.equal(read(base).selectedModel, null);
+  });
+
+  test('a preferences payload with an unexpected shape refuses the selection only', () => {
+    // Same strictness as the quota: full expected shape or nothing. The blast
+    // radius is deliberately the selection — a store whose preferences moved
+    // is still a store whose figures we can read.
+    const base = appData({ 'Antigravity IDE': withIds({ selectedId: OPUS, selectedField: 4 }) });
+    const q = read(base);
+    assert.equal(q.selectedModel, null);
+    assert.match(q.selectionError, /schema/);
+    assert.equal(q.fiveHour.usedPercentage, 60, 'the quota is not taken down with it');
+    assert.equal(q.groups.length, 2);
+  });
+
+  test('a renamed preferences sentinel refuses the selection only', () => {
+    const base = appData({
+      'Antigravity IDE': withIds({ selectedId: OPUS, prefsSentinel: 'something_else_key' }),
+    });
+    const q = read(base);
+    assert.equal(q.selectedModel, null);
+    assert.equal(q.fiveHour.usedPercentage, 60);
+  });
+
+  test('a malformed model id block refuses the selection, never the figures', () => {
+    // An extra field inside the id block: the id space is no longer one we can
+    // match against, so no selection is claimed — but the quota is untouched.
+    const base = appData({
+      'Antigravity IDE': {
+        models: [{ ...model('Claude Opus 4.6 (Thinking)', 0.4), id: OPUS, idExtra: 7 }],
+        mtimeMs: NOW - 1000,
+        selectedId: OPUS,
+      },
+    });
+    const q = read(base);
+    assert.equal(q.selectedModel, null);
+    assert.match(q.selectionError, /model id/);
+    assert.equal(q.fiveHour.usedPercentage, 60);
+  });
+
+  test('models with no id at all are still quoted, just never selected', () => {
+    const base = appData({
+      'Antigravity IDE': { models: [model('No id', 0.4)], mtimeMs: NOW - 1000, selectedId: OPUS },
+    });
+    const q = read(base);
+    assert.equal(q.selectedModel, null);
+    assert.equal(q.fiveHour.usedPercentage, 60);
+  });
+
+  test('a selection survives the mtime cache, and changes with the store', () => {
+    // The cache is keyed by mtime and now holds the selection too; a switch
+    // that rewrites the store must not be served the previous answer.
+    const dirA = appData({ 'Antigravity IDE': withIds({ selectedId: OPUS }) });
+    assert.equal(read(dirA).selectedModel, 'Claude Opus 4.6 (Thinking)');
+    const dirB = appData({ 'Antigravity IDE': withIds({ selectedId: GEM_HIGH, mtimeMs: NOW - 2000 }) });
+    assert.equal(read(dirB).selectedModel, 'Gemini 3.1 Pro (High)');
+  });
+});
+
+/* ------------------------------------------------ is the IDE even running */
+
+test.describe('the process probe behind the refresh notice', () => {
+  const REAL = [
+    '"Antigravity IDE.exe","24716","Console","1","195.440 K"',
+    '"language_server_windows_x64.exe","3080","Console","1","125.068 K"',
+    '"chrome.exe","999","Console","1","10 K"',
+  ].join('\r\n');
+
+  function exec(stdout, err) {
+    return (file, args, opts, cb) => cb(err || null, stdout, '');
+  }
+
+  test('says running when an Antigravity image is in the list', async () => {
+    assert.equal(await isAntigravityRunning({ exec: exec(REAL) }), 'running');
+  });
+
+  test('the language server alone is not the IDE', async () => {
+    // It outlives the editor. Treating it as "the IDE is up" would suppress
+    // the one message this probe exists to produce.
+    const only = '"language_server_windows_x64.exe","3080","Console","1","125.068 K"';
+    assert.equal(await isAntigravityRunning({ exec: exec(only) }), 'not-running');
+  });
+
+  test('a localised "no tasks" reply reads as not-running, not as an error', async () => {
+    // tasklist's own message is translated; the CSV rows are not. Matching on
+    // quoted image names instead of on prose is what makes this locale-proof.
+    assert.equal(await isAntigravityRunning({ exec: exec('BİLGİ: Ölçütlere uyan görev çalışmıyor.\r\n') }), 'not-running');
+  });
+
+  test('every failure lands on unknown, never on a confident wrong answer', async () => {
+    // Telling users their editor is closed while it is open is a false
+    // statement; saying nothing is merely unhelpful.
+    assert.equal(await isAntigravityRunning({ exec: exec('', new Error('timeout')) }), 'unknown');
+    assert.equal(await isAntigravityRunning({ exec: exec('') }), 'unknown');
+    assert.equal(await isAntigravityRunning({ exec: exec(null) }), 'unknown');
+    assert.equal(await isAntigravityRunning({
+      exec: () => { throw new Error('spawn refused'); },
+    }), 'unknown');
+  });
+
+  test('it never rejects, whatever the callback does', async () => {
+    await assert.doesNotReject(() => isAntigravityRunning({ exec: exec(undefined, new Error('x')) }));
+  });
+
+  test('tasklist is invoked by absolute path, with no shell', async () => {
+    // A bare "tasklist" would resolve through PATH, which is writable by the
+    // user and by anything running as them.
+    let seen = null;
+    await isAntigravityRunning({
+      exec: (file, args, opts, cb) => { seen = { file, args, opts }; cb(null, REAL, ''); },
+    });
+    assert.match(seen.file, /^[A-Za-z]:\\/, 'absolute');
+    assert.match(seen.file, /System32[\\/]tasklist\.exe$/i);
+    assert.deepEqual(seen.args, ['/FO', 'CSV', '/NH'], 'arguments are a list, not a command string');
+    assert.equal(seen.opts.windowsHide, true);
+    assert.ok(seen.opts.timeout > 0, 'a probe that can hang is a refresh that can hang');
+  });
+
+  test('the CSV parser only ever looks at the first field', () => {
+    // A process whose WINDOW TITLE mentions Antigravity must not count.
+    assert.equal(anyAntigravityImage('"notepad.exe","1","Console","1","Antigravity notes"'), false);
+    assert.equal(anyAntigravityImage('"Antigravity.exe","1","Console","1","x"'), true, 'the old name still counts');
+  });
+});
+
+/* -------------------------------------------- the store is watched, not polled */
+
+test.describe('the collector follows the IDE store', () => {
+  function collectorOn(base, t) {
+    const dir = tmpdir();
+    const c = new Collector({
+      userDataDir: dir,
+      projectsRoot: path.join(dir, 'projects'),
+      rateLimitsDir: dir,
+      rateLimitsFile: path.join(dir, 'claude-rate-limits.json'),
+      antigravityQuotaFile: path.join(dir, 'antigravity-quota.json'),
+      ideAppDataDir: base,
+    });
+    t.after(() => c.stop());
+    return c;
+  }
+
+  test('a rebuild points the watcher at the chosen store directory', (t) => {
+    const base = appData({ 'Antigravity IDE': { models: [model('A', 0.5)], mtimeMs: NOW - 1000 } });
+    const c = collectorOn(base, t);
+    c.rebuild();
+    assert.equal(
+      c._ideWatchDir,
+      path.join(base, 'Antigravity IDE', 'User', 'globalStorage'),
+      'watching the directory, because the store file is replaced rather than appended to',
+    );
+  });
+
+  test('when a newer install appears the watcher moves to it', (t) => {
+    // GUARD 1 chooses by mtime and can change its mind. A watcher pinned to
+    // the first answer would quietly stop reporting changes.
+    const base = appData({ 'Antigravity IDE': { models: [model('A', 0.5)], mtimeMs: NOW - 10 * DAY } });
+    const c = collectorOn(base, t);
+    c.rebuild();
+    const first = c._ideWatchDir;
+
+    store.writeInstall(path.join(base, 'Antigravity Next'), [model('B', 0.5)], { mtimeMs: NOW - 1000 });
+    c.rebuild();
+    assert.notEqual(c._ideWatchDir, first);
+    assert.equal(c._ideWatchDir, path.join(base, 'Antigravity Next', 'User', 'globalStorage'));
+  });
+
+  test('a burst of store writes coalesces into one rebuild', (t) => {
+    // The IDE rewrites this file whenever it syncs. Rebuilding per event would
+    // redraw the tray icon and re-push a snapshot several times a second.
+    //
+    // The DEBOUNCE is what is asserted here, not `fs.watch` itself: whether
+    // the OS delivers an event, and how many, is the platform's business and
+    // not something a unit test should pretend to pin.
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const base = appData({ 'Antigravity IDE': { models: [model('A', 0.5)], mtimeMs: NOW - 1000 } });
+    const c = collectorOn(base, t);
+    let rebuilds = 0;
+    const real = c.rebuild.bind(c);
+    c.rebuild = () => { rebuilds += 1; return real(); };
+
+    c._onIdeStoreChange();
+    c._onIdeStoreChange();
+    c._onIdeStoreChange();
+    assert.equal(rebuilds, 0, 'nothing happens until the burst settles');
+    t.mock.timers.tick(DEBOUNCE_MS);
+    assert.equal(rebuilds, 1, 'and then exactly once');
+  });
+
+  test('a stopped collector does not rebuild on a late store event', (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const base = appData({ 'Antigravity IDE': { models: [model('A', 0.5)], mtimeMs: NOW - 1000 } });
+    const c = collectorOn(base, t);
+    let rebuilds = 0;
+    const real = c.rebuild.bind(c);
+    c.rebuild = () => { rebuilds += 1; return real(); };
+    c._onIdeStoreChange();
+    c.stop();
+    t.mock.timers.tick(DEBOUNCE_MS * 4);
+    assert.equal(rebuilds, 0);
+    assert.equal(c._ideWatchDir, null, 'and it forgets what it was watching');
+  });
+
+  test('the collector reads the store it was pointed at, not the real one', (t) => {
+    // The seam this test exists to hold: without `ideAppDataDir` every
+    // Collector built in this suite would read the developer's own install.
+    // Stamped against the REAL clock, not the suite's fixed NOW: the collector
+    // reads with `Date.now()`, so a fixture frozen in the past would be judged
+    // stale for a reason that has nothing to do with what is being tested.
+    const liveNow = Date.now();
+    const base = appData({
+      'Antigravity IDE': {
+        models: [model('Only', 0.75, Math.floor((liveNow + 3 * HOUR) / 1000))],
+        mtimeMs: liveNow - 1000,
+      },
+    });
+    const c = collectorOn(base, t);
+    c.rebuild();
+    assert.equal(c.antigravityIde.state, 'fresh');
+    assert.deepEqual(c.antigravityIde.groups[0].members, ['Only']);
+    assert.equal(c.antigravityIde.fiveHour.usedPercentage, 25);
   });
 });

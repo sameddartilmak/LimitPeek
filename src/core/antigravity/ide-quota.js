@@ -55,6 +55,20 @@ const STORE_KEY = 'antigravityUnifiedStateSync.userStatus';
  */
 const SENTINEL_KEY = 'userStatusSentinelKey';
 
+/**
+ * The user's currently selected model, in a SECOND key with the SAME envelope.
+ *
+ *   value -> message { 1: entry }
+ *     entry { 1: 'last_selected_agent_model_sentinel_key', 2: { 1: bytes } }
+ *       bytes are base64 TEXT again -> message { 2: varint model id }
+ *
+ * Verified live: the four bytes are the ASCII `EIII`, which base64-decodes to
+ * `10 82 08` — field 2, varint 1026 — and 1026 is the id the model list gives
+ * to the entry the user had selected.
+ */
+const PREFS_KEY = 'antigravityUnifiedStateSync.modelPreferences';
+const PREFS_SENTINEL = 'last_selected_agent_model_sentinel_key';
+
 /** Field numbers, all verified against a live store on 2026-09-09. */
 const F = {
   ENTRY: 1,            // top level: repeated keyed entry
@@ -64,8 +78,11 @@ const F = {
   MODEL_LIST: 33,      // inside userStatus: the container holding the models
   MODEL: 1,            // inside the container: repeated model entry
   MODEL_NAME: 1,
+  MODEL_ID_BLOCK: 2,   // inside a model entry: a message holding its id
+  MODEL_ID: 1,         // varint, matches the id in modelPreferences
   MODEL_QUOTA: 15,
   MODEL_TIER: 16,
+  SELECTED_ID: 2,      // modelPreferences payload: varint, the selected model
   QUOTA_FRACTION: 1,   // float32
   QUOTA_RESET: 2,      // message
   RESET_SECONDS: 1,    // varint, unix seconds
@@ -74,6 +91,18 @@ const F = {
 /** Bounds. A store outside these is malformed or hostile, not merely new. */
 const MAX_MODELS = 64;
 const MAX_NAME_LEN = 64;
+/**
+ * The hard ceiling on a capture, beyond which nothing is shown at all.
+ *
+ * GUARD 2's backstop. The newest-written-store resolver already prefers a live
+ * install over an abandoned one, but it can only choose between what is on
+ * disk: a machine with exactly one Antigravity directory, unopened since
+ * spring, would hand its months-old numbers to a reader that has no other
+ * candidate to prefer. A week is far longer than any five-hour window, so
+ * nothing inside this ceiling can still be describing an open window by
+ * accident — and past it we say nothing rather than reason about it.
+ */
+const IDE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 /** A reset instant must be a plausible unix second, before any skew check. */
 const RESET_MIN_MS = Date.parse('2020-01-01T00:00:00Z');
 const RESET_MAX_MS = Date.parse('2100-01-01T00:00:00Z');
@@ -132,24 +161,41 @@ function absent(reason, extra = {}) {
     groups: [],
     diverged: false,
     modelsSeen: 0,
+    selectedModel: null,
+    selectedGroupIndex: null,
     install: null,
     ...extra,
   };
 }
 
 /**
- * The one query. Named key, read-only handle, no enumeration.
- * @returns {string|null} the base64 value, or null when the key is not there.
+ * The two queries. Named keys, read-only handle, no enumeration.
+ *
+ * Two named keys rather than one is still not a scan: each is fetched by
+ * literal key through a bound parameter, and `antigravityUnifiedStateSync
+ * .oauthToken` sits in this same table without ever being named. One open for
+ * both, because opening the database twice per rebuild would double the cost
+ * of the thing the mtime cache exists to avoid.
+ *
+ * The preferences key is OPTIONAL: a user who has never switched model may not
+ * have one, and that is a missing selection, not a broken store.
+ *
+ * @returns {{value:string, prefs:string|null}|{err:string}}
  */
-function readStoreValue(file) {
+function readStoreValues(file) {
   const sqlite = loadSqlite();
   if (!sqlite || typeof sqlite.DatabaseSync !== 'function') return { err: 'sqlite-unavailable' };
   let db = null;
   try {
     db = new sqlite.DatabaseSync(file, { readOnly: true });
-    const row = db.prepare('SELECT value FROM ItemTable WHERE key = ?').get(STORE_KEY);
+    const query = db.prepare('SELECT value FROM ItemTable WHERE key = ?');
+    const row = query.get(STORE_KEY);
     if (!row || row.value == null) return { err: 'no-key' };
-    return { value: String(row.value) };
+    const prefsRow = query.get(PREFS_KEY);
+    return {
+      value: String(row.value),
+      prefs: prefsRow && prefsRow.value != null ? String(prefsRow.value) : null,
+    };
   } catch (err) {
     // A locked, corrupt or schema-less store. Never propagate the message: it
     // can quote file contents.
@@ -163,7 +209,7 @@ function readStoreValue(file) {
  * Peels the double-base64 envelope and returns the decoded userStatus fields.
  * @throws {WireError}
  */
-function unwrap(value) {
+function unwrap(value, sentinel = SENTINEL_KEY) {
   const outer = decodeMessage(Buffer.from(value, 'base64'));
   const entries = all(outer, F.ENTRY, 2);
   if (entries.length === 0) throw new WireError('no keyed entries');
@@ -172,7 +218,7 @@ function unwrap(value) {
   for (const entry of entries) {
     const inner = decodeMessage(entry.value);
     const key = one(inner, F.ENTRY_KEY, 2).value.toString('utf8');
-    if (key !== SENTINEL_KEY) continue;
+    if (key !== sentinel) continue;
     const wrapper = decodeMessage(one(inner, F.ENTRY_VALUE, 2).value);
     // Exactly one field here: the re-encoded payload. An extra one would mean
     // we are no longer sure which of two blobs is the status.
@@ -180,8 +226,55 @@ function unwrap(value) {
     payload = one(wrapper, F.PAYLOAD_B64, 2).value.toString('utf8');
     break;
   }
-  if (payload === null) throw new WireError(`entry ${SENTINEL_KEY} missing`);
+  if (payload === null) throw new WireError(`entry ${sentinel} missing`);
   return decodeMessage(Buffer.from(payload, 'base64'));
+}
+
+/**
+ * The model id carried by one model entry, or null when it carries none.
+ *
+ * Strict for the same reason the quota block is: this id is what decides
+ * WHICH model we tell the user they have selected, and naming the wrong one is
+ * a false statement, not a missing one.
+ *
+ * @throws {WireError} on any structural surprise.
+ */
+function idOf(modelFields) {
+  const blocks = modelFields.filter((f) => f.field === F.MODEL_ID_BLOCK);
+  if (blocks.length === 0) return null;
+  if (blocks.length > 1) throw new WireError('model carries more than one id block');
+  if (blocks[0].wire !== 2) throw new WireError('id block wire type');
+  const inner = decodeMessage(blocks[0].value);
+  exactly(inner, [F.MODEL_ID]);
+  const id = Number(one(inner, F.MODEL_ID, 0).value);
+  if (!Number.isSafeInteger(id) || id < 0) throw new WireError('model id not a plausible integer');
+  return id;
+}
+
+/**
+ * The selected model id from the preferences key.
+ *
+ * Refuses rather than guesses, and refuses ONLY the selection: a store whose
+ * preferences moved is still a store whose quota we can read, so this never
+ * takes the figures down with it. The blast radius of being wrong here is a
+ * highlight on the wrong model, which is why it is `exactly` rather than a
+ * lenient lookup — and why the id is cross-checked against the model list
+ * before it is believed.
+ *
+ * @returns {{id:number}|{err:string}}
+ */
+function selectedIdFrom(prefsValue) {
+  if (prefsValue === null) return { err: 'no-preference' };
+  try {
+    const payload = unwrap(prefsValue, PREFS_SENTINEL);
+    exactly(payload, [F.SELECTED_ID]);
+    const id = Number(one(payload, F.SELECTED_ID, 0).value);
+    if (!Number.isSafeInteger(id) || id < 0) throw new WireError('selected id not a plausible integer');
+    return { id };
+  } catch (err) {
+    if (!(err instanceof WireError)) throw err;
+    return { err: `schema: ${err.message}` };
+  }
 }
 
 /**
@@ -259,13 +352,17 @@ function groupByValue(models) {
  * @returns {{state:'missing'|'invalid'|'absent'|'stale'|'fresh', reason:string|null,
  *   capturedAt:string|null, capturedAtMs:number|null, ageMs:number|null,
  *   fiveHour:{usedPercentage:number,resetsAtMs:number|null}|null, sevenDay:null,
- *   groups:Array, diverged:boolean, modelsSeen:number, install:object|null}}
+ *   groups:Array, diverged:boolean, modelsSeen:number,
+ *   selectedModel:string|null, selectedGroupIndex:number|null,
+ *   install:object|null}}
  *
  *   - `missing`  no install, or no store file
  *   - `invalid`  the store exists but could not be opened
  *   - `absent`   opened, but nothing could be stated: no key, no models with a
- *                quota, or a shape we refuse to guess at (`reason: 'schema'`)
- *   - `stale`    older than the freshness budget
+ *                quota, a shape we refuse to guess at (`reason: 'schema'`), or
+ *                a capture past IDE_MAX_AGE_MS (`reason: 'abandoned'`)
+ *   - `stale`    older than the freshness budget. STILL CARRIES ITS FIGURE:
+ *                the caller keeps it until the window it describes resets.
  *   - `fresh`    usable
  */
 function readAntigravityIdeQuota(options = {}) {
@@ -286,9 +383,24 @@ function readAntigravityIdeQuota(options = {}) {
     file = install.file;
   }
 
-  // GUARD 2. The store's own mtime is the capture instant. Everything after
-  // this point ages through the same rule the statusline captures do, so a
-  // store nobody has written for 112 days cannot present a figure.
+  // GUARD 2, and it changed shape. It used to be summarised as "a stale store
+  // yields no percentage, ever", which overstated what the code did and what
+  // the user wants.
+  //
+  // The store's own mtime is the capture instant, and everything after this
+  // point ages through the SAME rule the statusline captures do. That rule is
+  // not "old means nothing": it is ADR-001 amendment 2 — a figure stays true
+  // about its window until that window resets. So with the IDE closed, the
+  // last known five-hour figure is still a true statement for as long as its
+  // own `resetsAt` is ahead of us, and it is shown with `capturedAt` set and
+  // the row marked stale, which is what the renderer turns into "... önce
+  // güncellendi". Once that instant passes it is not old, it is WRONG, and
+  // `snapshot.windowFrom` drops it as `rolled-over`.
+  //
+  // What guard 2 still absolutely prevents is an ABANDONED install being read
+  // as current — the 112-day case that made it necessary. Two things do that:
+  // `install.js` prefers the newest-written store, and IDE_MAX_AGE_MS below is
+  // a hard ceiling for the machine that has only the abandoned one.
   let stat;
   try {
     stat = fs.statSync(file);
@@ -302,8 +414,15 @@ function readAntigravityIdeQuota(options = {}) {
   const capturedAt = new Date(capturedAtMs).toISOString();
   const ageMs = now - capturedAtMs;
 
-  let models = cached(file, capturedAtMs);
-  if (models === null) {
+  // The hard ceiling. Past it nothing is shown at all, whatever the windows
+  // say: a capture older than any window it could describe cannot be reasoned
+  // about, only guessed at.
+  if (ageMs > IDE_MAX_AGE_MS || ageMs < -IDE_MAX_AGE_MS) {
+    return { ...absent('abandoned'), capturedAt, capturedAtMs, ageMs, install };
+  }
+
+  let decodedStore = cached(file, capturedAtMs);
+  if (decodedStore === null) {
     const decoded = decodeStore(file, capturedAtMs);
     if (decoded.err) {
       return {
@@ -316,9 +435,10 @@ function readAntigravityIdeQuota(options = {}) {
         ...(decoded.schemaError ? { schemaError: decoded.schemaError } : {}),
       };
     }
-    models = decoded.models;
+    decodedStore = decoded;
   }
 
+  const models = decodedStore.models;
   if (models.length === 0) {
     return { ...absent('no-quota'), capturedAt, capturedAtMs, ageMs, install };
   }
@@ -339,10 +459,17 @@ function readAntigravityIdeQuota(options = {}) {
   // forever, because `now >= resetsAt` never becomes true.
   const resetsAtMs = Math.abs(lead.resetMs - now) <= RESET_SKEW_MS.fiveHour ? lead.resetMs : null;
 
+  const { selectedModel, selectedGroupIndex } = resolveSelection(
+    models, groups, decodedStore.selectedId,
+  );
+
   const state = (ageMs > maxAgeMs || ageMs < -maxAgeMs) ? 'stale' : 'fresh';
   return {
     state,
     reason: null,
+    selectedModel,
+    selectedGroupIndex,
+    selectionError: decodedStore.selectionError || null,
     capturedAt,
     capturedAtMs,
     ageMs,
@@ -373,10 +500,14 @@ function readAntigravityIdeQuota(options = {}) {
  * @returns {{models:Array}|{err:string, schemaError?:string}}
  */
 function decodeStore(file, mtimeMs) {
-  const read = readStoreValue(file);
+  const read = readStoreValues(file);
   if (read.err) return { err: read.err };
 
   let models;
+  // Set when a model's id block is malformed. It does NOT refuse the quota —
+  // the figures are independently valid — but it does refuse the SELECTION,
+  // because an id space we cannot decode is one we must not match against.
+  let idFailure = null;
   try {
     const status = unwrap(read.value);
     const list = one(status, F.MODEL_LIST, 2);
@@ -391,7 +522,14 @@ function decodeStore(file, mtimeMs) {
       const name = safeName(one(fields, F.MODEL_NAME, 2).value.toString('utf8'));
       const quota = quotaOf(fields);
       if (name === null || quota === null) continue;
-      models.push({ name, fraction: quota.fraction, resetMs: quota.resetMs });
+      let id = null;
+      try {
+        id = idOf(fields);
+      } catch (err) {
+        if (!(err instanceof WireError)) throw err;
+        idFailure = idFailure || err.message;
+      }
+      models.push({ name, id, fraction: quota.fraction, resetMs: quota.resetMs });
     }
   } catch (err) {
     if (!(err instanceof WireError)) throw err;
@@ -400,13 +538,47 @@ function decodeStore(file, mtimeMs) {
     return { err: 'schema', schemaError: err.message };
   }
 
-  remember(file, mtimeMs, models);
-  return { models };
+  const selection = selectedIdFrom(read.prefs);
+  const decoded = {
+    models,
+    // An unreadable id space poisons the match, so the selection is dropped
+    // rather than made against ids we do not trust.
+    selectedId: (selection.err || idFailure) ? null : selection.id,
+    selectionError: selection.err || (idFailure ? `model id: ${idFailure}` : null),
+  };
+  remember(file, mtimeMs, decoded);
+  return decoded;
+}
+
+/**
+ * Which model the user has selected, and which group holds it.
+ *
+ * Three ways to refuse, all of them ending in "no selection" rather than in a
+ * guess. Naming the wrong model would put a highlight on someone else's
+ * figure, which is a false statement about the number beside it.
+ */
+function resolveSelection(models, groups, selectedId) {
+  const none = { selectedModel: null, selectedGroupIndex: null };
+  if (!Number.isSafeInteger(selectedId)) return none;
+  const matches = models.filter((m) => m.id === selectedId);
+  // Zero: the id names a model this store does not list — a stale preference,
+  // or an id space that moved. More than one: the id is not an identifier.
+  if (matches.length !== 1) return none;
+  const name = matches[0].name;
+  if (models.filter((m) => m.name === name).length !== 1) return none;
+  const index = groups.findIndex((g) => g.members.includes(name));
+  return { selectedModel: name, selectedGroupIndex: index >= 0 ? index : null };
 }
 
 module.exports = {
   readAntigravityIdeQuota,
   clearDecodeCache,
+  resolveSelection,
+  selectedIdFrom,
+  idOf,
+  IDE_MAX_AGE_MS,
+  PREFS_KEY,
+  PREFS_SENTINEL,
   groupByValue,
   quotaOf,
   unwrap,
