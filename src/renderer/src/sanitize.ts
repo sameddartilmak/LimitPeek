@@ -23,6 +23,7 @@ import type {
   ModelQuotaGroup,
   Provenance,
   ProviderSnapshot,
+  RefreshNotice,
   RowStatus,
   SetupAction,
   SetupKind,
@@ -79,6 +80,12 @@ const WINDOW_ABSENCES = new Set<WindowAbsence>([
   'rolled-over',
   'unreadable',
 ]);
+/**
+ * The closed set of refresh notices. Like every other discriminant here it is
+ * checked, not trusted: it drives a user-facing message and an unknown value
+ * must produce silence, not a bubble with no copy behind it.
+ */
+const REFRESH_NOTICES = new Set<RefreshNotice>(['ANTIGRAVITY_NOT_RUNNING']);
 
 /**
  * Hard caps on the model-quota block.
@@ -276,12 +283,39 @@ function modelQuotas(raw: unknown): ModelQuotaDetail | null {
   const source_ = figureSource(source.source);
   if (source_ === null) return null;
 
+  // The selected model, and the group it lives in — validated against the
+  // FINAL groups array, not main's. Groups can be dropped or truncated above,
+  // and the selection must never point at a member this validator no longer
+  // holds: a marker on the wrong row is a false statement about the figure
+  // beside it. Same treatment (text, cap 64) the member names got, so the
+  // equality below compares like with like.
+  const selectedModel = text(source.selectedModel, 64);
+  let selectedGroupIndex: number | null = null;
+  if (selectedModel !== null) {
+    const idx = source.selectedGroupIndex;
+    if (
+      typeof idx === 'number' &&
+      Number.isInteger(idx) &&
+      idx >= 0 &&
+      idx < groups.length &&
+      groups[idx]!.members.includes(selectedModel)
+    ) {
+      selectedGroupIndex = idx;
+    }
+    // else: the selection is real but unplaceable in the sanitised groups (the
+    // group or the member was dropped). Keep `selectedModel` — "a selection
+    // exists" is still true and drives the headline label — but leave the
+    // index null, so the disclosure marks nothing rather than the wrong row.
+  }
+
   return {
     groups,
     // One surviving group cannot be diverged from anything, whatever main
     // said. Groups are dropped above when they are unusable, so main's flag
     // can legitimately describe a set this validator no longer holds.
     diverged: groups.length > 1 && source.diverged === true,
+    selectedModel,
+    selectedGroupIndex,
     source: source_,
     provenance: provenanceOf(source.provenance),
     capturedAt,
@@ -598,5 +632,16 @@ export function sanitizeSnapshot(raw: unknown): Snapshot | null {
     .map(provider)
     .filter((entry): entry is ProviderSnapshot => entry !== null);
 
-  return { generatedAt, providers };
+  // Present only on a refresh reply, never on a push. Each entry is checked
+  // against the closed set; unknown values are dropped, so a producer that
+  // invents a notice cannot make the panel show an empty bubble. The field is
+  // omitted entirely when nothing survives, so `refreshNotices` is either a
+  // non-empty array or absent — the caller tests membership, not length.
+  const notices = (Array.isArray(source.refreshNotices) ? source.refreshNotices : []).filter(
+    (entry): entry is RefreshNotice => REFRESH_NOTICES.has(entry as RefreshNotice),
+  );
+
+  return notices.length > 0
+    ? { generatedAt, providers, refreshNotices: notices }
+    : { generatedAt, providers };
 }

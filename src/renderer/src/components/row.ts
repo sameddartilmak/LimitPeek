@@ -203,6 +203,13 @@ function shapeKeyOf(p: ProviderSnapshot): string {
     // measurement would rebuild the row and kill the meter transition; it is
     // refreshed in the in-place branch instead.
     (primary?.billableSinceCapture ?? 0) > 0 ? 'delta' : 'no-delta',
+    // The five-hour label carries "· seçili model" only when a selection
+    // exists. The suffix is set at meter construction (createBlock), so its
+    // presence is STRUCTURE and must rebuild the meter when it flips — a user
+    // switching model in Antigravity, or clearing the selection, changes this.
+    // Which model is a CONTENT change handled by the disclosure below, not by
+    // the key.
+    p.modelQuotas?.selectedModel ? 'sel' : 'no-sel',
   ].join('|');
 }
 
@@ -366,7 +373,12 @@ function buildLive(
   let meter: MeterHandle | null = null;
   let meterNode: HTMLElement;
   if (drawable) {
-    meter = createMeter(p.fiveHour, p.sevenDay, p.status === 'stale');
+    // When a model is selected in Antigravity, main ties the five-hour figure
+    // to that model's group, so the number changes as the user switches model.
+    // Qualify the label — "seçili model", a role and not a name — so the change
+    // has a visible cause. The name itself is only in the disclosure below.
+    const fiveHourNote = p.modelQuotas?.selectedModel ? 'seçili model' : undefined;
+    meter = createMeter(p.fiveHour, p.sevenDay, p.status === 'stale', fiveHourNote);
     meter.update(p.fiveHour, p.sevenDay, p.status === 'stale', now);
     meterNode = meter.el;
   } else {

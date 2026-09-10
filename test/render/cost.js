@@ -424,6 +424,56 @@ app.whenReady().then(async () => {
   check('and it never appears without the instant it was measured',
     quotaOpen.notes.some(n => /itibarıyla/.test(n)), quotaOpen.notes);
 
+  // ---- the selected model is marked, with no figure beside its name ------
+  const selected = await js(`(() => {
+    const b = ${q('antigravity')}.querySelector('.quota');
+    const firstGroup = b.querySelector('.quota__group');
+    const marked = [...b.querySelectorAll('.quota__models > li.quota__model--selected')];
+    const one = marked[0] || null;
+    return {
+      markedCount: marked.length,
+      name: one ? (one.querySelector('.quota__model-name') || {}).textContent : null,
+      tag: one ? (one.querySelector('.quota__sel') || {}).textContent : null,
+      hasPercent: one ? /%/.test(one.textContent) : null,
+      aria: one ? one.getAttribute('aria-label') : null,
+      inPointedGroup: one ? one.closest('.quota__group') === firstGroup : null,
+    };
+  })()`);
+  say('selected marker: ' + JSON.stringify(selected));
+  check('exactly one member is marked selected', selected.markedCount === 1, selected);
+  check('it is the model the user picked in Antigravity',
+    selected.name === 'Claude Opus 4.6 (Thinking)', selected.name);
+  check('the mark is the label "seçili" and carries NO percentage',
+    selected.tag === 'seçili' && selected.hasPercent === false, selected);
+  check('a screen reader hears "seçili model" with no figure in the phrase',
+    /seçili model/.test(selected.aria || '') && !/%/.test(selected.aria || ''), selected.aria);
+  check('the mark sits in the group the contract pointed at',
+    selected.inPointedGroup === true, selected);
+
+  // ---- the row headline says the figure is the SELECTED model's ----------
+  // Main ties the five-hour figure to the selected model's group, so the number
+  // shifts when the user switches model. The label makes that cause visible —
+  // and it is a ROLE ("seçili model"), never a model name, so nothing reads as
+  // a claim about the Claude Code row above.
+  const headline = await js(`(() => {
+    const row = ${q('antigravity')};
+    const label = row.querySelector('.win--5h .win__label');
+    const rail = row.querySelector('.win--5h [role="meter"]');
+    return {
+      label: label ? label.textContent : null,
+      spoken: rail ? rail.getAttribute('aria-label') : null,
+      hasName: label ? /Claude|Opus|Sonnet|Gemini|GPT|Flash/.test(label.textContent) : null,
+    };
+  })()`);
+  say('headline label: ' + JSON.stringify(headline));
+  check('the five-hour label is qualified as the selected model',
+    /5 saatlik pencere/.test(headline.label || '') && /seçili model/.test(headline.label || ''),
+    headline.label);
+  check('the qualifier is a role, never the model name',
+    headline.hasName === false, headline.label);
+  check('the meter speaks the qualifier too',
+    /seçili model/.test(headline.spoken || ''), headline.spoken);
+
   // THE CHECK THIS WHOLE COMPONENT EXISTS FOR.
   const pairing = await js(`(() => {
     const b = ${q('antigravity')}.querySelector('.quota');
@@ -489,6 +539,96 @@ app.whenReady().then(async () => {
 
   await js(`${q('antigravity')}.querySelector('.quota__toggle').click()`);
   await sleep(120);
+
+
+  // ---- the "Antigravity açık değil" bubble -------------------------------
+  // Only on an explicit refresh whose reply carries the notice, never on a
+  // push, and calm rather than the error row.
+  check('no refresh bubble on a normal load',
+    (await js(`document.querySelector('.coach--calm').hidden`)) === true);
+
+  await js(`window.__probe.push()`);
+  await sleep(120);
+  check('a background push never raises it',
+    (await js(`document.querySelector('.coach--calm').hidden`)) === true);
+
+  await js(`window.__probe.setRefreshNotices(['ANTIGRAVITY_NOT_RUNNING'])`);
+  await js(`[...document.querySelectorAll('.foot button')].pop().click()`);
+  await sleep(220);
+  const bubble = await js(`(() => {
+    const b = document.querySelector('.coach--calm');
+    const plain = document.querySelector('.coach:not(.coach--calm)');
+    const text = (b.querySelector('.coach__text') || {}).textContent || '';
+    const calmAccent = getComputedStyle(b).borderLeftColor;
+    return {
+      hidden: b.hidden,
+      role: b.getAttribute('role'),
+      text,
+      dismiss: (b.querySelector('button') || {}).textContent,
+      calmAccent,
+      plainAccent: plain ? getComputedStyle(plain).borderLeftColor : null,
+      accentReal: /^rgb/.test(calmAccent) && calmAccent !== 'rgba(0, 0, 0, 0)',
+    };
+  })()`);
+  say('refresh bubble: ' + JSON.stringify(bubble));
+  check('an explicit refresh with the IDE closed raises the bubble',
+    bubble.hidden === false && /Antigravity açık değil/.test(bubble.text), bubble);
+  check('it says the values are the last known ones, not that anything broke',
+    /son/.test(bubble.text) && !/hata|bozuk|sorun var/i.test(bubble.text), bubble.text);
+  check('it is a polite status region, not an alarm', bubble.role === 'status', bubble.role);
+  check('it can be dismissed', bubble.dismiss === 'Tamam', bubble.dismiss);
+  check('its left accent is a real colour and distinct from the neutral coach note',
+    bubble.accentReal === true && bubble.calmAccent !== bubble.plainAccent,
+    [bubble.calmAccent, bubble.plainAccent]);
+
+  await js(`document.querySelector('.coach--calm button').click()`);
+  await sleep(120);
+  check('dismiss clears the bubble',
+    (await js(`document.querySelector('.coach--calm').hidden`)) === true);
+
+  await js(`window.__probe.setRefreshNotices(null)`);
+  await js(`[...document.querySelectorAll('.foot button')].pop().click()`);
+  await sleep(220);
+  check('a clean refresh leaves it down',
+    (await js(`document.querySelector('.coach--calm').hidden`)) === true);
+
+  // ---- item 4: nothing assumed the window was activated on open ----------
+  // The core lane opens the window inactive (showInactive, no focus()). The
+  // keyboard path must survive the user's FIRST click granting focus, and the
+  // only way that fails is if the path depended on focus arriving on open.
+  //
+  // This is asserted STRUCTURALLY, not by calling .focus(): once the always-on-
+  // top Usage Notch app takes foreground, element.focus() no-ops in this test
+  // window (the same environmental steal that breaks the pointer suite). What
+  // is deterministic — and is the actual property — is that Tab from <body>
+  // lands inside the panel because index.html mounts #app and nothing else,
+  // and that the first tab stop is a real, enabled control. Nothing here runs
+  // on open; it all waits for the click that grants focus.
+  const kb = await js(`(() => {
+    // Everything Tab can reach, in document order.
+    const focusables = [...document.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )].filter((e) => e.offsetParent !== null || e === document.activeElement);
+    const first = focusables[0] || null;
+    // A REAL row grip, not the skeleton row's aria-hidden .grip--empty span.
+    const grip = document.querySelector('li.row[data-provider] button.grip');
+    return {
+      // The dialog root is the only tabindex=-1 element: reachable by script on
+      // open, never a Tab stop, so it cannot swallow the first Tab.
+      rootIsSkipped: document.querySelector('.panel').getAttribute('tabindex') === '-1',
+      firstInsidePanel: !!(first && first.closest && first.closest('.panel')),
+      firstTag: first ? first.tagName : null,
+      gripIsButton: !!grip && grip.tagName === 'BUTTON' && !grip.disabled,
+      gripTabbable: !!grip && grip.tabIndex >= 0,
+    };
+  })()`);
+  say('keyboard path: ' + JSON.stringify(kb));
+  check('the dialog root is tabindex=-1, so it never eats the first Tab',
+    kb.rootIsSkipped === true, kb);
+  check('the first Tab stop is a real control inside the panel',
+    kb.firstInsidePanel === true && kb.firstTag === 'BUTTON', kb);
+  check('the drag grip is a genuine, tabbable button — the keyboard reorder path',
+    kb.gripIsButton === true && kb.gripTabbable === true, kb);
 
   // ---- no bare total anywhere in the rendered text ---------------------
   const bare = await js(`(() => {

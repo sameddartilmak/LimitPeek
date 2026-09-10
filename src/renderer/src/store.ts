@@ -9,6 +9,7 @@
 import type {
   AnchorPayload,
   ProviderSnapshot,
+  RefreshNotice,
   Snapshot,
   ThemeChoice,
 } from '../../shared/contract.js';
@@ -53,6 +54,14 @@ export interface PanelState {
   busy: readonly string[];
   /** Transient, renderer-side message shown above the footer. */
   notice: string | null;
+  /**
+   * A notice about the last EXPLICIT refresh — not about the data. Set from
+   * `Snapshot.refreshNotices` on a `requestRefresh()` reply and never from a
+   * push, so it describes one action the user just took (pressing Yenile) and
+   * does not become a standing claim. Cleared at the start of the next refresh
+   * and on dismissal. Drives the calm "Antigravity açık değil" bubble.
+   */
+  refreshNotice: RefreshNotice | null;
   /**
    * Set while a setup action is waiting for explicit consent. Nothing is sent
    * to main until the user confirms, so this is the gate that makes
@@ -117,6 +126,7 @@ const INITIAL: PanelState = {
   refreshing: false,
   busy: [],
   notice: null,
+  refreshNotice: null,
   consent: null,
   order: null,
   view: 'main',

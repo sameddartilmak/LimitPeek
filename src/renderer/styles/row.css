@@ -859,6 +859,32 @@
   background: var(--ink-500);
 }
 
+/* The selected model. Carried by INK and a label, never by a figure — the
+ * percentage stays on the group heading (see components/quotas.ts). The row is
+ * lifted to the primary text colour and its bullet brightened, so "which one
+ * did I pick" survives a greyscale screenshot on the label alone, not on a hue. */
+.quota__model--selected {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  color: var(--ink-100);
+  font-weight: 600;
+}
+.quota__model--selected::before { background: var(--ink-200); }
+.quota__model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The "seçili" tag. A quiet pill, not a second reading: it names a state, so
+ * it must not compete with the group figure above it. */
+.quota__sel {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid var(--ink-600);
+  border-radius: 999px;
+  font-size: var(--fs-nano, var(--fs-micro));
+  font-weight: 500;
+  color: var(--ink-300);
+  white-space: nowrap;
+}
+
 .quota__notes { display: flex; flex-direction: column; gap: var(--s-1); }
 .quota__note {
   margin: 0;

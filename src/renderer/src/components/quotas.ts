@@ -145,10 +145,14 @@ export function createQuotas(providerId: string): QuotaHandle {
     applyExpanded();
   });
 
-  function renderGroups(groups: readonly ModelQuotaGroup[]): void {
+  function renderGroups(
+    groups: readonly ModelQuotaGroup[],
+    selectedModel: string | null,
+    selectedGroupIndex: number | null,
+  ): void {
     replaceChildrenWith(
       groupList,
-      groups.map((group) => {
+      groups.map((group, groupIndex) => {
         const head = el('p', { class: 'quota__head' }, groupHeadText(group));
         // The state ramp is right here and wrong in cost.ts: this IS distance
         // to a limit, which is what the ramp means, and it is the same kind of
@@ -159,9 +163,29 @@ export function createQuotas(providerId: string): QuotaHandle {
 
         const members = el('ul', { class: 'quota__models' });
         for (const name of group.members) {
-          // A text node, and nothing else in the row. No figure is appended
-          // here on any code path — see the header of this file.
-          members.appendChild(el('li', {}, name));
+          // The selection is matched by INDEX and NAME together, so a name that
+          // happened to appear in two groups is only marked in the one main
+          // pointed at. The mark is the word "seçili", a text label on the
+          // member — NEVER a figure. The pairing rule holds: this <li> carries
+          // a name and "seçili", and no percentage on any code path.
+          const isSelected =
+            selectedModel !== null && groupIndex === selectedGroupIndex && name === selectedModel;
+          if (isSelected) {
+            const li = el(
+              'li',
+              { class: 'quota__model quota__model--selected' },
+              el('span', { class: 'quota__model-name' }, name),
+              el('span', { class: 'quota__sel' }, 'seçili'),
+            );
+            // Spoken as the name plus "seçili model", no figure — the group
+            // heading above already carries the percentage.
+            setAttr(li, 'aria-label', `${name} — seçili model`);
+            members.appendChild(li);
+          } else {
+            // A text node, and nothing else in the row. No figure is appended
+            // here on any code path — see the header of this file.
+            members.appendChild(el('li', { class: 'quota__model' }, name));
+          }
         }
 
         // Grouped rather than a bare heading plus list, so a screen reader
@@ -241,7 +265,7 @@ export function createQuotas(providerId: string): QuotaHandle {
         'araçların kotasıyla ilgileri yoktur.',
     );
 
-    renderGroups(detailData.groups);
+    renderGroups(detailData.groups, detailData.selectedModel ?? null, detailData.selectedGroupIndex ?? null);
     renderNotes(detailData, degraded);
     applyExpanded();
   }

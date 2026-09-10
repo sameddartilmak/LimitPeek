@@ -234,10 +234,24 @@ interface BlockHandle {
  * element. row.ts rebuilds the row when a window's certainty changes, so this
  * is never asked to grow a bar it was not built with.
  */
-function createBlock(kind: WindowKind, drawable: boolean, stale: boolean): BlockHandle {
+function createBlock(
+  kind: WindowKind,
+  drawable: boolean,
+  stale: boolean,
+  note?: string,
+): BlockHandle {
   const copy = COPY[kind];
+  // An optional qualifier on the window's own label, printed and spoken right
+  // where the figure is. Used by the Antigravity row to say "· seçili model"
+  // on the five-hour block, so the headline percentage — which main ties to
+  // the model the user picked in Antigravity — reads as THEIRS rather than as
+  // a number that shifted for no visible reason. It is a role, never a model
+  // NAME: the name lives only in the disclosure below, marked in its group, so
+  // no name is ever set beside this percentage.
+  const labelText = note ? `${copy.label} · ${note}` : copy.label;
+  const spokenText = note ? `${copy.spoken}, ${note}` : copy.spoken;
 
-  const label = el('span', { class: 'win__label' }, copy.label);
+  const label = el('span', { class: 'win__label' }, labelText);
   const pct = el(
     'span',
     { class: drawable ? 'win__pct' : 'win__pct win__pct--none' },
@@ -279,7 +293,7 @@ function createBlock(kind: WindowKind, drawable: boolean, stale: boolean): Block
       {
         class: `rail rail--${kind}`,
         role: 'meter',
-        'aria-label': copy.spoken,
+        'aria-label': spokenText,
         'aria-valuemin': '0',
         'aria-valuemax': '100',
       },
@@ -359,7 +373,7 @@ function createBlock(kind: WindowKind, drawable: boolean, stale: boolean): Block
         band.hidden = !hasBand;
 
         setAttr(rail, 'aria-valuenow', String(Math.round(value)));
-        setAttr(rail, 'aria-valuetext', valueText(usage, copy.spoken, now));
+        setAttr(rail, 'aria-valuetext', valueText(usage, spokenText, now));
 
         if (asOfLabel) {
           const capturedAt = isStale ? usage.capturedAt : null;
@@ -380,7 +394,7 @@ function createBlock(kind: WindowKind, drawable: boolean, stale: boolean): Block
         const absence = absenceCopy(usage);
         setText(pct, absence.figure);
         setAttr(root, 'data-state', null);
-        setAttr(root, 'aria-label', absence.spoken(copy.spoken));
+        setAttr(root, 'aria-label', absence.spoken(spokenText));
         if (reason) {
           setText(reason, absence.reason ?? '');
           reason.hidden = absence.reason === null;
@@ -406,10 +420,12 @@ export function createMeter(
   fiveHour: WindowUsage | null,
   sevenDay: WindowUsage | null,
   stale: boolean,
+  /** Qualifier on the five-hour label, e.g. "seçili model" (see createBlock). */
+  fiveHourNote?: string,
 ): MeterHandle {
   const root = el('div', { class: 'meter' });
 
-  const block5 = fiveHour ? createBlock('5h', isDrawable(fiveHour), stale) : null;
+  const block5 = fiveHour ? createBlock('5h', isDrawable(fiveHour), stale, fiveHourNote) : null;
   const block7 = sevenDay ? createBlock('7d', isDrawable(sevenDay), stale) : null;
 
   if (block5) root.appendChild(block5.el);
