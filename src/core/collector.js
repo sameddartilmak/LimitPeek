@@ -9,6 +9,7 @@ const log = require('./log');
 const paths = require('./paths');
 const { readClaudeRateLimits, readAntigravityQuota } = require('./ratelimits');
 const { readAntigravityIdeQuota } = require('./antigravity/ide-quota');
+const { resolveAntigravityIdeStore } = require('./antigravity/install');
 const { buildSnapshot, loadingSnapshot } = require('./snapshot');
 const { sanitizeOrder } = require('./order');
 const { sanitizeEnabled } = require('./enabled');
@@ -58,6 +59,19 @@ class Collector extends EventEmitter {
     this._quotaWarnKey = null;
     /** Same discipline for the IDE store: which install, how old, what state. */
     this._ideStoreKey = null;
+    /** The directory the IDE store watcher is currently attached to. */
+    this._ideWatchDir = null;
+    this._ideWatcher = null;
+    this._ideDebounce = null;
+    /**
+     * Where to look for Antigravity IDE installs. Null means the real
+     * %APPDATA%. A seam, because without it every test that builds a Collector
+     * silently reads the developer's own store — which is both a hidden
+     * dependency and a way for a suite to pass on one machine only.
+     */
+    this.ideAppDataDir = options.ideAppDataDir || null;
+    /** Last IDE reading, for callers that must not re-open the database. */
+    this.antigravityIde = null;
     this.workerPath = options.workerPath || path.join(__dirname, 'scan', 'worker.js');
     this.planLabel = options.planLabel || null;
     /** User's drag order. Owned and persisted by main; held here so that every
@@ -112,12 +126,17 @@ class Collector extends EventEmitter {
     this._stopped = true;
     if (this._debounce) clearTimeout(this._debounce);
     if (this._rlDebounce) clearTimeout(this._rlDebounce);
+    if (this._ideDebounce) clearTimeout(this._ideDebounce);
     if (this._throttle) clearTimeout(this._throttle);
     if (this._sweep) clearTimeout(this._sweep);
     for (const w of this._watchers) {
       try { w.close(); } catch { /* already gone */ }
     }
     this._watchers = [];
+    // Cleared so a restarted collector re-attaches instead of believing it is
+    // still watching a directory whose watcher it just closed.
+    this._ideWatcher = null;
+    this._ideWatchDir = null;
   }
 
   setPanelOpen(open) {
@@ -183,6 +202,9 @@ class Collector extends EventEmitter {
     const antigravityQuota = readAntigravityQuota({ file: this.antigravityQuotaFile, now: Date.now() });
     this._reportUnusableQuota(antigravityQuota);
     const antigravityIde = this._readIdeQuota();
+    // Held so the refresh handler can ask "was this reading stale?" without
+    // re-opening the store. Read-only to everyone else.
+    this.antigravityIde = antigravityIde;
     this.snapshot = buildSnapshot({
       now: Date.now(),
       events: this.store.events,
@@ -214,13 +236,17 @@ class Collector extends EventEmitter {
   _readIdeQuota() {
     let reading;
     try {
-      reading = readAntigravityIdeQuota({ now: Date.now() });
+      reading = readAntigravityIdeQuota({ now: Date.now(), appDataDir: this.ideAppDataDir || undefined });
     } catch (err) {
       log.warn(`antigravity ide store read failed: code=${(err && err.code) || 'UNKNOWN'}`);
       return { state: 'invalid', reason: 'threw', fiveHour: null, sevenDay: null, groups: [] };
     }
 
     const install = reading.install;
+    // The chosen install can change under us — a rename, a second install
+    // written more recently — so the watcher follows the resolver rather than
+    // being attached once at startup.
+    this._watchIdeStore(install);
     const key = install
       ? `${install.name}|${install.mtimeMs}|${reading.state}|${reading.reason || ''}`
       : `none|${reading.state}|${reading.reason || ''}`;
@@ -242,6 +268,54 @@ class Collector extends EventEmitter {
       }
     }
     return reading;
+  }
+
+  /**
+   * Watches the chosen IDE store so a model switch shows up promptly.
+   *
+   * Without it the only thing that notices is the sweep, which is 15 s with
+   * the panel open and 60 s without — long enough that switching model in
+   * Antigravity and looking at the tray reads as "it did not update". The
+   * store is rewritten by the IDE itself, so this is the same arrangement the
+   * two statusline bridges already have: watch the directory, filter by name,
+   * debounce, rebuild. No scan is involved.
+   *
+   * Attached to the DIRECTORY, not the file: the store is replaced rather than
+   * appended to, and a watch on an inode that gets swapped stops firing.
+   */
+  _watchIdeStore(install) {
+    const dir = install ? path.dirname(install.file) : null;
+    if (dir === this._ideWatchDir) return;
+
+    if (this._ideWatcher) {
+      try { this._ideWatcher.close(); } catch { /* already gone */ }
+      this._ideWatcher = null;
+    }
+    this._ideWatchDir = dir;
+    if (dir === null) return;
+
+    const base = path.basename(install.file);
+    try {
+      const w = fs.watch(dir, { persistent: false }, (_evt, name) => {
+        // SQLite writes a journal beside the database and renames it away, so
+        // the interesting events land on names that START with the store's.
+        if (name && !String(name).startsWith(base)) return;
+        this._onIdeStoreChange();
+      });
+      w.on('error', () => { /* watcher died; the sweep still runs */ });
+      this._ideWatcher = w;
+      this._watchers.push(w);
+    } catch (err) {
+      log.warn(`antigravity ide watcher unavailable: code=${(err && err.code) || 'UNKNOWN'}`);
+    }
+  }
+
+  _onIdeStoreChange() {
+    if (this._ideDebounce) clearTimeout(this._ideDebounce);
+    this._ideDebounce = setTimeout(() => {
+      this._ideDebounce = null;
+      if (!this._stopped) this.rebuild();
+    }, DEBOUNCE_MS);
   }
 
   /**
@@ -400,6 +474,15 @@ class Collector extends EventEmitter {
   }
 
   _startWatchers() {
+    // The IDE store, if there is one to watch. `_readIdeQuota()` re-points
+    // this on every rebuild, so a store that appears later is picked up by the
+    // sweep and then watched from that moment on.
+    try {
+      this._watchIdeStore(resolveAntigravityIdeStore(this.ideAppDataDir || undefined));
+    } catch (err) {
+      log.warn(`antigravity ide watcher setup failed: code=${(err && err.code) || 'UNKNOWN'}`);
+    }
+
     // Transcripts. Recursive watch is supported on Windows; if it is not
     // available we simply fall back to the periodic sweep.
     try {

@@ -300,6 +300,31 @@ export interface ModelQuotaDetail {
    * would have to do it anyway, silently.
    */
   diverged: boolean;
+  /**
+   * OPTIONAL in the type so the renderer lane can adopt it in its own pass;
+   * main always populates both, on every Antigravity row that has a detail
+   * block at all.
+   *
+   * The model the user currently has selected in Antigravity, by display name,
+   * or null when it cannot be established truthfully.
+   *
+   * Null covers every doubtful case on purpose — no preference recorded, an id
+   * that matches no listed model, an id that matches more than one, or an id
+   * space the decoder refused. A highlight on the wrong model is a false
+   * statement about the figure beside it, and "we do not know which" is not.
+   */
+  selectedModel?: string | null;
+  /**
+   * Index into `groups` of the group whose `members` include `selectedModel`,
+   * or null when there is no selection or it is in no group.
+   *
+   * The pairing rule still holds and this does not weaken it: the figure lives
+   * on the GROUP, and this points at a group, not at a number. Render the
+   * selection as a marker on that member inside its group — never as
+   * "Claude Opus 4.6 (Thinking) · %60", which is the string this shape exists
+   * to make unconstructible.
+   */
+  selectedGroupIndex?: number | null;
   source: FigureSource;
   provenance: Provenance;
   /** When these figures were captured. */
@@ -351,6 +376,17 @@ export interface ProviderSnapshot {
   lastGoodAt?: string | null;
 }
 
+/**
+ * Something the user should be told about the refresh they just asked for —
+ * not about the data, about the attempt.
+ *
+ * `ANTIGRAVITY_NOT_RUNNING`: the Antigravity IDE process is not running, so
+ * its state store cannot be updating. Without this the user presses Yenile,
+ * sees the same "… önce güncellendi" as before, and has no way to know the
+ * reason is on their side rather than ours.
+ */
+export type RefreshNotice = 'ANTIGRAVITY_NOT_RUNNING';
+
 export interface Snapshot {
   /** ISO. Renderer derives staleness locally from this. */
   generatedAt: string;
@@ -365,6 +401,16 @@ export interface Snapshot {
    * comes from. When nothing is enabled the tray shows the no-data ring.
    */
   providers: ProviderSnapshot[];
+  /**
+   * Present ONLY on the snapshot returned from `requestRefresh()`, and never
+   * on a pushed one.
+   *
+   * The distinction is the point: these describe one explicit user action, so
+   * repeating them on every background push would turn a one-off answer into a
+   * standing claim. Main builds this onto a copy of the snapshot for the
+   * invoke reply; the object it pushes is untouched.
+   */
+  refreshNotices?: RefreshNotice[];
 }
 
 /**

@@ -13,7 +13,7 @@ log.setTrace(false);
 // Must be installed before panel-window.js is required.
 const electron = fakeElectron.install();
 const {
-  PanelWindow, LEAVE_GRACE_MS, POINTER_POLL_MS, BLUR_ARM_MS,
+  PanelWindow, LEAVE_GRACE_MS, POINTER_POLL_MS, NEVER_ENGAGED_MAX_MS,
 } = require('../src/main/panel-window');
 const { IPC } = require('../src/shared/contract');
 
@@ -126,11 +126,11 @@ test.describe('re-opening a panel that is already on screen', () => {
     assert.equal(panel.isVisible(), true, 'the old grace timer must not fire under a new panel');
   });
 
-  test('a re-open with the pointer resting inside cannot be dismissed by blur', (t) => {
+  test('a re-open with the pointer resting inside is not dismissed by anything', (t) => {
     // The re-open clears the transit latch, so for one poll interval the panel
-    // looks "never reached" to `_onBlur`. BLUR_ARM_MS > POINTER_POLL_MS is
-    // what stops that being a dismissal under a resting cursor; this is that
-    // invariant as a behaviour rather than as an inequality.
+    // looks "never reached". It must not be dismissed in that window: the
+    // cursor is demonstrably on it, and the very next poll re-latches. Blur
+    // cannot dismiss it either, because blur no longer dismisses anything.
     t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
     const { panel, send, trayRect } = build();
     panel.open(trayRect, send);
@@ -139,10 +139,11 @@ test.describe('re-opening a panel that is already on screen', () => {
 
     panel.open(trayRect, send);
     assert.equal(panel._pointerSeen, false, 'the latch is cleared by the re-open');
-    t.mock.timers.tick(BLUR_ARM_MS);
     panel.win.focused = false;
     panel.win.emit('blur');
-    assert.equal(panel._hideTimer, null, 'the poll must have re-latched before blur may act');
+    assert.equal(panel._hideTimer, null, 'a blur may not arm anything');
+    t.mock.timers.tick(POINTER_POLL_MS);
+    assert.equal(panel._pointerSeen, true, 'and the poll re-latches from the real cursor');
     t.mock.timers.tick(LEAVE_GRACE_MS * 4);
     assert.equal(panel.isVisible(), true);
   });
@@ -433,7 +434,9 @@ test.describe('a renderer revived under a panel main still holds a mode for', ()
     assert.equal(panel._pointerSeen, false, 'the mount-time claim was refused');
     t.mock.timers.tick(POINTER_POLL_MS);
     t.mock.timers.tick(LEAVE_GRACE_MS);
-    assert.equal(panel.isVisible(), true, 'so blur still owns it, exactly as before the crash');
+    // The cursor is far from the corridor, so the corridor rule is what closes
+    // it — the panel is not stranded just because the claim was refused.
+    assert.equal(panel.isVisible(), false, 'the corridor rule owns it, the renderer does not');
   });
 
   test('an unpinned panel keeps its dismissal paths across a revive', (t) => {

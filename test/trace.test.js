@@ -125,10 +125,10 @@ function panelFor(t) {
 }
 
 test.describe('one click produces a readable sequence', () => {
-  test('open -> blur inside the arming window -> deferred re-check are all logged', (t) => {
+  test('open -> blur is logged, and the blur says it changed nothing', (t) => {
     const panel = panelFor(t);
     // The pointer is nowhere near the panel, which is the transit state a
-    // tray click starts in and the state the reported flash would happen in.
+    // tray click starts in and the state the reported flash happened in.
     electron.moveCursor(5000, 5000);
 
     const lines = captured(() => {
@@ -141,13 +141,40 @@ test.describe('one click produces a readable sequence', () => {
     assert.ok(seen.includes('panel.pointerWatch'), seen.join(','));
     assert.ok(seen.includes('panel.show'), seen.join(','));
     assert.ok(seen.includes('panel.blur'), seen.join(','));
-    // The candidate explanation, and the line that would confirm or kill it:
-    // a blur arriving while the transit latch is still clear is DEFERRED, and
-    // the log has to say so rather than leaving a silent gap before a hide
-    // 550 ms later.
+
+    // The line that used to say `act=deferred` and a wait in milliseconds now
+    // says the panel ignored it. Blur stopped being a dismissal path — see
+    // `_onBlur` — but it is still LOGGED, because the flash was diagnosed from
+    // this line twice and an event nobody records is one nobody can argue
+    // about. `sinceShown` is kept for exactly that: it is how the 1211 ms
+    // handoff that beat the old 1200 ms window was found.
     const blur = lines.find((l) => l.includes('panel.blur '));
-    assert.ok(/act=deferred/.test(blur), blur);
-    assert.ok(/wait=\d+/.test(blur), blur);
+    assert.ok(/act=ignored/.test(blur), blur);
+    assert.ok(/why=focus-is-not-a-dismissal-signal/.test(blur), blur);
+    assert.ok(/sinceShown=\d+/.test(blur), blur);
+  });
+
+  test('the show line records that the panel did not take focus', (t) => {
+    // A tray open shows without activating, so the shell's focus handoff is
+    // no longer part of the panel's lifecycle. If that ever regresses, this
+    // line is where it becomes visible in a user's trace.
+    const panel = panelFor(t);
+    const lines = captured(() => panel.open(null, () => {}));
+    const show = lines.find((l) => l.includes('panel.show'));
+    assert.ok(/activated=false/.test(show), show);
+  });
+
+  test('leaving the corridor is traced, because it is now a dismissal path', (t) => {
+    // It replaced blur. A dismissal nobody can see in the log is one nobody
+    // can diagnose, and this is the rule most likely to be accused next.
+    const panel = panelFor(t);
+    const trayRect = { x: 100, y: 100, width: 24, height: 24 };
+    panel.open(trayRect, () => {});
+    electron.moveCursor(5000, 5000);
+    const lines = captured(() => panel._pollPointer());
+    const transit = lines.find((l) => l.includes('panel.transit'));
+    assert.ok(transit, names(lines).join(','));
+    assert.ok(/act=left-corridor/.test(transit), transit);
   });
 
   test('the show line reports the resulting visibility, not the request', (t) => {

@@ -40,9 +40,52 @@ const LEAVE_GRACE_MS = 550;
  */
 const POINTER_POLL_MS = 250;
 /**
- * How long after the panel is shown that `blur` is ignored.
+ * How far outside the tray->panel corridor the pointer may stray before an
+ * unpinned panel NOBODY HAS REACHED YET is treated as abandoned.
  *
- * Two jobs, and the second is the load-bearing one:
+ * This replaces `blur` as the dismissal path for a never-engaged panel. See
+ * `open()` for why focus stopped being a signal at all; this is the answer to
+ * the hole that leaves — an unpinned panel nobody engages still needs a way to
+ * go away, or a 440x680 always-on-top window sits over the user's work.
+ *
+ * The corridor is the bounding box of the tray icon and the panel, inflated by
+ * this much. The panel is anchored adjacent to its icon, so that box is the
+ * panel plus a short strip to the icon: a hand travelling from one to the
+ * other stays inside it, and a cursor that leaves it has gone somewhere else.
+ * Sized for a hand that overshoots, not for one that leaves.
+ */
+const TRANSIT_MARGIN_PX = 48;
+/**
+ * Backstop for a panel that is never engaged AND whose cursor never leaves the
+ * corridor.
+ *
+ * Reachable one realistic way: the user clicks the tray, leaves the pointer
+ * resting on the taskbar, and goes back to the keyboard. The corridor rule
+ * never fires because the cursor never moves.
+ *
+ * Deliberately long. Real traces from this machine show un-engaged panels held
+ * for 7.0, 13.4 and 28.5 seconds before the user dismissed them by clicking
+ * elsewhere, so anything in that range would close a panel mid-read — the same
+ * over-eager dismissal this change exists to remove. Erring long is the safe
+ * direction: a late close costs one click, an early one is the reported bug.
+ */
+const NEVER_ENGAGED_MAX_MS = 60_000;
+/**
+ * RETIRED, and kept as prose because the measurements are the argument for
+ * what replaced it.
+ *
+ * `blur` no longer dismisses anything (see `_onBlur`), so there is no arming
+ * window to size. Two fixed windows were tried, 400 ms and then 1200 ms, and
+ * both were cliffs: the shell's focus handoff after a real tray click was
+ * measured at 414, 425, 500, 505, 510, 656, 729, 769, 860, 1088, 1211 and
+ * 1355 ms, and a 1211 ms sample — eleven milliseconds past the second window —
+ * produced a fresh flash on the fixed build. Any fixed threshold has a tail
+ * behind it; raising it only thins the tail while delaying genuine dismissal.
+ * The fix was to stop treating the shell's focus handoff as a signal.
+ *
+ * The original reasoning, preserved:
+ *
+ * Two jobs, and the second was the load-bearing one:
  *
  *  1. It absorbs any transient blur that activation itself might emit. Measured
  *     on Electron 44.2.0 here, none does: across open(), open() with a live
@@ -75,9 +118,10 @@ const POINTER_POLL_MS = 250;
  *     makes from the tray icon to the panel: arriving sets `_pointerSeen`,
  *     which retires `blur` from the decision entirely.
  */
-const BLUR_ARM_MS = 1200;
 /**
- * How long a blur arriving AFTER the arming window is held before it is
+ * RETIRED with the arming window above.
+ *
+ * How long a blur arriving AFTER the arming window was held before it was
  * believed.
  *
  * The old code had a cliff exactly at BLUR_ARM_MS. A blur at 399 ms was
@@ -87,10 +131,10 @@ const BLUR_ARM_MS = 1200;
  * halves of the same physical event were being judged by different rules.
  * Every blur is confirmed once now; only the length of the wait differs.
  *
- * Greater than POINTER_POLL_MS for the same reason the arming window is: a
- * poll must be able to latch the pointer inside the confirmation.
+ * Greater than POINTER_POLL_MS for the same reason the arming window was: a
+ * poll had to be able to latch the pointer inside the confirmation. The value
+ * was 300 ms.
  */
-const BLUR_CONFIRM_MS = 300;
 
 class PanelWindow {
   constructor(options = {}) {
@@ -112,10 +156,23 @@ class PanelWindow {
      * not exist until this latch is set.
      */
     this._pointerSeen = false;
-    /** When the window was last SHOWN. Only the blur path reads it. */
-    this._shownAt = 0;
-    /** A blur that arrived inside the arming window, waiting to be re-asked. */
-    this._blurTimer = null;
+    /**
+     * When the window was last SHOWN, or null if it never has been. Read by
+     * the never-engaged backstop.
+     *
+     * `null` rather than `0` because 0 is a legitimate instant — it is what
+     * `Date.now()` returns under the test suite's mocked clock — and a falsy
+     * check here silently disabled the backstop for the whole first tick of
+     * epoch time. A sentinel that a real value can collide with is not a
+     * sentinel.
+     */
+    this._shownAt = null;
+    /**
+     * The tray->panel corridor, in DIP screen space, or null when the anchor
+     * could not be measured. A pointer outside it, on a panel that has not
+     * been engaged, means the user went somewhere else. See TRANSIT_MARGIN_PX.
+     */
+    this._transitBox = null;
     this.onPinChange = options.onPinChange || (() => {});
     this.onVisibilityChange = options.onVisibilityChange || (() => {});
   }
@@ -166,12 +223,12 @@ class PanelWindow {
     this.win.setVisibleOnAllWorkspaces(true);
     this.win.setMenu(null);
 
-    // Blur is now the NARROWEST of the three dismissal paths, and the
-    // inversion is the point (contract.ts, `AnchorPayload.mode`). It used to
-    // hide when PINNED — "click outside dismisses a popover" — so the one
-    // control the user pressed to keep the panel on screen was the control
-    // that armed its dismissal. It now never touches a pinned panel, and only
-    // ever touches an unpinned one the pointer has not reached. See `_onBlur`.
+    // Blur is now DIAGNOSTIC ONLY and dismisses nothing at all. A tray open no
+    // longer takes focus, so losing focus is not evidence the user dismissed
+    // anything — most of the time it is the shell handing focus back to
+    // whatever they were using. The listener stays because the trace is how
+    // this was diagnosed twice, and a silent event is one nobody can argue
+    // about. See `_onBlur`.
     this.win.on('blur', () => this._onBlur());
 
     this.win.on('closed', () => { this.win = null; });
@@ -290,17 +347,30 @@ class PanelWindow {
   }
 
   /**
-   * Tray-click open. Activates the window, and does NOT pin it.
+   * Tray-click open. Shows WITHOUT activating, and does NOT pin.
    *
-   * Taking focus is now safe, and it is a simplification worth having: the
-   * panel is no longer opened by a pointer merely crossing the tray icon, so
-   * there is no longer a case where showing it steals focus from something the
-   * user was typing into. Keyboard navigation and the drag gesture both work
-   * in an activated window with no special handling.
+   * The panel used to call `show()` then `focus()`. That made the shell's
+   * focus handoff part of the panel's lifecycle, and it is a race we cannot
+   * win: after a real tray click Windows hands focus around on its own
+   * schedule, measured here at 414, 425, 500, 505, 510, 656, 729, 769, 860,
+   * 1088, 1211 and 1355 ms. Every fixed "ignore blur for N ms" window is a
+   * cliff with a tail behind it — a 1211 ms sample flashed on a build with the
+   * window set to 1200 — and raising N only thins the tail while making
+   * genuine dismissal slower.
+   *
+   * So the panel no longer takes focus at all. There is no focus to lose,
+   * therefore no blur, therefore no race. Focus is granted by WINDOWS, when
+   * the user engages: clicking inside the panel activates it the way clicking
+   * any inactive window does, and `acceptFirstMouse` means that first click is
+   * also delivered to the control under it rather than being swallowed by the
+   * activation. We never call `focus()` on the user's behalf, which also means
+   * we never yank the keyboard out of whatever they were typing into.
+   *
+   * The dismissal path this removes is replaced, not dropped: see
+   * `_pollTransit` for the corridor rule and NEVER_ENGAGED_MAX_MS.
    */
   open(trayBounds, sendAnchor) {
     this.cancelHide('open');
-    this._cancelBlurRecheck();
     this.create();
     this._shownAt = Date.now();
     const anchor = this.positionFor(trayBounds);
@@ -308,13 +378,18 @@ class PanelWindow {
       sendAnchor({ ...anchor, mode: this.pinned ? 'pin' : 'hover' });
     }
     const wasVisible = this.win.isVisible();
-    this.win.show();
-    this.win.focus();
+    // Unconditional, including on an already-visible panel: it raises the
+    // window without activating it, which is what a second tray click on a
+    // panel hidden behind something else has to do.
+    this.win.showInactive();
+    this._transitBox = this._corridorFrom(anchor);
     log.trace('panel.show', {
       was: wasVisible,
       visible: this.win.isVisible(),
       pinned: this.pinned,
       anchor: anchor ? anchor.anchorSource : 'none',
+      activated: false,
+      corridor: this._transitBox ? 'measured' : 'none',
     });
     if (!wasVisible) this.onVisibilityChange(true);
     // Re-armed on every open, including a re-open of an already visible panel:
@@ -323,31 +398,15 @@ class PanelWindow {
   }
 
   /**
-   * Non-activating open. Nothing in the product calls this any more — the tray
-   * no longer opens the panel on hover — but the smoke test drives it to hold
-   * the property that makes it safe to reintroduce: it shows without stealing
-   * focus.
+   * Kept as a name, because `open()` IS the non-activating open now.
+   *
+   * `scripts/smoke-ipc.js` drives this to assert the property that used to be
+   * the difference between the two methods. Leaving it as an alias means the
+   * smoke test exercises the real path rather than a second one that could
+   * drift away from it.
    */
   showInactive(trayBounds, sendAnchor) {
-    this.cancelHide('showInactive');
-    this._cancelBlurRecheck();
-    this.create();
-    this._shownAt = Date.now();
-    const anchor = this.positionFor(trayBounds);
-    if (anchor && typeof sendAnchor === 'function') {
-      sendAnchor({ ...anchor, mode: this.pinned ? 'pin' : 'hover' });
-    }
-    const wasVisible = this.win.isVisible();
-    if (!wasVisible) {
-      this.win.showInactive();
-      this.onVisibilityChange(true);
-    }
-    log.trace('panel.showInactive', {
-      was: wasVisible,
-      visible: this.win.isVisible(),
-      pinned: this.pinned,
-    });
-    if (!this.pinned) this._startPointerWatch();
+    this.open(trayBounds, sendAnchor);
   }
 
   /**
@@ -360,7 +419,6 @@ class PanelWindow {
   pin(trayBounds, sendAnchor) {
     this.cancelHide('pin');
     this._stopPointerWatch();
-    this._cancelBlurRecheck();
     this.create();
     this._shownAt = Date.now();
     this.pinned = true;
@@ -396,14 +454,19 @@ class PanelWindow {
     // happened to be. Unpinning changes a mode, not a place.
     const anchor = this.positionFor(trayBounds);
     if (anchor && typeof sendAnchor === 'function') sendAnchor({ ...anchor, mode: 'hover' });
-    // `_shownAt` is deliberately NOT re-stamped here. BLUR_ARM_MS exists to
-    // absorb the focus transient that ACTIVATION can emit, and unpinning
-    // activates nothing — the window is already up, focused and settled.
-    // Re-arming would only blind the panel to a real blur for 400 ms at the
-    // exact moment the transit latch is decided, which is the shortest path
-    // there is to a window with no way to close itself.
+    // `_shownAt` IS re-stamped here, and the reason is the opposite of the one
+    // that used to be written here.
     //
-    // `seed: true` for the same reason: there is no transit on an unpin, so
+    // It used to say "do not re-stamp, or the arming window blinds the panel
+    // to a real blur". That window is gone: blur dismisses nothing now, and
+    // the only thing `_shownAt` still feeds is the NEVER_ENGAGED_MAX_MS
+    // backstop. Leaving it at the pin's timestamp would mean a panel pinned
+    // for over a minute could be unpinned and then hidden on the very next
+    // poll — the backstop firing for a panel the user just asked to keep,
+    // before they could touch it. The minute starts when the panel becomes
+    // dismissible again, which is now.
+    this._shownAt = Date.now();
+    // `seed: true` because there is no transit on an unpin: so
     // the latch is taken from where the pointer IS rather than cleared. This
     // used to assume the user had just CLICKED the pin control — true of a
     // mouse, false of Space or Enter on it, and in the keyboard case the
@@ -422,7 +485,7 @@ class PanelWindow {
   hide(reason = 'unspecified') {
     this.cancelHide('hide');
     this._stopPointerWatch();
-    this._cancelBlurRecheck();
+    this._transitBox = null;
     this.pinned = false;
     this.onPinChange(false);
     const wasVisible = Boolean(this.win && !this.win.isDestroyed() && this.win.isVisible());
@@ -469,93 +532,33 @@ class PanelWindow {
   }
 
   /**
-   * The user went to work somewhere else before the panel was ever reached.
+   * Focus was lost. NOTHING is dismissed on account of it.
    *
-   * This closes exactly one hole, and refuses to close any other: an unpinned
-   * panel the pointer NEVER entered would otherwise have no dismissal path at
-   * all, because `_pollPointer()` deliberately does nothing until the transit
-   * latch is set. A 440x680 always-on-top window sitting over the user's work
-   * indefinitely is a worse failure than any flicker this could cause.
+   * This method used to be a dismissal path, and it was the wrong shape twice.
+   * The panel does not take focus when it opens (see `open()`), so a blur here
+   * means one of:
    *
-   * Every other case is someone else's:
-   *  - pinned            survives everything, by definition
-   *  - pointer arrived   the poll owns the lifecycle from then on, and a blur
-   *                      while the pointer rests ON the panel must not dismiss
-   *                      it (another window can take focus without the user
-   *                      leaving the panel)
-   *  - just shown        activation is still settling; see BLUR_ARM_MS
+   *   - the shell handing focus back to whatever the user was using, on its
+   *     own schedule, milliseconds to seconds after the tray click; or
+   *   - the user clicking into another window AFTER engaging with the panel,
+   *     in which case the pointer poll already owns the decision and will
+   *     close the panel when the cursor leaves.
+   *
+   * Neither is evidence to hide on. The first is the reported flash; the
+   * second is already handled by a rule that cannot be raced.
+   *
+   * The listener survives as a TRACE because the flash was diagnosed from this
+   * line twice, and an event nobody records is one nobody can argue about. If
+   * a panel is ever reported vanishing again, the log still says whether focus
+   * moved and when.
    */
-  _onBlur(confirmed = false) {
-    if (this.pinned) {
-      log.trace('panel.blur', { act: 'ignored', why: 'pinned' });
-      return;
-    }
-    if (!this.isVisible()) {
-      log.trace('panel.blur', { act: 'ignored', why: 'hidden' });
-      return;
-    }
-    if (this._pointerSeen) {
-      log.trace('panel.blur', { act: 'ignored', why: 'pointer-seen' });
-      return;
-    }
-
-    // DEFERRED, never discarded. An already-unfocused window emits no second
-    // blur, so swallowing this one with a bare `return` would throw away the
-    // only blur that will ever arrive — and `_pollPointer()` refuses to act
-    // while the transit latch is unset, leaving the panel with no dismissal
-    // path at all while its footer promises "imleç ayrılınca kapanır".
-    //
-    // Re-asking later keeps the belt-and-braces property intact: if the blur
-    // was an activation transient, focus has come back by then and the
-    // re-check drops it. If it was real, it is still true.
-    const sinceShown = Date.now() - this._shownAt;
-    const wait = this._shownAt + BLUR_ARM_MS - Date.now();
-    // One confirmation for EVERY blur, not only an early one. Inside the
-    // arming window the wait is whatever is left of it; outside, it is the
-    // shorter BLUR_CONFIRM_MS. Either way the re-check runs, and with it the
-    // `isFocused()` guard that drops a blur focus has already taken back.
-    if (!confirmed || wait > 0) {
-      const delay = wait > 0 ? wait : BLUR_CONFIRM_MS;
-      log.trace('panel.blur', { act: 'deferred', wait: delay, sinceShown });
-      this._armBlurRecheck(delay);
-      return;
-    }
-    log.trace('panel.blur', { act: 'hide', sinceShown });
-    this.scheduleHide(LEAVE_GRACE_MS, 'blur');
-  }
-
-  _armBlurRecheck(wait) {
-    // One pending re-check is enough; a burst of blurs asks the same question.
-    if (this._blurTimer) {
-      log.trace('panel.blurRecheck', { act: 'coalesced' });
-      return;
-    }
-    this._blurTimer = setTimeout(() => {
-      this._blurTimer = null;
-      // The window may have been hidden, pinned, re-shown or destroyed in the
-      // meantime. `isFocused()` catches the transient this delay exists for;
-      // re-entering `_onBlur()` re-applies every other guard rather than
-      // restating them here, where they could drift.
-      if (!this.win || this.win.isDestroyed()) {
-        log.trace('panel.blurRecheck', { act: 'dropped', why: 'destroyed' });
-        return;
-      }
-      if (this.win.isFocused()) {
-        log.trace('panel.blurRecheck', { act: 'dropped', why: 'refocused' });
-        return;
-      }
-      log.trace('panel.blurRecheck', { act: 'reask', pointerSeen: this._pointerSeen });
-      this._onBlur(true);
-    }, wait);
-    if (this._blurTimer.unref) this._blurTimer.unref();
-  }
-
-  _cancelBlurRecheck() {
-    if (this._blurTimer) {
-      clearTimeout(this._blurTimer);
-      this._blurTimer = null;
-      log.trace('panel.blurRecheck', { act: 'cancelled' });
-    }
+  _onBlur() {
+    log.trace('panel.blur', {
+      act: 'ignored',
+      why: this.pinned ? 'pinned' : 'focus-is-not-a-dismissal-signal',
+      pointerSeen: this._pointerSeen,
+      sinceShown: this._shownAt === null ? null : Date.now() - this._shownAt,
+    });
   }
 
   /**
@@ -642,17 +645,42 @@ class PanelWindow {
     if (seed) this._pollPointer();
   }
 
-  /** true / false, or null when the OS would not say. */
-  _pointerIsInside() {
+  /** The OS cursor in DIP screen space, or null when it will not say. */
+  _cursorPoint() {
     if (!this.win || this.win.isDestroyed()) return null;
     try {
       const point = screen.getCursorScreenPoint();
-      const b = this.win.getBounds();
-      return point.x >= b.x && point.x < b.x + b.width
-        && point.y >= b.y && point.y < b.y + b.height;
+      return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : null;
     } catch {
       return null;
     }
+  }
+
+  /** true / false, or null when the OS would not say. */
+  _pointerIsInside() {
+    const point = this._cursorPoint();
+    if (point === null) return null;
+    return pointInRect(point, this.win.getBounds());
+  }
+
+  /**
+   * The tray->panel corridor for this open, or null when the anchor could not
+   * be measured.
+   *
+   * The bounding box of the icon and the panel, inflated. Because the panel is
+   * placed adjacent to its icon, that box is the panel plus a short strip to
+   * the tray — the shape of the journey, not of the screen.
+   */
+  _corridorFrom(anchor) {
+    if (!anchor || !anchor.tray || !this.win || this.win.isDestroyed()) return null;
+    const t = anchor.tray;
+    if (!Number.isFinite(t.x) || !Number.isFinite(t.y)) return null;
+    const w = this.win.getBounds();
+    const minX = Math.min(t.x, w.x) - TRANSIT_MARGIN_PX;
+    const minY = Math.min(t.y, w.y) - TRANSIT_MARGIN_PX;
+    const maxX = Math.max(t.x + t.width, w.x + w.width) + TRANSIT_MARGIN_PX;
+    const maxY = Math.max(t.y + t.height, w.y + w.height) + TRANSIT_MARGIN_PX;
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
   }
 
   _stopPointerWatch() {
@@ -677,11 +705,12 @@ class PanelWindow {
     }
     // A transient failure must not close a panel the user is reading. Skip
     // this tick; the next one asks again.
-    const inside = this._pointerIsInside();
-    if (inside === null) {
+    const point = this._cursorPoint();
+    if (point === null) {
       log.trace('panel.poll', { act: 'skipped', why: 'no-cursor' });
       return;
     }
+    const inside = pointInRect(point, this.win.getBounds());
     if (inside) {
       // Only the TRANSITION is traced. A resting pointer would otherwise
       // narrate itself four times a second and bury the sequence this log
@@ -691,12 +720,51 @@ class PanelWindow {
       this.cancelHide('pointer-inside');
       return;
     }
-    // Still travelling from the tray icon: there is nothing to leave yet, and
-    // no state changes, so nothing is logged.
-    if (!this._pointerSeen) return;
+    // Never reached: the corridor rule owns it, not the leave rule.
+    if (!this._pointerSeen) {
+      this._pollTransit(point);
+      return;
+    }
     // Re-arming every 250 ms would reset the grace period forever and the timer
     // would never fire, so only start one when none is pending.
     if (!this._hideTimer) this.scheduleHide(LEAVE_GRACE_MS, 'pointer-left');
+  }
+
+  /**
+   * The dismissal path for a panel the pointer has NEVER entered.
+   *
+   * This is what replaced `blur`. The question it answers is the one focus was
+   * being asked to answer and could not: has the user gone somewhere else?
+   * The cursor can say so directly, and unlike focus it is not handed around
+   * by the shell on a schedule of its own.
+   *
+   *   inside the corridor   still on the way, or resting on the taskbar next
+   *                         to the icon. Nothing happens.
+   *   outside the corridor  they went somewhere else. Normal leave grace, so a
+   *                         hand that overshoots and comes back is forgiven.
+   *   never engaged at all  after NEVER_ENGAGED_MAX_MS, hide outright. The
+   *                         cursor-parked-and-alt-tabbed case; no grace,
+   *                         because a minute has already been the grace.
+   */
+  _pollTransit(point) {
+    if (this._shownAt !== null && Date.now() - this._shownAt >= NEVER_ENGAGED_MAX_MS) {
+      log.trace('panel.transit', { act: 'expired' });
+      this.hide('never-engaged');
+      return;
+    }
+    // No measurable anchor means no corridor. Then the backstop above is the
+    // only rule, which is the honest answer: we cannot tell travelling from
+    // leaving without knowing where the journey started.
+    if (this._transitBox === null || pointInRect(point, this._transitBox)) {
+      // Silent unless something was actually pending: an overshoot that comes
+      // back must not narrate itself four times a second.
+      this.cancelHide('transit-return');
+      return;
+    }
+    if (!this._hideTimer) {
+      log.trace('panel.transit', { act: 'left-corridor' });
+      this.scheduleHide(LEAVE_GRACE_MS, 'left-corridor');
+    }
   }
 
   send(channel, payload) {
@@ -712,10 +780,16 @@ class PanelWindow {
   destroy() {
     this.cancelHide('destroy');
     this._stopPointerWatch();
-    this._cancelBlurRecheck();
     if (this.win && !this.win.isDestroyed()) this.win.destroy();
     this.win = null;
   }
+}
+
+/** Half-open on both axes, so the last pixel inside is inside. */
+function pointInRect(point, rect) {
+  if (!point || !rect) return false;
+  return point.x >= rect.x && point.x < rect.x + rect.width
+    && point.y >= rect.y && point.y < rect.y + rect.height;
 }
 
 /**
@@ -774,8 +848,9 @@ module.exports = {
   PANEL_HEIGHT,
   LEAVE_GRACE_MS,
   POINTER_POLL_MS,
-  BLUR_ARM_MS,
-  BLUR_CONFIRM_MS,
+  TRANSIT_MARGIN_PX,
+  NEVER_ENGAGED_MAX_MS,
+  pointInRect,
   resolveRendererEntry,
   taskbarEdge,
   isPlausibleDipRect,

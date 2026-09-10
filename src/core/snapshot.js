@@ -395,6 +395,11 @@ function buildSnapshot(input) {
         members: g.members.slice(),
       })),
       diverged: agIde.diverged === true,
+      // Straight through from the reader, which already refused every
+      // doubtful match. Nothing here re-derives it: a selection this row
+      // invented would point at a figure that is not the user's.
+      selectedModel: typeof agIde.selectedModel === 'string' ? agIde.selectedModel : null,
+      selectedGroupIndex: Number.isInteger(agIde.selectedGroupIndex) ? agIde.selectedGroupIndex : null,
       source: 'antigravity.ide.quota_info.remaining_fraction',
       provenance: 'derived',
       capturedAt: new Date(agIdeCapturedAtMs).toISOString(),

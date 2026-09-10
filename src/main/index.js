@@ -11,6 +11,7 @@ const { isTheme, sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { traySpecFromSnapshot, trayIconKey } = require('../core/tray-spec');
 const { buildTooltip } = require('../core/tray-tooltip');
 const paths = require('../core/paths');
+const { isAntigravityRunning } = require('../core/antigravity/process');
 const log = require('../core/log');
 const security = require('./security');
 const settingsStore = require('./settings');
@@ -79,6 +80,73 @@ function openPinned() {
   panel.pin(tray ? tray.bounds() : null, anchorSender);
   collector.setPanelOpen(true);
   if (collector.snapshot) panel.send(IPC.SNAPSHOT, collector.snapshot);
+}
+
+/* --------------------------------------------------------- refresh notices */
+
+/**
+ * How long the refresh reply may wait for the process probe once the scan is
+ * already done. Generous, because it is only ever reached on the path where
+ * the answer is worth having.
+ */
+const PROBE_WAIT_MS = 1200;
+
+/**
+ * Is this reading one the user could reasonably be pressing Yenile about?
+ *
+ * The notice explains an OLD figure. A fresh one needs no explanation, and a
+ * machine with no Antigravity install at all is not a machine whose IDE is
+ * "not running" — it has nothing to run.
+ */
+function antigravityLooksStale(reading) {
+  if (!reading) return false;
+  return reading.state === 'stale' || reading.reason === 'abandoned';
+}
+
+/**
+ * Starts the process probe, or returns null when there is nothing to explain.
+ *
+ * Deliberately conditional. The probe spawns a process, and doing that on
+ * every refresh — including the overwhelmingly common one where the IDE is
+ * open and the store is current — would spend half a second to learn
+ * something we can already see in the data. It is asked only when the reading
+ * is old, which is exactly when the user is owed a reason.
+ *
+ * Decided from the PRE-refresh reading so the probe can overlap the scan; the
+ * post-refresh reading gets the final say in `collectRefreshNotices`.
+ */
+function startAntigravityProbe() {
+  const row = collector.snapshot
+    && collector.snapshot.providers.find((p) => p.id === 'antigravity');
+  // A row the user never added is a row they cannot be confused by.
+  if (!row || row.enabled !== true) return null;
+  if (!antigravityLooksStale(collector.antigravityIde)) return null;
+  return isAntigravityRunning();
+}
+
+/**
+ * Turns the probe into notices, bounded in time and re-checked against the
+ * reading the refresh actually produced.
+ *
+ * `unknown` produces nothing: saying "your editor is closed" while it is open
+ * is a wrong statement, and this whole app exists to not make those.
+ */
+async function collectRefreshNotices(probe) {
+  if (!probe) return [];
+  // The scan may have found a store the IDE wrote while we were asking. Then
+  // there is nothing to explain and the probe's answer is discarded.
+  if (!antigravityLooksStale(collector.antigravityIde)) return [];
+  let timer = null;
+  const budget = new Promise((resolve) => {
+    timer = setTimeout(() => resolve('unknown'), PROBE_WAIT_MS);
+    if (timer.unref) timer.unref();
+  });
+  try {
+    const answer = await Promise.race([probe, budget]);
+    return answer === 'not-running' ? ['ANTIGRAVITY_NOT_RUNNING'] : [];
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /* ------------------------------------------------------------ preferences */
@@ -315,12 +383,21 @@ function registerIpc() {
 
   ipcMain.handle(IPC.REQUEST_REFRESH, async (event) => {
     if (!fromPanel(event)) return null;
+    // Started BEFORE the scan so the two overlap. `tasklist` costs about half
+    // a second on this machine, and the refresh must not visibly wait for it.
+    const probe = startAntigravityProbe();
+    let snapshot;
     try {
-      return await collector.refreshNow();
+      snapshot = await collector.refreshNow();
     } catch (err) {
       log.warn(`refresh failed: code=${(err && err.code) || 'UNKNOWN'}`);
-      return collector.snapshot;
+      snapshot = collector.snapshot;
     }
+    const refreshNotices = await collectRefreshNotices(probe);
+    // A COPY, so the notice rides the invoke reply only. The object the
+    // collector pushes on its own schedule must not start carrying the answer
+    // to a question the user asked once.
+    return refreshNotices.length ? { ...snapshot, refreshNotices } : snapshot;
   });
 
   ipcMain.handle(IPC.RUN_SETUP, async (event, providerId, confirmed) => {
