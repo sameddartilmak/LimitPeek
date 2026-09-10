@@ -104,7 +104,13 @@ function windowResetting(win, now, horizonMs = READING_HORIZON_MS) {
   return at - now < horizonMs;
 }
 
-function windowPercentage(provider, key, now = Date.now()) {
+/**
+ * The drawable percentage of ONE window object, applying every guard the tray
+ * shares with the panel. Split out from `windowPercentage` so the same rules
+ * govern a synthetic window (the tray's most-consumed group, below) as govern
+ * `provider.fiveHour`.
+ */
+function percentageOfWindow(provider, win, now) {
   if (!provider) return null;
   // One predicate governs both halves of the disconnected case. `accentOf()`
   // already neutralises the dot for a disconnected provider; leaving the sweep
@@ -113,7 +119,6 @@ function windowPercentage(provider, key, now = Date.now()) {
   // collector only sets connected:false alongside fiveHour:null — but "the
   // comment says it cannot happen" is not enforcement.
   if (provider.connected === false) return null;
-  const win = provider[key];
   if (!win) return null;
   if (win.certainty === 'unknown') return null;
   const pct = win.usedPercentage;
@@ -129,6 +134,39 @@ function windowPercentage(provider, key, now = Date.now()) {
   // survive this artefact's lifetime is no more drawable than a missing one.
   if (windowResetting(win, now)) return null;
   return pct;
+}
+
+function windowPercentage(provider, key, now = Date.now()) {
+  if (!provider) return null;
+  return percentageOfWindow(provider, provider[key], now);
+}
+
+/**
+ * The five-hour window the TRAY draws — the MOST-CONSUMED model group, not the
+ * selected one the panel headline shows (snapshot.js, `headlineWindow`).
+ *
+ * The split is deliberate and the coordinator ruled it: the panel headline can
+ * name the model it belongs to, so it follows the user's selection; a 16px
+ * donut cannot, so a figure that silently changed meaning when the user
+ * switched model would be unreadable. The tray therefore always shows the
+ * binding constraint — the worst group — which is `modelQuotas.groups[0]`
+ * (the reader sorts most-consumed first).
+ *
+ * Providers with no per-model breakdown (Claude) fall straight through to
+ * their own `fiveHour`, unchanged.
+ */
+function trayFiveHourWindow(provider) {
+  const mq = provider && provider.modelQuotas;
+  const groups = mq && Array.isArray(mq.groups) ? mq.groups : null;
+  if (groups && groups.length > 0) {
+    const worst = groups[0];
+    return {
+      usedPercentage: worst.usedPercentage,
+      certainty: 'known',
+      resetsAt: worst.resetsAt,
+    };
+  }
+  return provider ? provider.fiveHour : null;
 }
 
 /**
@@ -150,7 +188,10 @@ function windowPercentage(provider, key, now = Date.now()) {
  * figure at all.
  */
 function drawablePercentage(provider, now = Date.now()) {
-  const five = windowPercentage(provider, 'fiveHour', now);
+  // The five-hour slot is the most-consumed group for a provider that has
+  // one, and `provider.fiveHour` for one that does not. See
+  // `trayFiveHourWindow` for why the tray does not follow the panel headline.
+  const five = percentageOfWindow(provider, trayFiveHourWindow(provider), now);
   if (five !== null) return five;
   return windowPercentage(provider, 'sevenDay', now);
 }

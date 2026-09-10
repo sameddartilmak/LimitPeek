@@ -38,6 +38,37 @@ function snapshot(providers) {
   return { generatedAt: new Date().toISOString(), providers };
 }
 
+/**
+ * An Antigravity-shaped row: a headline `fiveHour` (the SELECTED model) plus a
+ * `modelQuotas` breakdown whose `groups[0]` is the most-consumed one. F7 made
+ * these diverge, and the tray must read the breakdown's most-consumed group,
+ * never the headline.
+ */
+function antigravityRow(over = {}) {
+  return {
+    id: 'antigravity',
+    displayName: 'Antigravity',
+    accent: '#E8B84B',
+    connected: true,
+    status: 'ok',
+    fiveHour: { usedPercentage: 5, certainty: 'known', resetsAt: null },
+    sevenDay: null,
+    modelQuotas: {
+      groups: [
+        { usedPercentage: 92, resetsAt: null, members: ['Claude Opus 4.6'] },
+        { usedPercentage: 5, resetsAt: null, members: ['Gemini 3.1 Pro'] },
+      ],
+      diverged: true,
+      selectedModel: 'Gemini 3.1 Pro',
+      selectedGroupIndex: 1,
+      source: 'antigravity.ide.quota_info.remaining_fraction',
+      provenance: 'derived',
+      capturedAt: new Date().toISOString(),
+    },
+    ...over,
+  };
+}
+
 /** Reads one pixel as { r, g, b, a } out of the premultiplied BGRA buffer. */
 function pixel(buf, size, x, y) {
   const i = (y * size + x) * 4;
@@ -65,6 +96,41 @@ function isColour(px, hex) {
 }
 
 /* -------------------------------------------- state from ROUNDED percent */
+
+test.describe('the tray follows the most-consumed model, not the selected one', () => {
+  // F7 split the surfaces: the panel headline names the selected model, the
+  // 16px tray cannot, so the tray shows the binding constraint — the worst
+  // group. These assert the tray reads the breakdown, not the headline.
+  test('the donut draws the most-consumed group, not the headline', () => {
+    const spec = traySpecFromSnapshot(snapshot([antigravityRow()]));
+    assert.equal(spec.usedPercentage, 92, 'the worst group, not the selected 5');
+    assert.equal(spec.state, 'ember', '92 is ember; spent is 100');
+  });
+
+  test('drawablePercentage ignores the selected headline for a provider with a breakdown', () => {
+    assert.equal(drawablePercentage(antigravityRow()), 92);
+  });
+
+  test('a provider WITHOUT a breakdown still uses its own fiveHour', () => {
+    // Claude has no modelQuotas: the tray must not regress for it.
+    assert.equal(drawablePercentage(provider({ fiveHour: { usedPercentage: 40, certainty: 'known', resetsAt: null } })), 40);
+  });
+
+  test('an empty breakdown falls through to fiveHour rather than blanking', () => {
+    const row = antigravityRow({ modelQuotas: { groups: [], diverged: false, selectedModel: null, selectedGroupIndex: null, source: 'antigravity.ide.quota_info.remaining_fraction', provenance: 'derived', capturedAt: new Date().toISOString() } });
+    assert.equal(drawablePercentage(row), 5, 'no groups -> the headline window is all there is');
+  });
+
+  test('the most-consumed group obeys the same reject-do-not-clamp rule', () => {
+    const row = antigravityRow();
+    row.modelQuotas.groups[0].usedPercentage = 250;
+    assert.equal(drawablePercentage(row), null, 'an impossible worst figure draws the no-data ring, not a full one');
+  });
+
+  test('a disconnected antigravity row draws no sweep from its breakdown either', () => {
+    assert.equal(drawablePercentage(antigravityRow({ connected: false })), null);
+  });
+});
 
 test.describe('the state ramp reads the ROUNDED percentage', () => {
   test('the thresholds come from the contract, not from a local copy', () => {

@@ -671,6 +671,47 @@ test.describe('the selected model, read from the preferences key', () => {
     }
   });
 
+  test('F7: the row HEADLINE is the selected model group, not the most-consumed one', () => {
+    // The user has Gemini selected (0% used), while the Claude models sit at
+    // 60%. The renderer labels the headline "the selected model", so it must
+    // BE that model's figure or the label lies. The most-consumed group still
+    // leads `groups`, for the tray and for the breakdown.
+    const base = appData({
+      'Antigravity IDE': {
+        models: [
+          { ...model('Claude Opus 4.6 (Thinking)', 0.4), id: OPUS },
+          { ...model('Gemini 3.1 Pro (High)', 1), id: GEM_HIGH },
+        ],
+        mtimeMs: NOW - 1000,
+        selectedId: GEM_HIGH,
+      },
+    });
+    const ag = agRow(read(base));
+    assert.equal(ag.modelQuotas.selectedModel, 'Gemini 3.1 Pro (High)');
+    assert.equal(ag.modelQuotas.selectedGroupIndex, 1, 'selected sits in the roomier group');
+    assert.equal(ag.fiveHour.usedPercentage, 0, 'the headline is the SELECTED figure');
+    assert.equal(ag.modelQuotas.groups[0].usedPercentage, 60, 'most-consumed still leads the breakdown');
+  });
+
+  test('F7: a refused selection falls the headline back to most-consumed, never blank', () => {
+    // The safety rule: a bad preferences read must cost only the highlight,
+    // never the number. Selected id names no listed model -> no selection ->
+    // headline is the most-consumed group, and the row still reads.
+    const base = appData({
+      'Antigravity IDE': {
+        models: [
+          { ...model('Claude Opus 4.6 (Thinking)', 0.4), id: OPUS },
+          { ...model('Gemini 3.1 Pro (High)', 1), id: GEM_HIGH },
+        ],
+        mtimeMs: NOW - 1000,
+        selectedId: 999999,
+      },
+    });
+    const ag = agRow(read(base));
+    assert.equal(ag.modelQuotas.selectedGroupIndex, null, 'no selection');
+    assert.equal(ag.fiveHour.usedPercentage, 60, 'headline falls back to most-consumed');
+  });
+
   test('a store with no preferences key has no selection, and still has quota', () => {
     // A user who has never switched model. Missing is not broken.
     const base = appData({ 'Antigravity IDE': withIds({ selectedId: null }) });
