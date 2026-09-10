@@ -115,6 +115,10 @@ class FakeWindow {
   getBounds() { return { ...this.bounds }; }
   show() { this.visible = true; this.focused = true; this.activations.push('show'); }
   showInactive() { this.visible = true; this.activations.push('showInactive'); }
+  // Real `moveTop()` reorders z-order without activating: it must NOT touch
+  // `focused`. Recorded in `activations` so a test can assert it ran, and that
+  // it ran AFTER the show rather than before it.
+  moveTop() { this.activations.push('moveTop'); }
   focus() { this.focused = true; }
   hide() { this.visible = false; this.focused = false; }
   destroy() { this.destroyed = true; }

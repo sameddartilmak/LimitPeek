@@ -382,6 +382,25 @@ class PanelWindow {
     // window without activating it, which is what a second tray click on a
     // panel hidden behind something else has to do.
     this.win.showInactive();
+    // Re-assert top-of-z-order in the same tick as the show.
+    //
+    // `showInactive()` maps to SW_SHOWNOACTIVATE: the panel appears on top but
+    // the foreground stays with whatever the user was in, and that foreground
+    // app can repaint over this transparent topmost window for a few frames
+    // before the shell settles the z-order. Captured at ~9 ms/frame around a
+    // real open, that is the reported flicker: the panel is present and dark at
+    // t=117 ms, the background shows through at t=129 ms, and it returns by
+    // t=301 ms — present->gone->present, i.e. something painted OVER a window
+    // that had already drawn its content, not a window that had not drawn yet.
+    //
+    // `moveTop()` issues a fresh SetWindowPos(HWND_TOP) with no activation, so
+    // it re-inserts the panel at the top of the topmost band while preserving
+    // the no-focus-steal property this whole method is built around (see the
+    // doc comment): the keyboard stays wherever the user was typing. It does
+    // NOT close a gap that opens asynchronously several frames later — if the
+    // capture shows the flicker surviving, the next step is re-asserting the
+    // topmost flag from a `ready-to-show`/paint gate rather than at show time.
+    this.win.moveTop();
     this._transitBox = this._corridorFrom(anchor);
     log.trace('panel.show', {
       was: wasVisible,
@@ -391,6 +410,9 @@ class PanelWindow {
       activated: false,
       corridor: this._transitBox ? 'measured' : 'none',
     });
+    // Separate line, not a field on panel.show: this is a distinct OS call and
+    // the trace is how the z-order fix is confirmed against the next capture.
+    log.trace('panel.moveTop', { visible: this.win.isVisible(), activated: false });
     if (!wasVisible) this.onVisibilityChange(true);
     // Re-armed on every open, including a re-open of an already visible panel:
     // the pointer is back at the tray icon, so the transit grace starts again.
