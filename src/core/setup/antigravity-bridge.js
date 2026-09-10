@@ -7,6 +7,7 @@ const {
   antigravityHomeOverridden,
   antigravitySettingsPath,
 } = require('../paths');
+const { isAgyInstalled } = require('../antigravity/cli-install');
 const messages = require('./messages');
 const log = require('../log');
 
@@ -56,8 +57,23 @@ function statusLineEntry(bridgePath) {
   };
 }
 
-/** True when the `agy` CLI's config directory exists on this machine. */
+/**
+ * True when the `agy` CLI is on this machine.
+ *
+ * Answered by the BINARY first, then by the config directory. The binary is
+ * the real proof of installation — a freshly installed CLI has `agy.exe` but
+ * not yet `~/.gemini/antigravity-cli/`, which agy creates the first time it
+ * runs. Checking only the config dir (as this once did) meant a one-click
+ * install left the row still saying "not installed" until the user happened to
+ * run agy by hand.
+ *
+ * The config dir is still accepted on its own, so a machine where agy has run
+ * at least once — and therefore has the dir but where the binary probe might
+ * be pointed elsewhere by a custom `homeDir` in a test — still reads as
+ * installed.
+ */
 function cliInstalled(homeDir) {
+  if (isAgyInstalled()) return true;
   const dir = homeDir || antigravityHome();
   try {
     return fs.statSync(dir).isDirectory();
@@ -107,6 +123,21 @@ function installAntigravityStatusLine(opts) {
   if (!cliInstalled(homeDir)) {
     log.info(`antigravity cli not found under ${homeDir}`);
     return { ok: false, code: 'CLI_NOT_FOUND', message: messages.cliNotFound(homeDir) };
+  }
+
+  // agy is installed (binary present) but may not have run yet, so its config
+  // directory can be missing. Create it now — this is not "writing settings
+  // for a CLI that is not there", the guard above already proved it is there;
+  // it is giving the hook a directory to live in. mkdir is recursive and a
+  // no-op when the directory already exists.
+  try {
+    fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
+  } catch (err) {
+    return {
+      ok: false,
+      code: 'MKDIR_FAILED',
+      message: 'Antigravity ayar klasörü oluşturulamadı; hiçbir değişiklik yapılmadı.',
+    };
   }
 
   let settings = {};
@@ -227,6 +258,79 @@ function installAntigravityStatusLine(opts) {
 }
 
 /**
+ * Removes the Usage Notch statusLine hook — the "way back" for the one-click
+ * setup.
+ *
+ * Reversible by construction, and conservative: it only ever removes a
+ * statusLine that is OURS (its command names our bridge script). A foreign or
+ * absent one is left exactly as found, so a user who chained their own command
+ * cannot lose it here. A timestamped backup is taken before the write, the
+ * same as the install path.
+ *
+ * @returns {{ok:boolean, code:string, message:string}}
+ */
+function removeAntigravityStatusLine(opts = {}) {
+  const now = opts.now ?? Date.now();
+  const settingsFile = opts.settingsPath || antigravitySettingsPath();
+
+  let original;
+  try {
+    original = fs.readFileSync(settingsFile, 'utf8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      return { ok: true, code: 'ALREADY_ABSENT', message: 'Köprü zaten kurulu değil.' };
+    }
+    return { ok: false, code: 'SETTINGS_UNREADABLE', message: 'Antigravity ayar dosyası okunamadı.' };
+  }
+
+  let settings;
+  try {
+    settings = JSON.parse(original);
+  } catch {
+    return { ok: false, code: 'SETTINGS_INVALID', message: 'Antigravity ayar dosyası geçerli JSON değil.' };
+  }
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return { ok: false, code: 'SETTINGS_INVALID', message: 'Antigravity ayar dosyası beklenen biçimde değil.' };
+  }
+
+  const cmd = settings.statusLine && settings.statusLine.command;
+  const ours = typeof cmd === 'string' && cmd.includes('antigravity-statusline.mjs');
+  if (settings.statusLine == null) {
+    return { ok: true, code: 'ALREADY_ABSENT', message: 'Köprü zaten kurulu değil.' };
+  }
+  if (!ours) {
+    // Never touch a statusLine we did not write.
+    return { ok: false, code: 'STATUSLINE_FOREIGN', message: 'Bu statusLine bize ait değil; kaldırmıyoruz.' };
+  }
+
+  const backupFile = backupName(settingsFile, now);
+  try {
+    fs.writeFileSync(backupFile, original, { encoding: 'utf8', flag: 'wx' });
+  } catch {
+    return { ok: false, code: 'BACKUP_FAILED', message: 'Ayar dosyasının yedeği alınamadı; hiçbir değişiklik yapılmadı.' };
+  }
+
+  delete settings.statusLine;
+  const tmp = `${settingsFile}.${process.pid}.usagenotch.tmp`;
+  try {
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeFileSync(fd, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, settingsFile);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch { /* best effort */ }
+    try { fs.unlinkSync(backupFile); } catch { /* best effort */ }
+    log.warn(`antigravity statusline removal failed: code=${(err && err.code) || 'UNKNOWN'}`);
+    return { ok: false, code: 'WRITE_FAILED', message: 'Ayar dosyası yazılamadı; hiçbir değişiklik yapılmadı.' };
+  }
+  return { ok: true, code: 'REMOVED', message: 'Bağlantı kaldırıldı. Haftalık limit artık okunmayacak.' };
+}
+
+/**
  * Read-only probe used to decide what the row's button should say.
  *
  * `not-installed` comes first and is checked against the DIRECTORY, not the
@@ -255,6 +359,7 @@ function antigravityStatusLineState(settingsPath, homeDir) {
 
 module.exports = {
   installAntigravityStatusLine,
+  removeAntigravityStatusLine,
   antigravityStatusLineState,
   statusLineEntry,
   cliInstalled,

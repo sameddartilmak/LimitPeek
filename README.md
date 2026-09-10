@@ -186,12 +186,11 @@ teşhis için tutulan **en üst düzey anahtar adları** listesidir (`payloadKey
 e-mail or identifier" testi sabitliyor. Ayar dosyasında yalnızca `statusLine`
 anahtarına dokunulur; `~/.gemini` altındaki kimlik bilgilerine hiç bakılmaz.
 
-Bu makinede `agy` kurulu değilse düğme bunu **açıkça söyler ve hiçbir dosya
-oluşturmaz** — var olmayan bir programın ayar dosyasını yazmak, kimsenin
-okumayacağı bir çöp bırakmak olurdu. Bu bir arıza değil: beş saatlik limit
-`agy` olmadan da görünür, CLI yalnızca haftalık pencere için gerekir. Var olan bir `statusLine` yine üzerine
-yazılmaz; zincirleme komutu sana verilir. (`agy`, `stack_with_default: true`
-seçeneğiyle kendi satırını yerleşik satırın altına eklemeye de izin veriyor.)
+Bu makinede `agy` kurulu değilse **Bağla** düğmesi onu tek tıkla kurabilir: onayınızı isteyen bir pencere çıkar (“Antigravity CLI'ı antigravity.google adresinden indirip kuracak”), onaylarsanız uygulama aracı indirip kurar ve ardından zaten bildiği durum-satırı köprüsünü yapılandırır. Bu, uygulamanın **tek** ağ erişimidir ve yalnızca burada, sizin onayınızla olur — çalışma anındaki sıfır-ağ sözü bozulmaz (aşağıya bakın). İndirme başarısız olursa hiçbir şey değişmez ve bu söylenir.
+
+Önemli, dürüstçe: `agy`, IDE'den **ayrı** kimlik doğrular (kendi anahtarlığı/tarayıcı oturumu). Kurulumdan sonra kotanın görünmesi için `agy`'ı bir kez çalıştırıp oturum açmanız gerekir; oturum durumunu okuyamıyoruz çünkü bu bir kimlik-bilgisi okuması olurdu ve uygulama bunu asla yapmaz. Bu yüzden akış oturumu **doğrulamaz**, yönlendirir.
+
+Geri dönüşü var: köprü yapılandırıldıysa “bağlantıyı kaldır” yalnızca **bizim** yazdığımız `statusLine` kancasını (yedek alarak) siler; `agy` aracı yerinde kalır. Var olan yabancı bir `statusLine` üzerine yazılmaz.
 
 Antigravity kotasını **kova adıyla** eşleştiriyoruz: adında `week` geçen kova
 haftalık pencereye yazılır. Adını tanımadığımız bir kova gösterilmez —
@@ -215,10 +214,17 @@ gösteriliyor: ayrı kaynaklı iki pencere, her biri geldiği alanla etiketli.
 
 ## Güvenlik duruşu
 
-- **Sıfır giden ağ trafiği.** Bağımlılık ağacında HTTP istemcisi yok. Telemetri,
-  çökme raporu ve güncelleme kontrolü yok. Doğrulaması: uygulamanın exe'sine
-  giden bağlantıyı engelleyen bir güvenlik duvarı kuralı ekle — hiçbir sayı
-  kaybolmamalı.
+- **Çalışma anında sıfır giden ağ trafiği.** Bağımlılık ağacında HTTP istemcisi yok.
+  Telemetri, çökme raporu ve güncelleme kontrolü yok. Snapshot, yenileme, tarama — hiçbiri
+  ağa çıkmaz. Doğrulaması: uygulamanın exe'sine giden bağlantıyı engelleyen bir güvenlik
+  duvarı kuralı ekle — hiçbir sayı kaybolmamalı.
+- **Tek istisna, açıkça sınırlanmış: isteğe bağlı `agy` kurulumu.** Antigravity satırında
+  **Bağla**'ya bastığınızda, `agy` kurulu değilse uygulama onu antigravity.google'dan
+  indirir. Bu, bir defalık, onaya bağlı bir **kurulum adımı**dır — çalışma-anı çağrısı
+  değil. Kodda tek, dar, yorumlu bir yerde olur (`src/core/antigravity/cli-install.js`),
+  onay penceresi tam üstünde durur; indirdiği şey vendor'ın belgelediği PowerShell
+  komutudur (`irm https://antigravity.google/cli/install.ps1 | iex`), mutlak yoldan,
+  kabuk olmadan, zaman aşımlı. Zamanlayıcıyla ya da sizden habersiz asla çalışmaz.
 - **OAuth token'ına dokunulmuyor.** `~/.claude/.credentials.json` hiç açılmıyor.
   Aynı kural `~/.gemini` için de geçerli: adı geçen tek dosya
   `antigravity-cli/settings.json`, okunan/yazılan tek anahtar `statusLine`.
@@ -240,7 +246,7 @@ gösteriliyor: ayrı kaynaklı iki pencere, her biri geldiği alanla etiketli.
 ## Geliştirme
 
 ```bash
-npm test     # tip kontrolü + 756 test
+npm test     # tip kontrolü + 795 test
 npm run scan # gerçek corpus üzerinde tarama ölçümü
 npm run build # paketleme derlemesi (dist/ temizlenip yeniden üretilir)
 npm run smoke # Electron IPC duman testi
@@ -263,7 +269,7 @@ sunucusu dinleyen bir soket açar ve yayınlanan uygulamada böyle bir şey yokt
   verisi üzerinde **hiç aritmetik yapmaz**; ana süreç çözülmüş değerler gönderir.
 - `src/core/antigravity/**` — IDE durum deposu okuyucusu: kurulum çözümleme
   (koruma 1), katı protobuf çözücü (koruma 3a), `node:sqlite` sarmalayıcısı ve
-  süreç sondası (`process.js`).
+  süreç sondası (`process.js`) ve tek-tık `agy` kurulumu (`cli-install.js` — uygulamanın tek ağ erişiminin yaşadığı dar, onay kapılı yer).
 - `bridge/claude-statusline.mjs`, `bridge/antigravity-statusline.mjs` —
   statusline köprüleri. Aynı disiplin: stdin'den oku, yalnızca sayısal kota
   alanlarını küçük bir dosyaya yaz, başka hiçbir şeyi kaydetme, ağ açma.
@@ -290,7 +296,9 @@ belirteci okumayı gerektiriyor ve uygulamanın "kimlik bilgisi okumaz"
 duruşuyla çelişiyor. Bu yüzden **yapılmadı**; haftalık pencere
 `bildirilmiyor` demeye devam ediyor.
 
-**Antigravity'de eksik olan:** `agy` CLI kurulu değilse haftalık pencere.
+**Antigravity'de eksik olan:** `agy` CLI kurulu **ve oturum açılmış** değilse haftalık
+pencere. Kurulumu tek tıkla yapabilirsiniz (yukarı); ama `agy` kendi oturumunu ister ve
+kotayı ancak siz onu bir kez çalıştırıp giriş yaptıktan sonra yayar.
 IDE'nin durum deposu haftalık figürü saklamıyor, biz de uydurmuyoruz; o satır
 `bildirilmiyor` diyor.
 

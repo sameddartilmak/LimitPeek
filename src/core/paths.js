@@ -75,6 +75,25 @@ function antigravitySettingsPath() {
   return path.join(antigravityHome(), 'settings.json');
 }
 
+/**
+ * Where the `agy` CLI's official Windows installer drops the binary, per
+ * https://antigravity.google/docs/cli/install :
+ * `C:\\Users\\<user>\\AppData\\Local\\agy\\bin\\agy.exe`.
+ *
+ * This is a SEPARATE location from `antigravityHome()`. That is the CLI's
+ * config directory (`~/.gemini/antigravity-cli/`, created the first time agy
+ * runs); this is the executable itself. A freshly installed CLI has the binary
+ * but not yet the config directory, so "is agy installed" is answered by the
+ * binary, not by the config dir.
+ */
+function agyBinDir() {
+  return path.join(localAppData(), 'agy', 'bin');
+}
+
+function agyBinaryPath() {
+  return path.join(agyBinDir(), 'agy.exe');
+}
+
 function localAppData() {
   return process.env.LOCALAPPDATA || path.join(os.homedir(), '.local', 'share');
 }
@@ -105,6 +124,8 @@ module.exports = {
   antigravityDefaultHome,
   antigravityHomeOverridden,
   antigravitySettingsPath,
+  agyBinDir,
+  agyBinaryPath,
   localAppData,
   rateLimitsDir,
   rateLimitsFile,
