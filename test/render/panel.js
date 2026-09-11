@@ -424,6 +424,30 @@ app.whenReady().then(async () => {
   check('the spoken sentence matches the printed word rather than drifting from it',
     /yenileniyor/.test(rolled.spoken || ''), rolled.spoken);
 
+  // 'awaiting-report' is the renewed-but-unreported window: connected, current,
+  // figure not yet in. It reads "yeni veri bekleniyor" — neither "bilinmiyor"
+  // (which reads as "we did not look") nor "yenileniyor" (the window did not
+  // reset). Like rolled-over it carries no reason line; the word is the whole
+  // of it.
+  await js(`window.__probe.setWindowsDirect('claude', { sevenDay: {
+    usedPercentage: null, certainty: 'unknown', absence: 'awaiting-report',
+    resetsAt: null, capturedAt: null } })`);
+  await sleep(160);
+  const awaiting = await js(`(() => {
+    const weekly = [...document.querySelectorAll('li.row[data-provider="claude"] .win')][1];
+    const reason = weekly.querySelector('.win__reason');
+    return {
+      pct: weekly.querySelector('.win__pct').textContent,
+      reasonHidden: reason ? reason.hidden : null,
+      spoken: weekly.getAttribute('aria-label'),
+    };
+  })()`);
+  say('awaiting-report: ' + JSON.stringify(awaiting));
+  check('a connected, current window with no figure yet says "yeni veri bekleniyor"',
+    awaiting.pct === 'yeni veri bekleniyor', awaiting.pct);
+  check('it carries no reason line, and the spoken sentence matches the printed word',
+    awaiting.reasonHidden === true && /yeni veri bekleniyor/.test(awaiting.spoken || ''), awaiting);
+
   // The other three collapse to today's wording. 'stale' in particular does
   // NOT get its own line: the row already states it, better, one line down —
   // `row__stale` prints "112 gün önce güncellendi", with the real duration,

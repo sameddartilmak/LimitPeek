@@ -78,6 +78,7 @@ const WINDOW_ABSENCES = new Set<WindowAbsence>([
   'not-supplied',
   'stale',
   'rolled-over',
+  'awaiting-report',
   'unreadable',
 ]);
 /**

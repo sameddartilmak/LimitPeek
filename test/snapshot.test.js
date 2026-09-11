@@ -129,6 +129,87 @@ test.describe('no rate-limit file -> certainty unknown', () => {
   });
 });
 
+test.describe("a renewed window awaits its report, and only when connected", () => {
+  // Claude Code renews the five-hour window and only writes the new number the
+  // next time it runs. In between the bridge holds a FRESH, valid capture whose
+  // five-hour figure is null while the weekly one is still a live reading.
+  function freshCapture(over) {
+    const file = path.join(tmpdir(), 'rl.json');
+    fs.writeFileSync(file, JSON.stringify({
+      schemaVersion: 1,
+      capturedAt: new Date(NOW).toISOString(),
+      present: true,
+      // No usedPercentage on the five-hour window -> the reader reports it null.
+      fiveHour: { resetsAt: (NOW + HOUR) / 1000 },
+      sevenDay: { usedPercentage: 10, resetsAt: (NOW + 3 * 24 * HOUR) / 1000 },
+      ...over,
+    }));
+    return readClaudeRateLimits({ file, now: NOW });
+  }
+
+  test("a fresh capture with a null current-window figure says 'yeni veri bekleniyor', not 'bilinmiyor'", () => {
+    const rl = freshCapture();
+    assert.equal(rl.state, 'fresh');
+    const c = claude(buildSnapshot({ now: NOW, events: [], rateLimits: rl, scanOk: true }));
+    assert.equal(c.connected, true);
+    assert.equal(c.fiveHour.usedPercentage, null);
+    assert.equal(c.fiveHour.certainty, 'unknown');
+    assert.equal(c.fiveHour.absence, 'awaiting-report', 'connected + current + null == awaiting a report');
+    // The weekly reading is still live, so the row draws its meter and the
+    // five-hour block renders this absence copy rather than the whole-row
+    // "Kullanım oranı bilinmiyor" fallback.
+    assert.equal(c.sevenDay.usedPercentage, 10);
+  });
+
+  test('the awaiting-report word is used even when the current window has no reset instant', () => {
+    const rl = freshCapture({ fiveHour: {} });
+    const c = claude(buildSnapshot({ now: NOW, events: [], rateLimits: rl, scanOk: true }));
+    assert.equal(c.fiveHour.absence, 'awaiting-report');
+    assert.equal(c.fiveHour.resetsAt, null);
+  });
+
+  test('a figure whose window has ALREADY rolled over still says rolled-over, not awaiting-report', () => {
+    // Fresh file, but the five-hour window it describes reset ten minutes ago.
+    // windowFrom decides this on the non-null percentage and never consults the
+    // awaiting-report stamp, so the two states stay distinct.
+    const rl = freshCapture({ fiveHour: { usedPercentage: 6, resetsAt: (NOW - 10 * 60 * 1000) / 1000 } });
+    assert.equal(rl.state, 'fresh');
+    const c = claude(buildSnapshot({ now: NOW, events: [], rateLimits: rl, scanOk: true }));
+    assert.equal(c.fiveHour.usedPercentage, null);
+    assert.equal(c.fiveHour.absence, 'rolled-over');
+  });
+
+  test('a NEVER-connected row never claims to be awaiting a report', () => {
+    // The first-run user: no bridge at all. The row is passive and shows the
+    // setup path; its windows must not read "yeni veri bekleniyor".
+    const rl = readClaudeRateLimits({ file: path.join(tmpdir(), 'nope.json'), now: NOW });
+    assert.equal(rl.state, 'missing');
+    const c = claude(buildSnapshot({ now: NOW, events: [], rateLimits: rl, scanOk: true }));
+    assert.equal(c.connected, false);
+    assert.equal(c.setupAction.kind, 'install-bridge');
+    assert.equal(c.fiveHour.absence, 'no-capture');
+    assert.equal(c.sevenDay.absence, 'no-capture');
+  });
+
+  test('a bridge that ran but sent no rate_limits is absent, not awaiting a report', () => {
+    const file = path.join(tmpdir(), 'rl.json');
+    fs.writeFileSync(file, JSON.stringify({ capturedAt: new Date(NOW).toISOString(), present: false }));
+    const rl = readClaudeRateLimits({ file, now: NOW });
+    assert.equal(rl.state, 'absent');
+    const c = claude(buildSnapshot({ now: NOW, events: [], rateLimits: rl, scanOk: true }));
+    assert.equal(c.fiveHour.absence, 'no-capture');
+  });
+
+  test('a STALE capture that never carried a figure stays bilinmiyor, not awaiting-report', () => {
+    // Old, not fresh: the number is not "about to land", the capture is simply
+    // stale, so the honest general default is kept.
+    const rl = freshCapture({ capturedAt: new Date(NOW - 45 * 60 * 1000).toISOString() });
+    assert.equal(rl.state, 'stale');
+    const c = claude(buildSnapshot({ now: NOW, events: [], rateLimits: rl, scanOk: true }));
+    assert.equal(c.fiveHour.absence, 'no-capture');
+  });
+});
+
 test.describe('fresh capture -> certainty known, verbatim', () => {
   // The real payload the orchestrator captured from the bridge on this machine.
   const REAL = {
