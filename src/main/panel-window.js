@@ -71,6 +71,20 @@ const TRANSIT_MARGIN_PX = 48;
  */
 const NEVER_ENGAGED_MAX_MS = 60_000;
 /**
+ * Where the panel parks when it is logically "hidden".
+ *
+ * The window is never `hide()`n — see `PanelWindow._open`. Instead it is moved
+ * far outside the union of every plausible display so it composites nothing a
+ * user can see and catches no click a user can make. -32000 is comfortably past
+ * any real multi-monitor arrangement (that would be sixteen 1080p monitors
+ * stacked to the left) yet inside the signed-16-bit range Win32 window
+ * coordinates historically clamp to, so no driver quietly snaps it back on
+ * screen. It is a position, not a `hide()`, so moving BACK to the anchor is a
+ * SetWindowPos on an already-composited surface — no show event, no composite
+ * transition, and therefore no flash.
+ */
+const OFFSCREEN = { x: -32000, y: -32000 };
+/**
  * RETIRED, and kept as prose because the measurements are the argument for
  * what replaced it.
  *
@@ -173,6 +187,20 @@ class PanelWindow {
      * been engaged, means the user went somewhere else. See TRANSIT_MARGIN_PX.
      */
     this._transitBox = null;
+    /**
+     * LOGICAL visibility — is the panel meant to be on screen for the user?
+     *
+     * The OS window is composited exactly once (in `create()`, off-screen) and
+     * from then on is NEVER hidden or re-shown: `win.isVisible()` is true for
+     * the whole life of the process. Showing a transparent, always-on-top
+     * window is the composite transition the foreground app repaints across —
+     * the reported open flicker — so the panel is revealed and concealed by
+     * MOVING it on and off screen, not by `hide()`/`showInactive()`. That makes
+     * `win.isVisible()` useless as the "is the panel up?" signal, and this flag
+     * is what every caller and the pointer poll must read instead. See
+     * `isVisible()`, `_reveal()` and `_conceal()`.
+     */
+    this._open = false;
     this.onPinChange = options.onPinChange || (() => {});
     this.onVisibilityChange = options.onVisibilityChange || (() => {});
   }
@@ -254,11 +282,29 @@ class PanelWindow {
     }
 
     this.win.loadFile(entry);
+
+    // Composite the window ONCE, here, and off-screen. This is the only
+    // show->composite transition in the panel's whole life; every subsequent
+    // "open" is a move of this already-composited surface, which is what makes
+    // the reveal flash-free. The bounds are set BEFORE the show so the show
+    // happens at OFFSCREEN, never at the default 0,0 — otherwise startup would
+    // flash the empty frame at the top-left corner. `showInactive()` is
+    // SW_SHOWNOACTIVATE: it does not take focus, so priming the window at launch
+    // cannot yank the keyboard away from whatever the user is doing.
+    this.win.setBounds({ x: OFFSCREEN.x, y: OFFSCREEN.y, width: this.width, height: this.height });
+    this.win.showInactive();
+
     return this.win;
   }
 
+  /**
+   * LOGICAL visibility, not the OS window's. The window is composited for the
+   * whole life of the process (see `create()` and `_open`), so `win.isVisible()`
+   * would answer "yes" the moment the app started and never change. The corridor
+   * poll, the tray toggle, `onVisibilityChange` and every test read THIS.
+   */
   isVisible() {
-    return Boolean(this.win && !this.win.isDestroyed() && this.win.isVisible());
+    return Boolean(this.win && !this.win.isDestroyed() && this._open);
   }
 
   /**
@@ -366,6 +412,12 @@ class PanelWindow {
    * activation. We never call `focus()` on the user's behalf, which also means
    * we never yank the keyboard out of whatever they were typing into.
    *
+   * It also never `show()`s. The window was composited once, off-screen, in
+   * `create()`; opening is `positionFor()` moving that already-drawn surface to
+   * the anchor. There is no show event, so the foreground app has nothing to
+   * repaint across — which is the fix for the reported open flicker. See
+   * `_reveal()`.
+   *
    * The dismissal path this removes is replaced, not dropped: see
    * `_pollTransit` for the corridor rule and NEVER_ENGAGED_MAX_MS.
    */
@@ -373,50 +425,68 @@ class PanelWindow {
     this.cancelHide('open');
     this.create();
     this._shownAt = Date.now();
+    const wasVisible = this._open;
+    // `positionFor()` moves the (already composited) window to the anchor. When
+    // the panel was concealed off-screen, THIS is the move that brings it on
+    // screen; when it was already open it re-anchors in place. Either way it is
+    // a SetWindowPos on a live surface, not a show.
     const anchor = this.positionFor(trayBounds);
     if (anchor && typeof sendAnchor === 'function') {
       sendAnchor({ ...anchor, mode: this.pinned ? 'pin' : 'hover' });
     }
-    const wasVisible = this.win.isVisible();
-    // Unconditional, including on an already-visible panel: it raises the
-    // window without activating it, which is what a second tray click on a
-    // panel hidden behind something else has to do.
-    this.win.showInactive();
-    // Re-assert top-of-z-order in the same tick as the show.
-    //
-    // `showInactive()` maps to SW_SHOWNOACTIVATE: the panel appears on top but
-    // the foreground stays with whatever the user was in, and that foreground
-    // app can repaint over this transparent topmost window for a few frames
-    // before the shell settles the z-order. Captured at ~9 ms/frame around a
-    // real open, that is the reported flicker: the panel is present and dark at
-    // t=117 ms, the background shows through at t=129 ms, and it returns by
-    // t=301 ms — present->gone->present, i.e. something painted OVER a window
-    // that had already drawn its content, not a window that had not drawn yet.
-    //
-    // `moveTop()` issues a fresh SetWindowPos(HWND_TOP) with no activation, so
-    // it re-inserts the panel at the top of the topmost band while preserving
-    // the no-focus-steal property this whole method is built around (see the
-    // doc comment): the keyboard stays wherever the user was typing. It does
-    // NOT close a gap that opens asynchronously several frames later — if the
-    // capture shows the flicker surviving, the next step is re-asserting the
-    // topmost flag from a `ready-to-show`/paint gate rather than at show time.
-    this.win.moveTop();
+    this._reveal();
     this._transitBox = this._corridorFrom(anchor);
     log.trace('panel.show', {
       was: wasVisible,
-      visible: this.win.isVisible(),
+      visible: this._open,
       pinned: this.pinned,
       anchor: anchor ? anchor.anchorSource : 'none',
       activated: false,
       corridor: this._transitBox ? 'measured' : 'none',
     });
-    // Separate line, not a field on panel.show: this is a distinct OS call and
-    // the trace is how the z-order fix is confirmed against the next capture.
-    log.trace('panel.moveTop', { visible: this.win.isVisible(), activated: false });
     if (!wasVisible) this.onVisibilityChange(true);
     // Re-armed on every open, including a re-open of an already visible panel:
     // the pointer is back at the tray icon, so the transit grace starts again.
     if (!this.pinned) this._startPointerWatch();
+  }
+
+  /**
+   * Bring the composited window to the anchor's z-order and mark it logically
+   * open. NOT a `show()`: the window has been visible-to-the-compositor since
+   * `create()`, so there is no show->composite transition to flash. See
+   * `_open` and `OFFSCREEN`.
+   *
+   * `moveTop()` re-inserts the panel at the top of the always-on-top band with
+   * no activation (SetWindowPos HWND_TOP), so a second tray click on a panel
+   * that some other topmost window has covered raises it again without taking
+   * focus. The defensive `showInactive()` is for the one path that can leave the
+   * OS window genuinely hidden — a future caller, or an Electron that drops the
+   * surface on renderer death — and it is a no-op on the normal path because the
+   * window is already shown.
+   */
+  _reveal() {
+    if (!this.win || this.win.isDestroyed()) return;
+    if (!this.win.isVisible()) this.win.showInactive();
+    this.win.moveTop();
+    this._open = true;
+    log.trace('panel.reveal', { via: 'move', visible: this._open, activated: false });
+  }
+
+  /**
+   * The counterpart to `_reveal()`: mark the panel logically hidden and move the
+   * still-composited window off every display. NOT a `hide()` — hiding is the
+   * transition whose re-show flashes, and the whole point of this window living
+   * always-composited is never to pay that transition again. Off-screen it
+   * paints nothing a user sees and, being far outside the virtual desktop,
+   * catches no click a user can land, so no `setIgnoreMouseEvents` is needed to
+   * make it click-safe. `skipTaskbar` already keeps it out of the taskbar and
+   * Alt-Tab.
+   */
+  _conceal() {
+    this._open = false;
+    if (!this.win || this.win.isDestroyed()) return;
+    this.win.setBounds({ x: OFFSCREEN.x, y: OFFSCREEN.y, width: this.width, height: this.height });
+    log.trace('panel.conceal', { via: 'offscreen' });
   }
 
   /**
@@ -437,6 +507,13 @@ class PanelWindow {
    * Nothing dismisses it but an explicit close or unpin — no blur, no app
    * switch, no click elsewhere on the desktop — so the pointer watch is
    * stopped outright rather than merely ignored.
+   *
+   * Unlike `open()`, pin DELIBERATELY activates: the user reached for a control
+   * that means "keep this and let me work in it", so it takes focus. That is
+   * the one legitimate focus-steal in this class, and `show()`+`focus()` is how
+   * it is done. `positionFor()` has already moved the composited window to the
+   * anchor, so `show()` here activates an already-visible window rather than
+   * running a fresh show->composite transition.
    */
   pin(trayBounds, sendAnchor) {
     this.cancelHide('pin');
@@ -446,10 +523,11 @@ class PanelWindow {
     this.pinned = true;
     const anchor = this.positionFor(trayBounds);
     if (anchor && typeof sendAnchor === 'function') sendAnchor({ ...anchor, mode: 'pin' });
-    const wasVisible = this.win.isVisible();
+    const wasVisible = this._open;
     this.win.show();
     this.win.focus();
-    log.trace('panel.pin', { was: wasVisible, visible: this.win.isVisible() });
+    this._open = true;
+    log.trace('panel.pin', { was: wasVisible, visible: this._open });
     if (!wasVisible) this.onVisibilityChange(true);
     this.onPinChange(true);
   }
@@ -510,12 +588,16 @@ class PanelWindow {
     this._transitBox = null;
     this.pinned = false;
     this.onPinChange(false);
-    const wasVisible = Boolean(this.win && !this.win.isDestroyed() && this.win.isVisible());
+    const wasVisible = this._open;
     if (wasVisible) {
-      this.win.hide();
+      // Conceal by moving off-screen, NOT by `win.hide()`. A hidden window's
+      // next show is the composite transition that flashes; a moved one has no
+      // show to pay for. `_conceal()` clears `_open`, so `isVisible()` reads
+      // false from here on.
+      this._conceal();
       this.onVisibilityChange(false);
     }
-    log.trace('panel.hide', { reason, was: wasVisible, visible: this.isVisible() });
+    log.trace('panel.hide', { reason, was: wasVisible, visible: this._open });
   }
 
   /** Grace period so a pointer that clipped the edge can come back. */
