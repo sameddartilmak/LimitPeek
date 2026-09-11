@@ -1,9 +1,11 @@
 /**
- * The in-panel settings view: which providers exist as rows in the main panel.
+ * The in-panel settings view: which providers exist as rows in the main panel,
+ * a per-period usage summary, and the theme.
  *
  * ADDED vs. CONNECTED
  * -------------------
- * These are two different questions and this view answers only the first.
+ * These are two different questions and the tools section answers only the
+ * first.
  *
  *   enabled    the user ADDED the row. It is their choice to see the provider
  *              at all, and it is the only thing a switch here changes.
@@ -22,30 +24,67 @@
  * language. The panel is click-opened and pinnable now, so it is stable enough
  * to hold a form.
  *
- * TWO SECTIONS NOW
- * ----------------
- * "Araçlar" (which rows exist) and "Görünüm" (the theme). The view heading is
- * therefore "Ayarlar" and each section carries its own h3 — a single h2 saying
- * "Araçlar" over a theme control would be a heading that lies about what it
- * covers, and headings are how a screen reader user navigates this view.
+ * THREE SECTIONS, ONE OPEN AT A TIME (ACCORDION)
+ * ----------------------------------------------
+ * The view holds three sections now — "Model Yönetimi" (which rows exist),
+ * "Toplam Kullanım" (per-period notional cost) and "Görünüm" (the theme). They
+ * are collapsible and mutually exclusive: opening one closes the others, so the
+ * short hover panel never has to scroll through all three at once. Each header
+ * is the accordion pattern from the ARIA practices — an <h3> wrapping a real
+ * <button> with `aria-expanded` — so a screen-reader user both navigates by
+ * heading AND operates the disclosure with the platform's own Space/Enter, and
+ * the focus ring is the shared :focus-visible one.
  *
- * The appearance section comes LAST in DOM order on purpose: it keeps the
- * existing tab path (back control -> first provider switch) exactly as it was.
+ * DEFAULT OPEN: "Model Yönetimi", the first section. It is the view's original
+ * job and keeps the tab path (back control -> first provider switch) exactly as
+ * it was; the other two start collapsed. Clicking the open header collapses it,
+ * so "all closed" is reachable too — the invariant is at most one open, which
+ * is what "opening one closes the others" means.
+ *
+ * WHY THE USAGE FIGURE IS A COST AND NOT A TOKEN TOTAL
+ * ---------------------------------------------------
+ * Summing the four token classes into one number is meaningless here (README,
+ * ADR-001): cache reads are ~98% of raw volume and bill at 0.1x. So each period
+ * is summarised by its NOTIONAL cost at published API prices, computed in main
+ * (`src/core/history.js`) and sent resolved — the renderer does no arithmetic
+ * on usage. It is framed exactly like the weekly cost block: never a bill, and
+ * "en az $X" whenever the figure is a lower bound.
  */
 
-import type { ProviderSnapshot, ThemeChoice } from '../../../shared/contract.js';
-import { el, on, setAttr, setText, svg } from '../dom.js';
+import type {
+  PeriodUsage,
+  ProviderSnapshot,
+  ThemeChoice,
+  UsageHistory,
+} from '../../../shared/contract.js';
+import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { enabledOf, type PanelState } from '../store.js';
 import { themeLabel } from '../theme.js';
+import { dayRange, priceDate, usd } from '../format.js';
 import { providerMark } from './logo.js';
 
 /** The id the header's settings button points `aria-controls` at. */
 export const SETTINGS_VIEW_ID = 'settings-view';
 const SETTINGS_TITLE_ID = 'settings-title';
-const TOOLS_TITLE_ID = 'settings-tools-title';
+const MODELS_HEADER_ID = 'settings-sec-models-h';
+const MODELS_REGION_ID = 'settings-sec-models-r';
+const USAGE_HEADER_ID = 'settings-sec-usage-h';
+const USAGE_REGION_ID = 'settings-sec-usage-r';
+const THEME_HEADER_ID = 'settings-sec-theme-h';
+const THEME_REGION_ID = 'settings-sec-theme-r';
 const SETTINGS_HELP_ID = 'settings-help';
 const THEME_TITLE_ID = 'settings-theme-title';
 const THEME_HELP_ID = 'settings-theme-help';
+
+/** The grain the usage section is showing. */
+type UsageGrain = 'week' | 'month';
+
+/**
+ * DEFAULT GRAIN: monthly. "Toplam Kullanım" reads first as a coarse overview —
+ * a run of months is a year at a glance in a few rows — and the finer weekly
+ * view is the drill-down the toggle offers.
+ */
+const DEFAULT_GRAIN: UsageGrain = 'month';
 
 export interface SettingsContext {
   /** The user asked to add (`enabled: true`) or remove a provider. */
@@ -70,6 +109,23 @@ function backIcon(): SVGElement {
     { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false' },
     svg('path', {
       d: 'M9.5 3.5L5 8l4.5 4.5',
+      stroke: 'currentColor',
+      'stroke-width': '1.4',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+    }),
+  );
+}
+
+/** The disclosure chevron. Points right when collapsed; CSS rotates it down
+ *  when the header's `aria-expanded` is true, so the state has a visual carrier
+ *  besides the region appearing. */
+function chevronIcon(): SVGElement {
+  return svg(
+    'svg',
+    { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false' },
+    svg('path', {
+      d: 'M6 4l4 4-4 4',
       stroke: 'currentColor',
       'stroke-width': '1.4',
       'stroke-linecap': 'round',
@@ -177,6 +233,11 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
  * hand-rolled ARIA to keep honest. They are visually replaced, never hidden
  * with `display:none`, so focus still lands on a real control.
  *
+ * The legend is visually hidden now (`u-sr`): the accordion header already
+ * shows "Görünüm", and a second visible copy directly above the radios would
+ * be a heading printed twice. The legend stays in the accessibility tree so the
+ * radio group keeps a group name.
+ *
  * `system` is a live binding, so its label says what it is currently resolving
  * to. Otherwise picking it looks like nothing happened on a machine whose OS
  * is already dark.
@@ -218,7 +279,7 @@ function createThemeControl(ctx: SettingsContext): ThemeHandleLocal {
   const root = el(
     'fieldset',
     { class: 'theme', 'aria-describedby': THEME_HELP_ID },
-    el('legend', { class: 'settings__section', id: THEME_TITLE_ID }, 'Görünüm'),
+    el('legend', { class: 'u-sr', id: THEME_TITLE_ID }, 'Görünüm'),
     help,
     options,
   );
@@ -251,6 +312,217 @@ function createThemeControl(ctx: SettingsContext): ThemeHandleLocal {
   return { el: root, update };
 }
 
+/**
+ * The per-period usage section.
+ *
+ * Renders the resolved figures from `Snapshot.usageHistory` — it does no
+ * arithmetic on usage. The one ratio it does compute is the bar length
+ * (`costUsd / maxCost`), which is presentation scaling of already-resolved
+ * dollar figures, exactly the shape the cost block's composition bar already
+ * uses; the load-bearing numbers all arrive resolved from main.
+ *
+ * The grain toggle re-renders from the history already in hand, so switching
+ * hafta/ay does not wait for the next snapshot.
+ */
+interface UsageHandleLocal {
+  el: HTMLElement;
+  update(history: UsageHistory | null, hasData: boolean): void;
+}
+
+/** The amount cell's text, framed and honest. Never a bare "$0,00". */
+function amountText(period: PeriodUsage): string {
+  if (!period.hasUsage) return '—';
+  if (period.costUsd > 0) return (period.isFloor ? 'en az ' : '') + usd(period.costUsd);
+  // Usage happened, but none of it could be priced: say so rather than print a
+  // zero that reads as "free".
+  return period.unpricedModels.length > 0 ? 'fiyatlanamadı' : '—';
+}
+
+function createUsageSection(): UsageHandleLocal {
+  let grain: UsageGrain = DEFAULT_GRAIN;
+  let current: UsageHistory | null = null;
+  let hasData = false;
+
+  const intro = el(
+    'p',
+    { class: 'usage__intro' },
+    'Yayımlanan API fiyatlarıyla dönem dönem yaklaşık maliyet. Bu bir fatura ' +
+      'değildir — abonelik kapsamında bu tutar (ABD doları) ödenmez. Yalnızca ' +
+      'yerel Claude Code transkriptlerinden hesaplanır.',
+  );
+
+  const GRAINS: ReadonlyArray<{ v: UsageGrain; label: string }> = [
+    { v: 'month', label: 'Aylık' },
+    { v: 'week', label: 'Haftalık' },
+  ];
+  const radios = new Map<UsageGrain, HTMLInputElement>();
+  const toggle = el('div', { class: 'seg', role: 'group', 'aria-label': 'Dönem aralığı' });
+  for (const g of GRAINS) {
+    const id = 'usage-grain-' + g.v;
+    const input = el('input', {
+      type: 'radio',
+      name: 'usage-grain',
+      id,
+      value: g.v,
+      class: 'seg__radio',
+    }) as HTMLInputElement;
+    const label = el('label', { class: 'seg__opt', for: id }, g.label);
+    on(input, 'change', () => {
+      if (input.checked && grain !== g.v) {
+        grain = g.v;
+        renderList();
+      }
+    });
+    radios.set(g.v, input);
+    toggle.appendChild(input);
+    toggle.appendChild(label);
+  }
+
+  const list = el('ul', { class: 'usage__list', role: 'list' });
+  const empty = el('p', { class: 'usage__empty' }, '');
+  const note = el('p', { class: 'usage__note' }, '');
+
+  const root = el('div', { class: 'usage' }, intro, toggle, list, empty, note);
+
+  function periodsFor(): PeriodUsage[] {
+    if (!current) return [];
+    return grain === 'week' ? current.weeks : current.months;
+  }
+
+  function renderRow(period: PeriodUsage, maxCost: number): HTMLElement {
+    const range = el('span', { class: 'usage__range' }, dayRange(period.startsAt, period.endsAt) || '—');
+    const amount = el('span', { class: 'usage__amount u-num' }, amountText(period));
+    const bar = el('span', { class: 'usage__bar', 'aria-hidden': 'true' });
+    if (maxCost > 0 && period.costUsd > 0) {
+      const fill = el('i', { class: 'usage__fill' });
+      fill.style.setProperty('--w', (period.costUsd / maxCost).toFixed(4));
+      bar.appendChild(fill);
+    } else {
+      bar.hidden = true;
+    }
+    const row = el('li', { class: 'usage__row', role: 'listitem' }, range, amount, bar) as HTMLElement;
+    setAttr(row, 'data-empty', period.hasUsage ? null : 'true');
+    setAttr(row, 'data-floor', period.isFloor ? 'true' : null);
+    return row;
+  }
+
+  function renderList(): void {
+    for (const [v, input] of radios) {
+      const on_ = grain === v;
+      if (input.checked !== on_) input.checked = on_;
+    }
+
+    if (!hasData) {
+      list.hidden = true;
+      note.hidden = true;
+      empty.hidden = false;
+      setText(empty, 'Kullanım geçmişi yükleniyor…');
+      return;
+    }
+
+    const periods = periodsFor();
+    if (periods.length === 0) {
+      list.hidden = true;
+      note.hidden = true;
+      empty.hidden = false;
+      setText(empty, 'Henüz yerel kullanım kaydı bulunamadı.');
+      return;
+    }
+
+    empty.hidden = true;
+    list.hidden = false;
+    const maxCost = periods.reduce((max, p) => (p.costUsd > max ? p.costUsd : max), 0);
+    replaceChildrenWith(list, periods.map((p) => renderRow(p, maxCost)));
+
+    note.hidden = false;
+    setText(
+      note,
+      current && current.pricesAsOf
+        ? `Fiyatlar ${priceDate(current.pricesAsOf)} tarihli listeye göre. ` +
+            '“En az”, fiyatlanamayan kullanım toplama katılmadığı için alt sınır demektir.'
+        : 'Fiyat listesinin tarihi bildirilmedi.',
+    );
+  }
+
+  function update(history: UsageHistory | null, dataArrived: boolean): void {
+    current = history;
+    hasData = dataArrived;
+    renderList();
+  }
+
+  return { el: root, update };
+}
+
+/* --------------------------------------------------------------- accordion */
+
+interface AccordionSection {
+  id: string;
+  trigger: HTMLButtonElement;
+  region: HTMLElement;
+  el: HTMLElement;
+}
+
+/**
+ * Builds one accordion section: an <h3> that wraps the toggle button, and a
+ * labelled region. The heading carries the outline for screen-reader
+ * navigation; the button carries the disclosure. `data-acc` is a stable hook
+ * for tests and for the CSS chevron.
+ */
+function createAccordionSection(
+  id: string,
+  headerId: string,
+  regionId: string,
+  title: string,
+  content: readonly HTMLElement[],
+): AccordionSection {
+  const trigger = el(
+    'button',
+    {
+      type: 'button',
+      class: 'acc__trigger',
+      id: headerId,
+      'aria-expanded': 'false',
+      'aria-controls': regionId,
+      'data-acc': id,
+    },
+    el('span', { class: 'acc__title' }, title),
+    el('span', { class: 'acc__chev', 'aria-hidden': 'true' }, chevronIcon()),
+  ) as HTMLButtonElement;
+
+  const heading = el('h3', { class: 'acc__heading' }, trigger);
+  const region = el(
+    'div',
+    { class: 'acc__region', id: regionId, role: 'region', 'aria-labelledby': headerId },
+    ...content,
+  );
+  const section = el('div', { class: 'acc__section', 'data-acc-section': id }, heading, region);
+  return { id, trigger, region, el: section };
+}
+
+/**
+ * Wires the sections so at most one is open. Opening one closes the others;
+ * clicking the open one collapses it. `aria-expanded` on the trigger and
+ * `hidden` on the region are the two things kept in sync, and they are the two
+ * a screen reader and a Tab key respectively depend on.
+ */
+function wireAccordion(sections: readonly AccordionSection[], defaultOpenId: string | null): void {
+  const setOpen = (section: AccordionSection, open: boolean): void => {
+    setAttr(section.trigger, 'aria-expanded', open ? 'true' : 'false');
+    section.region.hidden = !open;
+  };
+  for (const section of sections) setOpen(section, section.id === defaultOpenId);
+  for (const section of sections) {
+    on(section.trigger, 'click', () => {
+      const open = section.trigger.getAttribute('aria-expanded') === 'true';
+      if (open) {
+        setOpen(section, false);
+      } else {
+        for (const other of sections) setOpen(other, other.id === section.id);
+      }
+    });
+  }
+}
+
 export function createSettings(ctx: SettingsContext): SettingsHandle {
   const items = new Map<string, ItemHandle>();
 
@@ -270,12 +542,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     el('h2', { class: 'settings__title', id: SETTINGS_TITLE_ID }, 'Ayarlar'),
   );
 
-  // The view holds two sections now, so "Araçlar" is a section heading rather
-  // than the view's title. The list is labelled by THIS heading, not by the
-  // view title, or a screen reader would announce the theme radios as part of
-  // a list of tools.
-  const toolsTitle = el('h3', { class: 'settings__section', id: TOOLS_TITLE_ID }, 'Araçlar');
-
+  // --- "Model Yönetimi": which rows exist ---------------------------------
   const help = el(
     'p',
     { class: 'settings__help', id: SETTINGS_HELP_ID },
@@ -286,16 +553,48 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   const list = el('ul', {
     class: 'settings__list',
     role: 'list',
-    'aria-labelledby': TOOLS_TITLE_ID,
+    'aria-labelledby': MODELS_HEADER_ID,
     'aria-describedby': SETTINGS_HELP_ID,
   });
 
-  // The view's own three states. "Taranıyor" and "araç yok" are different
-  // claims and must not share one blank panel.
+  // The models section's own three states. "Taranıyor" and "araç yok" are
+  // different claims and must not share one blank panel.
   const status = el('p', { class: 'settings__status' }, '');
   status.hidden = true;
 
+  const modelsSection = createAccordionSection(
+    'models',
+    MODELS_HEADER_ID,
+    MODELS_REGION_ID,
+    'Model Yönetimi',
+    [help, list, status],
+  );
+
+  // --- "Toplam Kullanım": per-period notional cost ------------------------
+  const usage = createUsageSection();
+  const usageSection = createAccordionSection(
+    'usage',
+    USAGE_HEADER_ID,
+    USAGE_REGION_ID,
+    'Toplam Kullanım',
+    [usage.el],
+  );
+
+  // --- "Görünüm": the theme ----------------------------------------------
   const theme = createThemeControl(ctx);
+  const themeSection = createAccordionSection(
+    'theme',
+    THEME_HEADER_ID,
+    THEME_REGION_ID,
+    'Görünüm',
+    [theme.el],
+  );
+
+  const sections = [modelsSection, usageSection, themeSection];
+  // First section open; the tab path (back -> first switch) is unchanged.
+  wireAccordion(sections, 'models');
+
+  const acc = el('div', { class: 'acc' }, ...sections.map((s) => s.el));
 
   const root = el(
     'section',
@@ -306,13 +605,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
       'aria-labelledby': SETTINGS_TITLE_ID,
     },
     bar,
-    toolsTitle,
-    help,
-    list,
-    status,
-    // Last, so the tab path from the back control still runs into the provider
-    // switches before it reaches anything new.
-    theme.el,
+    acc,
   );
   root.hidden = true;
 
@@ -321,8 +614,8 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
    * switch must keep focus across the 15s snapshot cadence.
    *
    * Runs BEFORE the empty/loading branches decide what to show, and runs even
-   * for an empty array. Returning early instead left six hidden switches in
-   * the document after every provider went away — invisible, but still real
+   * for an empty array. Returning early instead left hidden switches in the
+   * document after every provider went away — invisible, but still real
    * controls carrying stale names and stale aria-checked, which is what a
    * screen reader and a query selector both walk.
    */
@@ -361,14 +654,15 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
 
   function render(state: PanelState, providers: readonly ProviderSnapshot[]): void {
     syncItems(state, providers);
-    // Painted before the three list states return: the theme control belongs
-    // to the VIEW, not to the provider list, and a machine with no recognised
-    // tools must still be able to pick a theme. Returning early above it was
-    // how the settings status branches used to strand everything below them.
+    // Painted regardless of the models list's state: the theme control and the
+    // usage section belong to the VIEW, not to the provider list, and a machine
+    // with no recognised tools must still be able to pick a theme and see its
+    // history.
     theme.update(state);
+    usage.update(state.snapshot?.usageHistory ?? null, state.hasData);
 
-    // Three states, told apart in words. "Still scanning" and "this machine has
-    // nothing" are different claims and must not share one blank form.
+    // Three states for the models list, told apart in words. "Still scanning"
+    // and "this machine has nothing" are different claims.
     if (!state.hasData) {
       list.hidden = true;
       status.hidden = false;

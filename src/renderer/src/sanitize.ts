@@ -21,6 +21,7 @@ import type {
   ModelCost,
   ModelQuotaDetail,
   ModelQuotaGroup,
+  PeriodUsage,
   Provenance,
   ProviderSnapshot,
   RefreshNotice,
@@ -30,6 +31,7 @@ import type {
   Snapshot,
   ThemeChoice,
   TokenBreakdown,
+  UsageHistory,
   WeeklyCost,
   WindowAbsence,
   WindowUsage,
@@ -479,6 +481,81 @@ function weeklyCost(raw: unknown): WeeklyCost | null {
   };
 }
 
+/**
+ * A hard cap on each period list. The producer emits at most a dozen, but a
+ * malformed main process could send an unbounded array, and every entry becomes
+ * a row in a narrow scrolling panel. Generous enough that the real payload is
+ * never clipped, bounded enough that a bad one cannot make the view unusable.
+ */
+const MAX_PERIODS = 60;
+
+/**
+ * One period bucket.
+ *
+ * Dropped — not zeroed — when it has no valid date range, because the whole row
+ * is a labelled range and an unlabelled one is not this shape. Everything else
+ * degrades in place, on the same reasoning as `weeklyCost()`: a single bad field
+ * must not delete a period the user could still have been shown truthfully.
+ *
+ * `costUsd` is coerced to a non-negative number and never to a bill: the
+ * renderer frames it. `byClass` falls back to zeros (the composition simply
+ * hides). There is deliberately no token-total field to carry — the contract
+ * does not define one, so none can cross this boundary.
+ */
+function periodUsage(raw: unknown): PeriodUsage | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const source = raw as Record<string, unknown>;
+
+  const startsAt = isoInstant(source.startsAt);
+  const endsAt = isoInstant(source.endsAt);
+  if (startsAt === null || endsAt === null) return null;
+
+  const unpricedModels = (Array.isArray(source.unpricedModels) ? source.unpricedModels : [])
+    .map((entry) => text(entry, 64))
+    .filter((entry): entry is string => entry !== null)
+    .slice(0, 24);
+
+  return {
+    key: text(source.key, 32) ?? startsAt,
+    startsAt,
+    endsAt,
+    costUsd: nonNegative(source.costUsd) ?? 0,
+    byClass: costByClass(source.byClass) ?? {
+      input: 0,
+      output: 0,
+      cacheWrite5m: 0,
+      cacheWrite1h: 0,
+      cacheRead: 0,
+    },
+    isFloor: source.isFloor === true,
+    unpricedModels,
+    hasUsage: source.hasUsage === true,
+  };
+}
+
+/**
+ * Week/month history. Absent or malformed collapses to null, which the settings
+ * section renders as its empty state — indistinguishable, correctly, from a main
+ * process that predates the field.
+ */
+function usageHistory(raw: unknown): UsageHistory | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const source = raw as Record<string, unknown>;
+  const weeks = (Array.isArray(source.weeks) ? source.weeks : [])
+    .map(periodUsage)
+    .filter((entry): entry is PeriodUsage => entry !== null)
+    .slice(0, MAX_PERIODS);
+  const months = (Array.isArray(source.months) ? source.months : [])
+    .map(periodUsage)
+    .filter((entry): entry is PeriodUsage => entry !== null)
+    .slice(0, MAX_PERIODS);
+  // '' is the same "not reported" sentinel weeklyCost() uses: no valid ISO date
+  // is empty, and the renderer branches on it to say the date was not given
+  // rather than printing an empty one.
+  const pricesAsOf = isoInstant(source.pricesAsOf) ?? '';
+  return { weeks, months, pricesAsOf };
+}
+
 function setupAction(raw: unknown): SetupAction | null {
   if (!raw || typeof raw !== 'object') return null;
   const source = raw as Record<string, unknown>;
@@ -642,7 +719,12 @@ export function sanitizeSnapshot(raw: unknown): Snapshot | null {
     (entry): entry is RefreshNotice => REFRESH_NOTICES.has(entry as RefreshNotice),
   );
 
+  // A standing fact about the local corpus, carried on every snapshot (unlike
+  // refreshNotices). null when absent or unusable; the section shows its empty
+  // state, which is the same thing an older main process should produce.
+  const history = usageHistory(source.usageHistory);
+
   return notices.length > 0
-    ? { generatedAt, providers, refreshNotices: notices }
-    : { generatedAt, providers };
+    ? { generatedAt, providers, refreshNotices: notices, usageHistory: history }
+    : { generatedAt, providers, usageHistory: history };
 }

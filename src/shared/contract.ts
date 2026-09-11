@@ -268,6 +268,70 @@ export interface WeeklyCost {
 }
 
 /**
+ * One calendar period (a week or a month) and its NOTIONAL cost.
+ *
+ * The honesty rule that shapes this shape: there is deliberately NO single
+ * merged token total here. Summing the four token classes produces a figure
+ * dominated by cache reads (≈98% of raw volume, billed at 0.1x) that means
+ * nothing (README, ADR-001). A period is summarised the one honest way there
+ * is — its cost at published API prices (ADR-002), which has a real published
+ * denominator — carried in `costUsd` plus a per-class `byClass`. Main resolves
+ * both; the renderer does no arithmetic on them. Frame `costUsd` exactly as
+ * `WeeklyCost.totalUsd` is framed: never a bill, always "what this would have
+ * cost at published API rates", and prefixed "en az" whenever `isFloor`.
+ */
+export interface PeriodUsage {
+  /** Stable identity, derived from the LOCAL period start: a week is keyed by
+   *  its Monday's date ("2026-09-07"), a month by "YYYY-MM". Not shown to the
+   *  user — the visible range is formatted from `startsAt`/`endsAt`. */
+  key: string;
+  /** ISO instant the period starts (local calendar midnight). */
+  startsAt: string;
+  /** ISO instant of the period's INCLUSIVE last day (its local midnight), so
+   *  the renderer formats "2 Eylül – 8 Eylül" directly, with no exclusive
+   *  boundary to adjust for. */
+  endsAt: string;
+  /**
+   * Notional USD over PRICED models only, at published API rates. Never a bill.
+   * A real 0 means "no priced usage in this period" — read `hasUsage` to tell
+   * that apart from "usage happened but none of it could be priced".
+   */
+  costUsd: number;
+  /** Per-class USD split (same classes as `CostByClass`). Shown separately;
+   *  never summed back into one token figure. */
+  byClass: CostByClass;
+  /**
+   * true when `costUsd` is a LOWER BOUND: unpriced models were excluded, or a
+   * cache-write TTL split was missing and priced at the 1.25x floor. Every such
+   * cause can only push the true figure up, so the renderer prints "en az".
+   */
+  isFloor: boolean;
+  /** Model ids seen in the period with no price-table entry. Presence only —
+   *  de-duplicated and speed-dropped, exactly like `WeeklyCost.unpricedModels`. */
+  unpricedModels: string[];
+  /** true when ANY event landed in the period, priced or not. Distinguishes a
+   *  genuinely empty period from one whose usage could not be costed. */
+  hasUsage: boolean;
+}
+
+/**
+ * Week-by-week and month-by-month notional usage, for the settings "Toplam
+ * Kullanım" section. Derived from LOCAL transcripts, which today means Claude
+ * Code — the only provider with a local corpus (README). Both lists are
+ * contiguous and NEWEST FIRST, and include honest empty periods between the
+ * first observed usage and now. Main computes every figure; the renderer only
+ * renders (contract rule: no renderer arithmetic on usage).
+ */
+export interface UsageHistory {
+  /** ISO-week-aligned (Mon–Sun) buckets, newest first. */
+  weeks: PeriodUsage[];
+  /** Calendar-month buckets, newest first. */
+  months: PeriodUsage[];
+  /** ISO date the price table was current (see `WeeklyCost.pricesAsOf`). */
+  pricesAsOf: string;
+}
+
+/**
  * One figure and the models it was reported for.
  *
  * The split is the point and it is structural, not stylistic: the figure lives
@@ -421,6 +485,14 @@ export interface Snapshot {
    * invoke reply; the object it pushes is untouched.
    */
   refreshNotices?: RefreshNotice[];
+  /**
+   * Week-by-week / month-by-month notional usage for the settings "Toplam
+   * Kullanım" section. Optional and additive: an older main process omits it,
+   * and the renderer simply shows the section's empty state. Present on both
+   * pushed and refresh snapshots — unlike `refreshNotices`, it is a standing
+   * fact about the local corpus, not a one-off answer to a user action.
+   */
+  usageHistory?: UsageHistory | null;
 }
 
 /**

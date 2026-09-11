@@ -376,3 +376,103 @@ test.describe('enabled decides whether a row exists at all', () => {
     assert.equal(out.providers.some((p) => p.enabled), false);
   });
 });
+
+/* ----------------------------------------------------------- usage history */
+
+/**
+ * `usageHistory` is a new top-level field, and the renderer only ever sees the
+ * OUTPUT of sanitizeSnapshot (bridge.ts sanitises every ingress). So the
+ * sanitiser is the one thing standing between main's per-period figures and the
+ * settings section — a field it does not carry is a section that never fills.
+ */
+function period(over) {
+  return {
+    key: '2026-09-07',
+    startsAt: '2026-09-07T00:00:00.000Z',
+    endsAt: '2026-09-13T00:00:00.000Z',
+    costUsd: 12.34,
+    byClass: { input: 1, output: 2, cacheWrite5m: 3, cacheWrite1h: 4, cacheRead: 5 },
+    isFloor: false,
+    unpricedModels: [],
+    hasUsage: true,
+    ...over,
+  };
+}
+function historyWith(history) {
+  return { generatedAt: '2026-09-09T15:00:00.000Z', providers: [], usageHistory: history };
+}
+
+test.describe('the per-period usage history survives the boundary', () => {
+  test('an absent history is null, indistinguishable from an older main process', () => {
+    const out = s.sanitizeSnapshot({ generatedAt: '2026-09-09T15:00:00.000Z', providers: [] });
+    assert.equal(out.usageHistory, null);
+  });
+
+  test('a well-formed history passes through with its figures intact', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ costUsd: 12.34, isFloor: true })],
+      months: [period({ key: '2026-09', costUsd: 40 })],
+      pricesAsOf: '2026-06-24',
+    }));
+    assert.equal(out.usageHistory.weeks.length, 1);
+    assert.equal(out.usageHistory.weeks[0].costUsd, 12.34);
+    assert.equal(out.usageHistory.weeks[0].isFloor, true);
+    assert.equal(out.usageHistory.months[0].costUsd, 40);
+    assert.equal(out.usageHistory.pricesAsOf, '2026-06-24');
+  });
+
+  test('a period with no usable date range is dropped, not zeroed', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ startsAt: 'yarın' }), period({ endsAt: null }), period()],
+      months: [],
+      pricesAsOf: '2026-06-24',
+    }));
+    // Only the fully-dated period survives; an unlabelled range is not this shape.
+    assert.equal(out.usageHistory.weeks.length, 1);
+  });
+
+  test('a negative cost is floored to zero, never shown as a credit', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ costUsd: -5 })],
+      months: [],
+      pricesAsOf: '2026-06-24',
+    }));
+    assert.equal(out.usageHistory.weeks[0].costUsd, 0);
+  });
+
+  test('isFloor and hasUsage admit only the boolean true, like every other flag here', () => {
+    for (const truthy of ['true', 1, {}, 'yes']) {
+      const out = s.sanitizeSnapshot(historyWith({
+        weeks: [period({ isFloor: truthy, hasUsage: truthy })],
+        months: [],
+        pricesAsOf: '2026-06-24',
+      }));
+      assert.equal(out.usageHistory.weeks[0].isFloor, false, JSON.stringify(truthy));
+      assert.equal(out.usageHistory.weeks[0].hasUsage, false, JSON.stringify(truthy));
+    }
+  });
+
+  test('no merged token total can be smuggled in — the shape has nowhere to put one', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ billable: 999999, tokens: { billable: 999999 } })],
+      months: [],
+      pricesAsOf: '2026-06-24',
+    }));
+    const p = out.usageHistory.weeks[0];
+    assert.equal('billable' in p, false);
+    assert.equal('tokens' in p, false);
+    // byClass carries dollars per class and no merged total.
+    assert.equal('billable' in p.byClass, false);
+  });
+
+  test('an unparseable pricesAsOf becomes the "" not-reported sentinel, not a bad date', () => {
+    const out = s.sanitizeSnapshot(historyWith({ weeks: [], months: [], pricesAsOf: 'dün' }));
+    assert.equal(out.usageHistory.pricesAsOf, '');
+  });
+
+  test('a garbage history collapses to null rather than half-rendering', () => {
+    for (const bad of [42, 'history', true]) {
+      assert.equal(s.sanitizeSnapshot(historyWith(bad)).usageHistory, null, JSON.stringify(bad));
+    }
+  });
+});
