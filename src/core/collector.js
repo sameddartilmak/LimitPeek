@@ -7,7 +7,7 @@ const { Worker } = require('node:worker_threads');
 const store = require('./store');
 const log = require('./log');
 const paths = require('./paths');
-const { readClaudeRateLimits, readAntigravityQuota } = require('./ratelimits');
+const { readClaudeRateLimits, retainClaudeFigures, readAntigravityQuota } = require('./ratelimits');
 const { readAntigravityIdeQuota } = require('./antigravity/ide-quota');
 const { resolveAntigravityIdeStore } = require('./antigravity/install');
 const { buildSnapshot, loadingSnapshot } = require('./snapshot');
@@ -88,6 +88,16 @@ class Collector extends EventEmitter {
     this.panelOpen = false;
     /** When the transcript data was last known-good. Feeds `lastGoodAt`. */
     this.scanGoodAtMs = null;
+    /**
+     * Last VALID Claude figure per window, `{ resetsAtMs, usedPercentage }`.
+     * Owned here, not in the reader, on purpose: the bridge OVERWRITES its
+     * capture file with a null percentage on a transient gap, so the last good
+     * number is not on disk to be re-read — only the collector, which rebuilds
+     * on every bridge change, spans two readings and can carry it. In memory
+     * only: a restart starts empty, so a figure from a previous run can never be
+     * shown as current. Reset by `retainClaudeFigures` when the window changes.
+     */
+    this._claudeRetained = { fiveHour: null, sevenDay: null };
 
     this._scanning = false;
     this._pending = false;
@@ -198,7 +208,16 @@ class Collector extends EventEmitter {
    * bridge output changed, and after every scan.
    */
   rebuild() {
-    const rateLimits = readClaudeRateLimits({ file: this.rateLimitsFile, now: Date.now() });
+    const now = Date.now();
+    // Retain the last valid figure for a window that is still current, so a
+    // transient null in the bridge capture (Claude Code omitting
+    // `used_percentage` for a render) does not wipe a figure that is still true.
+    // Held on this instance across rebuilds and reset when the window changes;
+    // see `retainClaudeFigures`.
+    const read = readClaudeRateLimits({ file: this.rateLimitsFile, now });
+    const retained = retainClaudeFigures(read, this._claudeRetained, now);
+    this._claudeRetained = retained.retained;
+    const rateLimits = retained.rateLimits;
     const antigravityQuota = readAntigravityQuota({ file: this.antigravityQuotaFile, now: Date.now() });
     this._reportUnusableQuota(antigravityQuota);
     const antigravityIde = this._readIdeQuota();
