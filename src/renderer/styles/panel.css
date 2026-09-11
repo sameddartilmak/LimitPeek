@@ -773,3 +773,196 @@
   animation: settings-revert 1600ms ease-out 1;
   border-radius: 6px;
 }
+
+/* ------------------------------------------------------- settings accordion */
+/* Three sections, one open at a time. The header is a real <button> inside an
+ * <h3>, so the disclosure is keyboard-operable by the platform and the ring is
+ * the shared :focus-visible one. State is carried twice — the region shows or
+ * hides, and the chevron turns — so it survives a greyscale screenshot. */
+
+.acc { display: block; }
+
+.acc__section { border-top: 1px solid var(--ink-700); }
+.acc__section:first-child { border-top: 0; }
+
+.acc__heading { margin: 0; }
+
+.acc__trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: var(--s-3) var(--s-4);
+  border: 0;
+  background: transparent;
+  color: var(--ink-200);
+  font: inherit;
+  font-size: var(--fs-name);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color 120ms linear, background-color 120ms linear;
+}
+.acc__trigger:hover { color: var(--ink-100); background: var(--ink-800); }
+.acc__trigger[aria-expanded="true"] { color: var(--ink-100); }
+
+.acc__title { flex: 1 1 auto; min-width: 0; }
+
+.acc__chev {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--ink-400);
+  transition: transform 160ms var(--ease-open), color 120ms linear;
+}
+.acc__chev svg { width: 14px; height: 14px; display: block; }
+.acc__trigger[aria-expanded="true"] .acc__chev {
+  transform: rotate(90deg);
+  color: var(--ink-200);
+}
+
+.acc__region { padding-bottom: var(--s-2); }
+
+/* The theme fieldset already draws its own separator; inside a section that is
+ * one line too many. */
+.acc__region .theme { border-top: 0; }
+
+/* --------------------------------------------------------- total usage */
+/* Per-period notional cost. Never a merged token total (README/ADR-001); the
+ * figures arrive resolved from main and the section only frames and lays them
+ * out. The magnitude bar is neutral ink ON PURPOSE — it is a share of a whole
+ * with no limit in it, so it must not borrow the state ramp, which means
+ * "distance to a limit". */
+
+.usage { display: block; }
+
+.usage__intro {
+  margin: 0;
+  padding: 0 var(--s-4) var(--s-2);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-400);
+}
+
+/* Segmented hafta/ay toggle. Same native-radio treatment as the theme control:
+ * the inputs are visually replaced, not hidden, so they keep focus and arrow
+ * keys, and the drawn label carries the ring. */
+.seg {
+  display: flex;
+  gap: var(--s-1);
+  padding: 0 var(--s-4) var(--s-2);
+  min-inline-size: 0;
+}
+.seg__radio {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.seg__opt {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--ink-600);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-300);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms linear, color 120ms linear, border-color 120ms linear;
+}
+.seg__opt:hover { color: var(--ink-100); border-color: var(--ink-500); background: var(--ink-700); }
+.seg__radio:checked + .seg__opt {
+  background: var(--ink-100);
+  border-color: var(--ink-100);
+  color: var(--ink-900);
+  font-weight: 600;
+}
+.seg__radio:focus-visible + .seg__opt {
+  outline: 2px solid var(--ink-100);
+  outline-offset: 2px;
+}
+.seg__radio:checked:focus-visible + .seg__opt { outline-color: var(--ink-400); }
+
+.usage__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* range + amount on one line, the magnitude bar spanning the width below. Keeps
+ * a period legible in a ~360px panel without truncating the money. */
+.usage__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "range amount" "bar bar";
+  align-items: baseline;
+  column-gap: var(--s-2);
+  row-gap: 3px;
+  padding: var(--s-1) 0;
+}
+.usage__range {
+  grid-area: range;
+  font-size: var(--fs-meta);
+  color: var(--ink-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usage__amount {
+  grid-area: amount;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-100);
+  white-space: nowrap;
+}
+/* A lower bound ("en az") is not an exact figure, so it does not wear the full
+ * weight of one. */
+.usage__row[data-floor="true"] .usage__amount { font-weight: 500; }
+/* An empty period is stated, quietly: dimmed, no bar. */
+.usage__row[data-empty="true"] .usage__range,
+.usage__row[data-empty="true"] .usage__amount {
+  color: var(--ink-500);
+  font-weight: 500;
+}
+
+.usage__bar {
+  grid-area: bar;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink-800);
+  overflow: hidden;
+}
+.usage__fill {
+  display: block;
+  height: 100%;
+  width: calc(var(--w, 0) * 100%);
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--ink-400);
+}
+
+.usage__empty {
+  margin: 0;
+  padding: var(--s-2) var(--s-4) var(--s-3);
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+}
+.usage__note {
+  margin: 0;
+  padding: var(--s-2) var(--s-4) 0;
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  color: var(--ink-500);
+}

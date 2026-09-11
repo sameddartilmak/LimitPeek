@@ -4,6 +4,7 @@ const { applyOrder } = require('./order');
 const { resolveEnabled } = require('./enabled');
 const pricing = require('./pricing');
 const agg = require('./aggregate');
+const history = require('./history');
 
 /**
  * Builds the Snapshot described by `src/shared/contract.ts`.
@@ -499,6 +500,11 @@ function buildSnapshot(input) {
   return {
     generatedAt: new Date(now).toISOString(),
     providers: applyOrder(providers, input.order),
+    // Week/month notional cost from the SAME deduped local corpus every other
+    // figure uses — so the 115.3% resume-replay inflation cannot land on the
+    // history any more than it can on the weekly total. Today that corpus is
+    // Claude's; the settings section is labelled accordingly.
+    usageHistory: history.usageHistory(deduped, now),
   };
 }
 
@@ -530,6 +536,9 @@ function loadingSnapshot(now = Date.now(), order, enabledRaw) {
       setupAction: p.live ? null : { ...p.setupAction },
       lastGoodAt: null,
     })), order),
+    // Nothing has been scanned yet, so there is no history to state. Null, not
+    // an empty history: "we have not looked" is not "you used nothing".
+    usageHistory: null,
   };
 }
 
