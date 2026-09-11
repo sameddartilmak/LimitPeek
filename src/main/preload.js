@@ -20,6 +20,7 @@ const CH = {
   PANEL_CLOSE: 'panel:close',
   PANEL_PIN: 'panel:pin',
   ANCHOR: 'panel:anchor',
+  PANEL_VISIBILITY: 'panel:visibility',
   SET_ORDER: 'providers:set-order',
   SET_ENABLED: 'providers:set-enabled',
   PREFERENCES: 'prefs:changed',
@@ -74,6 +75,13 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * that of the display containing the tray icon, not the primary display.
    */
   onAnchor: (cb) => subscribe(CH.ANCHOR, cb),
+
+  /**
+   * main -> renderer: the panel was revealed (true) or concealed (false). The
+   * renderer replays its content open animation off this. See
+   * IPC.PANEL_VISIBILITY in contract.ts. Returns an unsubscribe.
+   */
+  onPanelVisibility: (cb) => subscribe(CH.PANEL_VISIBILITY, cb),
 
   /** Panel is visible / the pointer is inside it. Also cancels an auto-hide. */
   panelOpened: () => ipcRenderer.send(CH.PANEL_OPENED),

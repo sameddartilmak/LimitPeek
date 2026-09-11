@@ -34,6 +34,13 @@ export interface Bridge {
   initialSnapshot(): Snapshot | null;
   onSnapshot(listener: (snapshot: Snapshot) => void): () => void;
   onAnchor(listener: (anchor: AnchorPayload) => void): () => void;
+  /**
+   * Subscribe to panel reveal (true) / conceal (false) from main. The renderer
+   * replays its content open animation off this, so it plays on every open. A
+   * preload that does not expose it degrades to a no-op subscription: the panel
+   * still opens, it just does not re-animate.
+   */
+  onPanelVisibility(listener: (open: boolean) => void): () => void;
   panelOpened(): void;
   requestRefresh(): Promise<Snapshot | null>;
   /**
@@ -92,6 +99,7 @@ function nullBridge(): Bridge {
     initialSnapshot: () => null,
     onSnapshot: () => () => {},
     onAnchor: () => () => {},
+    onPanelVisibility: () => () => {},
     panelOpened: () => {},
     requestRefresh: async () => null,
     runSetup: async () => ({ ok: false, message: 'Arka plan servisine ulaşılamıyor.' }),
@@ -155,6 +163,21 @@ export function createBridge(): Bridge {
           const clean = sanitizeAnchor(payload);
           if (clean) listener(clean);
         });
+      } catch {
+        return () => {};
+      }
+    },
+
+    onPanelVisibility(listener): () => void {
+      if (typeof api.onPanelVisibility !== 'function') {
+        missing('onPanelVisibility');
+        return () => {};
+      }
+      try {
+        // Coerced to a strict boolean here: main sends `true`/`false`, but a
+        // dropped or malformed payload must resolve to "closed" rather than
+        // leave the panel animating toward an undefined state.
+        return api.onPanelVisibility((payload) => listener(payload === true));
       } catch {
         return () => {};
       }

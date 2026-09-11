@@ -517,6 +517,21 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
 
   disposers.push(bridge.onSnapshot((snapshot) => acceptSnapshot(snapshot)));
   disposers.push(bridge.onPreferences((prefs) => acceptPreferences(prefs.theme)));
+  // Replays the entrance on EVERY open, not just at app start.
+  //
+  // The window lives always-composited and is revealed by moving on-screen and
+  // concealed by moving off-screen (main's `_reveal`/`_conceal`), so `data-open`
+  // no longer flips on its own between opens — without this the panel would just
+  // pop into place. Main sends `false` while the window is OFF-SCREEN, so the
+  // closed visual state is set invisibly; the following `true` then has a clean
+  // false->true transition to grow in on screen. `prefers-reduced-motion`
+  // collapses that transition to ~1ms automatically, because it is the same
+  // token-driven `data-open` path the first-paint entrance uses.
+  //
+  // The first-paint entrance above stays the app-start entrance; the first
+  // reveal after launch finds `data-open` already true and is a no-op, so
+  // startup plays exactly one entrance and this never double-fires it.
+  disposers.push(bridge.onPanelVisibility((open) => panel.setOpen(open)));
   // 'system' is a LIVE binding: when Windows flips at sunset the document has
   // already changed underneath us, and the settings copy that names what
   // 'system' currently resolves to has to follow it.
