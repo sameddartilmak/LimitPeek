@@ -131,6 +131,95 @@ function readClaudeRateLimits(options = {}) {
   return { state, capturedAt, capturedAtMs, ageMs, fiveHour, sevenDay };
 }
 
+/**
+ * Reconciles one window's fresh reading against the last VALID figure held for
+ * it, and returns the window to use plus the figure to hold going forward.
+ *
+ * @param {object|null} win  the reading's window, `{ usedPercentage, resetsAtMs }`
+ *                           or null when the capture carried no window at all
+ * @param {object|null} held last valid `{ resetsAtMs, usedPercentage }`, or null
+ * @param {number} now
+ * @returns {{ win: object|null, held: object|null }}
+ */
+function retainWindow(win, held, now) {
+  // A real figure: this reading IS the new last-valid statement for its window.
+  // Held verbatim, `resetsAtMs` and all, so a later transient null can be tied
+  // back to the exact window this number describes.
+  if (win && typeof win.usedPercentage === 'number' && Number.isFinite(win.usedPercentage)) {
+    return { win, held: { resetsAtMs: win.resetsAtMs, usedPercentage: win.usedPercentage } };
+  }
+
+  // No window at all in this reading (a missing / invalid / absent capture). We
+  // learn nothing about the window from it, so we neither substitute nor drop:
+  // the read guard below only ever resurfaces a held figure once a LATER reading
+  // proves the window is the same and still current, so holding it here in the
+  // face of a momentary blank capture can never surface anything stale.
+  if (!win) return { win, held };
+
+  // A window is present but carries no figure. Substitute the held one ONLY when
+  // it belongs to THIS window (same reset instant) and that window is still
+  // current. That is Claude Code omitting the percentage for a render while the
+  // window it already reported on runs on unchanged.
+  if (
+    held
+    && typeof held.usedPercentage === 'number'
+    && Number.isFinite(win.resetsAtMs)
+    && win.resetsAtMs === held.resetsAtMs
+    && now < win.resetsAtMs
+  ) {
+    return { win: { usedPercentage: held.usedPercentage, resetsAtMs: win.resetsAtMs }, held };
+  }
+
+  // A DIFFERENT reset instant (a genuine renewal), a window whose instant has
+  // passed (rolled over), an absent instant, or no held figure at all: the held
+  // figure no longer describes the current window. Drop it so it can never
+  // resurface, and let `awaiting-report` / `rolled-over` stand on their own.
+  return { win, held: null };
+}
+
+/**
+ * Retains the last VALID per-window figure across a transient null.
+ *
+ * Claude Code's statusline payload occasionally omits
+ * `rate_limits.<window>.used_percentage` for a render — a reset-tail, or a gap
+ * between reports — while still stating that window's `resets_at`. The bridge
+ * copies the payload faithfully, so a FRESH capture can carry
+ * `{ usedPercentage: null, resetsAtMs: <future> }` for a window that has NOT
+ * reset. Untouched, `snapshot.js` reads that as `awaiting-report` ("yeni veri
+ * bekleniyor") and discards a figure that is still true, until Claude Code next
+ * restates a number — which can be a long while when the user is not coding.
+ *
+ * This holds, per window and IN MEMORY only, the last reading whose
+ * `usedPercentage` was a real number. When a later reading has no figure but
+ * names the SAME window and that window is still current, the held figure is
+ * substituted back in: it remains a true, server-computed statement about a
+ * live window, so `windowFrom` presents it exactly as it would have the reading
+ * that produced it.
+ *
+ * It NEVER bridges a genuine renewal (a new `resets_at`) or a rollover
+ * (`now >= resets_at`): those are the cases the caller's `awaiting-report` /
+ * `rolled-over` words are for, and the held figure is dropped in both.
+ *
+ * The `held` map is the caller's, and it must live only for the process's
+ * lifetime — a restart starts empty, so a figure from a previous run can never
+ * be presented as current. This function is otherwise pure: it reads `rl` and
+ * `held`, mutates neither, and returns fresh objects.
+ *
+ * @param {object} rl        result of `readClaudeRateLimits()`
+ * @param {{fiveHour:object|null, sevenDay:object|null}|null} held
+ * @param {number} now
+ * @returns {{ rateLimits: object, retained: {fiveHour:object|null, sevenDay:object|null} }}
+ */
+function retainClaudeFigures(rl, held, now) {
+  const prev = held || {};
+  const five = retainWindow(rl.fiveHour, prev.fiveHour || null, now);
+  const seven = retainWindow(rl.sevenDay, prev.sevenDay || null, now);
+  return {
+    rateLimits: { ...rl, fiveHour: five.win, sevenDay: seven.win },
+    retained: { fiveHour: five.held, sevenDay: seven.held },
+  };
+}
+
 /* ------------------------------------------------------------ Antigravity */
 
 /**
@@ -355,6 +444,7 @@ function readAntigravityQuota(options = {}) {
 
 module.exports = {
   readClaudeRateLimits,
+  retainClaudeFigures,
   readAntigravityQuota,
   usedFromRemaining,
   MAX_AGE_MS,
