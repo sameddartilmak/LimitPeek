@@ -44,11 +44,46 @@
 .grip[disabled] { cursor: default; }
 .grip--empty { display: block; }
 
+/* The identity mark is the provider's REAL brand logo, shipped as a build-time
+ * asset (assets/logos/) and painted here — never fetched, never innerHTML'd.
+ * See components/logo.ts. Two techniques, chosen by the art the vendor ships:
+ *   - a multi-colour SVG shown as a background-image (claude/codex/gemini/
+ *     antigravity/kimi);
+ *   - a monochrome mark used as a MASK filled with a colour we control
+ *     (copilot, .mark--mono).
+ * Grey vs brand-colour is the connected/unconnected treatment; see below. */
 .mark {
   width: 24px; height: 24px;
   display: block;
-  stroke-width: 1.5;
-  opacity: .78;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+.mark[data-logo="claude"]      { background-image: url(../assets/logos/claude-color.svg); }
+.mark[data-logo="codex"]       { background-image: url(../assets/logos/codex-color.svg); }
+.mark[data-logo="gemini"]      { background-image: url(../assets/logos/gemini-color.svg); }
+.mark[data-logo="antigravity"] { background-image: url(../assets/logos/antigravity-color.svg); }
+.mark[data-logo="kimi"]        { background-image: url(../assets/logos/kimi-color.svg); }
+
+/* Copilot ships only a monochrome (currentColor) mark, which would render black
+ * — invisible on a dark ground — inside an image. It is used as a mask instead
+ * and filled with a colour we choose: an ink token when inactive (grey rule
+ * below), the provider accent when active (below that). */
+.mark--mono {
+  -webkit-mask-image: url(../assets/logos/github-copilot.svg);
+  mask-image: url(../assets/logos/github-copilot.svg);
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  -webkit-mask-size: contain; mask-size: contain;
+}
+
+/* An id with no shipped asset: a neutral ring, never a broken image or a
+ * letter. logo.ts adds this class; today every provider has art, so it is
+ * defensive. */
+.mark--fallback {
+  border: 1.5px solid var(--ink-400);
+  border-radius: 50%;
 }
 
 /* CONNECTED: brand hue, full-weight stroke, a tile to sit on.
@@ -73,7 +108,40 @@
 :root[data-theme="light"] .row[data-connected="true"] .grip {
   color: color-mix(in srgb, var(--accent, #666666) var(--accent-shade), #000000);
 }
-.row[data-connected="true"] .mark { stroke-width: 2; opacity: 1; }
+/* CONNECTED vs UNCONNECTED — the mark's colour treatment.
+ * Grey by default (the same brand SVG, desaturated); full brand colour when the
+ * provider's account is wired up. "Connected" is carried by a [data-connected]
+ * ancestor — set every render by the row (applyChrome) and by the settings list
+ * — which is therefore always fresh; the mark's own data-active is a redundant
+ * self-descriptor the row stamps at creation. The ancestor is authoritative, so
+ * a provider that later disconnects greys correctly even though data-active is
+ * stale. Grey uses ink TOKENS (grayscale filter for the colour art, --ink-300
+ * for the copilot mask), so it stays visible on both the dark and light ground. */
+.mark { filter: grayscale(1); opacity: .6; }
+.mark--mono { background-color: var(--ink-300); }
+
+.mark[data-active="true"],
+[data-connected="true"] .mark { filter: none; opacity: 1; }
+.mark--mono[data-active="true"],
+[data-connected="true"] .mark--mono {
+  /* Copilot has no brand colour of its own; the provider accent (a defined
+   * colour, #8B5CF6) is the sensible fill and matches the tile tint. */
+  background-color: var(--accent, #8B5CF6);
+}
+
+/* The ancestor is authoritative: a disconnected row/item greys its mark even if
+ * a stale data-active still says active. Same specificity as the active rules,
+ * so it must come AFTER them to win. */
+[data-connected="false"] .mark { filter: grayscale(1); opacity: .6; }
+[data-connected="false"] .mark--mono { background-color: var(--ink-300); }
+
+/* Light theme: the brand hexes were chosen against a dark ground, so the
+ * copilot accent fill is shaded the same way the grip colour is (--accent-shade
+ * in tokens.css) rather than used raw. */
+:root[data-theme="light"] .mark--mono[data-active="true"],
+:root[data-theme="light"] [data-connected="true"] .mark--mono {
+  background-color: color-mix(in srgb, var(--accent, #8B5CF6) var(--accent-shade), #000000);
+}
 
 .row[data-status="loading"] .grip {
   background: var(--ink-800);
