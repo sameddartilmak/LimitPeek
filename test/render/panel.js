@@ -200,16 +200,16 @@ app.whenReady().then(async () => {
              kimi: pick('kimi'), copilot: pick('copilot') };
   })()`);
   say('colours: ' + JSON.stringify(colours));
-  check('connected claude mark is its own colour art', /claude-color\\.svg/.test(colours.claude.bg), colours.claude.bg);
-  check('connected codex mark is its own colour art', /codex-color\\.svg/.test(colours.codex.bg), colours.codex.bg);
+  check('connected claude mark is its own colour art', /claude-color\.svg/.test(colours.claude.bg), colours.claude.bg);
+  check('connected codex mark is its own colour art', /codex-color\.svg/.test(colours.codex.bg), colours.codex.bg);
   check('connected marks are not desaturated', colours.claude.filter === 'none' && colours.codex.filter === 'none',
     [colours.claude.filter, colours.codex.filter]);
   check('unconnected gemini mark is the same art, in grey',
-    /gemini-color\\.svg/.test(colours.gemini.bg) && /grayscale/.test(colours.gemini.filter), [colours.gemini.bg, colours.gemini.filter]);
+    /gemini-color\.svg/.test(colours.gemini.bg) && /grayscale/.test(colours.gemini.filter), [colours.gemini.bg, colours.gemini.filter]);
   check('unconnected kimi mark is the same art, in grey',
-    /kimi-color\\.svg/.test(colours.kimi.bg) && /grayscale/.test(colours.kimi.filter), [colours.kimi.bg, colours.kimi.filter]);
+    /kimi-color\.svg/.test(colours.kimi.bg) && /grayscale/.test(colours.kimi.filter), [colours.kimi.bg, colours.kimi.filter]);
   check('copilot has no colour file, so it is a masked monochrome mark',
-    colours.copilot.mono && /github-copilot\\.svg/.test(colours.copilot.mask), [colours.copilot.mono, colours.copilot.mask]);
+    colours.copilot.mono && /github-copilot\.svg/.test(colours.copilot.mask), [colours.copilot.mono, colours.copilot.mask]);
   check('connected mark is at full opacity, unconnected is not',
     parseFloat(colours.claude.opacity) === 1 && parseFloat(colours.gemini.opacity) < 1,
     [colours.claude.opacity, colours.gemini.opacity]);
