@@ -1,147 +1,99 @@
 /**
  * Provider identity marks.
  *
- * Six inline SVG glyphs, drawn by hand in this file. There is no network
- * fetch and no external asset: `connect-src 'none'` would block one, and the
- * app is required to work fully offline. Every node is built with
- * `createElementNS` through `svg()` in dom.ts — never from a markup string,
- * so no `innerHTML` path exists here.
+ * Each mark is the vendor's REAL brand logo, shipped as a trusted build-time
+ * asset under `src/renderer/assets/logos/` (lobe-icons, `viewBox="0 0 24 24"`).
+ * There is no network fetch — `connect-src 'none'` would block one and the app
+ * must work fully offline — and no runtime `innerHTML`: the mark is a plain
+ * `<span>` and the SVG is referenced from CSS through `url(...)`, which the CSP
+ * (`img-src 'self'`) permits and which never turns file-sourced text into
+ * markup. So no parser and no `innerHTML` path exists here, exactly as before.
  *
- * ONE GRID, ONE WEIGHT
- * --------------------
- * Every mark is drawn on a 24x24 viewBox, centred on (12,12), with its extreme
- * points on a radius-8..8.5 circle, stroked in `currentColor` with round caps
- * and joins and no fill. `stroke-width` is NOT set here; it is inherited from
- * CSS (`.mark`), which is what lets the connected/unconnected treatment change
- * the optical weight without touching the geometry. Total stroke length across
- * the set sits in a 43..72 unit band, so no mark reads heavier than its
- * neighbours in the column.
+ * TWO PAINTING TECHNIQUES, ONE ELEMENT
+ * ------------------------------------
+ * Which mechanism CSS uses is decided by what art the vendor ships (see
+ * assets/logos/):
  *
- * These are simplified glyphs in the SPIRIT of each vendor's mark, drawn from
- * primitives — not traced outlines of a trademarked logo.
+ *   background-image  the multi-colour `<name>-color.svg` painted as-is, so the
+ *                     ACTIVE mark carries the vendor's own colours. Greyed for
+ *                     the inactive state with `filter: grayscale(1)` — the same
+ *                     SVG, desaturated. Used for claude, codex, gemini,
+ *                     antigravity and kimi.
+ *   mask-image        github-copilot ships only a monochrome `currentColor`
+ *                     mark, which renders black inside an <img> (invisible on a
+ *                     dark ground). It is instead used as a MASK and filled with
+ *                     a colour we control — the provider accent when active, an
+ *                     ink token when not. Marked `.mark--mono`.
  *
- * `antigravity` and `kimi` are drawn from the product/brand idea (lift; the
- * moon of Moonshot AI) rather than from a mark this lane could verify. See the
- * frontend report: they are the two glyphs a designer should review first.
+ * ACTIVE vs INACTIVE
+ * ------------------
+ * "Active" means the provider's account is wired up and reporting, i.e.
+ * `ProviderSnapshot.connected`. An active mark shows in full brand colour; an
+ * inactive one shows the SAME logo in grey. The switch is carried two ways that
+ * cannot disagree because they are the same fact:
+ *   - the mark's own `data-active`, set from the `active` argument the row
+ *     passes (`provider.connected`); and
+ *   - a `[data-connected="true"]` ancestor, which the row and the settings list
+ *     already set — this is what colours the settings marks, whose caller does
+ *     not pass the flag.
+ * All the colour/grey rules live in styles/row.css.
+ *
+ * The mark stays `aria-hidden`: it is decorative. Its provider is already named
+ * by the control it lives in — the grip `<button>`'s `aria-label` in the row,
+ * and the `aria-hidden` `.settings__mark` wrapper's labelled row in settings —
+ * so a second label here would announce the same name twice.
  */
 
 import type { ProviderSnapshot } from '../../../shared/contract.js';
-import { svg } from '../dom.js';
-
-type Shape =
-  | { t: 'path'; d: string }
-  | { t: 'circle'; cx: number; cy: number; r: number };
+import { el, svg } from '../dom.js';
 
 export type ProviderId = ProviderSnapshot['id'];
 
 /**
- * Radial burst, six spokes on a radius-8 circle. Three crossing strokes at
- * 30 / 90 / 150 degrees. Reads at 16px because it is pure line and has no
- * enclosed counter to fill in.
+ * The provider ids that ship a brand logo. Kept in sync with assets/logos/ BY
+ * HAND — a new provider without an asset must be added here only once its file
+ * exists, or its mark would be an empty box.
  */
-const CLAUDE: Shape[] = [
-  { t: 'path', d: 'M12 4V20' },
-  { t: 'path', d: 'M18.93 8L5.07 16' },
-  { t: 'path', d: 'M5.07 8L18.93 16' },
-];
+const HAS_LOGO: ReadonlySet<string> = new Set<ProviderId>([
+  'claude',
+  'codex',
+  'gemini',
+  'copilot',
+  'antigravity',
+  'kimi',
+]);
 
 /**
- * Pointy-top hexagon on a radius-8 circle, with three spokes on alternating
- * axes: the three-fold symmetry of the knot, without the knot's overlaps,
- * which turn to mud below 20px.
+ * The mark for a provider, as an `aria-hidden` `<span>`. Its brand SVG and the
+ * connected/grey treatment come from CSS keyed off `data-logo` and the active
+ * state; see styles/row.css.
+ *
+ * @param active whether the provider is connected (its account is wired up).
+ *   Omit it — as the settings list does — to let a `[data-connected]` ancestor
+ *   decide instead.
  */
-const CODEX: Shape[] = [
-  { t: 'path', d: 'M12 4L18.93 8V16L12 20L5.07 16V8Z' },
-  { t: 'path', d: 'M12 12V8.6' },
-  { t: 'path', d: 'M12 12L9.06 13.7' },
-  { t: 'path', d: 'M12 12L14.94 13.7' },
-];
+export function providerMark(id: string, active?: boolean): HTMLSpanElement {
+  const known = HAS_LOGO.has(id);
+  // Copilot ships only a monochrome mark, so it is painted via a CSS mask in a
+  // colour we control rather than shown as flat art.
+  const classes = ['mark'];
+  if (id === 'copilot') classes.push('mark--mono');
+  if (!known) classes.push('mark--fallback');
 
-/**
- * Four-point spark, concave sides, tips on a radius-8.5 circle. Drawn as an
- * outline rather than a fill so it carries the same weight as the rest of the
- * set; the cusps close into solid points at small sizes, which is what makes
- * a spark read.
- */
-const GEMINI: Shape[] = [
-  {
-    t: 'path',
-    d:
-      'M12 3.5C12.55 8.9 15.1 11.45 20.5 12C15.1 12.55 12.55 15.1 12 20.5' +
-      'C11.45 15.1 8.9 12.55 3.5 12C8.9 11.45 11.45 8.9 12 3.5Z',
-  },
-];
+  const span = el('span', {
+    class: classes.join(' '),
+    // The logo geometry itself is the identity; the id selects the art in CSS.
+    // Unknown ids get no art and fall back to a neutral ring (.mark--fallback).
+    'data-logo': known ? id : null,
+    // Decorative: the provider is named by the control that owns this mark.
+    'aria-hidden': 'true',
+  });
 
-/**
- * Twin lenses under a brow: the goggled head, reduced to three primitives.
- * The lenses touch rather than overlap, because two 2px strokes crossing at a
- * shallow angle fill in at 16px.
- */
-const COPILOT: Shape[] = [
-  { t: 'circle', cx: 8.2, cy: 13.4, r: 3.6 },
-  { t: 'circle', cx: 15.8, cy: 13.4, r: 3.6 },
-  { t: 'path', d: 'M6.2 8.7Q12 5.2 17.8 8.7' },
-];
+  // The row knows whether the account is wired up; the settings list does not
+  // and leaves this unset, deferring to its [data-connected] ancestor.
+  if (active !== undefined) span.setAttribute('data-active', active ? 'true' : 'false');
 
-/**
- * An orb with the lift taken off it: a wide rising chevron, well clear of the
- * mass below. The gap is the whole point — closed up, the pair reads as a
- * circumflex over a letter rather than as an object leaving the ground.
- */
-const ANTIGRAVITY: Shape[] = [
-  { t: 'path', d: 'M5 7.8L12 3.2L19 7.8' },
-  { t: 'circle', cx: 12, cy: 15.9, r: 4.3 },
-];
-
-/**
- * Crescent, outer edge on a radius-8 circle, inner edge on a radius-9.6 circle
- * offset right. The horns are what makes it a moon; a thinner crescent loses
- * them first, so the waist is kept at ~7.5 units.
- */
-const KIMI: Shape[] = [
-  { t: 'path', d: 'M15.6 4.6A8 8 0 1 0 15.6 19.4A9.6 9.6 0 0 1 15.6 4.6Z' },
-];
-
-/** Neutral fallback: a plain ring. Never a letter — a letter is not a mark. */
-const FALLBACK: Shape[] = [{ t: 'circle', cx: 12, cy: 12, r: 7.5 }];
-
-const MARKS: Record<ProviderId, Shape[]> = {
-  claude: CLAUDE,
-  codex: CODEX,
-  gemini: GEMINI,
-  copilot: COPILOT,
-  antigravity: ANTIGRAVITY,
-  kimi: KIMI,
-};
-
-function shapeNode(shape: Shape): SVGElement {
-  if (shape.t === 'circle') {
-    return svg('circle', { cx: shape.cx, cy: shape.cy, r: shape.r });
-  }
-  return svg('path', { d: shape.d });
-}
-
-/**
- * The mark for a provider, as an `aria-hidden` SVG. Colour and stroke weight
- * come from CSS so the same element serves both the brand-colour (connected)
- * and the monochrome (unconnected) treatments with no rebuild.
- */
-export function providerMark(id: string): SVGElement {
-  const shapes = MARKS[id as ProviderId] ?? FALLBACK;
-  return svg(
-    'svg',
-    {
-      class: 'mark',
-      viewBox: '0 0 24 24',
-      fill: 'none',
-      stroke: 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'aria-hidden': 'true',
-      focusable: 'false',
-    },
-    ...shapes.map(shapeNode),
-  );
+  return span;
 }
 
 /** Six dots: the grip texture shown on hover, so the tile reads as draggable. */

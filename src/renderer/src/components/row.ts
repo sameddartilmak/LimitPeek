@@ -484,7 +484,13 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     class: 'grip',
     'aria-describedby': REORDER_HELP_ID,
   }) as HTMLButtonElement;
-  refs.grip.appendChild(providerMark(provider.id));
+  // `connected` is the "account is wired up" flag (contract.ts): true for
+  // Claude once the bridge reports and for Antigravity when its store is
+  // readable, false for a provider the user has not added yet. It paints the
+  // mark in brand colour vs grey. The value is stamped once here; the mark's
+  // live colour is kept correct across (dis)connects by the [data-connected]
+  // ancestor applyChrome() re-asserts every render.
+  refs.grip.appendChild(providerMark(provider.id, provider.connected));
   refs.grip.appendChild(gripDots());
 
   const body = el('div', { class: 'row__body' });

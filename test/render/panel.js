@@ -138,7 +138,10 @@ app.whenReady().then(async () => {
       posinset: rows.map(r => r.getAttribute('aria-posinset')),
       setsize: rows.map(r => r.getAttribute('aria-setsize')),
       grips: rows.map(r => !!r.querySelector('button.grip')),
-      marks: rows.map(r => r.querySelectorAll('svg.mark path, svg.mark circle').length),
+      marks: rows.map(r => {
+        const m = r.querySelector('.grip .mark');
+        return m ? (m.getAttribute('data-logo') || (m.classList.contains('mark--mono') ? 'copilot' : null)) : null;
+      }),
       spines: document.querySelectorAll('.row__spine').length,
       monos: document.querySelectorAll('.mono').length,
       meters: rows.map(r => r.querySelectorAll('.rail').length),
@@ -160,7 +163,7 @@ app.whenReady().then(async () => {
   check('aria-posinset is 1..6', JSON.stringify(structure.posinset) === JSON.stringify(['1','2','3','4','5','6']), structure.posinset);
   check('aria-setsize is 6 everywhere', structure.setsize.every(v => v === '6'), structure.setsize);
   check('every row has a grip button', structure.grips.every(Boolean));
-  check('every row has a drawn mark (>=1 shape)', structure.marks.every(n => n >= 1), structure.marks);
+  check('every row draws its brand logo', structure.marks.every(Boolean), structure.marks);
   check('the brand spine element is gone', structure.spines === 0, structure.spines);
   check('the monogram tile is gone', structure.monos === 0, structure.monos);
   check('unconnected rows draw no meter', structure.meters.slice(2).every(n => n === 0), structure.meters);
@@ -173,28 +176,40 @@ app.whenReady().then(async () => {
   check('reorder help mentions the Alt keys', /Alt/.test(structure.helpText || ''), structure.helpText);
   check('a polite live region exists', structure.liveRegion);
 
-  // ---- colour treatment -------------------------------------------------
+  // ---- brand-logo treatment ---------------------------------------------
+  // The mark is now the vendor's real brand SVG (assets/logos/), painted in CSS
+  // — a background-image for the multi-colour marks, a mask filled with a
+  // controlled colour for the monochrome copilot one. Connected = full brand
+  // colour; unconnected = the SAME art in grey (grayscale filter, or an ink
+  // token for the mask). See components/logo.ts and styles/row.css.
   const colours = await js(`(() => {
     const pick = (id) => {
       const row = document.querySelector('li.row[data-provider="' + id + '"]');
       const grip = row.querySelector('.grip');
-      const mark = row.querySelector('svg.mark');
+      const mark = row.querySelector('.mark');
       const cs = getComputedStyle(mark);
       const gs = getComputedStyle(grip);
-      return { color: cs.color, strokeWidth: cs.strokeWidth, opacity: cs.opacity,
+      return { logo: mark.getAttribute('data-logo'),
+               mono: mark.classList.contains('mark--mono'),
+               bg: cs.backgroundImage, mask: cs.maskImage || cs.webkitMaskImage,
+               filter: cs.filter, opacity: cs.opacity, bgColor: cs.backgroundColor,
                tile: gs.backgroundColor, border: gs.borderTopColor,
                w: mark.getBoundingClientRect().width };
     };
-    return { claude: pick('claude'), codex: pick('codex'), gemini: pick('gemini'), kimi: pick('kimi') };
+    return { claude: pick('claude'), codex: pick('codex'), gemini: pick('gemini'),
+             kimi: pick('kimi'), copilot: pick('copilot') };
   })()`);
   say('colours: ' + JSON.stringify(colours));
-  check('connected claude mark is its brand hex', colours.claude.color === 'rgb(201, 100, 66)', colours.claude.color);
-  check('connected codex mark is its brand hex', colours.codex.color === 'rgb(16, 163, 127)', colours.codex.color);
-  check('unconnected gemini mark is ink, not brand', colours.gemini.color === 'rgb(107, 122, 119)', colours.gemini.color);
-  check('unconnected kimi mark is ink, not brand', colours.kimi.color === 'rgb(107, 122, 119)', colours.kimi.color);
-  check('connected stroke is heavier than unconnected',
-    parseFloat(colours.claude.strokeWidth) > parseFloat(colours.gemini.strokeWidth),
-    [colours.claude.strokeWidth, colours.gemini.strokeWidth]);
+  check('connected claude mark is its own colour art', /claude-color\\.svg/.test(colours.claude.bg), colours.claude.bg);
+  check('connected codex mark is its own colour art', /codex-color\\.svg/.test(colours.codex.bg), colours.codex.bg);
+  check('connected marks are not desaturated', colours.claude.filter === 'none' && colours.codex.filter === 'none',
+    [colours.claude.filter, colours.codex.filter]);
+  check('unconnected gemini mark is the same art, in grey',
+    /gemini-color\\.svg/.test(colours.gemini.bg) && /grayscale/.test(colours.gemini.filter), [colours.gemini.bg, colours.gemini.filter]);
+  check('unconnected kimi mark is the same art, in grey',
+    /kimi-color\\.svg/.test(colours.kimi.bg) && /grayscale/.test(colours.kimi.filter), [colours.kimi.bg, colours.kimi.filter]);
+  check('copilot has no colour file, so it is a masked monochrome mark',
+    colours.copilot.mono && /github-copilot\\.svg/.test(colours.copilot.mask), [colours.copilot.mono, colours.copilot.mask]);
   check('connected mark is at full opacity, unconnected is not',
     parseFloat(colours.claude.opacity) === 1 && parseFloat(colours.gemini.opacity) < 1,
     [colours.claude.opacity, colours.gemini.opacity]);
@@ -826,7 +841,7 @@ app.whenReady().then(async () => {
       rowsHidden: document.querySelector('ul.rows.rows, ul.rows') ? [...document.querySelectorAll('ul.rows')].every(l => l.hidden) : null,
       expanded: document.querySelector('.iconbtn--settings').getAttribute('aria-expanded'),
       ids: items.map(i => i.dataset.provider),
-      marks: items.map(i => i.querySelectorAll('svg.mark path, svg.mark circle').length),
+      marks: items.map(i => i.querySelector('.settings__mark .mark[data-logo], .settings__mark .mark--mono') ? 1 : 0),
       switches: items.map(i => {
         const s = i.querySelector('button.switch');
         return s ? { role: s.getAttribute('role'), checked: s.getAttribute('aria-checked'),
@@ -1325,24 +1340,26 @@ app.whenReady().then(async () => {
   check('the certainty tick reads on EVERY fill in light, not only the pale ones',
     lightRamp.tickOnFills.every((v) => v >= 3), lightRamp.tickOnFills);
 
-  // The brand accents are fixed hexes chosen against a dark ground. Four of the
-  // six are illegible on a light one, so the light theme shades the same hue.
+  // The marks are now the vendors' real brand SVGs; a connected mark is shown
+  // in its own colours (never greyed) in both themes, so its legibility is a
+  // property of the shipped art rather than of a shaded currentColor. What the
+  // light theme must still guarantee is that a connected mark is not
+  // desaturated and sits at full presence.
   const marks = await js(`(() => {
     const rows = [...document.querySelectorAll('#settings-view li.settings__item[data-connected="true"]')];
     return rows.map((r) => {
-      const m = r.querySelector('.settings__mark');
+      const m = r.querySelector('.settings__mark .mark');
       const cs = getComputedStyle(m);
-      const brand = r.style.getPropertyValue('--accent').trim();
-      return { id: r.dataset.provider, brand, ink: cs.color, tile: cs.backgroundColor,
-               vsTile: window.__cr(cs.color, cs.backgroundColor),
-               vsBrand: window.__cr(cs.color, brand) };
+      return { id: r.dataset.provider, logo: m.getAttribute('data-logo'),
+               mono: m.classList.contains('mark--mono'),
+               filter: cs.filter, opacity: cs.opacity };
     });
   })()`);
   say('light marks: ' + JSON.stringify(marks));
-  check('the light theme shades the brand hex rather than using it raw',
-    marks.length >= 2 && marks.every((m) => m.vsBrand > 1.05), marks);
-  check('and every identity mark clears the 3:1 non-text threshold on light',
-    marks.every((m) => m.vsTile >= 3), marks.map((m) => [m.id, m.vsTile]));
+  check('a connected mark keeps its own colours on light (not greyed)',
+    marks.length >= 2 && marks.every((m) => m.filter === 'none'), marks);
+  check('and a connected mark sits at full presence on light',
+    marks.every((m) => parseFloat(m.opacity) === 1), marks.map((m) => [m.id, m.opacity]));
 
   // A failed write must put the PALETTE back too, not just the radio: leaving
   // the new theme on screen would show a setting that dies at the next launch.
