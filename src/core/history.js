@@ -34,6 +34,18 @@
  * Empty periods between the first observed usage and now are emitted as honest
  * zeros (`hasUsage: false`), never invented and never omitted, so a quiet week
  * reads as a quiet week and not as missing data.
+ *
+ * PER-MODEL BREAKDOWN
+ * -------------------
+ * Each period also carries a `byModel` list: the same period, split by the
+ * event's recorded `model` id, each entry priced through `pricing.js` exactly
+ * the way the period total is. The honesty rule is IDENTICAL and
+ * non-negotiable — an entry carries a `costUsd` (never a merged token count),
+ * is a `isFloor` lower bound exactly when its own usage was excluded or hit the
+ * 1.25x cache-write floor, and a model with no published price carries
+ * `costUsd: null` (the renderer says "fiyatlanamadı", never "$0,00"). Grouping
+ * is by the RAW recorded model id, matching how `pricing.js` groups, so the
+ * per-model priced figures partition the period total.
  */
 
 const pricing = require('./pricing');
@@ -106,6 +118,75 @@ function emptyByClass() {
 }
 
 /**
+ * The per-model split of one period.
+ *
+ * Groups the in-window events by their RAW recorded `model` id (the same key
+ * `pricing.js` groups on, so two speeds of a model stay in one entry and the
+ * priced entries partition the period total), then prices each model's slice
+ * through `pricing.weeklyCost`. Reusing the pricer verbatim is what keeps the
+ * per-model figures honest without a second copy of the TTL and unpriced rules:
+ *
+ *   costUsd  the model's priced total, or `null` when NONE of its usage could
+ *            be priced (no price-table row at any speed). Never 0-for-unpriced:
+ *            a silent zero is the ADR-002 rule-2 failure this whole section
+ *            exists to avoid, so the renderer reads null as "fiyatlanamadı".
+ *   isFloor  true when this model's own figure is a LOWER BOUND — a cache-write
+ *            TTL split was missing (priced at the 1.25x floor) or part of its
+ *            usage was at an unpriced speed and excluded. Every cause pushes
+ *            the true figure up, exactly as at the period level.
+ *
+ * Deliberately NO token total per entry: cost only, same as `PeriodUsage`.
+ * Largest priced cost first; unpriced models last, then by id, so the order
+ * does not depend on which file was read first.
+ *
+ * @param {Array}  events         deduped usage events
+ * @param {number} startMs        inclusive period start
+ * @param {number} endExclusiveMs exclusive period end
+ * @returns {Array<{model:string, costUsd:number|null, isFloor:boolean}>}
+ */
+function byModelUsageFrom(events, startMs, endExclusiveMs) {
+  // One pass: partition the in-window events by raw model id. `pricing.js`
+  // filters by ts again on each slice, but the slices are already small and
+  // in-window, so that second filter is cheap.
+  const groups = new Map();
+  for (const event of events || []) {
+    if (!event || !Number.isFinite(event.ts)) continue;
+    if (event.ts < startMs || event.ts >= endExclusiveMs) continue;
+    const model = event.model;
+    let slice = groups.get(model);
+    if (!slice) {
+      slice = [];
+      groups.set(model, slice);
+    }
+    slice.push(event);
+  }
+
+  const out = [];
+  for (const [model, slice] of groups) {
+    const cost = pricing.weeklyCost(slice, startMs, endExclusiveMs, false);
+    if (!cost) continue; // unreachable — the slice is non-empty and in-window
+    const hasPricedRow = cost.byModel.some((m) => m.usd !== null);
+    const hasUnpricedRow = cost.byModel.some((m) => m.usd === null);
+    out.push({
+      model,
+      // null when the model has no priced usage at all; the period total already
+      // excluded it and the renderer must not print it as $0,00.
+      costUsd: hasPricedRow ? cost.totalUsd : null,
+      isFloor: cost.fallbackWriteEvents > 0 || hasUnpricedRow,
+    });
+  }
+
+  out.sort((a, b) => {
+    if (a.costUsd === null && b.costUsd === null) return a.model < b.model ? -1 : 1;
+    if (a.costUsd === null) return 1;
+    if (b.costUsd === null) return -1;
+    return b.costUsd - a.costUsd || (a.model < b.model ? -1 : 1);
+  });
+
+  return out;
+}
+
+/**
  * One period, priced.
  *
  * `startsAt` is the period start; `endsAt` is the INCLUSIVE last day of the
@@ -134,6 +215,7 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key) {
       ...base,
       costUsd: 0,
       byClass: emptyByClass(),
+      byModel: [],
       isFloor: false,
       unpricedModels: [],
       hasUsage: false,
@@ -151,6 +233,7 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key) {
     ...base,
     costUsd: cost.totalUsd,
     byClass: cost.byClass,
+    byModel: byModelUsageFrom(events, startMs, endExclusiveMs),
     isFloor,
     unpricedModels: cost.unpricedModels.slice(),
     // Something landed in the period even if none of it could be priced, so the
@@ -231,6 +314,7 @@ function usageHistory(events, now, opts) {
 module.exports = {
   usageHistory,
   periodUsageFrom,
+  byModelUsageFrom,
   bucketsOf,
   startOfDayMs,
   weekStartMs,

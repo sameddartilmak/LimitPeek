@@ -52,6 +52,7 @@
  */
 
 import type {
+  PeriodModelCost,
   PeriodUsage,
   ProviderSnapshot,
   ThemeChoice,
@@ -60,7 +61,7 @@ import type {
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { enabledOf, type PanelState } from '../store.js';
 import { themeLabel } from '../theme.js';
-import { dayRange, priceDate, usd } from '../format.js';
+import { dayRange, integer, priceDate, usd } from '../format.js';
 import { providerMark } from './logo.js';
 
 /** The id the header's settings button points `aria-controls` at. */
@@ -323,6 +324,19 @@ function createThemeControl(ctx: SettingsContext): ThemeHandleLocal {
  *
  * The grain toggle re-renders from the history already in hand, so switching
  * hafta/ay does not wait for the next snapshot.
+ *
+ * PER-MODEL BREAKDOWN
+ * -------------------
+ * Under each period sits a disclosure (collapsed by default) that expands to a
+ * per-model list — which models were used in that period and how much each
+ * cost. It reuses the cost block's disclosure idiom because the hover panel is
+ * narrow: an always-open list under a dozen periods would be a scroll tunnel,
+ * so the summary line just counts the models (no figure, like the quota block)
+ * and the figures appear on expand. The per-model list is itself a bounded
+ * scroller (`.usage__models` max-height + overflow), so a period with many
+ * models scrolls WITHIN its disclosure instead of pushing the panel off screen.
+ * Each model amount is framed exactly like the period amount — "en az" for a
+ * floor, "fiyatlanamadı" for an unpriced model — never a bare "$0,00".
  */
 interface UsageHandleLocal {
   el: HTMLElement;
@@ -336,6 +350,18 @@ function amountText(period: PeriodUsage): string {
   // Usage happened, but none of it could be priced: say so rather than print a
   // zero that reads as "free".
   return period.unpricedModels.length > 0 ? 'fiyatlanamadı' : '—';
+}
+
+/**
+ * One model's amount, framed the same way as the period's. A null cost is an
+ * unpriced model — "fiyatlanamadı", never "$0,00", the ADR-002 rule-2 silent
+ * zero this whole section refuses. A priced-but-zero figure (a model whose
+ * events carried no billable tokens) reads "—" rather than a misleading "free".
+ */
+function modelAmountText(model: PeriodModelCost): string {
+  if (model.costUsd === null) return 'fiyatlanamadı';
+  if (model.costUsd > 0) return (model.isFloor ? 'en az ' : '') + usd(model.costUsd);
+  return '—';
 }
 
 function createUsageSection(): UsageHandleLocal {
@@ -389,7 +415,59 @@ function createUsageSection(): UsageHandleLocal {
     return grain === 'week' ? current.weeks : current.months;
   }
 
-  function renderRow(period: PeriodUsage, maxCost: number): HTMLElement {
+  /**
+   * One model's line inside a period's disclosure: its id and its framed cost.
+   * The id is rendered verbatim through a text node (`el` never uses innerHTML),
+   * so a model name decoded from a file cannot become markup.
+   */
+  function renderModelRow(model: PeriodModelCost): HTMLElement {
+    const name = el('span', { class: 'usage__model-name' }, model.model);
+    const amount = el('span', { class: 'usage__model-amount u-num' }, modelAmountText(model));
+    const row = el('li', { class: 'usage__model', role: 'listitem' }, name, amount) as HTMLElement;
+    setAttr(row, 'data-floor', model.isFloor ? 'true' : null);
+    setAttr(row, 'data-unpriced', model.costUsd === null ? 'true' : null);
+    return row;
+  }
+
+  /**
+   * The per-model disclosure appended under a period row. Collapsed by default
+   * so the panel stays short; the summary counts models and shows no figure
+   * (the meter above the equivalent block owns the reading), and expanding
+   * reveals the framed per-model amounts inside a bounded scroller.
+   */
+  function renderDisclosure(period: PeriodUsage, regionId: string): readonly HTMLElement[] {
+    const chev = el('span', { class: 'usage__chev', 'aria-hidden': 'true' }, chevronIcon());
+    const label = el('span', { class: 'usage__toggle-label' }, integer(period.byModel.length) + ' model');
+    const toggle = el(
+      'button',
+      {
+        type: 'button',
+        class: 'usage__toggle',
+        'aria-expanded': 'false',
+        'aria-controls': regionId,
+        title: 'Modele göre dağılım',
+      },
+      label,
+      chev,
+    ) as HTMLButtonElement;
+
+    const models = el(
+      'ul',
+      { class: 'usage__models', id: regionId, role: 'list' },
+      ...period.byModel.map(renderModelRow),
+    ) as HTMLElement;
+    models.hidden = true;
+
+    on(toggle, 'click', () => {
+      const open = toggle.getAttribute('aria-expanded') === 'true';
+      setAttr(toggle, 'aria-expanded', open ? 'false' : 'true');
+      models.hidden = open;
+    });
+
+    return [toggle, models];
+  }
+
+  function renderRow(period: PeriodUsage, maxCost: number, index: number): HTMLElement {
     const range = el('span', { class: 'usage__range' }, dayRange(period.startsAt, period.endsAt) || '—');
     const amount = el('span', { class: 'usage__amount u-num' }, amountText(period));
     const bar = el('span', { class: 'usage__bar', 'aria-hidden': 'true' });
@@ -403,6 +481,13 @@ function createUsageSection(): UsageHandleLocal {
     const row = el('li', { class: 'usage__row', role: 'listitem' }, range, amount, bar) as HTMLElement;
     setAttr(row, 'data-empty', period.hasUsage ? null : 'true');
     setAttr(row, 'data-floor', period.isFloor ? 'true' : null);
+    // Only a period with a per-model split gets a disclosure — an empty period
+    // has nothing to break down. The region id is unique per grain+index so the
+    // toggle's aria-controls resolves even with a duplicate period key.
+    if (period.byModel.length > 0) {
+      const regionId = `usage-models-${grain}-${index}`;
+      for (const node of renderDisclosure(period, regionId)) row.appendChild(node);
+    }
     return row;
   }
 
@@ -432,7 +517,7 @@ function createUsageSection(): UsageHandleLocal {
     empty.hidden = true;
     list.hidden = false;
     const maxCost = periods.reduce((max, p) => (p.costUsd > max ? p.costUsd : max), 0);
-    replaceChildrenWith(list, periods.map((p) => renderRow(p, maxCost)));
+    replaceChildrenWith(list, periods.map((p, i) => renderRow(p, maxCost, i)));
 
     note.hidden = false;
     setText(

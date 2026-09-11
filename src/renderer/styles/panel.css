@@ -912,6 +912,11 @@
   row-gap: 3px;
   padding: var(--s-1) 0;
 }
+/* The per-model disclosure is auto-placed on its own implicit rows below the
+ * named areas; each spans the whole width. (The bar already spans via its
+ * "bar bar" named area, so it is not listed here.) */
+.usage__toggle,
+.usage__models { grid-column: 1 / -1; }
 .usage__range {
   grid-area: range;
   font-size: var(--fs-meta);
@@ -951,6 +956,81 @@
   min-width: 2px;
   border-radius: 2px;
   background: var(--ink-400);
+}
+
+/* Per-model disclosure. Collapsed by default so a dozen periods stay short; the
+ * toggle counts models and carries no figure (the period amount above already
+ * states the total), and the figures appear on expand. */
+.usage__toggle {
+  align-self: start;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  margin: 1px 0 0;
+  padding: 2px 4px 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-400);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 120ms linear;
+}
+.usage__toggle:hover { color: var(--ink-200); }
+.usage__toggle[aria-expanded="true"] { color: var(--ink-200); }
+.usage__chev {
+  display: inline-flex;
+  color: var(--ink-500);
+  transition: transform 160ms var(--ease-open), color 120ms linear;
+}
+.usage__chev svg { width: 12px; height: 12px; display: block; }
+.usage__toggle[aria-expanded="true"] .usage__chev {
+  transform: rotate(90deg);
+  color: var(--ink-300);
+}
+
+/* The list itself is a bounded scroller: a period with many models scrolls
+ * within its disclosure rather than pushing the panel off screen. ~6 rows show
+ * before it scrolls. */
+.usage__models {
+  list-style: none;
+  margin: 2px 0 var(--s-1);
+  padding: 0 0 0 var(--s-2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 132px;
+  overflow-y: auto;
+  border-left: 1px solid var(--ink-700);
+}
+.usage__model {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  column-gap: var(--s-2);
+  padding: 1px 0;
+}
+.usage__model-name {
+  font-size: var(--fs-micro);
+  color: var(--ink-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usage__model-amount {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--ink-200);
+  white-space: nowrap;
+}
+/* A lower bound is not an exact figure, so it does not wear the full weight of
+ * one — same treatment as the period amount. */
+.usage__model[data-floor="true"] .usage__model-amount { font-weight: 500; }
+/* An unpriced model ("fiyatlanamadı") is stated, quietly. */
+.usage__model[data-unpriced="true"] .usage__model-amount {
+  color: var(--ink-400);
+  font-weight: 500;
 }
 
 .usage__empty {

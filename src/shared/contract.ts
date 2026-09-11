@@ -268,6 +268,37 @@ export interface WeeklyCost {
 }
 
 /**
+ * One model's notional cost inside a period.
+ *
+ * The SAME honesty rule as `PeriodUsage`, one level down: cost only, never a
+ * merged token count — the shape has nowhere to put one on purpose. Frame it
+ * exactly as the period figure: never a bill, "en az" whenever `isFloor`, and
+ * a null `costUsd` reads "fiyatlanamadı", never "$0,00".
+ */
+export interface PeriodModelCost {
+  /**
+   * The RAW recorded model id, e.g. "claude-opus-5" (or a dated id like
+   * "claude-haiku-4-5-20251001"). Shown as it appears — no marketing name is
+   * invented, and the codebase has no display-label table to draw one from.
+   */
+  model: string;
+  /**
+   * Notional USD for this model's PRICED usage in the period, or `null` when
+   * the model has no price-table entry at any speed. Null is the "could not be
+   * priced" signal (renderer: "fiyatlanamadı"); it is never coerced to 0, or an
+   * unpriced model would read as a free one. Never a bill.
+   */
+  costUsd: number | null;
+  /**
+   * true when `costUsd` is a LOWER BOUND for this model: a cache-write TTL split
+   * was missing (priced at the 1.25x floor) or part of the model's usage was at
+   * an unpriced speed and excluded. Every cause pushes the true figure up, so
+   * the renderer prints "en az" — exactly as at the period level.
+   */
+  isFloor: boolean;
+}
+
+/**
  * One calendar period (a week or a month) and its NOTIONAL cost.
  *
  * The honesty rule that shapes this shape: there is deliberately NO single
@@ -300,6 +331,14 @@ export interface PeriodUsage {
   /** Per-class USD split (same classes as `CostByClass`). Shown separately;
    *  never summed back into one token figure. */
   byClass: CostByClass;
+  /**
+   * The period split by recorded model id, largest priced cost first and
+   * unpriced models last. Cost only — never a merged token total, same honesty
+   * rule as the period figure. The priced entries partition `costUsd` (each
+   * entry is `round()`ed independently, so their sum may differ from `costUsd`
+   * by a cent). Empty for an empty period.
+   */
+  byModel: PeriodModelCost[];
   /**
    * true when `costUsd` is a LOWER BOUND: unpriced models were excluded, or a
    * cache-write TTL split was missing and priced at the 1.25x floor. Every such
