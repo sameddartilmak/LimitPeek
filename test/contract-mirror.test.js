@@ -138,7 +138,8 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   assert.ok(declared.has('setEnabled'), 'contract.ts should declare setEnabled()');
   assert.ok(declared.has('initialPreferences'), 'contract.ts should declare initialPreferences()');
   assert.ok(declared.has('setTheme'), 'contract.ts should declare setTheme()');
-  assert.equal(declared.size, 13, `expected the 13 declared methods, saw ${[...declared].join(',')}`);
+  assert.ok(declared.has('onPanelVisibility'), 'contract.ts should declare onPanelVisibility()');
+  assert.equal(declared.size, 14, `expected the 14 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const STATE_THRESHOLDS = { ... } as const;`. */

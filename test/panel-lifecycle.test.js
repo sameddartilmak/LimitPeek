@@ -15,6 +15,14 @@ const electron = fakeElectron.install();
 const {
   PanelWindow, LEAVE_GRACE_MS, POINTER_POLL_MS, TRANSIT_MARGIN_PX, NEVER_ENGAGED_MAX_MS,
 } = require('../src/main/panel-window');
+const { IPC } = require('../src/shared/contract');
+
+/** The boolean visibility signals main pushed to the renderer, in order. */
+function visibilitySignals(panel) {
+  return panel.win.webContents.sent
+    .filter((m) => m.channel === IPC.PANEL_VISIBILITY)
+    .map((m) => m.payload);
+}
 
 /**
  * The panel's open / pin / leave state machine.
@@ -709,5 +717,88 @@ test.describe('an unpinned panel follows the pointer, not the focus', () => {
     panel.destroy();
     assert.equal(panel._pointerTimer, null);
     assert.equal(panel._hideTimer, null);
+  });
+});
+
+/* ---------------------------------------------- the open animation replays */
+
+test.describe('the entrance animation replays on every open', () => {
+  test('a reveal tells the renderer to open, so the content entrance plays', () => {
+    // The bug this fixes: with the window living always-composited, `data-open`
+    // no longer flips between opens on its own, so the panel just popped in.
+    // Every reveal must now push `true` so the renderer replays the grow-in.
+    const { panel, send, trayRect } = build();
+    panel.open(trayRect, send);
+    assert.deepEqual(visibilitySignals(panel), [true]);
+  });
+
+  test('a conceal tells the renderer to close, and does so off-screen', () => {
+    // `false` sets the closed visual state, and it must be pushed AFTER the
+    // window is off every display so the state change is invisible — which is
+    // what leaves `data-open` false for the next reveal to animate against.
+    const { panel, send, trayRect } = build();
+    panel.open(trayRect, send);
+    panel.hide();
+    assert.deepEqual(visibilitySignals(panel), [true, false]);
+    assert.ok(panel.win.getBounds().x <= -10000, 'the window was off-screen when it was told to close');
+  });
+
+  test('create() sends no visibility signal, so app-start plays exactly one entrance', () => {
+    // Main reveals nothing at startup — the renderer's own first-paint rAF is
+    // the sole app-start entrance. If create() pushed a reveal, the first open
+    // would double-fire it. build() has already called create().
+    const { panel } = build();
+    assert.deepEqual(visibilitySignals(panel), [], 'no reveal/conceal at startup');
+  });
+
+  test('close then re-open replays the entrance: true, false, true', () => {
+    // The corridor-dismiss-then-reopen path the user reported as a dead "pop".
+    // The false between the trues is what makes the second true a real
+    // false->true transition rather than a no-op on an already-open panel.
+    const { panel, send, trayRect } = build();
+    panel.open(trayRect, send);
+    panel.hide();
+    panel.open(trayRect, send);
+    assert.deepEqual(visibilitySignals(panel), [true, false, true]);
+  });
+
+  test('the reveal animates content only — the OS window is never re-shown or resized', () => {
+    // The hard constraint: the fix must stay CONTENT-only. Across a full
+    // open/hide/open cycle the OS window is shown exactly once (at create) and
+    // its size never changes, so nothing here animates the window itself.
+    const { panel, send, trayRect } = build();
+    const size = { w: panel.win.getBounds().width, h: panel.win.getBounds().height };
+    panel.open(trayRect, send);
+    panel.hide();
+    panel.open(trayRect, send);
+    assert.equal(
+      panel.win.activations.filter((a) => a === 'show' || a === 'showInactive').length,
+      1,
+      'exactly one show for the whole cycle; the reveal is a move, not a show',
+    );
+    const b = panel.win.getBounds();
+    assert.equal(b.width, size.w, 'the window is never resized (no geometric animation)');
+    assert.equal(b.height, size.h, 'the window is never resized (no geometric animation)');
+  });
+
+  test('pinning a concealed panel signals a reveal, so its content is not shown blank', () => {
+    // pin() activates via show()/focus() and does not go through _reveal(), so
+    // without its own signal a pin from the concealed state would show a window
+    // whose content is still in the closed (opacity 0) state. A fresh panel is
+    // logically concealed until opened.
+    const { panel, send, trayRect } = build();
+    assert.equal(panel.isVisible(), false, 'precondition: a primed panel is concealed');
+    panel.pin(trayRect, send);
+    assert.deepEqual(visibilitySignals(panel), [true]);
+  });
+
+  test('pinning an already-open panel does not re-signal a redundant reveal', () => {
+    // The common path is a pin toggle on a panel that is already up. Re-pushing
+    // `true` would be harmless (the renderer no-ops it), but the signal should
+    // track a real reveal, not every activation.
+    const { panel, send, trayRect } = build();
+    panel.open(trayRect, send);
+    panel.pin(trayRect, send);
+    assert.deepEqual(visibilitySignals(panel), [true], 'the pin added no second reveal');
   });
 });

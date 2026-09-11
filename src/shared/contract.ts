@@ -460,6 +460,20 @@ export const IPC = {
   /** main -> renderer, tray anchor geometry. Re-sent on every open. */
   ANCHOR: 'panel:anchor',
   /**
+   * main -> renderer, boolean: the panel was revealed (true) or concealed
+   * (false).
+   *
+   * Drives the CONTENT open/close animation — the `.anchor` transform/opacity
+   * INSIDE the fixed, always-composited window — so it replays on every open,
+   * not just at app start. It NEVER animates the OS window: main still moves
+   * that on/off screen instantly (panel-window.js `_reveal`/`_conceal`).
+   *
+   * `false` is sent while the window is OFF-SCREEN, so the closed visual state
+   * (scaleY .96, opacity 0) is set invisibly, and the next reveal has a clean
+   * false->true transition to grow in — no flash of the final state.
+   */
+  PANEL_VISIBILITY: 'panel:visibility',
+  /**
    * renderer -> main invoke(ids: string[]). Persists the user's provider
    * order. Main re-emits an ordered Snapshot and re-renders the tray icon.
    * Returns { ok: boolean }.
@@ -556,6 +570,12 @@ export interface UsageNotchApi {
   onSnapshot(cb: (s: Snapshot) => void): () => void;
   /** Subscribe to tray anchor geometry. Returns an unsubscribe function. */
   onAnchor(cb: (a: AnchorPayload) => void): () => void;
+  /**
+   * Subscribe to panel reveal (true) / conceal (false) from main. The renderer
+   * drives its CONTENT open animation off this so it replays on every open, not
+   * only at app start. Returns an unsubscribe function.
+   */
+  onPanelVisibility(cb: (open: boolean) => void): () => void;
   /** Ask main to refresh now. */
   requestRefresh(): Promise<Snapshot>;
   /**

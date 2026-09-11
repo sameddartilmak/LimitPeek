@@ -470,6 +470,12 @@ class PanelWindow {
     this.win.moveTop();
     this._open = true;
     log.trace('panel.reveal', { via: 'move', visible: this._open, activated: false });
+    // Tell the renderer to REPLAY its content entrance. Sent AFTER the window is
+    // on screen and at the anchor; the renderer's `data-open` was left false by
+    // the previous (off-screen) conceal, so this is a clean false->true grow-in
+    // with no flash of the final state. This never animates the OS window — the
+    // move above is instant. See contract.ts IPC.PANEL_VISIBILITY.
+    this._signalVisibility(true);
   }
 
   /**
@@ -487,6 +493,22 @@ class PanelWindow {
     if (!this.win || this.win.isDestroyed()) return;
     this.win.setBounds({ x: OFFSCREEN.x, y: OFFSCREEN.y, width: this.width, height: this.height });
     log.trace('panel.conceal', { via: 'offscreen' });
+    // Set the renderer's closed visual state AFTER the window is off-screen, so
+    // it happens invisibly. This is what leaves `data-open` false for the next
+    // reveal to animate against — the ordering the flash-free open depends on.
+    this._signalVisibility(false);
+  }
+
+  /**
+   * Tell the renderer the panel was revealed (true) or concealed (false) so it
+   * can replay its CONTENT open animation on every open (contract.ts
+   * IPC.PANEL_VISIBILITY). This is a notification only: the OS window is still
+   * moved on/off screen instantly and is never itself animated. A boolean
+   * crosses the wire; the renderer coerces it and drives `data-open`.
+   */
+  _signalVisibility(open) {
+    this.send(IPC.PANEL_VISIBILITY, open === true);
+    log.trace('panel.visibility', { open: open === true });
   }
 
   /**
@@ -528,6 +550,13 @@ class PanelWindow {
     this.win.focus();
     this._open = true;
     log.trace('panel.pin', { was: wasVisible, visible: this._open });
+    // Keep the renderer's `data-open` in step. On the common path (pinning an
+    // already-open panel) this is a no-op the renderer ignores; on the rare
+    // pin-from-concealed it both plays the entrance and — more importantly —
+    // stops a panel whose content is still in its closed (opacity 0) state from
+    // being shown blank. pin activates, but this signal, like `_reveal`'s,
+    // animates only the CONTENT.
+    if (!wasVisible) this._signalVisibility(true);
     if (!wasVisible) this.onVisibilityChange(true);
     this.onPinChange(true);
   }

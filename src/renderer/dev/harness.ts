@@ -88,6 +88,13 @@ function makeBridge(scenario: Scenario): Bridge {
       };
     },
 
+    onPanelVisibility() {
+      // There is no main process here, so nothing reveals or conceals the
+      // panel: the app-start entrance opens it and it stays open for the
+      // harness. Present only to satisfy the Bridge contract.
+      return () => {};
+    },
+
     panelOpened() {
       log('panelOpened()');
     },
