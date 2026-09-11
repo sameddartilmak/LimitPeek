@@ -21,6 +21,7 @@ import type {
   ModelCost,
   ModelQuotaDetail,
   ModelQuotaGroup,
+  PeriodModelCost,
   PeriodUsage,
   Provenance,
   ProviderSnapshot,
@@ -490,6 +491,38 @@ function weeklyCost(raw: unknown): WeeklyCost | null {
 const MAX_PERIODS = 60;
 
 /**
+ * A hard cap on each period's per-model list. The producer emits at most a
+ * handful (the price table has five model families), but a malformed main
+ * process could send an unbounded array and each entry is a row in the
+ * disclosure. Generous enough never to clip the real payload, bounded enough
+ * that a bad one cannot blow up the panel.
+ */
+const MAX_PERIOD_MODELS = 24;
+
+/**
+ * One per-model entry inside a period.
+ *
+ * Dropped — not zeroed — when it has no usable model name, because an entry is
+ * a labelled figure and an unlabelled one is not this shape. `costUsd` mirrors
+ * the contract precisely: `nonNegative` yields `null` for a missing, negative
+ * or non-finite value, and null is the "could not be priced" signal the
+ * renderer prints as "fiyatlanamadı" — never coerced to 0, which would read as
+ * free. There is no token field to carry: the contract defines none, so none
+ * can cross this boundary — the same honesty invariant as the period itself.
+ */
+function periodModelCost(raw: unknown): PeriodModelCost | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const source = raw as Record<string, unknown>;
+  const model = text(source.model, 64);
+  if (model === null) return null;
+  return {
+    model,
+    costUsd: nonNegative(source.costUsd),
+    isFloor: source.isFloor === true,
+  };
+}
+
+/**
  * One period bucket.
  *
  * Dropped — not zeroed — when it has no valid date range, because the whole row
@@ -515,6 +548,11 @@ function periodUsage(raw: unknown): PeriodUsage | null {
     .filter((entry): entry is string => entry !== null)
     .slice(0, 24);
 
+  const byModel = (Array.isArray(source.byModel) ? source.byModel : [])
+    .map(periodModelCost)
+    .filter((entry): entry is PeriodModelCost => entry !== null)
+    .slice(0, MAX_PERIOD_MODELS);
+
   return {
     key: text(source.key, 32) ?? startsAt,
     startsAt,
@@ -527,6 +565,7 @@ function periodUsage(raw: unknown): PeriodUsage | null {
       cacheWrite1h: 0,
       cacheRead: 0,
     },
+    byModel,
     isFloor: source.isFloor === true,
     unpricedModels,
     hasUsage: source.hasUsage === true,

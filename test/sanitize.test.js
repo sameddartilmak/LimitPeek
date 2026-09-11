@@ -476,3 +476,91 @@ test.describe('the per-period usage history survives the boundary', () => {
     }
   });
 });
+
+test.describe('the per-model breakdown survives the boundary', () => {
+  test('a well-formed byModel passes through, each entry with model, cost and floor', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ byModel: [
+        { model: 'claude-opus-5', costUsd: 200.5, isFloor: false },
+        { model: 'claude-sonnet-5', costUsd: 12.25, isFloor: true },
+      ] })],
+      months: [],
+      pricesAsOf: '2026-06-24',
+    }));
+    const byModel = out.usageHistory.weeks[0].byModel;
+    assert.equal(byModel.length, 2);
+    assert.deepEqual(byModel[0], { model: 'claude-opus-5', costUsd: 200.5, isFloor: false });
+    assert.deepEqual(byModel[1], { model: 'claude-sonnet-5', costUsd: 12.25, isFloor: true });
+  });
+
+  test('byModel defaults to an empty array when main omits it', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period()], months: [], pricesAsOf: '2026-06-24',
+    }));
+    assert.deepEqual(out.usageHistory.weeks[0].byModel, []);
+  });
+
+  test('a null cost survives as null — the "fiyatlanamadı" signal, never coerced to 0', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ byModel: [{ model: 'mystery-9', costUsd: null, isFloor: true }] })],
+      months: [], pricesAsOf: '2026-06-24',
+    }));
+    assert.equal(out.usageHistory.weeks[0].byModel[0].costUsd, null);
+  });
+
+  test('a negative or non-finite cost becomes null (unpriced), never a shown figure', () => {
+    for (const bad of [-5, NaN, Infinity, 'lots', undefined]) {
+      const out = s.sanitizeSnapshot(historyWith({
+        weeks: [period({ byModel: [{ model: 'm', costUsd: bad, isFloor: false }] })],
+        months: [], pricesAsOf: '2026-06-24',
+      }));
+      assert.equal(out.usageHistory.weeks[0].byModel[0].costUsd, null, JSON.stringify(bad));
+    }
+  });
+
+  test('an entry with no usable model name is dropped, not shown unlabelled', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ byModel: [
+        { model: '', costUsd: 5, isFloor: false },
+        { model: 42, costUsd: 5, isFloor: false },
+        { model: 'claude-opus-5', costUsd: 5, isFloor: false },
+      ] })],
+      months: [], pricesAsOf: '2026-06-24',
+    }));
+    const byModel = out.usageHistory.weeks[0].byModel;
+    assert.equal(byModel.length, 1);
+    assert.equal(byModel[0].model, 'claude-opus-5');
+  });
+
+  test('isFloor on a per-model entry admits only the boolean true', () => {
+    for (const truthy of ['true', 1, {}, 'yes']) {
+      const out = s.sanitizeSnapshot(historyWith({
+        weeks: [period({ byModel: [{ model: 'm', costUsd: 5, isFloor: truthy }] })],
+        months: [], pricesAsOf: '2026-06-24',
+      }));
+      assert.equal(out.usageHistory.weeks[0].byModel[0].isFloor, false, JSON.stringify(truthy));
+    }
+  });
+
+  test('no merged token total can ride in on a per-model entry either', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ byModel: [
+        { model: 'm', costUsd: 5, isFloor: false, tokens: { billable: 9 }, billable: 9 },
+      ] })],
+      months: [], pricesAsOf: '2026-06-24',
+    }));
+    const entry = out.usageHistory.weeks[0].byModel[0];
+    assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model']);
+    assert.equal('tokens' in entry, false);
+    assert.equal('billable' in entry, false);
+  });
+
+  test('a byModel that is not an array degrades to empty, it does not drop the period', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ byModel: 'claude-opus-5' })],
+      months: [], pricesAsOf: '2026-06-24',
+    }));
+    assert.equal(out.usageHistory.weeks.length, 1);
+    assert.deepEqual(out.usageHistory.weeks[0].byModel, []);
+  });
+});

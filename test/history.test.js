@@ -160,6 +160,132 @@ test.describe('the honesty constraint: no single merged token total crosses the 
   });
 });
 
+test.describe('the per-model breakdown of a period', () => {
+  const wStart = history.weekStartMs(NOW);
+  const endEx = history.nextWeekStartMs(wStart);
+  const at = wStart + HOUR;
+  // The notional cost of one model's own events, priced the same way the
+  // period is — never hard-coded dollars, so a price-table change moves the
+  // expectation with the code.
+  const costOf = (events) => pricing.weeklyCost(events, wStart, endEx, false);
+
+  test('groups by model and prices each model exactly as the period is priced', () => {
+    const opus = ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 100000 });
+    const sonnet = ev({ ts: at, key: 's1', model: 'claude-sonnet-5', output: 100000 });
+    const { weeks } = history.usageHistory([opus, sonnet], NOW);
+    const byModel = weeks[0].byModel;
+
+    assert.equal(byModel.length, 2);
+    const find = (m) => byModel.find((e) => e.model === m);
+    // Each entry's cost is that model's own slice priced through pricing.js.
+    assert.equal(find('claude-opus-5').costUsd, costOf([opus]).totalUsd);
+    assert.equal(find('claude-sonnet-5').costUsd, costOf([sonnet]).totalUsd);
+    // Priced entries partition the period total (rounding aside — here exact).
+    assert.equal(
+      find('claude-opus-5').costUsd + find('claude-sonnet-5').costUsd,
+      weeks[0].costUsd,
+    );
+  });
+
+  test('is sorted largest priced cost first, unpriced models last', () => {
+    const opus = ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 100000 }); // 25/M out
+    const sonnet = ev({ ts: at, key: 's1', model: 'claude-sonnet-5', output: 100000 }); // 10/M out
+    const haiku = ev({ ts: at, key: 'h1', model: 'claude-haiku-4-5', output: 100000 }); // 5/M out
+    const mystery = ev({ ts: at, key: 'm1', model: 'mystery-model-9', output: 100000 });
+    const { weeks } = history.usageHistory([haiku, mystery, sonnet, opus], NOW);
+    const order = weeks[0].byModel.map((e) => e.model);
+    assert.deepEqual(order, [
+      'claude-opus-5',
+      'claude-sonnet-5',
+      'claude-haiku-4-5',
+      'mystery-model-9', // unpriced, always last
+    ]);
+    // Descending by cost among the priced ones.
+    const priced = weeks[0].byModel.filter((e) => e.costUsd !== null);
+    for (let i = 1; i < priced.length; i += 1) {
+      assert.ok(priced[i - 1].costUsd >= priced[i].costUsd);
+    }
+  });
+
+  test('a model with no published price is null, never $0 — the "fiyatlanamadı" signal', () => {
+    const mystery = ev({ ts: at, key: 'm1', model: 'mystery-model-9', output: 100000 });
+    const { weeks } = history.usageHistory([mystery], NOW);
+    const entry = weeks[0].byModel.find((e) => e.model === 'mystery-model-9');
+    assert.equal(entry.costUsd, null); // NOT 0
+    // The period total excluded it, and the period is a floor because of it.
+    assert.equal(weeks[0].costUsd, 0);
+    assert.equal(weeks[0].isFloor, true);
+  });
+
+  test('a model whose cache write has no TTL split is its own floor (1.25x, not up to 2x)', () => {
+    const opus = ev({ ts: at, key: 'o1', model: 'claude-opus-5', cacheWrite: 10000, cw5: 0, cw1h: 0 });
+    const { weeks } = history.usageHistory([opus], NOW);
+    const entry = weeks[0].byModel.find((e) => e.model === 'claude-opus-5');
+    assert.equal(entry.isFloor, true);
+    assert.ok(entry.costUsd > 0);
+  });
+
+  test('a model priced at one speed and unpriced at another is a floor, with the priced portion as cost', () => {
+    // claude-opus-4-8 is priced at standard, but has NO fast row (ADR-002).
+    const std = ev({ ts: at, key: 'a', model: 'claude-opus-4-8', speed: 'standard', output: 100000 });
+    const fast = ev({ ts: at, key: 'b', model: 'claude-opus-4-8', speed: 'fast', output: 100000 });
+    const { weeks } = history.usageHistory([std, fast], NOW);
+    // One entry: grouping is by MODEL, so the two speeds fold together.
+    const entry = weeks[0].byModel.find((e) => e.model === 'claude-opus-4-8');
+    assert.ok(entry);
+    // Cost is the PRICED (standard) portion only; the fast portion is excluded.
+    assert.equal(entry.costUsd, costOf([std]).totalUsd);
+    assert.equal(entry.isFloor, true); // a lower bound: fast usage was excluded
+  });
+
+  test('a fully-priced model is not framed as a floor', () => {
+    const opus = ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 100000, cacheWrite: 4000, cw5: 4000, cw1h: 0 });
+    const { weeks } = history.usageHistory([opus], NOW);
+    const entry = weeks[0].byModel.find((e) => e.model === 'claude-opus-5');
+    assert.equal(entry.isFloor, false);
+    assert.ok(entry.costUsd > 0);
+  });
+
+  test('honesty invariant: a per-model entry carries cost only, never a merged token total', () => {
+    const opus = ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 1000, input: 50, cacheRead: 9_000_000 });
+    const { weeks } = history.usageHistory([opus], NOW);
+    const entry = weeks[0].byModel[0];
+    // Exactly the three honest fields, and none of the forbidden token sums.
+    assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model']);
+    for (const banned of ['billable', 'tokens', 'tokensUsed', 'totalTokens', 'byClass']) {
+      assert.equal(banned in entry, false, `per-model entry must not carry "${banned}"`);
+    }
+  });
+
+  test('an empty period carries an empty byModel, not a fabricated row', () => {
+    const wk0 = history.weekStartMs(NOW);
+    const wk2 = weeksBack(NOW, 2);
+    const { weeks } = history.usageHistory(
+      [ev({ ts: wk2 + HOUR, key: 'old', output: 1000 }), ev({ ts: wk0 + HOUR, key: 'new', output: 1000 })],
+      NOW,
+    );
+    // weeks[1] is the quiet week between the two.
+    assert.equal(weeks[1].hasUsage, false);
+    assert.deepEqual(weeks[1].byModel, []);
+  });
+
+  test('the same corpus reflects in months as in weeks (this machine: all data is this week)', () => {
+    // Mirrors the note on the real data: with everything in the current week,
+    // week and month buckets summarise the same events, so the per-model split
+    // matches. claude-opus-5 dominates, exactly as on the reference machine.
+    const events = [
+      ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 500000 }),
+      ev({ ts: at, key: 's1', model: 'claude-sonnet-5', output: 100000 }),
+    ];
+    const { weeks, months } = history.usageHistory(events, NOW);
+    assert.equal(weeks[0].byModel[0].model, 'claude-opus-5');
+    assert.deepEqual(
+      weeks[0].byModel.map((e) => [e.model, e.costUsd]),
+      months[0].byModel.map((e) => [e.model, e.costUsd]),
+    );
+  });
+});
+
 test.describe('the cost figure is framed as a floor exactly when it is one', () => {
   test('a fully-priced period is not a floor', () => {
     const wStart = history.weekStartMs(NOW);
