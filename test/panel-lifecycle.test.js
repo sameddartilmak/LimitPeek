@@ -176,37 +176,82 @@ test.describe('an unpinned panel follows the pointer, not the focus', () => {
     assert.equal(panel.pinned, false);
   });
 
-  test('a click-open re-asserts top-of-z-order right after showing, without activating', () => {
-    // The reported open flicker: `showInactive()` shows the transparent topmost
-    // panel WITHOUT taking the foreground, so the app the user was in keeps it
-    // and repaints over the panel for a few frames before the shell settles the
-    // z-order (present->gone->present in the capture). `moveTop()` re-inserts
-    // the panel at the top of the topmost band in the same tick, and does so
-    // without activation, so the fix must not cost the no-focus-steal property.
+  test('the window is composited ONCE, off-screen, at create — never shown again on open', () => {
+    // The root of the reported flicker: showing a transparent, always-on-top
+    // window is a composite transition the foreground app repaints across. The
+    // fix is to pay that transition exactly once, at create, and off-screen so
+    // nobody sees it. From then on the window is never re-shown; it is MOVED.
+    const { panel } = build();
+    // build() has already called create(): the single show has happened, and it
+    // put the window off every display so the prime is invisible.
+    assert.deepEqual(panel.win.activations, ['showInactive'], 'exactly one show, at create');
+    assert.ok(panel.win.getBounds().x <= -10000, 'and it was primed off-screen');
+    assert.equal(panel.isVisible(), false, 'a primed-but-unopened panel is logically hidden');
+  });
+
+  test('a click-open MOVES the composited window and re-asserts z-order, without a second show', () => {
+    // The mechanism, asserted directly. open() must NOT add a `showInactive`
+    // (that would be the flashing transition back); it moves the already-shown
+    // surface into place and raises it with moveTop. If a mutant reintroduced a
+    // per-open show, this array would carry a second 'showInactive'.
     const { panel, send, trayRect } = build();
+    const before = panel.win.activations.length;
     panel.open(trayRect, send);
     assert.deepEqual(
-      panel.win.activations,
-      ['showInactive', 'moveTop'],
-      'moveTop must run, and run AFTER the show — before it there is nothing on top to raise',
+      panel.win.activations.slice(before),
+      ['moveTop'],
+      'open only raises z-order; it does not re-show',
     );
-    assert.equal(panel.win.isFocused(), false, 'moveTop must not steal focus');
+    assert.equal(panel.win.isFocused(), false, 'the reveal must not steal focus');
     assert.equal(panel.isVisible(), true);
   });
 
   test('a second open (panel buried behind another window) re-raises it again', () => {
     // The OTHER second click — not the toggle-closed path, but a re-open of a
     // still-visible panel that has been covered. Each open must re-assert
-    // z-order, or a panel buried since the first open never resurfaces.
+    // z-order, or a panel buried since the first open never resurfaces — and it
+    // must do so WITHOUT a fresh show, or the flicker comes back on every click.
     const { panel, send, trayRect } = build();
     panel.open(trayRect, send);
     panel.open(trayRect, send);
     assert.deepEqual(
       panel.win.activations,
-      ['showInactive', 'moveTop', 'showInactive', 'moveTop'],
-      'every open pairs a show with a z-order re-assert',
+      ['showInactive', 'moveTop', 'moveTop'],
+      'one prime at create, then a z-order re-assert per open and never another show',
     );
     assert.equal(panel.isVisible(), true);
+  });
+
+  test('hiding does NOT hide or destroy the OS window; it moves it off-screen', () => {
+    // The invariant the whole fix rests on: the OS window stays composited for
+    // life, so there is never a show->composite transition to flash. `hide()`
+    // clears LOGICAL visibility and parks the surface off every display.
+    const { panel, send, trayRect } = build();
+    panel.open(trayRect, send);
+    const onScreen = panel.win.getBounds();
+    assert.ok(onScreen.x > -10000, 'precondition: an open panel is on screen');
+
+    panel.hide();
+    assert.equal(panel.isVisible(), false, 'logically hidden');
+    assert.equal(panel.win.isVisible(), true, 'but the OS window is never hidden');
+    assert.equal(panel.win.isDestroyed(), false, 'nor destroyed');
+    assert.ok(panel.win.getBounds().x <= -10000, 'it was moved off-screen instead');
+  });
+
+  test('a re-open after a hide brings it back with a move, still no re-show', () => {
+    // Toggle closed, then open again: the surface that was parked off-screen is
+    // moved back and raised. No new show anywhere in the sequence.
+    const { panel, send, trayRect } = build();
+    panel.open(trayRect, send);
+    panel.hide();
+    panel.open(trayRect, send);
+    assert.equal(panel.isVisible(), true);
+    assert.ok(panel.win.getBounds().x > -10000, 'back on screen');
+    assert.equal(
+      panel.win.activations.filter((a) => a === 'showInactive').length,
+      1,
+      'still exactly one show for the whole open/hide/open cycle',
+    );
   });
 
   test('the transit gap does not close it while the pointer is still travelling', (t) => {
