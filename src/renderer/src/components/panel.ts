@@ -341,11 +341,21 @@ export function createPanel(ctx: PanelContext): PanelHandle {
 
   // The refresh bubble. A CALM message, not the error row: the user pressed
   // Yenile while the Antigravity IDE was closed, so its store cannot be
-  // updating. It says the tool is not open and that the figures are the last
-  // known ones — deliberately not that anything is broken. It borrows the
-  // coach's bubble chrome so the two read as one friendly-notice idiom, and it
-  // is shown ONLY on an explicit refresh reply carrying the notice, never on a
-  // push (app.ts reads it off the invoke reply alone).
+  // updating. It says the tool is not open and that nothing is broken.
+  //
+  // What it must NOT do is promise "the values below are your last measurement"
+  // unconditionally. Antigravity's five-hour window rolls over every five hours
+  // while the store only updates with the IDE open, so by the time the user
+  // looks with it closed that window has almost always ENDED — the snapshot
+  // then carries no figure for it and the row honestly shows an absence. The
+  // old wording promised values the row could not show, so the bubble and the
+  // row contradicted each other. The honest claim is narrower: values are shown
+  // ONLY where the last reading is still valid, and an expired window needs the
+  // IDE open. That matches the row in every case, expired or not.
+  //
+  // It borrows the coach's bubble chrome so the two read as one friendly-notice
+  // idiom, and it is shown ONLY on an explicit refresh reply carrying the
+  // notice, never on a push (app.ts reads it off the invoke reply alone).
   const refreshBubbleDismiss = el(
     'button',
     { type: 'button', class: 'btn', 'aria-label': 'Bu mesajı kapat' },
@@ -357,8 +367,9 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     el(
       'span',
       { class: 'coach__text' },
-      'Antigravity açık değil. Aşağıdaki Antigravity değerleri, aracı en son ' +
-        'açtığınızdaki ölçüm — bir sorun yok. Güncel oran için Antigravity’yi açın.',
+      'Antigravity açık değil, değerleri güncellenmiyor — bir sorun yok. ' +
+        'Aşağıda yalnızca hâlâ geçerli olan son ölçümler görünür; süresi dolmuş ' +
+        'pencerelerin güncel oranı için Antigravity’yi açın.',
     ),
     el('div', { class: 'coach__actions' }, refreshBubbleDismiss),
   );

@@ -94,6 +94,16 @@ export type WindowAbsence =
   | 'stale'
   /** The window this figure described has already reset. */
   | 'rolled-over'
+  /**
+   * The source is connected and this window is CURRENT (not rolled over), but
+   * its figure has not been reported yet. Claude Code renews the five-hour
+   * window and only writes the new number the next time it runs, so for a
+   * moment the bridge holds a fresh, valid capture whose window carries no
+   * percentage. Distinct from `no-capture` (never connected — the row shows the
+   * setup path) and from `rolled-over` (a figure whose window has ended). The
+   * renderer says "yeni veri bekleniyor" rather than the bare "bilinmiyor".
+   */
+  | 'awaiting-report'
   /** Something was captured and could not be understood. */
   | 'unreadable';
 

@@ -131,6 +131,16 @@ const ABSENCE: Partial<Record<WindowAbsence, AbsenceCopy>> = {
     reason: null,
     spoken: (label) => `${label}: şu anda yenileniyor.`,
   },
+  // Connected and current, but the number for THIS window has not landed yet.
+  // Deliberately not "bilinmiyor" (which reads as "we did not look") and not
+  // "yenileniyor" (the window did not reset — it is fresh and simply unreported
+  // so far). No reason line: the word already says the whole of it, and the
+  // reset countdown beneath still carries when the window turns over.
+  'awaiting-report': {
+    figure: 'yeni veri bekleniyor',
+    reason: null,
+    spoken: (label) => `${label}: yeni veri bekleniyor.`,
+  },
 };
 
 function absenceCopy(usage: WindowUsage | null | undefined): AbsenceCopy {

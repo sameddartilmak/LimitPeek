@@ -275,8 +275,22 @@ function buildSnapshot(input) {
     sinceCapture = agg.sumWindow(deduped, capturedAtMs, now).tokens.billable;
   }
 
-  const fiveHour = windowFrom(rl.fiveHour, captureFresh, capturedAtMs, now, sinceCapture);
-  const sevenDay = windowFrom(rl.sevenDay, captureFresh, capturedAtMs, now, sinceCapture);
+  // When the bridge capture is FRESH but a window carries no figure, Claude
+  // Code has renewed that window and not yet reported the new number — it only
+  // writes one the next time it runs. That is a connected, current, waiting
+  // state, and it earns its own word: 'awaiting-report' -> "yeni veri
+  // bekleniyor", rather than the bare "bilinmiyor" that reads as "we did not
+  // look". It is deliberately gated on `fresh`, not on connection alone:
+  //   - a NEVER-CONNECTED row (rl.state 'missing') keeps 'no-capture' so the
+  //     first-run user still sees the setup path, not a "waiting" figure;
+  //   - a STALE capture keeps 'no-capture' too — a capture that never carried a
+  //     figure and is now old is not "about to report", it is simply old.
+  // A figure whose window has already ROLLED OVER is untouched by this: that is
+  // decided in windowFrom, which reaches its 'rolled-over' branch only with a
+  // NON-null percentage and so never consults this stamp.
+  const claudeStamp = { absence: rl.state === 'fresh' ? 'awaiting-report' : 'no-capture' };
+  const fiveHour = windowFrom(rl.fiveHour, captureFresh, capturedAtMs, now, sinceCapture, claudeStamp);
+  const sevenDay = windowFrom(rl.sevenDay, captureFresh, capturedAtMs, now, sinceCapture, claudeStamp);
 
   // Token window: anchored to the real reset instant whenever that instant is
   // still ahead of us — that is true of a stale capture too, and it is what

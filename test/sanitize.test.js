@@ -97,6 +97,29 @@ test.describe('a window must not drive a meter it cannot justify', () => {
     assert.equal(out.fiveHour.usedPercentage, null);
   });
 
+  test("the 'awaiting-report' absence is a known cause and passes through as itself", () => {
+    // A window with no figure but a stated absence: the sanitizer keeps the
+    // cause so the renderer can print "yeni veri bekleniyor" rather than
+    // degrading it to "bilinmiyor".
+    const out = claudeOf(s.sanitizeSnapshot(snapshotWith({
+      fiveHour: {
+        usedPercentage: null,
+        certainty: 'unknown',
+        absence: 'awaiting-report',
+        resetsAt: '2026-09-08T20:00:00.000Z',
+      },
+    })));
+    assert.equal(out.fiveHour.usedPercentage, null);
+    assert.equal(out.fiveHour.absence, 'awaiting-report');
+  });
+
+  test("an unrecognised absence still degrades to 'no-capture', the claim that asserts least", () => {
+    const out = claudeOf(s.sanitizeSnapshot(snapshotWith({
+      fiveHour: { usedPercentage: null, certainty: 'unknown', absence: 'uydurma', resetsAt: null },
+    })));
+    assert.equal(out.fiveHour.absence, 'no-capture');
+  });
+
   test('an unparseable resetsAt becomes null instead of a NaN countdown', () => {
     const out = claudeOf(s.sanitizeSnapshot(snapshotWith({
       fiveHour: { usedPercentage: 62, certainty: 'known', resetsAt: 'yarın', capturedAt: 'dün' },

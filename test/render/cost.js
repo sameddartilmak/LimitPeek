@@ -573,8 +573,11 @@ app.whenReady().then(async () => {
   say('refresh bubble: ' + JSON.stringify(bubble));
   check('an explicit refresh with the IDE closed raises the bubble',
     bubble.hidden === false && /Antigravity açık değil/.test(bubble.text), bubble);
-  check('it says the values are the last known ones, not that anything broke',
-    /son/.test(bubble.text) && !/hata|bozuk|sorun var/i.test(bubble.text), bubble.text);
+  check('it is calm — nothing broke — and no longer promises values a rolled-over row cannot show',
+    !/hata|bozuk|sorun var/i.test(bubble.text)
+      && /hâlâ geçerli olan son ölçümler/.test(bubble.text)
+      && !/açtığınızdaki ölçüm/.test(bubble.text),
+    bubble.text);
   check('it is a polite status region, not an alarm', bubble.role === 'status', bubble.role);
   check('it can be dismissed', bubble.dismiss === 'Tamam', bubble.dismiss);
   check('its left accent is a real colour and distinct from the neutral coach note',
