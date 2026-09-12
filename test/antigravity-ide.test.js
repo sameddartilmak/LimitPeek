@@ -795,6 +795,40 @@ test.describe('the collector follows the IDE store', () => {
     );
   });
 
+  test('opening the panel re-reads sources immediately — no button, no waiting for a sweep', (t) => {
+    // The freshness contract the user asked for: the figures are current the
+    // instant the panel appears. Timestamps are stamped against the REAL clock
+    // because the collector rebuilds with Date.now(), not the suite's frozen
+    // NOW — a reset in the suite's past would roll the window over and null it.
+    const realNow = Date.now();
+    const c = collectorOn(tmpdir(), t);
+    const capture = (pct) => JSON.stringify({
+      schemaVersion: 1,
+      capturedAt: new Date(realNow).toISOString(),
+      present: true,
+      fiveHour: { usedPercentage: pct, resetsAt: Math.floor((realNow + 2 * HOUR) / 1000) },
+      sevenDay: { usedPercentage: 3, resetsAt: Math.floor((realNow + 3 * DAY) / 1000) },
+    });
+
+    fs.writeFileSync(c.rateLimitsFile, capture(18));
+    c.rebuild();
+    assert.equal(c.snapshot.providers.find((p) => p.id === 'claude').fiveHour.usedPercentage, 18);
+
+    // The bridge wrote a newer figure while the panel was closed, and no
+    // rebuild has run since. Opening the panel must surface it on its own.
+    fs.writeFileSync(c.rateLimitsFile, capture(25));
+    let emitted = null;
+    c.on('snapshot', (s) => { emitted = s; });
+    c.setPanelOpen(true);
+
+    assert.ok(emitted, 'opening the panel emitted a fresh snapshot without a refresh press');
+    assert.equal(
+      emitted.providers.find((p) => p.id === 'claude').fiveHour.usedPercentage,
+      25,
+      'the freshly re-read figure, not the one the panel last saw before it opened',
+    );
+  });
+
   test('when a newer install appears the watcher moves to it', (t) => {
     // GUARD 1 chooses by mtime and can change its mind. A watcher pinned to
     // the first answer would quietly stop reporting changes.
