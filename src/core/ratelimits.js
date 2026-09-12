@@ -260,15 +260,20 @@ function retainClaudeFigures(rl, held, now) {
  * test `a reset_time already in the past is never presented as current` found
  * exactly that.
  *
- * There is deliberately NO pattern for the five-hour slot. Nothing in the
- * documentation describes such a bucket, and a speculative pattern for a name
- * nobody has seen is an untested branch that can only ever mislabel something.
+ * The five-hour slot went unmapped until the CLI was seen in the wild. The
+ * documentation named only `*-weekly`, so a five-hour pattern would once have
+ * been a guess at a name nobody had observed. A live agy session settles it: it
+ * emits `3p-5h` and `gemini-5h` beside the weekly buckets, so `5h` in a bucket
+ * name is now an OBSERVED label and takes the five-hour slot for exactly the
+ * reason `week` takes the weekly one — the name makes the label true. `week` is
+ * tested first so any name that somehow carried both words still reads weekly.
  *
  * An unmatched bucket is DROPPED and counted. A partial answer is honest; a
  * mislabelled one is not.
  */
 const BUCKET_SLOTS = [
   { slot: 'sevenDay', test: /week/i, skewMs: RESET_SKEW_MS.sevenDay },
+  { slot: 'fiveHour', test: /5-?h/i, skewMs: RESET_SKEW_MS.fiveHour },
 ];
 
 /**
