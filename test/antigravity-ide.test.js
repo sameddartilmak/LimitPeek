@@ -865,3 +865,107 @@ test.describe('the collector follows the IDE store', () => {
     assert.equal(c.antigravityIde.fiveHour.usedPercentage, 25);
   });
 });
+
+/* ------------------------------------------ GUARD 6: the agy bridge is the
+ * only source of the weekly window and of a live, forward five-hour reset.
+ * The IDE store persists neither (it fetches both from its server and does
+ * not write them back), so a row connected on the store must STILL offer the
+ * bridge, and must prefer the CLI's live reset once the bridge is in — never
+ * inventing a countdown the store cannot supply. */
+test.describe('GUARD 6 — offer agy beside a store figure, prefer its live reset', () => {
+  // What the IDE reader hands the snapshot: a percentage whose stale reset has
+  // already been nulled by the skew guard, so there is no forward instant here.
+  const storeFive = {
+    state: 'fresh',
+    capturedAtMs: NOW - 1000,
+    fiveHour: { usedPercentage: 0, resetsAtMs: null },
+    sevenDay: null,
+    groups: [{ usedPercentage: 0, resetsAtMs: null, members: ['Claude Opus 4.6', 'Gemini 3.1 Pro'] }],
+    diverged: false,
+  };
+
+  test('store gives five-hour, agy not installed: connected, yet still offers "Bağla"', () => {
+    const ag = agRow(storeFive, { state: 'missing', fiveHour: null, sevenDay: null });
+    assert.equal(ag.connected, true, 'a real five-hour figure is a connection');
+    assert.ok(ag.setupAction, 'the bridge is still offered, so the weekly has a path');
+    assert.equal(ag.setupAction.kind, 'install-bridge');
+    assert.equal(ag.fiveHour.usedPercentage, 0);
+    assert.equal(ag.fiveHour.resetsAt, null, 'no countdown invented from a store with no forward reset');
+    assert.equal(ag.sevenDay.usedPercentage, null);
+    assert.equal(ag.sevenDay.absence, 'not-supplied', 'the weekly is real but this source does not supply it');
+  });
+
+  test('with the CLI connected, five-hour follows its LIVE reset and the weekly appears', () => {
+    const cli = {
+      state: 'fresh',
+      capturedAtMs: NOW - 1000,
+      fiveHour: { usedPercentage: 5, resetsAtMs: NOW + 2 * HOUR },
+      sevenDay: { usedPercentage: 8, resetsAtMs: NOW + 5 * DAY },
+    };
+    const ag = agRow(storeFive, cli);
+    assert.equal(ag.setupAction, null, 'the bridge is in; nothing left to set up');
+    assert.equal(ag.fiveHour.usedPercentage, 5, 'the CLI figure, not the store 0');
+    assert.equal(ag.fiveHour.resetsAt, new Date(NOW + 2 * HOUR).toISOString(), 'a live, forward reset');
+    assert.equal(ag.fiveHour.source, 'antigravity.cli.quota.remaining_fraction');
+    assert.equal(ag.sevenDay.usedPercentage, 8);
+    assert.equal(ag.sevenDay.resetsAt, new Date(NOW + 5 * DAY).toISOString());
+  });
+
+  test('CLI installed but supplying only the weekly: five-hour falls back to the store, no "Bağla"', () => {
+    const cli = {
+      state: 'fresh',
+      capturedAtMs: NOW - 1000,
+      fiveHour: null,
+      sevenDay: { usedPercentage: 8, resetsAtMs: NOW + 5 * DAY },
+    };
+    const ag = agRow(storeFive, cli);
+    assert.equal(ag.setupAction, null, 'agy is installed, so there is nothing to set up');
+    assert.equal(ag.fiveHour.usedPercentage, 0, 'the store still owns the five-hour figure');
+    assert.equal(ag.fiveHour.source, 'antigravity.ide.quota_info.remaining_fraction');
+    assert.equal(ag.sevenDay.usedPercentage, 8, 'and the CLI still fills the weekly');
+  });
+
+  test('store stale while the CLI is fresh: CLI drives the headline, the STALE store breakdown is withheld', () => {
+    // The source-decoupling this guards: modelQuotas is store-derived, so it
+    // must not ride onto a row the fresh CLI has made 'ok'. A stale, unmarked
+    // 40% breakdown under a fresh 5% headline is exactly the optimistic display
+    // the honesty doctrine forbids, and quotas.ts prints no staleness note
+    // because the row is not degraded.
+    const staleStore = {
+      state: 'stale', capturedAtMs: NOW - 40 * 60 * 1000,
+      fiveHour: { usedPercentage: 40, resetsAtMs: null }, sevenDay: null,
+      groups: [{ usedPercentage: 40, resetsAtMs: null, members: ['Claude Opus 4.6', 'Gemini 3.1 Pro'] }],
+      diverged: false,
+    };
+    const cli = {
+      state: 'fresh', capturedAtMs: NOW - 1000,
+      fiveHour: { usedPercentage: 5, resetsAtMs: NOW + 2 * HOUR },
+      sevenDay: { usedPercentage: 8, resetsAtMs: NOW + 5 * DAY },
+    };
+    const ag = agRow(staleStore, cli);
+    assert.equal(ag.status, 'ok', 'the fresh CLI makes the row current');
+    assert.equal(ag.fiveHour.usedPercentage, 5, 'the headline is the fresh CLI figure');
+    assert.equal(ag.fiveHour.source, 'antigravity.cli.quota.remaining_fraction');
+    assert.equal(ag.modelQuotas, null, 'the stale store breakdown is withheld, never shown unmarked under a fresh headline');
+  });
+
+  test('CLI staler than the store: the fresher store figure wins the headline', () => {
+    // An old percentage with a countdown is a worse headline than a current
+    // percentage without one, so a stale CLI must not displace a fresh store.
+    const freshStore = {
+      state: 'fresh', capturedAtMs: NOW - 1000,
+      fiveHour: { usedPercentage: 40, resetsAtMs: null }, sevenDay: null,
+      groups: [{ usedPercentage: 40, resetsAtMs: null, members: ['Claude Opus 4.6', 'Gemini 3.1 Pro'] }],
+      diverged: false,
+    };
+    const staleCli = {
+      state: 'stale', capturedAtMs: NOW - 40 * 60 * 1000,
+      fiveHour: { usedPercentage: 5, resetsAtMs: NOW + 2 * HOUR },
+      sevenDay: { usedPercentage: 8, resetsAtMs: NOW + 5 * DAY },
+    };
+    const ag = agRow(freshStore, staleCli);
+    assert.equal(ag.fiveHour.usedPercentage, 40, 'the current store figure, not the older CLI one');
+    assert.equal(ag.fiveHour.source, 'antigravity.ide.quota_info.remaining_fraction');
+    assert.ok(ag.modelQuotas, 'the fresh store breakdown is shown');
+  });
+});

@@ -350,9 +350,16 @@ function buildLive(
   // honest way to put "the" percentage next to the provider's name, and the
   // one that was there described the five-hour window without saying so.
 
-  // --- an inline connect action for a connected-but-unmeasurable row -----
+  // --- an inline connect action -----------------------------------------
+  // Present whenever the snapshot offers a setupAction. For a passive,
+  // unmeasurable row this is the row's only affordance. It ALSO appears on a
+  // row that already draws a meter: Antigravity connects on the IDE store's
+  // five-hour figure, yet its weekly window and a live five-hour reset only
+  // arrive through the agy bridge, so the snapshot keeps offering "Bağla"
+  // beside the live meter until that bridge is connected. The snapshot decides
+  // when the action exists; this only renders whatever it was given.
   let action: HTMLButtonElement | null = null;
-  if (!drawable && p.setupAction) {
+  if (p.setupAction) {
     action = el(
       'button',
       {

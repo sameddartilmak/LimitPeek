@@ -146,7 +146,7 @@ function anyWindowRolledOver(rl, now) {
  * `error` is now reserved for a genuine fault where a retry is meaningful: a
  * capture file or store we could not open or parse at all.
  */
-function antigravityRowState(sources, windows, anyFigure, allFresh, rolledOver) {
+function antigravityRowState(sources, windows, anyFigure, allFresh, rolledOver, cliMissing) {
   const present = sources.filter((s) => s.state !== 'missing');
   if (present.length === 0) {
     // Neither source connected. The "Bağla" case, not an error.
@@ -170,7 +170,16 @@ function antigravityRowState(sources, windows, anyFigure, allFresh, rolledOver) 
     return { connected: true, status: aged ? 'stale' : 'ok', setup: false, errorCode: undefined };
   }
   const live = allFresh && !rolledOver;
-  return { connected: true, status: live ? 'ok' : 'stale', setup: false, errorCode: undefined };
+  // Connected on the IDE store's five-hour figure, but the agy CLI is not
+  // installed. That CLI is the ONLY source of the weekly window and of a live,
+  // forward five-hour reset — the IDE fetches both from its server and never
+  // writes them to disk, so from the store alone there is no countdown and no
+  // weekly to show. So keep the row connected (the five-hour figure is real)
+  // and STILL offer the bridge, giving the user a path to the reading
+  // Antigravity computes but does not persist. Once agy is installed the CLI
+  // supplies both windows and `cliMissing` is false, so this returns to
+  // setup:false on its own — the button disappears without any state to clear.
+  return { connected: true, status: live ? 'ok' : 'stale', setup: cliMissing === true, errorCode: undefined };
 }
 
 /**
@@ -368,11 +377,39 @@ function buildSnapshot(input) {
   // "selected model", but that selection is not on disk — the picker's choice
   // is not persisted — so it was removed (see the note in ide-quota.js). The
   // tray also shows the most-consumed group, so the two agree again.
-  const agFive = windowFrom(agIde.fiveHour, agIdeFresh, agIdeCapturedAtMs, now, null, {
+  //
+  // The store's OWN five-hour window, computed unconditionally. It is the
+  // fallback headline when the CLI supplies nothing, and — separately — it is
+  // the gate the store-derived per-model disclosure rides on: that breakdown
+  // may only appear while the store's own reading is currently showable, never
+  // on the strength of a CLI figure that describes the same window a fresher
+  // way (see `agModelQuotas`).
+  const agStoreFive = windowFrom(agIde.fiveHour, agIdeFresh, agIdeCapturedAtMs, now, null, {
     source: 'antigravity.ide.quota_info.remaining_fraction',
     provenance: 'derived',
     absence: absenceOf(agIde, agIde.fiveHour, true, now),
   });
+  // Five-hour SOURCE: prefer the agy CLI over the IDE store, because only the
+  // CLI carries a LIVE, forward reset — the IDE persists a stale one (it fetches
+  // the live reset from its server and never writes it back), which `windowFrom`
+  // then nulls as not-forward, leaving the window with no countdown. But do NOT
+  // prefer a STALE CLI figure over a fresh store one: an old percentage with a
+  // countdown is a worse headline than a current percentage without one. So the
+  // CLI wins only when it is fresh, or when the store has nothing fresher to
+  // offer. With no CLI at all we fall back to the store's figure, percentage
+  // only. Both sources meter the same five-hour pool the same way.
+  const agCliFiveSupplied = agq.fiveHour != null && agq.fiveHour.usedPercentage !== null;
+  const agStoreFiveShowable = agStoreFive.usedPercentage !== null;
+  const agUseCliFive = agCliFiveSupplied && (agCliFresh || !agStoreFiveShowable || !agIdeFresh);
+  const agFiveFresh = agUseCliFive ? agCliFresh : agIdeFresh;
+  const agFiveCapturedAtMs = agUseCliFive ? agCliCapturedAtMs : agIdeCapturedAtMs;
+  const agFive = agUseCliFive
+    ? windowFrom(agq.fiveHour, agCliFresh, agCliCapturedAtMs, now, null, {
+      source: 'antigravity.cli.quota.remaining_fraction',
+      provenance: 'documented',
+      absence: absenceOf(agq, agq.fiveHour, true, now),
+    })
+    : agStoreFive;
   const agSeven = windowFrom(agq.sevenDay, agCliFresh, agCliCapturedAtMs, now, null, {
     source: 'antigravity.cli.quota.remaining_fraction',
     provenance: 'documented',
@@ -387,27 +424,42 @@ function buildSnapshot(input) {
   });
 
   const agAnyFigure = agFive.usedPercentage !== null || agSeven.usedPercentage !== null;
-  // Only the sources that actually contributed a figure gate "live".
+  // Only the sources that actually contributed a figure gate "live", and each
+  // is judged by the freshness of the source that actually produced it —
+  // `agFiveFresh` is the CLI's when the CLI drove the five-hour window, the
+  // store's otherwise.
   const agFreshParts = [];
-  if (agFive.usedPercentage !== null) agFreshParts.push(agIdeFresh);
+  if (agFive.usedPercentage !== null) agFreshParts.push(agFiveFresh);
   if (agSeven.usedPercentage !== null) agFreshParts.push(agCliFresh);
   const agAllFresh = agFreshParts.length > 0 && agFreshParts.every(Boolean);
   const agRolled = anyWindowRolledOver(agq, now) || anyWindowRolledOver(agIde, now);
-  const agRow = antigravityRowState([agq, agIde], [agFive, agSeven], agAnyFigure, agAllFresh, agRolled);
+  // The agy CLI is the only source of the weekly and of a live five-hour
+  // reset; when it is not installed the row stays connected on the store but
+  // still offers the bridge.
+  const agCliMissing = agq.state === 'missing';
+  const agRow = antigravityRowState([agq, agIde], [agFive, agSeven], agAnyFigure, agAllFresh, agRolled, agCliMissing);
 
   // Same MINIMUM rule as Claude's: a row is only as fresh as its stalest
   // contributing part, so a five-hour figure from an hour ago cannot claim it
   // updated "şimdi" because the weekly one landed a second ago.
   const agGoodParts = [];
-  if (agFive.usedPercentage !== null && agIdeCapturedAtMs !== null) agGoodParts.push(agIdeCapturedAtMs);
+  if (agFive.usedPercentage !== null && agFiveCapturedAtMs !== null) agGoodParts.push(agFiveCapturedAtMs);
   if (agSeven.usedPercentage !== null && agCliCapturedAtMs !== null) agGoodParts.push(agCliCapturedAtMs);
   const agLastGoodAt = agGoodParts.length ? new Date(Math.min(...agGoodParts)).toISOString() : null;
 
-  // Per-model detail. Offered ONLY alongside a five-hour figure the row is
-  // actually showing: the groups are the same numbers seen a second way, so
-  // presenting them next to a window we just refused would be presenting a
-  // reading through the back door.
-  const agModelQuotas = (agFive.usedPercentage !== null && Array.isArray(agIde.groups) && agIde.groups.length > 0)
+  // Per-model detail. This is a STORE-derived breakdown, so it is gated on the
+  // STORE's own five-hour window being showable — NOT on `agFive`, which may
+  // now be the CLI's fresher figure. Without this the stale store groups could
+  // ride onto a row the CLI has made 'ok': the disclosure would then show a
+  // stale, unmarked breakdown (the row is not degraded, so quotas.ts prints no
+  // staleness note) whose group figures contradict the fresh headline. The
+  // extra `agIdeFresh || !agUseCliFive` term is what closes that gap: the
+  // breakdown appears either when the store is currently fresh, or when the
+  // store is what drives the headline (so the row's own degraded state carries
+  // the staleness note, exactly as before this change).
+  const agModelQuotas = (agStoreFiveShowable && (agIdeFresh || !agUseCliFive)
+    && Array.isArray(agIde.groups) && agIde.groups.length > 0
+    && Number.isFinite(agIdeCapturedAtMs))
     ? {
       groups: agIde.groups.map((g) => ({
         usedPercentage: g.usedPercentage,
