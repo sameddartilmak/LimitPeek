@@ -230,6 +230,43 @@ function claudeRowState(rl, scanOk, captureFresh, rolledOver) {
 }
 
 /**
+ * The Codex row's connection/status from its rollout reading.
+ *
+ * Unlike Claude there is no bridge to install — Codex writes its rollout files
+ * itself — so `setup` is only ever the informational "not installed" chip when
+ * Codex is absent from the machine, never a "connect me" action.
+ */
+function codexRowState(cx, anyFigure, fresh, rolledOver) {
+  switch (cx.state) {
+    case 'missing':
+      // No ~/.codex/sessions at all: Codex is not on this machine. Passive.
+      return { connected: false, status: 'passive', setup: true, errorCode: undefined };
+    case 'invalid':
+      return { connected: true, status: 'error', setup: false, errorCode: 'CODEX_ROLLOUT_INVALID' };
+    case 'absent':
+      // A rollout exists but names no rate_limits — an API-key session (which
+      // gets no server percentage) or a session with no priced turn yet.
+      // Connected, with nothing to state; the window absence carries the reason.
+      return { connected: true, status: 'ok', setup: false, errorCode: undefined };
+    case 'stale':
+    case 'fresh': {
+      // No drawable figure: the only window rolled over, or the reading is
+      // stale with nothing forward. Dim the row so the chrome matches the
+      // content, exactly as claude/antigravity do — a bright, healthy row at
+      // the very moment a limit resets is the optimistic reading ADR-001 exists
+      // to prevent.
+      if (!anyFigure) {
+        return { connected: true, status: (rolledOver || !fresh) ? 'stale' : 'ok', setup: false, errorCode: undefined };
+      }
+      const live = fresh && !rolledOver;
+      return { connected: true, status: live ? 'ok' : 'stale', setup: false, errorCode: undefined };
+    }
+    default:
+      return { connected: false, status: 'passive', setup: true, errorCode: undefined };
+  }
+}
+
+/**
  * The instant this row's values were last simultaneously known-good.
  *
  * Deliberately the MINIMUM of its components, not the maximum: a row is only
@@ -479,6 +516,36 @@ function buildSnapshot(input) {
     }
     : null;
 
+  // --- Codex ------------------------------------------------------------
+  // Server-computed figures Codex writes into its own session rollout: primary
+  // (5h) and secondary (weekly), each a used_percent from OpenAI's headers.
+  // Read passively from the rollout — never the OAuth tokens sitting beside it,
+  // never the network. See core/codex/rollout.js.
+  const cx = input.codexRateLimits || { state: 'missing', fiveHour: null, sevenDay: null };
+  const cxFresh = cx.state === 'fresh';
+  const cxCapturedAtMs = Number.isFinite(cx.capturedAtMs) ? cx.capturedAtMs : null;
+  // A rollout that ran but carried no rate_limits yet is a figure not yet
+  // reported, not a figure this tool refuses to publish — the subscription user
+  // this feature targets gets one on their next priced turn. So `absent` reads
+  // as 'awaiting-report' ("yeni veri bekleniyor"), as Claude's does, rather than
+  // 'not-supplied'. Every other absence is decided the shared way.
+  const cxAbsence = (raw) => (cx.state === 'absent' ? 'awaiting-report' : absenceOf(cx, raw, true, now));
+  const cxFive = windowFrom(cx.fiveHour, cxFresh, cxCapturedAtMs, now, null, {
+    source: 'codex.rate_limits.primary.used_percent',
+    provenance: 'documented',
+    absence: cxAbsence(cx.fiveHour),
+  });
+  const cxSeven = windowFrom(cx.sevenDay, cxFresh, cxCapturedAtMs, now, null, {
+    source: 'codex.rate_limits.secondary.used_percent',
+    provenance: 'documented',
+    absence: cxAbsence(cx.sevenDay),
+  });
+  const cxAnyFigure = cxFive.usedPercentage !== null || cxSeven.usedPercentage !== null;
+  const cxRow = codexRowState(cx, cxAnyFigure, cxFresh, anyWindowRolledOver(cx, now));
+  const cxLastGoodAt = (cxAnyFigure && cxCapturedAtMs !== null)
+    ? new Date(cxCapturedAtMs).toISOString()
+    : null;
+
   const providers = PROVIDERS.map((p) => {
     if (p.id === 'antigravity') {
       const snap = {
@@ -503,6 +570,28 @@ function buildSnapshot(input) {
         lastGoodAt: agLastGoodAt,
       };
       if (agRow.errorCode) snap.errorCode = agRow.errorCode;
+      return snap;
+    }
+    if (p.id === 'codex') {
+      const snap = {
+        id: p.id,
+        displayName: p.displayName,
+        accent: p.accent,
+        enabled: enabled[p.id] === true,
+        connected: cxRow.connected,
+        status: cxRow.status,
+        // plan_type ("plus") is an account fact, not a usage number; ADR-001
+        // keeps planLabel sourced from app settings, as for Antigravity.
+        planLabel: null,
+        fiveHour: cxFive,
+        sevenDay: cxSeven,
+        tokens: null,
+        burnRatePerHour: null,
+        weeklyCost: null,
+        setupAction: cxRow.setup ? { ...p.setupAction } : null,
+        lastGoodAt: cxLastGoodAt,
+      };
+      if (cxRow.errorCode) snap.errorCode = cxRow.errorCode;
       return snap;
     }
     if (p.id !== 'claude') {

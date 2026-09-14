@@ -38,12 +38,15 @@ const PROVIDERS = [
     id: 'codex',
     displayName: 'Codex',
     accent: '#10A37F',
-    live: false,
+    live: true,
     enabledByDefault: false,
     setupAction: {
+      // Codex writes its rate limits into its own session rollout, so there is
+      // nothing for us to install — this chip only appears when Codex itself is
+      // not on the machine, as an informational "not found", never an action.
       kind: 'not-installed',
       label: 'Ekle',
-      detail: 'Codex bu sürümde henüz desteklenmiyor.',
+      detail: 'Codex bu makinede bulunamadı.',
     },
   },
   {

@@ -292,10 +292,12 @@ test.describe('the unconnected providers stay silent under every input', () => {
     for (const rl of inputs) {
       for (const p of build(rl).providers) {
         // Antigravity joined `claude` on the wired side when its `agy`
-        // statusline hook was implemented. Its silence under a Claude-only
-        // input is asserted in snapshot.test.js, where the reason — a capture
-        // file of its own that nothing has written — can be stated.
-        if (p.id === 'claude' || p.id === 'antigravity') continue;
+        // statusline hook was implemented, and Codex joined it when its
+        // session-rollout rate limits were read. Their silence under a
+        // Claude-only input (an unknown window, not a null one) is asserted in
+        // snapshot.test.js / the codex reader tests, where the reason — a
+        // source of their own that nothing has written — can be stated.
+        if (p.id === 'claude' || p.id === 'antigravity' || p.id === 'codex') continue;
         assert.equal(p.fiveHour, null, `${p.id} (${rl.state})`);
         assert.equal(p.sevenDay, null, `${p.id} (${rl.state})`);
         assert.equal(p.tokens, null, `${p.id} (${rl.state})`);

@@ -272,9 +272,10 @@ test.describe('provider registry shape', () => {
 
   test('the passive providers show no numbers at all', () => {
     // Was "the five passive providers". Antigravity left this set when its
-    // documented `agy` statusline hook was wired, so the set is now read off
-    // the registry's `live` flag; the assertions are unchanged.
-    assert.deepEqual(PASSIVE_IDS, ['codex', 'gemini', 'copilot', 'kimi']);
+    // documented `agy` statusline hook was wired, and Codex left it when its
+    // session-rollout rate limits were read; the set is now read off the
+    // registry's `live` flag, so the assertions below are unchanged.
+    assert.deepEqual(PASSIVE_IDS, ['gemini', 'copilot', 'kimi']);
     const snap = buildSnapshot({ now: NOW, events: [ev({ output: 100 })], rateLimits: { state: 'missing' }, scanOk: true });
     for (const p of snap.providers.filter((x) => PASSIVE_IDS.includes(x.id))) {
       assert.equal(p.status, 'passive');

@@ -391,7 +391,10 @@ test.describe('the antigravity row is sourced only from its own capture', () => 
     const snap = buildSnapshot({
       now: NOW, events: [], rateLimits: { state: 'missing' }, scanOk: true, antigravityQuota: q,
     });
-    for (const p of snap.providers.filter((x) => !['claude', 'antigravity'].includes(x.id))) {
+    // Codex joins claude/antigravity on the wired side (its rollout rate
+    // limits), so it too shows an unknown window rather than a null one and is
+    // excluded here; a Codex-only input drives it in the codex reader tests.
+    for (const p of snap.providers.filter((x) => !['claude', 'antigravity', 'codex'].includes(x.id))) {
       assert.equal(p.fiveHour, null, p.id);
       assert.equal(p.sevenDay, null, p.id);
       assert.equal(p.status, 'passive', p.id);

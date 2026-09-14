@@ -75,6 +75,8 @@ const FIGURE_SOURCES = new Set<FigureSource>([
   'claude.rate_limits.used_percentage',
   'antigravity.cli.quota.remaining_fraction',
   'antigravity.ide.quota_info.remaining_fraction',
+  'codex.rate_limits.primary.used_percent',
+  'codex.rate_limits.secondary.used_percent',
 ]);
 const WINDOW_ABSENCES = new Set<WindowAbsence>([
   'no-capture',
