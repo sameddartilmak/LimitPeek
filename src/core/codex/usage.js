@@ -50,19 +50,28 @@ function num(v) {
   return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0;
 }
 
-/** The session model, from the rollout's `session_meta` (first line). */
-function sessionModel(firstLine) {
-  try {
-    const o = JSON.parse(firstLine);
-    const s = JSON.stringify(o);
-    const m = /"model"\s*:\s*"([^"]+)"/.exec(s);
-    return m ? m[1] : null;
-  } catch {
-    return null;
+/** The session model, from a rollout's `session_meta`. Scanned across the first
+ *  few lines rather than assuming line 0, so a header the CLI reorders still
+ *  resolves the model instead of dropping the whole session to "unknown". */
+function sessionModel(lines) {
+  for (const line of lines.slice(0, 6)) {
+    if (line.indexOf('session_meta') === -1 && line.indexOf('"model"') === -1) continue;
+    const m = /"model"\s*:\s*"([^"]+)"/.exec(line);
+    if (m) return m[1];
   }
+  return 'unknown';
 }
 
-/** The `token_count` turn deltas in a rollout whose timestamp is in [startMs, endMs). */
+/**
+ * The per-turn token deltas in a rollout whose timestamp is in [startMs, endMs).
+ *
+ * Deltas are derived from the CUMULATIVE `total_token_usage`, not summed from
+ * `last_token_usage`: the cumulative total is monotonic, so a `token_count`
+ * re-emitted with an unchanged total (a rate-limit refresh, say) yields a zero
+ * delta and cannot double-count the money. `last_token_usage` is the fallback
+ * for any record that carries only it. The whole file is walked (to hold the
+ * running total), but only in-window turns are emitted.
+ */
 function eventsFromFile(file, startMs, endMs, out) {
   let stat;
   try {
@@ -79,7 +88,9 @@ function eventsFromFile(file, startMs, endMs, out) {
   }
   const lines = text.split(/\r?\n/);
   if (lines.length === 0) return;
-  const model = sessionModel(lines[0]);
+  const model = sessionModel(lines);
+
+  let prev = null; // running cumulative { input, cached, write, output }
   for (const line of lines) {
     if (line.indexOf('token_count') === -1) continue;
     let o;
@@ -90,25 +101,45 @@ function eventsFromFile(file, startMs, endMs, out) {
     }
     const p = o && o.payload;
     if (!p || p.type !== 'token_count' || !p.info) continue;
+
+    // Prefer the cumulative total; fall back to the per-turn field, treated as
+    // its own delta, when a record carries only that.
+    const tu = p.info.total_token_usage;
+    let delta;
+    if (tu && typeof tu === 'object') {
+      const cur = {
+        input: num(tu.input_tokens),
+        cached: num(tu.cached_input_tokens),
+        write: num(tu.cache_write_input_tokens),
+        output: num(tu.output_tokens),
+      };
+      delta = prev
+        ? {
+          input: Math.max(0, cur.input - prev.input),
+          cached: Math.max(0, cur.cached - prev.cached),
+          write: Math.max(0, cur.write - prev.write),
+          output: Math.max(0, cur.output - prev.output),
+        }
+        : { ...cur };
+      prev = cur;
+    } else {
+      const u = p.info.last_token_usage;
+      if (!u || typeof u !== 'object') continue;
+      delta = { input: num(u.input_tokens), cached: num(u.cached_input_tokens), write: num(u.cache_write_input_tokens), output: num(u.output_tokens) };
+    }
+
     const ts = Date.parse(o.timestamp);
     if (!Number.isFinite(ts) || ts < startMs || ts >= endMs) continue;
-    const u = p.info.last_token_usage;
-    if (!u || typeof u !== 'object') continue;
-    // `input_tokens` is the WHOLE prompt; `cached_input_tokens` and
-    // `cache_write_input_tokens` are disjoint subsets of it (OpenAI usage-object
-    // convention), so the full-price share is what remains. `reasoning_output`
-    // is a subset of `output_tokens`, NOT additive — adding it double-counts,
-    // and on the reference session input+output already equals total.
-    const inputTotal = num(u.input_tokens);
-    const cached = num(u.cached_input_tokens);
-    const write = num(u.cache_write_input_tokens);
+    // `input` is the WHOLE prompt; `cached` and `write` are disjoint subsets, so
+    // the full-price share is what remains. `output` already includes reasoning
+    // tokens (a subset), so nothing is added for them.
     out.push({
       ts,
-      model: typeof model === 'string' ? model : 'unknown',
-      inputUncached: Math.max(0, inputTotal - cached - write),
-      cachedInput: cached,
-      cacheWrite: write,
-      output: num(u.output_tokens),
+      model,
+      inputUncached: Math.max(0, delta.input - delta.cached - delta.write),
+      cachedInput: delta.cached,
+      cacheWrite: delta.write,
+      output: delta.output,
     });
   }
 }

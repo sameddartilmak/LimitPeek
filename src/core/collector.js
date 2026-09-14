@@ -609,7 +609,12 @@ class Collector extends EventEmitter {
    */
   _readCodexEvents(now) {
     const TTL = 20 * 1000;
-    if (!this._codexEventsDirty && this._codexEvents && (now - this._codexEventsAt) < TTL) {
+    // A dirty flag jumps the TTL so a new turn's cost shows promptly, but not
+    // below MIN_GAP: a burst of appends in one turn must not re-read every
+    // rollout file per event. Coalesced to at most once per MIN_GAP.
+    const MIN_GAP = 3 * 1000;
+    const age = now - this._codexEventsAt;
+    if (this._codexEvents && (this._codexEventsDirty ? age < MIN_GAP : age < TTL)) {
       return this._codexEvents;
     }
     try {

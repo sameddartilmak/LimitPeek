@@ -25,11 +25,15 @@ function writeRollout(home, { day = '2026/09/14', name = 'rollout-a.jsonl', mode
   const dir = path.join(home, 'sessions', ...day.split('/'));
   fs.mkdirSync(dir, { recursive: true });
   const lines = [JSON.stringify({ type: 'session_meta', payload: { model, model_provider: 'openai' } })];
+  // Codex records the CUMULATIVE `total_token_usage` (monotonic) alongside the
+  // per-turn `last_token_usage`; the reader derives deltas from the cumulative.
+  const cum = { input_tokens: 0, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0, total_tokens: 0 };
   for (const t of turns) {
+    for (const k of Object.keys(cum)) cum[k] += t.usage[k] || 0;
     lines.push(JSON.stringify({
       timestamp: new Date(t.ts).toISOString(),
       type: 'event_msg',
-      payload: { type: 'token_count', info: { last_token_usage: t.usage } },
+      payload: { type: 'token_count', info: { total_token_usage: { ...cum }, last_token_usage: t.usage } },
     }));
   }
   const file = path.join(dir, name);
