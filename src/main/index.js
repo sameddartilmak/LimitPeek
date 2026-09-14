@@ -92,15 +92,23 @@ function openPinned() {
 const PROBE_WAIT_MS = 1200;
 
 /**
- * Is this reading one the user could reasonably be pressing Yenile about?
+ * Are the Antigravity figures THE USER SEES old — the only thing the "open
+ * Antigravity" notice explains?
  *
- * The notice explains an OLD figure. A fresh one needs no explanation, and a
- * machine with no Antigravity install at all is not a machine whose IDE is
- * "not running" — it has nothing to run.
+ * Reads the ROW, not the raw IDE store. Since the agy CLI can now drive the
+ * windows — its capture carries live figures and the forward resets the IDE
+ * store never persists — the store on disk being stale no longer means the
+ * figures are stale. When any fresh source is current the row is 'ok', the
+ * values ARE updating, and there is nothing to explain. That is exactly the
+ * false "Antigravity açık değil" the user hit while agy was feeding live data
+ * with the IDE closed: the notice keyed off the stale IDE store and ignored the
+ * fresh CLI. It fires only when the row itself is dimmed 'stale' — i.e. no
+ * fresh source is driving it — and never on a row the user never added.
  */
-function antigravityLooksStale(reading) {
-  if (!reading) return false;
-  return reading.state === 'stale' || reading.reason === 'abandoned';
+function antigravityRowIsStale() {
+  const row = collector.snapshot
+    && collector.snapshot.providers.find((p) => p.id === 'antigravity');
+  return Boolean(row) && row.enabled === true && row.status === 'stale';
 }
 
 /**
@@ -116,11 +124,10 @@ function antigravityLooksStale(reading) {
  * post-refresh reading gets the final say in `collectRefreshNotices`.
  */
 function startAntigravityProbe() {
-  const row = collector.snapshot
-    && collector.snapshot.providers.find((p) => p.id === 'antigravity');
-  // A row the user never added is a row they cannot be confused by.
-  if (!row || row.enabled !== true) return null;
-  if (!antigravityLooksStale(collector.antigravityIde)) return null;
+  // Only worth a probe when the figures the user sees are actually old. A fresh
+  // CLI capture with the IDE closed is not "the IDE is not running" — the row
+  // is live, so there is nothing to explain.
+  if (!antigravityRowIsStale()) return null;
   return isAntigravityRunning();
 }
 
@@ -133,9 +140,10 @@ function startAntigravityProbe() {
  */
 async function collectRefreshNotices(probe) {
   if (!probe) return [];
-  // The scan may have found a store the IDE wrote while we were asking. Then
-  // there is nothing to explain and the probe's answer is discarded.
-  if (!antigravityLooksStale(collector.antigravityIde)) return [];
+  // The scan may have found a fresh source (the IDE store, or a new agy
+  // capture) while we were asking. Then the row is live again, there is nothing
+  // to explain, and the probe's answer is discarded.
+  if (!antigravityRowIsStale()) return [];
   let timer = null;
   const budget = new Promise((resolve) => {
     timer = setTimeout(() => resolve('unknown'), PROBE_WAIT_MS);
