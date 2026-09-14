@@ -41,24 +41,24 @@ export interface CostHandle {
   update(cost: WeeklyCost | null, providerName: string, degraded?: boolean): void;
 }
 
-type ClassKey = keyof CostByClass;
+/**
+ * DISPLAY classes. The price model splits a cache WRITE into 5-minute and
+ * 1-hour tiers because they cost different multiples, but that split is a
+ * pricing internal, not something the reader needs two rows for — so they are
+ * shown as one "Önbellek yazma" line. Four rows read far more calmly than five,
+ * and the total is identical (the two tiers are simply summed for display).
+ */
+type DisplayKey = 'input' | 'output' | 'cacheRead' | 'cacheWrite';
 
 /** Fixed labels; order is by value at render time, largest first. */
-const CLASS_LABEL: Record<ClassKey, string> = {
+const CLASS_LABEL: Record<DisplayKey, string> = {
   cacheRead: 'Önbellek okuma',
   output: 'Çıktı',
-  cacheWrite1h: 'Önbellek yazma · 1 sa',
-  cacheWrite5m: 'Önbellek yazma · 5 dk',
+  cacheWrite: 'Önbellek yazma',
   input: 'Girdi',
 };
 
-const CLASS_KEYS: readonly ClassKey[] = [
-  'input',
-  'output',
-  'cacheWrite5m',
-  'cacheWrite1h',
-  'cacheRead',
-];
+const DISPLAY_KEYS: readonly DisplayKey[] = ['input', 'output', 'cacheWrite', 'cacheRead'];
 
 /** `usage.speed` is a raw string from the transcript, so unknown values are
  *  shown verbatim rather than mapped to a guess. */
@@ -69,26 +69,36 @@ function speedLabel(speed: string): string {
 }
 
 interface Slice {
-  key: ClassKey;
+  key: DisplayKey;
   usd: number;
   fraction: number;
+}
+
+/** A byClass value, or 0 when it is missing/negative/non-finite. */
+function pos(value: number | undefined): number {
+  return Number.isFinite(value) && (value as number) > 0 ? (value as number) : 0;
 }
 
 /**
  * Shares are computed against the SUM OF THE CLASSES, not against `totalUsd`.
  * They then always add to 100% whatever the producer's rounding does, and a
- * class can never claim a share of a total it was not part of.
+ * class can never claim a share of a total it was not part of. The two
+ * cache-write tiers are summed into the single display class here.
  */
 function slicesOf(byClass: CostByClass): { slices: Slice[]; sum: number } {
+  const usdByKey: Record<DisplayKey, number> = {
+    input: pos(byClass.input),
+    output: pos(byClass.output),
+    cacheRead: pos(byClass.cacheRead),
+    cacheWrite: pos(byClass.cacheWrite5m) + pos(byClass.cacheWrite1h),
+  };
   let sum = 0;
-  for (const key of CLASS_KEYS) {
-    const value = byClass[key];
-    if (Number.isFinite(value) && value > 0) sum += value;
-  }
-  const slices: Slice[] = CLASS_KEYS.map((key) => {
-    const value = Number.isFinite(byClass[key]) && byClass[key] > 0 ? byClass[key] : 0;
-    return { key, usd: value, fraction: sum > 0 ? value / sum : 0 };
-  }).sort((a, b) => b.usd - a.usd);
+  for (const key of DISPLAY_KEYS) sum += usdByKey[key];
+  const slices: Slice[] = DISPLAY_KEYS.map((key) => ({
+    key,
+    usd: usdByKey[key],
+    fraction: sum > 0 ? usdByKey[key] / sum : 0,
+  })).sort((a, b) => b.usd - a.usd);
   return { slices, sum };
 }
 

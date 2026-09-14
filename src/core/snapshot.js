@@ -5,6 +5,8 @@ const { resolveEnabled } = require('./enabled');
 const pricing = require('./pricing');
 const agg = require('./aggregate');
 const history = require('./history');
+const codexUsage = require('./codex/usage');
+const codexPricing = require('./codex/pricing');
 
 /**
  * Builds the Snapshot described by `src/shared/contract.ts`.
@@ -546,6 +548,16 @@ function buildSnapshot(input) {
     ? new Date(cxCapturedAtMs).toISOString()
     : null;
 
+  // Codex token usage and its notional API cost, from the per-turn rollout
+  // deltas the collector scanned. Row tokens track the five-hour window (as
+  // Claude's do); the cost block is the trailing week at OpenAI's published
+  // prices — never a bill, the same framing as Claude's.
+  const cxEvents = Array.isArray(input.codexEvents) ? input.codexEvents : [];
+  const cxFiveUsage = codexUsage.sumCodexTokens(cxEvents, now - 5 * 60 * 60 * 1000, now);
+  const cxTokens = cxFiveUsage.tokens.billable > 0 ? cxFiveUsage.tokens : null;
+  const cxByModel = cxFiveUsage.byModel;
+  const cxWeeklyCost = codexPricing.codexCost(cxEvents, now - 7 * 24 * 60 * 60 * 1000, now, false);
+
   const providers = PROVIDERS.map((p) => {
     if (p.id === 'antigravity') {
       const snap = {
@@ -585,9 +597,10 @@ function buildSnapshot(input) {
         planLabel: null,
         fiveHour: cxFive,
         sevenDay: cxSeven,
-        tokens: null,
+        tokens: cxTokens,
         burnRatePerHour: null,
-        weeklyCost: null,
+        byModel: cxByModel.slice(0, 6),
+        weeklyCost: cxWeeklyCost,
         setupAction: cxRow.setup ? { ...p.setupAction } : null,
         lastGoodAt: cxLastGoodAt,
       };

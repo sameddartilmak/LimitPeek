@@ -154,7 +154,7 @@ app.whenReady().then(async () => {
   check('the breakdown is visible without expanding',
     claude.captionHidden === false && claude.segs.length >= 4, [claude.caption, claude.segs]);
   check('the caption names the two largest classes, largest first',
-    claude.caption === 'Önbellek okuma %65 · Çıktı %14', claude.caption);
+    claude.caption === 'Önbellek okuma %65 · Önbellek yazma %21', claude.caption);
   check('the composition bar is largest-first',
     claude.segs.map(Number).every((v, i, a) => i === 0 || a[i - 1] >= v), claude.segs);
   check('the detail starts collapsed', claude.expanded === 'false' && claude.detailHidden === true);
@@ -227,8 +227,9 @@ app.whenReady().then(async () => {
   check('the denial is present and unambiguous',
     /fatura değil/.test(detail.claude.denial) && /ödenmiyor/.test(detail.claude.denial),
     detail.claude.denial);
-  check('all five token classes are broken out, largest first',
-    detail.claude.rows.length === 5 && detail.claude.rows[0].k === 'Önbellek okuma',
+  check('the four token classes are broken out, largest first (the two cache-write tiers are one row)',
+    detail.claude.rows.length === 4 && detail.claude.rows[0].k === 'Önbellek okuma'
+    && detail.claude.rows.some(r => r.k === 'Önbellek yazma'),
     detail.claude.rows.map(r => r.k));
   check('cache read is the dominant class at ~65%',
     detail.claude.rows[0].p === '%65' && detail.claude.rows[0].v === '$147,04',
@@ -338,7 +339,7 @@ app.whenReady().then(async () => {
              rows: c.querySelectorAll('.cost__row').length };
   })()`);
   check('the disclosure survives a pushed snapshot',
-    after.expanded === 'true' && after.rows === 5, after);
+    after.expanded === 'true' && after.rows === 4, after);
 
   // ---- per-model quota detail ------------------------------------------
   //

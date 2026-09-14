@@ -11,6 +11,7 @@ const { readClaudeRateLimits, retainClaudeFigures, readAntigravityQuota } = requ
 const { readAntigravityIdeQuota } = require('./antigravity/ide-quota');
 const { resolveAntigravityIdeStore } = require('./antigravity/install');
 const { readCodexRateLimits, codexSessionsDir } = require('./codex/rollout');
+const { codexUsageEvents } = require('./codex/usage');
 const { buildSnapshot, loadingSnapshot } = require('./snapshot');
 const { sanitizeOrder } = require('./order');
 const { sanitizeEnabled } = require('./enabled');
@@ -73,6 +74,13 @@ class Collector extends EventEmitter {
     this.ideAppDataDir = options.ideAppDataDir || null;
     // Override for `~/.codex` (tests, CODEX_HOME). null lets the reader resolve it.
     this.codexHome = options.codexHome || null;
+    // Cached Codex token/cost events. The rollout SCAN behind them is heavier
+    // than the rate-limit tail read, so it is refreshed on a TTL and whenever
+    // the sessions dir changes, not on every rebuild. `null` + dirty forces a
+    // first scan.
+    this._codexEvents = null;
+    this._codexEventsAt = 0;
+    this._codexEventsDirty = true;
     /** Last IDE reading, for callers that must not re-open the database. */
     this.antigravityIde = null;
     this.workerPath = options.workerPath || path.join(__dirname, 'scan', 'worker.js');
@@ -239,6 +247,10 @@ class Collector extends EventEmitter {
     // Codex writes its own server-computed rate limits into its session
     // rollout; read them passively (never the tokens beside them).
     const codexRateLimits = readCodexRateLimits({ now: Date.now(), home: this.codexHome || undefined });
+    // Codex token/cost events, cached: the rollout SCAN is heavier than the
+    // rate-limit tail read, so it is refreshed on a TTL and on a sessions-dir
+    // change, not on every rebuild.
+    const codexEvents = this._readCodexEvents(Date.now());
     this.snapshot = buildSnapshot({
       now: Date.now(),
       events: this.store.events,
@@ -246,6 +258,7 @@ class Collector extends EventEmitter {
       antigravityQuota,
       antigravityIde,
       codexRateLimits,
+      codexEvents,
       scanOk: this.scanOk,
       scanGoodAtMs: this.scanGoodAtMs,
       planLabel: this.planLabel,
@@ -556,6 +569,8 @@ class Collector extends EventEmitter {
     // the periodic sweep covers it, so ENOENT is not worth a warning.
     try {
       const w = fs.watch(codexSessionsDir(this.codexHome || undefined), { recursive: true, persistent: false }, () => {
+        // A new turn changed a rollout: the cached token/cost scan is now stale.
+        this._codexEventsDirty = true;
         this._onRateLimitChange();
       });
       w.on('error', () => { /* watcher died; the sweep still runs */ });
@@ -583,6 +598,33 @@ class Collector extends EventEmitter {
       this._debounce = null;
       this.requestScan();
     }, DEBOUNCE_MS);
+  }
+
+  /**
+   * Codex token/cost events for the trailing week, cached. The scan reads
+   * rollout files whole (events are spread through them), so it is refreshed at
+   * most every `CODEX_EVENTS_TTL_MS`, and eagerly whenever a sessions-dir write
+   * marks it dirty. The cheap per-window aggregation happens fresh each rebuild
+   * on top of this cache.
+   */
+  _readCodexEvents(now) {
+    const TTL = 20 * 1000;
+    if (!this._codexEventsDirty && this._codexEvents && (now - this._codexEventsAt) < TTL) {
+      return this._codexEvents;
+    }
+    try {
+      this._codexEvents = codexUsageEvents({
+        now,
+        startMs: now - 7 * 24 * 60 * 60 * 1000,
+        home: this.codexHome || undefined,
+      });
+    } catch (err) {
+      log.warn(`codex usage scan failed: code=${(err && err.code) || 'UNKNOWN'}`);
+      this._codexEvents = this._codexEvents || [];
+    }
+    this._codexEventsAt = now;
+    this._codexEventsDirty = false;
+    return this._codexEvents;
   }
 
   _onRateLimitChange() {
