@@ -48,11 +48,23 @@ function backupName(file, now) {
  * The block the doc specifies: `{ type: 'command', command: '<cmd>' }`.
  * `padding: 0` is one of the three optional keys the doc lists, and it keeps
  * the CLI from inserting blank lines above our single-line output.
+ *
+ * NO quotes around the path. agy runs the command through a parser that splits
+ * on whitespace and keeps the quote characters as part of the argument, so
+ * `node "C:/…/x.mjs"` reaches node as the literal token `"C:/…/x.mjs"` — quotes
+ * and all — which node then treats as a RELATIVE module id and resolves against
+ * the agy session's cwd, failing with "Cannot find module …\"C:/…/x.mjs\"".
+ * (Observed on Windows; the log line is `statusline_runner.go … exit status 1`.)
+ * An unquoted absolute path splits cleanly into `node` + the path. The residual
+ * limitation — a bridge path containing a SPACE — has no fix on agy's side:
+ * quoted, the quotes leak; unquoted, the space splits it. userData lives under
+ * `%APPDATA%\usage-notch`, so this only bites a Windows username with a space,
+ * and there is no command string that agy's splitter would accept for it.
  */
 function statusLineEntry(bridgePath) {
   return {
     type: 'command',
-    command: `node "${bridgePath.split(path.sep).join('/')}"`,
+    command: `node ${bridgePath.split(path.sep).join('/')}`,
     padding: 0,
   };
 }

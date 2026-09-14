@@ -109,6 +109,34 @@ test.describe('remaining_fraction is REMAINING; the app shows USED', () => {
     assert.equal(q.bucketsMapped, 1);
   });
 
+  test('a `5h` bucket takes the five-hour slot, with its live forward reset', () => {
+    // Observed from a live agy session: it emits `gemini-5h`/`3p-5h` beside the
+    // weekly buckets, each carrying a forward `reset_time` the IDE store never
+    // persists. `5h` in a name is a real label now, so it maps.
+    const q = readAntigravityQuota({
+      file: freshCapture({ quota: {
+        'gemini-5h': { remainingFraction: 0.9, resetTime: new Date(NOW + 3 * HOUR).toISOString(), resetInSeconds: 3 * HOUR / 1000 },
+        'gemini-weekly': weeklyBucket(NOW),
+      } }),
+      now: NOW,
+    });
+    assert.equal(q.fiveHour.usedPercentage, 10, 'the 5h bucket maps to the five-hour slot');
+    assert.equal(q.fiveHour.resetsAtMs, NOW + 3 * HOUR, 'carrying the CLI\'s live forward reset');
+    assert.equal(q.sevenDay.usedPercentage, 6.22, 'and the weekly still maps');
+    assert.equal(q.bucketsMapped, 2);
+  });
+
+  test('two five-hour buckets: the MORE consumed one binds, as with the weekly slot', () => {
+    const q = readAntigravityQuota({
+      file: freshCapture({ quota: {
+        '3p-5h': { remainingFraction: 1, resetTime: new Date(NOW + 3 * HOUR).toISOString(), resetInSeconds: 3 * HOUR / 1000 },
+        'gemini-5h': { remainingFraction: 0.8, resetTime: new Date(NOW + 3 * HOUR).toISOString(), resetInSeconds: 3 * HOUR / 1000 },
+      } }),
+      now: NOW,
+    });
+    assert.equal(q.fiveHour.usedPercentage, 20, 'gemini-5h (20% used) is the binding constraint over 3p-5h (0%)');
+  });
+
   test('the snapshot never restates the fraction anywhere', () => {
     // The failure this guards against is a second conversion site: a row that
     // says 6 in one place and 94 in another. `usedPercentage` is the only
@@ -439,7 +467,11 @@ test.describe('installing the hook into the agy CLI settings', () => {
     assert.deepEqual(after.vim, { mode: 'NORMAL' });
     assert.deepEqual(after.sandbox, { enabled: true });
     assert.equal(after.statusLine.type, 'command');
-    assert.match(after.statusLine.command, /antigravity-statusline\.mjs"$/);
+    // NO quotes around the path. agy keeps quote characters as part of the
+    // argument, so a quoted path reaches node as a literal, unresolvable module
+    // id (see statusLineEntry). The path has forward slashes and no backslashes.
+    assert.match(after.statusLine.command, /^node \S.*antigravity-statusline\.mjs$/);
+    assert.equal(after.statusLine.command.includes('"'), false, 'no quotes: agy passes them to node verbatim');
     assert.equal(after.statusLine.command.includes('\\'), false, 'forward slashes survive a shell');
 
     const backups = backupsIn(s.home);

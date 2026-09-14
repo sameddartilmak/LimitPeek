@@ -155,6 +155,15 @@ class Collector extends EventEmitter {
     this.panelOpen = next;
     this._scheduleSweep();
     if (next) {
+      // Opening the panel is a "show me now" moment. Re-read every source and
+      // emit a fresh snapshot IMMEDIATELY, so the figures are current the
+      // instant the panel appears and the user never has to press refresh just
+      // to see up-to-date numbers. This is a PASSIVE rebuild: it re-reads the
+      // capture files and the IDE store and re-evaluates staleness against the
+      // clock, but runs no process probe and raises no refresh notice — those
+      // stay on the explicit refresh button, which the user presses only when
+      // they want to actively track a figure while the panel stays open.
+      this.rebuild();
       // Transcript changes seen while the panel was closed were not acted on;
       // opening it is the moment they matter, so force past the throttle.
       const force = this._missedChange;
