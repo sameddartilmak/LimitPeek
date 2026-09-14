@@ -71,7 +71,11 @@ export type FigureSource =
   /** `agy` CLI statusline: `quota[bucket].remaining_fraction`, converted to used. */
   | 'antigravity.cli.quota.remaining_fraction'
   /** Antigravity IDE state store: `userStatus` model `quota_info.remaining_fraction`. */
-  | 'antigravity.ide.quota_info.remaining_fraction';
+  | 'antigravity.ide.quota_info.remaining_fraction'
+  /** Codex session rollout `token_count.rate_limits.primary.used_percent` (5-hour). */
+  | 'codex.rate_limits.primary.used_percent'
+  /** Codex session rollout `token_count.rate_limits.secondary.used_percent` (weekly). */
+  | 'codex.rate_limits.secondary.used_percent';
 
 /**
  * Why a window carries no figure. Machine-readable, because the renderer must

@@ -10,6 +10,7 @@ const paths = require('./paths');
 const { readClaudeRateLimits, retainClaudeFigures, readAntigravityQuota } = require('./ratelimits');
 const { readAntigravityIdeQuota } = require('./antigravity/ide-quota');
 const { resolveAntigravityIdeStore } = require('./antigravity/install');
+const { readCodexRateLimits, codexSessionsDir } = require('./codex/rollout');
 const { buildSnapshot, loadingSnapshot } = require('./snapshot');
 const { sanitizeOrder } = require('./order');
 const { sanitizeEnabled } = require('./enabled');
@@ -70,6 +71,8 @@ class Collector extends EventEmitter {
      * dependency and a way for a suite to pass on one machine only.
      */
     this.ideAppDataDir = options.ideAppDataDir || null;
+    // Override for `~/.codex` (tests, CODEX_HOME). null lets the reader resolve it.
+    this.codexHome = options.codexHome || null;
     /** Last IDE reading, for callers that must not re-open the database. */
     this.antigravityIde = null;
     this.workerPath = options.workerPath || path.join(__dirname, 'scan', 'worker.js');
@@ -224,12 +227,16 @@ class Collector extends EventEmitter {
     // Held so the refresh handler can ask "was this reading stale?" without
     // re-opening the store. Read-only to everyone else.
     this.antigravityIde = antigravityIde;
+    // Codex writes its own server-computed rate limits into its session
+    // rollout; read them passively (never the tokens beside them).
+    const codexRateLimits = readCodexRateLimits({ now: Date.now(), home: this.codexHome || undefined });
     this.snapshot = buildSnapshot({
       now: Date.now(),
       events: this.store.events,
       rateLimits,
       antigravityQuota,
       antigravityIde,
+      codexRateLimits,
       scanOk: this.scanOk,
       scanGoodAtMs: this.scanGoodAtMs,
       planLabel: this.planLabel,
@@ -531,6 +538,23 @@ class Collector extends EventEmitter {
       this._watchers.push(w);
     } catch (err) {
       log.warn(`rate-limit watcher unavailable: code=${(err && err.code) || 'UNKNOWN'}`);
+    }
+
+    // Codex rollout logs. A new turn writes rollout-*.jsonl under
+    // sessions/YYYY/MM/DD, carrying a fresh server rate-limit snapshot, so a
+    // recursive watch on the sessions root surfaces it with only a rebuild (no
+    // scan). The directory is simply absent when Codex is not installed — then
+    // the periodic sweep covers it, so ENOENT is not worth a warning.
+    try {
+      const w = fs.watch(codexSessionsDir(this.codexHome || undefined), { recursive: true, persistent: false }, () => {
+        this._onRateLimitChange();
+      });
+      w.on('error', () => { /* watcher died; the sweep still runs */ });
+      this._watchers.push(w);
+    } catch (err) {
+      if (err && err.code !== 'ENOENT') {
+        log.warn(`codex watcher unavailable: code=${(err && err.code) || 'UNKNOWN'}`);
+      }
     }
   }
 
