@@ -279,9 +279,11 @@ test('nothing the packaged app loads opens a socket', () => {
 test('package.json declares no runtime dependencies', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   assert.deepEqual(pkg.dependencies || {}, {}, 'a runtime dependency is an operational commitment; there are none');
-  // Build-time only: neither ships in the package, and nothing at runtime
-  // requires either of them.
-  assert.deepEqual(Object.keys(pkg.devDependencies).sort(), ['electron', 'typescript']);
+  // Build-time only: none of these ships in the package, and nothing at runtime
+  // requires any of them. electron-builder is the packager, added on purpose
+  // for the NSIS installer; it runs at `npm run dist` and is never loaded by
+  // the app.
+  assert.deepEqual(Object.keys(pkg.devDependencies).sort(), ['electron', 'electron-builder', 'typescript']);
 });
 
 test('the packaged app excludes both the harness source and its compiled output', () => {
