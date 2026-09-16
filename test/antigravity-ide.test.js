@@ -396,7 +396,13 @@ test.describe('GUARD 3a — structural drift fails closed', () => {
     const base = tmpdir();
     const dir = path.join(base, 'Antigravity IDE', 'User', 'globalStorage');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'state.vscdb'), 'this is not sqlite');
+    const file = path.join(dir, 'state.vscdb');
+    fs.writeFileSync(file, 'this is not sqlite');
+    // Stamped against the suite's frozen NOW. Left at the real write time, the
+    // file drifts past IDE_MAX_AGE_MS of NOW as the calendar moves on, reads as
+    // `abandoned` before it is ever opened, and this stops testing the decode.
+    const when = new Date(NOW - 1000);
+    fs.utimesSync(file, when, when);
     const q = read(base);
     assert.equal(q.state, 'invalid');
     assert.equal(q.fiveHour, null);

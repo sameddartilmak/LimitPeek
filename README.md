@@ -246,7 +246,7 @@ gösteriliyor: ayrı kaynaklı iki pencere, her biri geldiği alanla etiketli.
 ## Geliştirme
 
 ```bash
-npm test     # tip kontrolü + 787 test
+npm test     # tip kontrolü + 902 test
 npm run scan # gerçek corpus üzerinde tarama ölçümü
 npm run build # paketleme derlemesi (dist/ temizlenip yeniden üretilir)
 npm run smoke # Electron IPC duman testi

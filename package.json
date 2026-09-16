@@ -13,17 +13,19 @@
     "icon": "node scripts/make-icon.js",
     "scan": "node scripts/scan-once.js",
     "smoke": "electron scripts/smoke-ipc.js",
-    "typecheck": "tsc -p src/renderer/tsconfig.json --noEmit"
+    "typecheck": "tsc -p src/renderer/tsconfig.json --noEmit",
+    "dist:dir": "npm run build && electron-builder --win --dir --publish never",
+    "dist": "npm run build && electron-builder --win nsis --publish never"
   },
   "devDependencies": {
     "electron": "^44.2.0",
+    "electron-builder": "26.15.3",
     "typescript": "^5.9.2"
   },
   "build": {
     "appId": "com.usagenotch.app",
     "productName": "Usage Notch",
     "asar": true,
-    "_comment": "electron-builder config. Inert until a packager is installed on purpose: adding one is an operational commitment, so it is not a devDependency yet. Run with `npx electron-builder`.",
     "asarUnpack": [
       "bridge/**"
     ],
@@ -54,8 +56,13 @@
       ]
     },
     "nsis": {
-      "oneClick": false,
-      "perMachine": false
+      "oneClick": true,
+      "perMachine": false,
+      "include": "build/installer.nsh"
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
     }
   }
 }

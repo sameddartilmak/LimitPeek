@@ -296,6 +296,12 @@ test.describe('the bridge bounds what it copies out of a hostile payload', () =>
     // open. A non-atomic writer would leave a file that is half one payload
     // and half the other — which the reader would report as `invalid`, and the
     // row would flash an error for a reason the user cannot act on.
+    //
+    // This race is left to the scheduler, so it only SOMETIMES lines two
+    // renames up. The interleaving that used to make it flake — Windows
+    // refusing a rename with EPERM, which left a `.tmp` behind — is driven
+    // deterministically in `bridge-atomic-write.test.js`. Every assertion here
+    // holds under every interleaving; none of them depends on timing.
     const out = tmpdir();
     const file = path.join(out, 'UsageNotch', 'antigravity-quota.json');
     const fire = (fraction) => new Promise((resolve) => {

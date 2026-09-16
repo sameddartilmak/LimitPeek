@@ -222,7 +222,7 @@ test.describe('every setup notice fits the renderer cap', () => {
     fs.writeFileSync(bridge, '// bridge\n');
     const home = path.join(dir, 'antigravity-cli');
     fs.mkdirSync(home);
-    return { dir, bridge, home, settings: path.join(home, 'settings.json') };
+    return { dir, bridge, home, binary: path.join(dir, 'no-agy', 'agy.exe'), settings: path.join(home, 'settings.json') };
   }
 
   /** Every installer outcome reachable without stubbing `fs`. */
@@ -247,18 +247,25 @@ test.describe('every setup notice fits the renderer cap', () => {
     add('claude/installed', installClaudeStatusLine({ confirmed: true, bridgePath: c.bridge, settingsPath: c.settings }));
 
     let a = agyBox();
-    add('agy/not-confirmed', installAntigravityStatusLine({ confirmed: false, bridgePath: a.bridge, settingsPath: a.settings, homeDir: a.home }));
+    add('agy/not-confirmed', installAntigravityStatusLine({ confirmed: false, bridgePath: a.bridge, settingsPath: a.settings, homeDir: a.home, binaryPath: a.binary }));
     a = agyBox();
     fs.rmSync(a.home, { recursive: true });
-    add('agy/cli-not-found', installAntigravityStatusLine({ confirmed: true, bridgePath: a.bridge, settingsPath: a.settings, homeDir: a.home }));
+    // binaryPath too, or on a machine with agy installed this branch silently
+    // measures the `installed` notice instead of the not-found one.
+    const notFound = installAntigravityStatusLine({
+      confirmed: true, bridgePath: a.bridge, settingsPath: a.settings, homeDir: a.home,
+      binaryPath: a.binary,
+    });
+    assert.equal(notFound.code, 'CLI_NOT_FOUND', 'the walk reached the branch it names');
+    add('agy/cli-not-found', notFound);
     a = agyBox();
     fs.writeFileSync(a.settings, '{ oops');
-    add('agy/settings-invalid', installAntigravityStatusLine({ confirmed: true, bridgePath: a.bridge, settingsPath: a.settings, homeDir: a.home }));
+    add('agy/settings-invalid', installAntigravityStatusLine({ confirmed: true, bridgePath: a.bridge, settingsPath: a.settings, homeDir: a.home, binaryPath: a.binary }));
     a = agyBox();
     fs.writeFileSync(a.settings, JSON.stringify({ statusLine: { command: 'theirs' } }));
-    add('agy/statusline-exists', installAntigravityStatusLine({ confirmed: true, bridgePath: a.bridge, settingsPath: a.settings, homeDir: a.home }));
+    add('agy/statusline-exists', installAntigravityStatusLine({ confirmed: true, bridgePath: a.bridge, settingsPath: a.settings, homeDir: a.home, binaryPath: a.binary }));
     a = agyBox();
-    add('agy/installed', installAntigravityStatusLine({ confirmed: true, bridgePath: a.bridge, settingsPath: a.settings, homeDir: a.home }));
+    add('agy/installed', installAntigravityStatusLine({ confirmed: true, bridgePath: a.bridge, settingsPath: a.settings, homeDir: a.home, binaryPath: a.binary }));
 
     // Built with a REAL packaged path rather than a temp one. The sandbox
     // paths are shorter than production's, which is how this defect survived
