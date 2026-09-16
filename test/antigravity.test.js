@@ -384,7 +384,11 @@ test.describe('installing the hook into the agy CLI settings', () => {
     fs.writeFileSync(bridge, '// bridge\n');
     const home = path.join(root, 'antigravity-cli');
     if (withCliDir) fs.mkdirSync(home);
-    return { root, home, bridge, settings: path.join(home, 'settings.json') };
+    // Where the agy binary would be. Never created: left to its default the
+    // probe reads the real %LOCALAPPDATA%, and these tests would pass or fail
+    // depending on whether the developer's machine has agy installed.
+    const binary = path.join(root, 'no-agy', 'agy.exe');
+    return { root, home, bridge, binary, settings: path.join(home, 'settings.json') };
   }
 
   function backupsIn(dir) {
@@ -392,16 +396,15 @@ test.describe('installing the hook into the agy CLI settings', () => {
   }
 
   test('an absent agy install is a stated outcome, and creates nothing', () => {
-    // `agy` is not installed on the machine this suite was written on, so this
-    // is the DEFAULT path here, not an edge case. It must not crash, must not
-    // mkdir ~/.gemini, and must not leave a settings.json for a program that
-    // is not there — a file nothing would ever read.
+    // Neither the binary nor the config dir exists. It must not crash, must
+    // not mkdir ~/.gemini, and must not leave a settings.json for a program
+    // that is not there — a file nothing would ever read.
     const s = sandbox({ withCliDir: false });
     assert.equal(fs.existsSync(s.home), false);
 
-    assert.equal(antigravityStatusLineState(s.settings, s.home), 'not-installed');
+    assert.equal(antigravityStatusLineState(s.settings, s.home, s.binary), 'not-installed');
 
-    const res = installAntigravityStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home });
+    const res = installAntigravityStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home, binaryPath: s.binary });
     assert.equal(res.ok, false);
     assert.equal(res.code, 'CLI_NOT_FOUND');
     assert.match(res.message, /Antigravity CLI \(agy\) bulunamadı/);
@@ -425,7 +428,7 @@ test.describe('installing the hook into the agy CLI settings', () => {
     const existing = { statusLine: { type: 'command', command: 'my-own-statusline.sh' } };
     fs.writeFileSync(s.settings, JSON.stringify(existing));
 
-    const res = installAntigravityStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home });
+    const res = installAntigravityStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home, binaryPath: s.binary });
     assert.equal(res.ok, false);
     assert.equal(res.code, 'STATUSLINE_EXISTS');
     assert.match(res.message, /zincirleyin/);
@@ -441,7 +444,7 @@ test.describe('installing the hook into the agy CLI settings', () => {
   test('refuses without an explicit confirmation flag', () => {
     const s = sandbox();
     for (const confirmed of [undefined, false, 'true', 1, null]) {
-      const res = installAntigravityStatusLine({ confirmed, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home });
+      const res = installAntigravityStatusLine({ confirmed, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home, binaryPath: s.binary });
       assert.equal(res.ok, false);
       assert.equal(res.code, 'NOT_CONFIRMED');
       assert.match(res.message, /Onay/);
@@ -457,7 +460,7 @@ test.describe('installing the hook into the agy CLI settings', () => {
     fs.writeFileSync(s.settings, original);
 
     const res = installAntigravityStatusLine({
-      confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home,
+      confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home, binaryPath: s.binary,
       now: Date.parse('2026-09-08T12:00:00Z'),
     });
     assert.equal(res.ok, true);
@@ -484,7 +487,7 @@ test.describe('installing the hook into the agy CLI settings', () => {
     const s = sandbox();
     const broken = '{ "theme": "dark", oops';
     fs.writeFileSync(s.settings, broken);
-    const res = installAntigravityStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home });
+    const res = installAntigravityStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home, binaryPath: s.binary });
     assert.equal(res.ok, false);
     assert.equal(res.code, 'SETTINGS_INVALID');
     assert.equal(fs.readFileSync(s.settings, 'utf8'), broken);
@@ -492,22 +495,22 @@ test.describe('installing the hook into the agy CLI settings', () => {
 
   test('the probe distinguishes not-installed from no-settings from ours', () => {
     const s = sandbox({ withCliDir: false });
-    assert.equal(antigravityStatusLineState(s.settings, s.home), 'not-installed');
+    assert.equal(antigravityStatusLineState(s.settings, s.home, s.binary), 'not-installed');
 
     fs.mkdirSync(s.home);
-    assert.equal(antigravityStatusLineState(s.settings, s.home), 'no-settings');
+    assert.equal(antigravityStatusLineState(s.settings, s.home, s.binary), 'no-settings');
 
     fs.writeFileSync(s.settings, JSON.stringify({ theme: 'dark' }));
-    assert.equal(antigravityStatusLineState(s.settings, s.home), 'none');
+    assert.equal(antigravityStatusLineState(s.settings, s.home, s.binary), 'none');
 
     fs.writeFileSync(s.settings, JSON.stringify({ statusLine: { command: './statusline.sh' } }));
-    assert.equal(antigravityStatusLineState(s.settings, s.home), 'foreign');
+    assert.equal(antigravityStatusLineState(s.settings, s.home, s.binary), 'foreign');
 
     fs.writeFileSync(s.settings, JSON.stringify({ statusLine: { command: 'node "C:/x/antigravity-statusline.mjs"' } }));
-    assert.equal(antigravityStatusLineState(s.settings, s.home), 'ours');
+    assert.equal(antigravityStatusLineState(s.settings, s.home, s.binary), 'ours');
 
     fs.writeFileSync(s.settings, 'nope');
-    assert.equal(antigravityStatusLineState(s.settings, s.home), 'invalid');
+    assert.equal(antigravityStatusLineState(s.settings, s.home, s.binary), 'invalid');
   });
 });
 
@@ -921,6 +924,7 @@ test.describe('ANTIGRAVITY_CLI_DIR is kept, but never silent', () => {
       assert.equal(antigravityHomeOverridden(home), true);
       return installAntigravityStatusLine({
         confirmed: true, bridgePath: bridge, settingsPath: path.join(home, 'settings.json'), homeDir: home,
+        binaryPath: path.join(root, 'no-agy', 'agy.exe'),
       });
     });
     assert.equal(res.ok, true);
@@ -955,6 +959,7 @@ test.describe('ANTIGRAVITY_CLI_DIR is kept, but never silent', () => {
 
     const res = withOverride(home, () => installAntigravityStatusLine({
       confirmed: true, bridgePath: bridge, settingsPath: path.join(home, 'settings.json'), homeDir: home,
+      binaryPath: path.join(root, 'no-agy', 'agy.exe'),
     }));
     assert.equal(res.code, 'CLI_NOT_FOUND');
     assert.match(res.message, /Antigravity CLI \(agy\) bulunamadı/);

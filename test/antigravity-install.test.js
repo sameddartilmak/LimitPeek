@@ -152,14 +152,14 @@ test.describe('removeAntigravityStatusLine: the reversible half', () => {
     // A config dir so installAntigravityStatusLine writes a real "ours" hook.
     const home = path.join(dir, 'antigravity-cli');
     fs.mkdirSync(home);
-    return { dir, bridge, home, settings: path.join(home, 'settings.json') };
+    return { dir, bridge, home, binary: path.join(dir, 'no-agy', 'agy.exe'), settings: path.join(home, 'settings.json') };
   }
   const backups = (dir) => fs.readdirSync(dir).filter((f) => f.includes('usagenotch-backup'));
 
   test('a full round-trip: install the hook, then remove it', () => {
     const s = sandbox();
     fs.writeFileSync(s.settings, JSON.stringify({ theme: 'dark' }));
-    const put = installAntigravityStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home });
+    const put = installAntigravityStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home, binaryPath: s.binary });
     assert.equal(put.ok, true);
     assert.ok(JSON.parse(fs.readFileSync(s.settings, 'utf8')).statusLine, 'hook is in');
 
@@ -173,7 +173,7 @@ test.describe('removeAntigravityStatusLine: the reversible half', () => {
 
   test('it backs up before removing, like the install path', () => {
     const s = sandbox();
-    installAntigravityStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home });
+    installAntigravityStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, homeDir: s.home, binaryPath: s.binary });
     const before = backups(s.home).length;
     removeAntigravityStatusLine({ settingsPath: s.settings });
     assert.equal(backups(s.home).length, before + 1, 'a timestamped backup is taken');
@@ -216,17 +216,26 @@ test.describe('removeAntigravityStatusLine: the reversible half', () => {
 /* ------------------------------- cliInstalled now believes the binary too */
 
 test.describe('cliInstalled recognises the binary, not just the config dir', () => {
+  // Every case names BOTH probes. Leaving `binaryPath` to its default reads
+  // the real %LOCALAPPDATA%, and the answer then depends on whether the
+  // machine running the suite happens to have agy installed.
+
   test('a config directory still counts as installed', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-notch-agyci-'));
     const home = path.join(dir, 'antigravity-cli');
     fs.mkdirSync(home);
-    assert.equal(cliInstalled(home), true);
+    assert.equal(cliInstalled(home, path.join(dir, 'no-agy', 'agy.exe')), true);
+  });
+
+  test('the binary alone counts as installed, before agy has ever run', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-notch-agyci3-'));
+    const binary = path.join(dir, 'agy.exe');
+    fs.writeFileSync(binary, 'MZ');
+    assert.equal(cliInstalled(path.join(dir, 'nope'), binary), true);
   });
 
   test('a machine with neither binary nor config dir is not installed', () => {
-    // agy.exe is not installed on the test machine, so the binary probe is
-    // false and only the (absent) config dir is left to check.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-notch-agici2-'));
-    assert.equal(cliInstalled(path.join(dir, 'nope')), false);
+    assert.equal(cliInstalled(path.join(dir, 'nope'), path.join(dir, 'no-agy', 'agy.exe')), false);
   });
 });

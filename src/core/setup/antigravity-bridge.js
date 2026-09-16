@@ -83,9 +83,17 @@ function statusLineEntry(bridgePath) {
  * at least once — and therefore has the dir but where the binary probe might
  * be pointed elsewhere by a custom `homeDir` in a test — still reads as
  * installed.
+ *
+ * Both probes are injectable. `binaryPath` defaults to the installer's real
+ * location (`%LOCALAPPDATA%/agy/bin/agy.exe`); a caller that passes
+ * `homeDir` for a sandbox must pass `binaryPath` too, or the answer depends on
+ * whether the machine running it happens to have agy installed.
+ *
+ * @param {string} [homeDir]     the CLI config dir; defaults to the real one
+ * @param {string} [binaryPath]  the agy executable; defaults to the real one
  */
-function cliInstalled(homeDir) {
-  if (isAgyInstalled()) return true;
+function cliInstalled(homeDir, binaryPath) {
+  if (isAgyInstalled(binaryPath)) return true;
   const dir = homeDir || antigravityHome();
   try {
     return fs.statSync(dir).isDirectory();
@@ -100,6 +108,7 @@ function cliInstalled(homeDir) {
  * @param {string}  opts.bridgePath  absolute path to antigravity-statusline.mjs
  * @param {string} [opts.settingsPath]
  * @param {string} [opts.homeDir]    the CLI config dir; defaults to the real one
+ * @param {string} [opts.binaryPath] the agy executable; defaults to the real one
  * @returns {{ok:boolean, message:string, code:string}}
  */
 function installAntigravityStatusLine(opts) {
@@ -132,7 +141,7 @@ function installAntigravityStatusLine(opts) {
   }
 
   // Checked BEFORE anything is read or created. See rule 4 above.
-  if (!cliInstalled(homeDir)) {
+  if (!cliInstalled(homeDir, opts.binaryPath)) {
     log.info(`antigravity cli not found under ${homeDir}`);
     return { ok: false, code: 'CLI_NOT_FOUND', message: messages.cliNotFound(homeDir) };
   }
@@ -349,10 +358,10 @@ function removeAntigravityStatusLine(opts = {}) {
  * settings file: a user without `agy` and a user with `agy` but no settings.json
  * yet need different sentences, and only the directory tells them apart.
  */
-function antigravityStatusLineState(settingsPath, homeDir) {
+function antigravityStatusLineState(settingsPath, homeDir, binaryPath) {
   const file = settingsPath || antigravitySettingsPath();
   const dir = homeDir || path.dirname(file);
-  if (!cliInstalled(dir)) return 'not-installed';
+  if (!cliInstalled(dir, binaryPath)) return 'not-installed';
 
   let text;
   try {
