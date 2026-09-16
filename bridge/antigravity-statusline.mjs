@@ -26,7 +26,7 @@
  * in `src/core/ratelimits.js`, so this file stays a faithful, auditable copy
  * of what Antigravity said rather than an interpretation of it.
  */
-import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
+import { mkdirSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -97,6 +97,47 @@ function safeId(id) {
   return clean.length > 0 && clean.length <= MAX_ID_LEN ? clean : null;
 }
 
+/**
+ * tmp + rename, with the one failure Windows adds to it.
+ *
+ * Two agy sessions fire this hook independently, and on Windows a rename onto
+ * a target that another process is renaming over at that instant is refused
+ * with EPERM (EACCES/EBUSY when an AV scanner or indexer holds the file). The
+ * refusal is transient, so it is retried a bounded number of times — about a
+ * quarter of a second in total, well inside a status-line render. Whatever
+ * happens, the temp file is removed: a `<pid>.tmp` left behind is never read
+ * and never cleaned up, and a new one would accumulate on every refusal.
+ *
+ * Rename is still what makes this safe to race: each writer's capture lands
+ * whole or not at all, never spliced with another's.
+ */
+const RENAME_TRANSIENT = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const RENAME_ATTEMPTS = 8;
+const RENAME_BACKOFF_MS = 8;
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function writeWhole(file, text) {
+  const tmp = file + '.' + process.pid + '.tmp';
+  try {
+    writeFileSync(tmp, text, 'utf8');
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        renameSync(tmp, file);
+        return;
+      } catch (err) {
+        if (attempt >= RENAME_ATTEMPTS || !RENAME_TRANSIENT.has(err && err.code)) throw err;
+        sleepSync(attempt * RENAME_BACKOFF_MS);
+      }
+    }
+  } catch (err) {
+    try { unlinkSync(tmp); } catch { /* best effort: it may never have been created */ }
+    throw err;
+  }
+}
+
 function pickBucket(b) {
   if (!b || typeof b !== 'object') return null;
   return {
@@ -142,9 +183,7 @@ try {
   };
 
   mkdirSync(OUT_DIR, { recursive: true });
-  const tmp = OUT_FILE + '.' + process.pid + '.tmp';
-  writeFileSync(tmp, JSON.stringify(snapshot, null, 2), 'utf8');
-  renameSync(tmp, OUT_FILE);
+  writeWhole(OUT_FILE, JSON.stringify(snapshot, null, 2));
 
   // Render something useful so the user's status line is not blank.
   //
