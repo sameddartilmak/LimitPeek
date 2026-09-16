@@ -23,10 +23,11 @@
  * mark, no tile, no meter, and its own "bağlı değil" explanation.
  */
 
-import type { ProviderSnapshot, ThemeChoice } from '../../../shared/contract.js';
+import type { LanguageChoice, ProviderSnapshot, ThemeChoice } from '../../../shared/contract.js';
 import { defaultPlacement, placePanel, type PanelPlacement } from '../anchor.js';
 import { el, on, setAttr, setText, svg } from '../dom.js';
-import { clockTime, integer } from '../format.js';
+import { clockTime } from '../format.js';
+import { language, t } from '../i18n.js';
 import { createReorder, type ReorderHandle } from '../reorder.js';
 import { enabledOf, type PanelState, type PanelView } from '../store.js';
 import { createHeader, type HeaderHandle } from './header.js';
@@ -58,6 +59,14 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onToggleProvider(providerId: string, enabled: boolean): void;
   /** The user picked a theme in settings. */
   onThemeChange(theme: ThemeChoice): void;
+  /** The user picked a language in settings. The app waits for main's push. */
+  onLanguageChange(language: LanguageChoice): void;
+  /**
+   * Whether the first-run tray coach was dismissed. Held by the app, not the
+   * panel, because a language change rebuilds the panel and a tip the user
+   * already closed must not come back with it.
+   */
+  coachDismissed: boolean;
   onConsentConfirm(): void;
   onConsentCancel(): void;
   /** User asked for a new order. The app persists it and owns the revert. */
@@ -82,6 +91,8 @@ export interface PanelHandle {
   focus(): void;
   /** Put focus somewhere sensible for the view that just became current. */
   focusView(view: PanelView): void;
+  /** After a rebuild for a new language: back onto the language radio. */
+  focusLanguage(): void;
   /** Re-place the panel against the newest tray geometry. */
   applyAnchor(state: PanelState): void;
   /** Measured panel size in CSS px, for the canvas-fit check. */
@@ -137,19 +148,20 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   const settings: SettingsHandle = createSettings({
     onToggle: (id, enabled) => ctx.onToggleProvider(id, enabled),
     onTheme: (theme) => ctx.onThemeChange(theme),
+    onLanguage: (choice) => ctx.onLanguageChange(choice),
     onBack: () => ctx.onSettingsToggle(),
   });
 
   const rowList = el('ul', {
     class: 'rows',
     role: 'list',
-    'aria-label': 'Araçlar, tepsi sırasına göre',
+    'aria-label': t('panel.rowsLabel'),
   });
 
   const skeletonList = el('ul', {
     class: 'rows',
     role: 'list',
-    'aria-label': 'Araçlar taranıyor',
+    'aria-label': t('panel.rowsLoading'),
     'aria-busy': 'true',
   });
   for (let i = 0; i < SKELETON_ROWS; i++) skeletonList.appendChild(createSkeletonRow());
@@ -168,7 +180,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   const emptyAction = el(
     'button',
     { type: 'button', class: 'btn btn--primary' },
-    'Ayarları aç',
+    t('panel.openSettings'),
   ) as HTMLButtonElement;
   on(emptyAction, 'click', () => ctx.onSettingsToggle());
   const emptyState = el('div', { class: 'empty' }, emptyTitle, emptyDetail, emptyAction);
@@ -179,9 +191,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   const reorderHelp = el(
     'p',
     { class: 'u-sr', id: REORDER_HELP_ID },
-    'Sırayı değiştirmek için sürükleyin ya da Alt tuşuyla yukarı ve aşağı ok ' +
-      'tuşlarını kullanın. Alt ve Home en üste taşır. En üstteki aracın beş ' +
-      'saatlik penceresi tepsi simgesine çizilir.',
+    t('panel.reorderHelp'),
   );
 
   // Moves are announced here, politely, with the resulting position. A drag
@@ -252,8 +262,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     class: 'iconbtn notice__close',
     // The glyph is drawn and aria-hidden, so the button would otherwise have
     // no accessible name at all.
-    'aria-label': 'Bu bildirimi kapat',
-    title: 'Bu bildirimi kapat',
+    'aria-label': t('panel.noticeClose'),
+    title: t('panel.noticeClose'),
   }) as HTMLButtonElement;
   noticeClose.appendChild(noticeCloseIcon());
   const notice = el('div', { class: 'notice' }, noticeText, noticeClose);
@@ -268,12 +278,12 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   const consentCancel = el(
     'button',
     { type: 'button', class: 'btn' },
-    'Vazgeç',
+    t('panel.consentCancel'),
   ) as HTMLButtonElement;
   const consentConfirm = el(
     'button',
     { type: 'button', class: 'btn btn--primary' },
-    'Onayla',
+    t('panel.consentConfirm'),
   ) as HTMLButtonElement;
   on(consentCancel, 'click', () => ctx.onConsentCancel());
   on(consentConfirm, 'click', () => ctx.onConsentConfirm());
@@ -302,8 +312,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   const modeText = el('span', { class: 'foot__mode' }, '');
   const refreshButton = el(
     'button',
-    { type: 'button', class: 'btn', 'aria-label': 'Şimdi yenile' },
-    'Yenile',
+    { type: 'button', class: 'btn', 'aria-label': t('panel.refreshLabel') },
+    t('panel.refresh'),
   ) as HTMLButtonElement;
   on(refreshButton, 'click', () => ctx.onRefresh());
 
@@ -317,8 +327,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
    */
   const coachDismiss = el(
     'button',
-    { type: 'button', class: 'btn', 'aria-label': 'Bu ipucunu kapat' },
-    'Anladım',
+    { type: 'button', class: 'btn', 'aria-label': t('panel.coachDismissLabel') },
+    t('panel.coachDismiss'),
   ) as HTMLButtonElement;
   const coach = el(
     'div',
@@ -326,16 +336,13 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     el(
       'span',
       { class: 'coach__text' },
-      'Tepsi simgesi gizli simgeler alanında olabilir: görev çubuğundaki ' +
-        'ok işaretini açıp simgeyi dışarı sürükleyin. ' +
-        'Panel artık üzerine gelince değil, tıklayınca açılır.',
+      t('panel.coach'),
     ),
     el('div', { class: 'coach__actions' }, coachDismiss),
   );
   coach.hidden = true;
-  let coachDismissed = false;
   on(coachDismiss, 'click', () => {
-    coachDismissed = true;
+    ctx.coachDismissed = true;
     coach.hidden = true;
   });
 
@@ -358,8 +365,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   // notice, never on a push (app.ts reads it off the invoke reply alone).
   const refreshBubbleDismiss = el(
     'button',
-    { type: 'button', class: 'btn', 'aria-label': 'Bu mesajı kapat' },
-    'Tamam',
+    { type: 'button', class: 'btn', 'aria-label': t('panel.bubbleDismissLabel') },
+    t('panel.bubbleDismiss'),
   ) as HTMLButtonElement;
   const refreshBubble = el(
     'div',
@@ -367,9 +374,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     el(
       'span',
       { class: 'coach__text' },
-      'Antigravity açık değil, değerleri güncellenmiyor — bir sorun yok. ' +
-        'Aşağıda yalnızca hâlâ geçerli olan son ölçümler görünür; süresi dolmuş ' +
-        'pencerelerin güncel oranı için Antigravity’yi açın.',
+      t('provider.antigravity.notRunning'),
     ),
     el('div', { class: 'coach__actions' }, refreshBubbleDismiss),
   );
@@ -399,9 +404,11 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     'div',
     {
       class: 'panel',
-      lang: 'tr',
+      // The language main resolved, at build time. A change rebuilds the
+      // panel (app.ts), so this is never stale.
+      lang: language(),
       role: 'dialog',
-      'aria-label': 'Kullanım paneli',
+      'aria-label': t('panel.dialogLabel'),
       'data-open': 'false',
       tabindex: '-1',
     },
@@ -724,16 +731,13 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       const nothingKnown = all.length === 0;
       setText(
         emptyTitle,
-        nothingKnown
-          ? 'Bu makinede tanınan bir yapay zekâ aracı bulunamadı.'
-          : 'Ana panelde hiç araç yok.',
+        nothingKnown ? t('providers.noneFound') : t('panel.empty.noneAdded'),
       );
       setText(
         emptyDetail,
         nothingKnown
-          ? 'Desteklenen bir araç kurduğunuzda burada görünür.'
-          : `Tanınan ${integer(all.length)} aracın hiçbiri eklenmemiş. ` +
-              'Ayarlardan istediklerinizi ekleyebilirsiniz.',
+          ? t('panel.empty.noneDetail')
+          : t('panel.empty.noneAddedDetail', { count: all.length }),
       );
       emptyAction.hidden = nothingKnown;
     }
@@ -746,7 +750,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       noticeClose.hidden = true;
       setText(
         noticeText,
-        'Arka plan servisine bağlanılamadı. Ekrandaki değerler güncellenmiyor.',
+        t('panel.offline'),
       );
     } else if (state.notice) {
       notice.hidden = false;
@@ -765,31 +769,35 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       setText(consentTitle, `${consent.providerName}: ${consent.label}`);
       setText(consentDetail, consent.detail);
       setText(consentConfirm, consent.label);
-      setAttr(consentConfirm, 'aria-label', `${consent.providerName}: ${consent.label} — onayla`);
+      setAttr(
+        consentConfirm,
+        'aria-label',
+        t('panel.consentConfirmLabel', { provider: consent.providerName, label: consent.label }),
+      );
     }
 
     refreshButton.disabled = state.refreshing || !state.bridgeAvailable;
-    setText(refreshButton, state.refreshing ? 'Yenileniyor' : 'Yenile');
+    setText(refreshButton, state.refreshing ? t('panel.refreshing') : t('panel.refresh'));
 
     const generatedAt = state.snapshot?.generatedAt ?? null;
-    setText(scanText, generatedAt ? `Son tarama ${clockTime(generatedAt)}` : 'Henüz tarama yok');
+    setText(
+      scanText,
+      generatedAt ? t('panel.lastScan', { time: clockTime(generatedAt) }) : t('panel.noScan'),
+    );
 
     // The same promise the pin button makes, written out.
     setText(
       modeText,
-      state.pinned ? 'ekranda kalıyor' : 'imleç ayrılınca kapanır',
+      state.pinned ? t('panel.modePinned') : t('panel.modeHover'),
     );
     setAttr(
       modeText,
       'title',
-      state.pinned
-        ? 'Panel sabitlendi: başka bir uygulamaya geçseniz de açık kalır.'
-        : 'Panel sabit değil: imleç panelden ayrılınca kapanır. ' +
-            'Başlıktaki raptiye düğmesi ekranda tutar.',
+      state.pinned ? t('panel.modePinnedTitle') : t('panel.modeHoverTitle'),
     );
 
     // Only when we know we are NOT pointing at a measured tray icon.
-    coach.hidden = coachDismissed || state.anchor?.anchorSource !== 'cursor';
+    coach.hidden = ctx.coachDismissed || state.anchor?.anchorSource !== 'cursor';
 
     // Driven purely by the store flag, which app.ts sets only from a refresh
     // reply and clears at the next refresh or on dismissal — never from a push.
@@ -843,6 +851,9 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     focusView(view: PanelView): void {
       if (view === 'settings') settings.focusFirst();
       else header.settingsButton.focus({ preventScroll: true });
+    },
+    focusLanguage(): void {
+      settings.focusLanguage();
     },
     destroy(): void {
       reorder.destroy();

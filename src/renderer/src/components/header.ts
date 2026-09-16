@@ -48,6 +48,7 @@
 
 import { el, on, setAttr, setText, svg } from '../dom.js';
 import { ago, agoSpoken, clockTime } from '../format.js';
+import { t } from '../i18n.js';
 import { freshnessOf, type Freshness, type PanelState } from '../store.js';
 import { SETTINGS_VIEW_ID } from './settings.js';
 
@@ -57,13 +58,12 @@ import { SETTINGS_VIEW_ID } from './settings.js';
  * panel being "open", which was true of both states and told the user nothing
  * about the one that closes the moment the pointer leaves.
  */
-const PIN_LABEL_OFF = 'Paneli ekranda tut';
-const PIN_LABEL_ON = 'Paneli ekranda tutmayı bırak';
-const PIN_TITLE_OFF =
-  'Paneli ekranda tut — şu anda imleç panelden ayrılınca kapanıyor';
-const PIN_TITLE_ON =
-  'Panel ekranda kalıyor — başka bir uygulamaya geçseniz de açık kalır. ' +
-  'Bırakmak için tıklayın.';
+// Functions, not constants: the words are read in the language current at
+// paint time, and a language change rebuilds the panel (app.ts).
+const PIN_LABEL_OFF = (): string => t('header.pin.labelOff');
+const PIN_LABEL_ON = (): string => t('header.pin.labelOn');
+const PIN_TITLE_OFF = (): string => t('header.pin.titleOff');
+const PIN_TITLE_ON = (): string => t('header.pin.titleOn');
 
 export interface HeaderContext {
   onPinToggle(pinned: boolean): void;
@@ -156,14 +156,14 @@ function freshnessText(level: Freshness, ageMs: number): string {
     case 'live':
       return '';
     case 'pending':
-      return 'ilk tarama sürüyor';
+      return t('header.fresh.pending');
     case 'aging':
       return ago(ageMs);
     case 'stale':
-      return `güncel değil · ${ago(ageMs)}`;
+      return t('header.fresh.stale', { age: ago(ageMs) });
     case 'offline':
     default:
-      return 'bağlantı yok';
+      return t('header.fresh.offline');
   }
 }
 
@@ -173,16 +173,12 @@ function freshnessText(level: Freshness, ageMs: number): string {
  * answerable, it just is not shouted while the answer is yes.
  */
 function freshnessTitle(level: Freshness, ageMs: number, generatedAt: string | null): string {
-  if (level === 'offline') {
-    return 'Arka plan servisine bağlantı yok. Ekrandaki değerler güncellenmiyor.';
-  }
-  if (level === 'pending' || !generatedAt) {
-    return 'İlk tarama sürüyor. Henüz gösterilecek bir ölçüm yok.';
-  }
-  const stamp = `Son güncelleme: ${clockTime(generatedAt)} — ${agoSpoken(ageMs)}`;
-  if (level === 'live') return `${stamp}. Ekrandaki değerler güncel.`;
-  if (level === 'aging') return `${stamp}. Beklenenden uzun süredir yeni ölçüm gelmedi.`;
-  return `${stamp}. Ekrandaki değerler artık güncel değil.`;
+  if (level === 'offline') return t('header.fresh.titleOffline');
+  if (level === 'pending' || !generatedAt) return t('header.fresh.titlePending');
+  const stamp = t('header.fresh.stamp', { time: clockTime(generatedAt), ago: agoSpoken(ageMs) });
+  if (level === 'live') return t('header.fresh.titleLive', { stamp });
+  if (level === 'aging') return t('header.fresh.titleAging', { stamp });
+  return t('header.fresh.titleStale', { stamp });
 }
 
 /**
@@ -196,15 +192,15 @@ function freshnessTitle(level: Freshness, ageMs: number, generatedAt: string | n
 function freshnessSpoken(level: Freshness, refreshing: boolean): string {
   const base =
     level === 'offline'
-      ? 'Arka plan servisine bağlantı yok. Ekrandaki değerler güncellenmiyor.'
+      ? t('header.fresh.titleOffline')
       : level === 'pending'
-        ? 'İlk tarama sürüyor.'
+        ? t('header.spoken.pending')
         : level === 'aging'
-          ? 'Beklenenden uzun süredir yeni ölçüm gelmedi.'
+          ? t('header.spoken.aging')
           : level === 'stale'
-            ? 'Uyarı: ekrandaki değerler güncel değil.'
-            : 'Ekrandaki değerler güncel.';
-  return refreshing ? `${base} Yenileniyor.` : base;
+            ? t('header.spoken.stale')
+            : t('header.spoken.live');
+  return refreshing ? t('header.spoken.refreshing', { base }) : base;
 }
 
 export function createHeader(ctx: HeaderContext): HeaderHandle {
@@ -238,8 +234,8 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
     class: 'iconbtn iconbtn--settings',
     'aria-expanded': 'false',
     'aria-controls': SETTINGS_VIEW_ID,
-    'aria-label': 'Ayarlar',
-    title: 'Ayarlar — panelde hangi araçların görüneceği ve panelin görünümü',
+    'aria-label': t('header.settings'),
+    title: t('header.settingsTitle'),
   }) as HTMLButtonElement;
   settingsButton.appendChild(settingsIcon());
 
@@ -248,23 +244,23 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
     type: 'button',
     class: 'iconbtn iconbtn--pin',
     'aria-pressed': 'false',
-    'aria-label': PIN_LABEL_OFF,
-    title: PIN_TITLE_OFF,
+    'aria-label': PIN_LABEL_OFF(),
+    title: PIN_TITLE_OFF(),
   }) as HTMLButtonElement;
   pinButton.appendChild(pin.root);
 
   const closeButton = el('button', {
     type: 'button',
     class: 'iconbtn',
-    'aria-label': 'Paneli kapat',
-    title: 'Paneli kapat (Esc)',
+    'aria-label': t('header.close'),
+    title: t('header.closeTitle'),
   }) as HTMLButtonElement;
   closeButton.appendChild(closeIcon());
 
   const top = el(
     'div',
     { class: 'hdr__top' },
-    el('h1', { class: 'hdr__title' }, 'Kullanım'),
+    el('h1', { class: 'hdr__title' }, t('header.title')),
     el('span', { class: 'hdr__spacer' }),
     fresh,
     el('div', { class: 'hdr__actions' }, settingsButton, pinButton, closeButton),
@@ -309,20 +305,18 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
     // panel survives blur, app switching and anything else happening on the
     // desktop. Unpinned: it lives only while the pointer is over it.
     setAttr(pinButton, 'aria-pressed', state.pinned ? 'true' : 'false');
-    setAttr(pinButton, 'aria-label', state.pinned ? PIN_LABEL_ON : PIN_LABEL_OFF);
-    setAttr(pinButton, 'title', state.pinned ? PIN_TITLE_ON : PIN_TITLE_OFF);
+    setAttr(pinButton, 'aria-label', state.pinned ? PIN_LABEL_ON() : PIN_LABEL_OFF());
+    setAttr(pinButton, 'title', state.pinned ? PIN_TITLE_ON() : PIN_TITLE_OFF());
     // Upright when pinned, tilted out of the board when not.
     setAttr(pin.body, 'transform', state.pinned ? null : 'rotate(38 8 9)');
 
     const inSettings = state.view === 'settings';
     setAttr(settingsButton, 'aria-expanded', inSettings ? 'true' : 'false');
-    setAttr(settingsButton, 'aria-label', inSettings ? 'Ayarları kapat' : 'Ayarlar');
+    setAttr(settingsButton, 'aria-label', inSettings ? t('header.settingsClose') : t('header.settings'));
     setAttr(
       settingsButton,
       'title',
-      inSettings
-        ? 'Ayarları kapat ve kullanım listesine dön'
-        : 'Ayarlar — panelde hangi araçların görüneceği ve panelin görünümü',
+      inSettings ? t('header.settingsCloseTitle') : t('header.settingsTitle'),
     );
   }
 

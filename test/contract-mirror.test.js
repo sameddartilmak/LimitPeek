@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { IPC } = require('../src/shared/contract');
+const { usageNotchApiMethods } = require('./helpers/contract-api');
 
 /**
  * `src/shared/contract.ts` is orchestrator-owned and cannot be edited by this
@@ -116,14 +117,9 @@ test('the anchor channel now comes from the contract, not from our extension', (
 });
 
 test('the preload exposes exactly the UsageNotchApi surface declared in contract.ts', () => {
-  const src = contractSource();
-  const start = src.indexOf('export interface UsageNotchApi');
-  assert.notEqual(start, -1, 'contract.ts no longer declares UsageNotchApi');
-  const block = src.slice(start, src.indexOf('\n}', start));
-  const declared = new Set();
-  const re = /^ {2}([a-zA-Z]+)\(/gm;
-  let m;
-  while ((m = re.exec(block)) !== null) declared.add(m[1]);
+  // The same parser the Electron smoke uses, so the two cannot disagree about
+  // what the contract declares (test/helpers/contract-api.js).
+  const declared = new Set(usageNotchApiMethods(contractSource()));
   assert.ok(declared.has('initialSnapshot'), 'parser failed to find the methods');
 
   const preload = fs.readFileSync(path.join(ROOT, 'src', 'main', 'preload.js'), 'utf8');
@@ -139,7 +135,8 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   assert.ok(declared.has('initialPreferences'), 'contract.ts should declare initialPreferences()');
   assert.ok(declared.has('setTheme'), 'contract.ts should declare setTheme()');
   assert.ok(declared.has('onPanelVisibility'), 'contract.ts should declare onPanelVisibility()');
-  assert.equal(declared.size, 14, `expected the 14 declared methods, saw ${[...declared].join(',')}`);
+  assert.ok(declared.has('setLanguage'), 'contract.ts should declare setLanguage()');
+  assert.equal(declared.size, 15, `expected the 15 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const STATE_THRESHOLDS = { ... } as const;`. */

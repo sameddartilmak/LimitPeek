@@ -11,10 +11,18 @@ const path = require('node:path');
  * `npm test`: they pin the WORDS themselves so a later edit cannot quietly
  * reintroduce the contradiction, following the same read-the-source precedent
  * as contract-mirror.test.js.
+ *
+ * ADR-004 moved the words out of the components into the shared catalogs, so
+ * the WORDS are pinned there and the components are pinned to the KEYS. Both
+ * halves matter: a correct catalog entry that meter.ts no longer reads is the
+ * same regression as a wrong word.
  */
 const ROOT = path.join(__dirname, '..');
 function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
+}
+function catalog(lang, file) {
+  return JSON.parse(read(`src/shared/i18n/${lang}/${file}`));
 }
 
 test.describe('the awaiting-report absence has its own honest wording', () => {
@@ -23,15 +31,29 @@ test.describe('the awaiting-report absence has its own honest wording', () => {
     const at = src.indexOf("'awaiting-report'");
     assert.notEqual(at, -1, "meter.ts must give 'awaiting-report' its own copy entry");
     const block = src.slice(at, at + 320);
-    assert.match(block, /figure:\s*'yeni veri bekleniyor'/, 'the printed figure word');
-    assert.match(block, /spoken:[\s\S]*yeni veri bekleniyor/, 'a spoken variant accompanies it');
+    assert.match(block, /figure:\s*t\('absence\.awaiting'\)/, 'the printed figure word');
+    assert.match(block, /spoken:[\s\S]*t\('meter\.awaiting\.spoken'/, 'a spoken variant accompanies it');
+    assert.equal(catalog('tr', 'common.json')['absence.awaiting'], 'yeni veri bekleniyor');
+    assert.match(catalog('tr', 'renderer.json')['meter.awaiting.spoken'], /yeni veri bekleniyor/);
+    assert.equal(catalog('en', 'common.json')['absence.awaiting'], 'awaiting new data');
   });
 
   test('it is neither "bilinmiyor" nor "yenileniyor": those describe other states', () => {
     const src = read('src/renderer/src/components/meter.ts');
     // The pre-existing absences keep their words; the new one does not borrow them.
-    assert.match(src, /'rolled-over':\s*\{[\s\S]*?figure:\s*'yenileniyor'/, 'rolled-over unchanged');
-    assert.match(src, /'not-supplied':\s*\{[\s\S]*?figure:\s*'bildirilmiyor'/, 'not-supplied unchanged');
+    assert.match(src, /'rolled-over':\s*\{[\s\S]*?figure:\s*t\('absence\.resetting'\)/, 'rolled-over unchanged');
+    assert.match(src, /'not-supplied':\s*\{[\s\S]*?figure:\s*t\('absence\.notReported'\)/, 'not-supplied unchanged');
+    const tr = catalog('tr', 'common.json');
+    assert.equal(tr['absence.resetting'], 'yenileniyor');
+    assert.equal(tr['absence.notReported'], 'bildirilmiyor');
+    assert.equal(tr['absence.unknown'], 'bilinmiyor');
+    // Four absences, four different words, in both languages.
+    for (const lang of ['tr', 'en']) {
+      const c = catalog(lang, 'common.json');
+      const words = ['absence.unknown', 'absence.notReported', 'absence.resetting', 'absence.awaiting']
+        .map((key) => c[key]);
+      assert.equal(new Set(words).size, 4, `${lang}: ${words}`);
+    }
   });
 
   test("the contract and the renderer's allow-set both admit 'awaiting-report'", () => {
@@ -42,7 +64,14 @@ test.describe('the awaiting-report absence has its own honest wording', () => {
 });
 
 test.describe('the refresh bubble no longer contradicts the row', () => {
-  const src = read('src/renderer/src/components/panel.ts');
+  // The bubble's words live under a per-provider key; panel.ts must still be
+  // the thing that prints that key.
+  const panelSrc = read('src/renderer/src/components/panel.ts');
+  const src = catalog('tr', 'renderer.json')['provider.antigravity.notRunning'];
+
+  test('panel.ts renders the per-provider key', () => {
+    assert.match(panelSrc, /t\('provider\.antigravity\.notRunning'\)/);
+  });
 
   test('the unconditional "your last measurement is below" promise is gone', () => {
     // The old copy asserted the values below were "aracı en son açtığınızdaki
@@ -65,5 +94,13 @@ test.describe('the refresh bubble no longer contradicts the row', () => {
       /güncel oranı için/,
       'an expired window is told to open the tool — matching the row it sits above',
     );
+  });
+
+  test('the English makes the same scoped claim', () => {
+    const en = catalog('en', 'renderer.json')['provider.antigravity.notRunning'];
+    assert.match(en, /Antigravity is not open/);
+    assert.match(en, /nothing is wrong/);
+    assert.match(en, /Only the last measurements that are still valid/);
+    assert.match(en, /windows that have expired/);
   });
 });

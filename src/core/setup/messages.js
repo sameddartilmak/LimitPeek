@@ -1,5 +1,6 @@
 'use strict';
 const { antigravityHomeOverridden } = require('../paths');
+const { t } = require('../i18n');
 
 /**
  * The setup notices for BOTH providers, and the budget they have to fit.
@@ -89,12 +90,12 @@ function shortPath(p, max = 52) {
  */
 function cliNotFound(homeDir) {
   return fitNotice(
-    'Antigravity CLI (agy) bulunamadı; hiçbir dosya oluşturulmadı.',
+    t('setup.agy.cliNotFound'),
     [
       // Ahead of the hint: a redirected install is the failure that makes the
       // rest of the sentence untrustworthy.
       overrideClause(homeDir),
-      'Beş saatlik limit yine de görünür; agy yalnızca haftalık limit için gerekir.',
+      t('setup.agy.fiveHourStillShown'),
     ],
   );
 }
@@ -107,9 +108,9 @@ function cliNotFound(homeDir) {
  * to prevent, and it is worth more than a reminder to restart.
  */
 function installed(homeDir) {
-  return fitNotice('Bağlandı.', [
+  return fitNotice(t('setup.connected'), [
     overrideClause(homeDir),
-    'Antigravity CLI oturumunu yeniden başlatın; yüzde birkaç saniye içinde görünür.',
+    t('setup.agy.restartHint'),
   ]);
 }
 
@@ -128,8 +129,8 @@ function installed(homeDir) {
  */
 function statusLineExists(command) {
   return fitNotice(
-    `Zaten bir statusLine tanımlı; şunu elle zincirleyin: ${command}`,
-    ['Üzerine yazmıyoruz.'],
+    t('setup.statusLineExists', { command: String(command) }),
+    [t('setup.noOverwrite')],
   );
 }
 
@@ -140,7 +141,7 @@ function statusLineExists(command) {
  */
 function overrideClause(homeDir) {
   if (!homeDir || !antigravityHomeOverridden(homeDir)) return '';
-  return `UYARI: ANTIGRAVITY_CLI_DIR ayarlı: ${shortPath(homeDir)}`;
+  return t('setup.agy.overrideWarning', { path: shortPath(homeDir) });
 }
 
 module.exports = { NOTICE_MAX, fitNotice, shortPath, cliNotFound, installed, statusLineExists, overrideClause };

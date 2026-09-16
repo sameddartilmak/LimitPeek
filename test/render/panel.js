@@ -664,19 +664,28 @@ app.whenReady().then(async () => {
   wc.sendInputEvent({ type: 'mouseDown', x: geom.x, y: geom.y, button: 'left', clickCount: 1 });
   await sleep(40);
 
-  // Two places down means the dragged row's CENTRE has to clear the MIDPOINT OF
-  // ROW 2 AS IT IS DRAWN. Rows are not uniform — measured here as
-  // [88, 42, 139, 42, 42, 42] — so the distance is derived from the layout
-  // rather than assumed to be "two rows".
+  // Two places down means the dragged row has to COVER row 2 as it is drawn.
+  // Rows are not uniform (measured as [44, 92, 145, 44, 44, 44] with Kimi on
+  // top), so the distance is derived from the measured layout, never assumed.
   //
-  // This used to be `h[1] + h[2]/2 - h[0]/2`, which is the distance in the
-  // COMPACTED layout: the list as if the dragged row had already been lifted
-  // out. That is the same coordinate-system confusion that produced the bug in
-  // `targetIndex`, encoded a second time in the test that was supposed to
-  // catch it — which is why the check passed against the broken algorithm and
-  // would have failed against the correct one. The distance is now the plain
-  // difference between two midpoints in one coordinate system.
-  const drop = Math.round(geom.t[2] + geom.h[2] / 2 - (geom.t[0] + geom.h[0] / 2)) + 8;
+  // The rule is reorder.ts `targetIndexFor` since b1d4470: a row gives way at
+  // the LATER of "my centre passed its midpoint" and "my leading edge reached
+  // its far edge". With reach = min(myHeight, theirHeight) / 2 that is one
+  // threshold for either direction — see `passDown` / `passUp` below. For equal
+  // heights it is the midpoint; for a short row passing a tall one it is edge
+  // alignment. The previous midpoint-only distance (195px here) stopped one
+  // slot short under that rule: the row needs 237px to cover a 145px row.
+  //
+  // Everything is in ONE coordinate system, the list as drawn at pick-up —
+  // not the compacted list with the dragged row lifted out, which is the
+  // confusion that produced the original `targetIndex` bug.
+  const passDown = (t, h, from, k) =>
+    t[k] + h[k] - Math.min(h[from], h[k]) / 2 - (t[from] + h[from] / 2);
+  const passUp = (t, h, from, k) =>
+    t[from] + h[from] / 2 - (t[k] + Math.min(h[from], h[k]) / 2);
+  // +8 past the threshold: clear of rounding, well short of the next row.
+  const drop = Math.round(passDown(geom.t, geom.h, 0, 2)) + 8;
+  say('drag down: ' + JSON.stringify({ ids: geom.ids, t: geom.t, h: geom.h, drop }));
   for (let i = 1; i <= 8; i++) {
     move(geom.x, geom.y + Math.round((drop * i) / 8));
     await sleep(25);
@@ -747,7 +756,9 @@ app.whenReady().then(async () => {
   await sleep(200);
   const shape = await js(`(() => {
     const rows = [...document.querySelectorAll('li.row[data-provider]')];
+    const listTop = rows[0].getBoundingClientRect().top;
     return { ids: rows.map(r => r.dataset.provider),
+             t: rows.map(r => Math.round(r.getBoundingClientRect().top - listTop)),
              h: rows.map(r => Math.round(r.getBoundingClientRect().height)) };
   })()`);
   say('row shape: ' + JSON.stringify(shape));
@@ -777,10 +788,13 @@ app.whenReady().then(async () => {
     JSON.stringify(nudged) === JSON.stringify(shape.ids), [shape.ids, nudged]);
 
   // Now the reported gesture: the second row, dragged up over the first.
-  // The distance is half my own height plus half of the row above me — the
-  // point at which my centre reaches their midpoint — derived from the
-  // measured heights rather than assumed, because they differ.
-  const up = Math.round(shape.h[1] / 2 + shape.h[0] / 2) + 8;
+  // The distance follows the same covered/leading-edge rule as the drag down
+  // (`passUp`): the midpoint when the dragged row is at least as tall as the
+  // one above it, edge alignment when it is shorter. It is derived from the
+  // rows measured HERE, so it holds whichever order the sections above left
+  // behind — a short row under a tall one needs the full height of the tall one.
+  const up = Math.round(passUp(shape.t, shape.h, 1, 0)) + 8;
+  say('drag up: ' + JSON.stringify({ up }));
   const g4 = await js(`(() => {
     const g = [...document.querySelectorAll('li.row[data-provider]')][1]
       .querySelector('.grip').getBoundingClientRect();
@@ -866,16 +880,26 @@ app.whenReady().then(async () => {
   check('the added/not-added state is stated in words as well as in the switch',
     /Ana panelde/.test(settings.metas[0] || ''), settings.metas[0]);
 
-  // Keyboard reachability: Tab from the way-out control lands on the first switch.
+  // Keyboard reachability. Since the accordion (f299d5b) the first tab stop
+  // after the way-out control is the "Model Yönetimi" section header — a real
+  // button — and, because that section is open by default, the next one is the
+  // first switch.
+  const readActive = `(() => {
+    const a = document.activeElement;
+    return { cls: a.className, role: a.getAttribute('role'), tag: a.tagName };
+  })()`;
   await js(`document.querySelector('#settings-view .iconbtn').focus()`);
   wc.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
   wc.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
   await sleep(120);
-  const tabbed = await js(`(() => {
-    const a = document.activeElement;
-    return { cls: a.className, role: a.getAttribute('role'), tag: a.tagName };
-  })()`);
-  check('Tab reaches the first switch from the back control',
+  const tabbed1 = await js(readActive);
+  check('Tab from the back control reaches the first section header',
+    tabbed1.tag === 'BUTTON' && /\bacc__trigger\b/.test(tabbed1.cls || ''), tabbed1);
+  wc.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+  wc.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+  await sleep(120);
+  const tabbed = await js(readActive);
+  check('the next Tab reaches the first switch',
     tabbed.role === 'switch' && tabbed.tag === 'BUTTON', tabbed);
 
   // ---- un-added providers leave the main panel --------------------------
@@ -1255,7 +1279,7 @@ app.whenReady().then(async () => {
   await js(`document.querySelector('.iconbtn--settings').click()`);
   await sleep(180);
   const themeGroup = await js(`(() => {
-    const f = document.querySelector('#settings-view fieldset.theme');
+    const f = document.querySelector('#settings-view fieldset.theme:not(.theme--language)');
     if (!f) return null;
     const radios = [...f.querySelectorAll('input[type=radio]')];
     const uniqueNames = radios.map((r) => r.name).filter((n, i, a) => a.indexOf(n) === i);
@@ -1269,7 +1293,7 @@ app.whenReady().then(async () => {
       help: (f.querySelector('.theme__help') || {}).textContent,
       headings: [...document.querySelectorAll('#settings-view h2, #settings-view h3, #settings-view legend')]
         .map((h) => h.textContent),
-      order: [...document.querySelectorAll('#settings-view .settings__list, #settings-view fieldset.theme')]
+      order: [...document.querySelectorAll('#settings-view .settings__list, #settings-view fieldset.theme:not(.theme--language)')]
         .map((n) => n.className.split(' ')[0]),
     };
   })()`);
@@ -1286,7 +1310,7 @@ app.whenReady().then(async () => {
   check('the radios stay in the focus order rather than being display:none',
     themeGroup.inFlow === true, themeGroup.inFlow);
   check('the view has a heading per section, not one that covers only half of it',
-    themeGroup.headings[0] === 'Ayarlar' && themeGroup.headings.indexOf('Araçlar') !== -1
+    themeGroup.headings[0] === 'Ayarlar' && themeGroup.headings.indexOf('Model Yönetimi') !== -1
       && themeGroup.headings.indexOf('Görünüm') !== -1, themeGroup.headings);
   check('the theme control comes after the provider list, so the tab path is unchanged',
     themeGroup.order[0] === 'settings__list', themeGroup.order);
@@ -1309,7 +1333,9 @@ app.whenReady().then(async () => {
       rampOnBase: ramp.map((c) => window.__cr(c, T('--ink-900'))),
       rampOnTrack: ramp.map((c) => window.__cr(c, T('--ink-600'))),
       rampLum: ramp.map((c) => Math.round(window.__lum(window.__rgb(c)) * 10000) / 10000),
-      checked: [...document.querySelectorAll('#settings-view input[type=radio]')]
+      // The theme group only: settings also holds the usage-period radios and
+      // the language radios, each with its own selection.
+      checked: [...document.querySelectorAll('#settings-view fieldset.theme:not(.theme--language) input[type=radio]')]
         .filter((r) => r.checked).map((r) => r.value),
     };
   })()`);
@@ -1370,9 +1396,9 @@ app.whenReady().then(async () => {
   await sleep(600);
   const themeReverted = await js(`(() => ({
     attr: document.documentElement.getAttribute('data-theme'),
-    checked: [...document.querySelectorAll('#settings-view input[type=radio]')]
+    checked: [...document.querySelectorAll('#settings-view fieldset.theme:not(.theme--language) input[type=radio]')]
       .filter((r) => r.checked).map((r) => r.value),
-    flash: document.querySelector('#settings-view fieldset.theme').dataset.revert || null,
+    flash: document.querySelector('#settings-view fieldset.theme:not(.theme--language)').dataset.revert || null,
     notice: (document.querySelector('.notice') || {}).textContent,
   }))()`);
   const themeStored = (await js('window.__probe.prefs()')).theme;
@@ -1398,14 +1424,14 @@ app.whenReady().then(async () => {
   const sysLight = await js(`(() => ({
     attr: document.documentElement.getAttribute('data-theme'),
     choice: document.documentElement.getAttribute('data-theme-choice'),
-    help: (document.querySelector('#settings-view .theme__help') || {}).textContent,
+    help: (document.querySelector('#settings-view fieldset.theme:not(.theme--language) .theme__help') || {}).textContent,
   }))()`);
   nativeTheme.themeSource = 'dark';
   await sleep(260);
   const sysDark = await js(`(() => ({
     attr: document.documentElement.getAttribute('data-theme'),
     choice: document.documentElement.getAttribute('data-theme-choice'),
-    help: (document.querySelector('#settings-view .theme__help') || {}).textContent,
+    help: (document.querySelector('#settings-view fieldset.theme:not(.theme--language) .theme__help') || {}).textContent,
   }))()`);
   say('system: ' + JSON.stringify([sysLight, sysDark]));
   check('Sistem follows prefers-color-scheme when the OS says light',
@@ -1430,6 +1456,55 @@ app.whenReady().then(async () => {
   await sleep(300);
   check('and picking Koyu again restores the dark palette',
     (await js(`document.documentElement.getAttribute('data-theme')`)) === 'dark');
+
+  // ---- language: the words follow main's PUSH, not the click ------------
+  //
+  // ADR-004 A1.7: `<html lang>` and the panel's `lang` follow
+  // `resolvedLanguage`, and the renderer is NOT optimistic about it — main also
+  // rewrites the tray tooltip, the menu and the setup text, so a panel that
+  // switched on the click could sit in English beside a Turkish tooltip. The
+  // fixture holds the PREFERENCES push (setDeferPrefs) so "before the push"
+  // is a state that can actually be observed.
+  const langState = `(() => ({
+    html: document.documentElement.getAttribute('lang'),
+    panel: document.querySelector('.panel').getAttribute('lang'),
+    title: (document.querySelector('#settings-view .settings__title') || {}).textContent,
+    checked: [...document.querySelectorAll('#settings-view fieldset.theme--language input[type=radio]')]
+      .filter((r) => r.checked).map((r) => r.value),
+  }))()`;
+  const langBefore = await js(langState);
+  check('the suite starts in Turkish, on the document and on the panel',
+    langBefore.html === 'tr' && langBefore.panel === 'tr' && langBefore.title === 'Ayarlar', langBefore);
+
+  await js('window.__probe.setDeferPrefs(true)');
+  await js(`document.querySelector('#settings-view label[for="language-en"]').click()`);
+  await sleep(280);
+  probe = await js('window.__probe.calls()');
+  const langHeld = await js(langState);
+  say('language held: ' + JSON.stringify(langHeld));
+  check('main was asked to persist English',
+    probe.setLanguage[probe.setLanguage.length - 1] === 'en', probe.setLanguage);
+  check('before main pushes PREFERENCES the words stay Turkish, even after an ok reply',
+    langHeld.html === 'tr' && langHeld.panel === 'tr' && langHeld.title === 'Ayarlar', langHeld);
+  check('only the radio moves ahead of main', JSON.stringify(langHeld.checked) === '["en"]', langHeld.checked);
+
+  const flushed = await js('window.__probe.flushPrefs()');
+  await sleep(280);
+  const langAfter = await js(langState);
+  say('language pushed: ' + JSON.stringify(langAfter));
+  check('the fixture really held a push, or the check above proves nothing', flushed === true, flushed);
+  check('after the push <html lang> follows resolvedLanguage', langAfter.html === 'en', langAfter);
+  check('and so does the panel lang', langAfter.panel === 'en', langAfter);
+  check('and the words are English', langAfter.title === 'Settings', langAfter);
+
+  // Back to Turkish, undeferred, for the checks below, which read Turkish copy.
+  await js('window.__probe.setDeferPrefs(false)');
+  await js(`document.querySelector('#settings-view label[for="language-tr"]').click()`);
+  await sleep(320);
+  const langBack = await js(langState);
+  check('picking Türkçe again restores Turkish everywhere',
+    langBack.html === 'tr' && langBack.panel === 'tr' && langBack.title === 'Ayarlar', langBack);
+
   await js(`document.querySelector('.iconbtn--settings').click()`);
   await sleep(160);
 
@@ -1707,7 +1782,7 @@ app.whenReady().then(async () => {
     (() => {
       const body = notice.text.replace(/…$/, '');
       const last = body.split(/\s+/).filter(Boolean).pop() || '';
-      return new RegExp('(^|\\s)' + last.replace(/[.*+?^${}()|[\]\\]/g, '\\  // ---- no innerHTML anywhere in shipped renderer ------------------------') + '($|\\s)')
+      return new RegExp('(^|\\s)' + last.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|\\s)')
         .test(LONG_SETUP);
     })(), notice.text);
   check('and the instruction survives it, which is the half the old cut dropped',

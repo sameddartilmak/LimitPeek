@@ -2,6 +2,7 @@
 const path = require('node:path');
 const { Tray, Menu, nativeImage, app } = require('electron');
 const log = require('../core/log');
+const { t } = require('../core/i18n');
 
 /**
  * Tray icon and its click behaviour.
@@ -130,18 +131,21 @@ class TrayController {
     return this.tray;
   }
 
+  // Labels are translated when the menu is BUILT; Electron keeps no reference
+  // to our strings. So a language change rebuilds it (`applyLanguage()` in
+  // index.js) rather than expecting the open menu to follow.
   setMenu({ autostart, onToggleAutostart, onQuit }) {
     const menu = Menu.buildFromTemplate([
       { label: `Usage Notch ${app.getVersion()}`, enabled: false },
       { type: 'separator' },
       {
-        label: 'Windows açılışında başlat',
+        label: t('tray.menu.autostart'),
         type: 'checkbox',
         checked: Boolean(autostart),
         click: (item) => onToggleAutostart(item.checked),
       },
       { type: 'separator' },
-      { label: 'Çıkış', click: () => onQuit() },
+      { label: t('tray.menu.quit'), click: () => onQuit() },
     ]);
     // Left click must open the panel, so the menu is bound to right click only.
     this.tray.setContextMenu(menu);

@@ -17,6 +17,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, watch, writeFil
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripTypeScriptTypes } from 'node:module';
+import { inlineJsonImports } from './inline-json.cjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RENDERER = HERE;
@@ -35,6 +36,9 @@ const PROD = process.argv.includes('--prod');
 const INPUTS = [
   join(SRC_ROOT, 'shared', 'contract.ts'),
   join(RENDERER, 'src'),
+  // No .ts in here, so nothing is emitted from it; listed so --watch rebuilds
+  // when a catalog changes, since its JSON is inlined into the modules.
+  join(SRC_ROOT, 'shared', 'i18n'),
   ...(PROD ? [] : [join(RENDERER, 'dev')]),
 ];
 
@@ -74,7 +78,11 @@ function outputPathFor(file) {
 
 function buildOne(file) {
   const source = readFileSync(file, 'utf8');
-  const js = stripTypeScriptTypes(source, { mode: 'strip', sourceUrl: file });
+  // Catalog JSON is inlined, never fetched: see inline-json.cjs (ADR-004 A1.4).
+  const { code: js } = inlineJsonImports(
+    stripTypeScriptTypes(source, { mode: 'strip', sourceUrl: file }),
+    file,
+  );
   const out = outputPathFor(file);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, js, 'utf8');

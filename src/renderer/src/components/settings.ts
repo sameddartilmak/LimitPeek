@@ -36,8 +36,8 @@
  * the focus ring is the shared :focus-visible one.
  *
  * DEFAULT OPEN: "Model Yönetimi", the first section. It is the view's original
- * job and keeps the tab path (back control -> first provider switch) exactly as
- * it was; the other two start collapsed. Clicking the open header collapses it,
+ * job, and it keeps the provider switches one tab stop away (back control ->
+ * its header -> first provider switch); the other two start collapsed. Clicking the open header collapses it,
  * so "all closed" is reachable too — the invariant is at most one open, which
  * is what "opening one closes the others" means.
  *
@@ -52,6 +52,7 @@
  */
 
 import type {
+  LanguageChoice,
   PeriodModelCost,
   PeriodUsage,
   ProviderSnapshot,
@@ -61,7 +62,8 @@ import type {
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { enabledOf, type PanelState } from '../store.js';
 import { themeLabel } from '../theme.js';
-import { dayRange, integer, priceDate, usd } from '../format.js';
+import { atLeast, dayRange, lowerFirst, priceDate, usd } from '../format.js';
+import { language as currentLanguage, t } from '../i18n.js';
 import { providerMark } from './logo.js';
 
 /** The id the header's settings button points `aria-controls` at. */
@@ -76,6 +78,8 @@ const THEME_REGION_ID = 'settings-sec-theme-r';
 const SETTINGS_HELP_ID = 'settings-help';
 const THEME_TITLE_ID = 'settings-theme-title';
 const THEME_HELP_ID = 'settings-theme-help';
+const LANGUAGE_TITLE_ID = 'settings-language-title';
+const LANGUAGE_HELP_ID = 'settings-language-help';
 
 /** The grain the usage section is showing. */
 type UsageGrain = 'week' | 'month';
@@ -92,6 +96,11 @@ export interface SettingsContext {
   onToggle(providerId: string, enabled: boolean): void;
   /** The user picked a theme. Optimistic; the app owns the revert. */
   onTheme(theme: ThemeChoice): void;
+  /**
+   * The user picked a language. NOT optimistic: main re-resolves and pushes,
+   * and the app rebuilds the panel from that push (ADR-004).
+   */
+  onLanguage(language: LanguageChoice): void;
   /** Leave settings and go back to the usage list. */
   onBack(): void;
 }
@@ -102,6 +111,12 @@ export interface SettingsHandle {
   /** Focus the way out. It is the first thing in the view, so tab order runs
    *  forwards from it into the list. */
   focusFirst(): void;
+  /**
+   * Open the appearance section and focus the checked language radio. Called
+   * after a language change rebuilds the panel, so the keyboard user lands
+   * back on the control they just operated instead of on <body>.
+   */
+  focusLanguage(): void;
 }
 
 function backIcon(): SVGElement {
@@ -135,11 +150,17 @@ function chevronIcon(): SVGElement {
   );
 }
 
-/** "Bulundu, henüz bağlı değil." -> "bulundu, henüz bağlı değil" */
+/**
+ * "Bulundu, henüz bağlı değil." -> "bulundu, henüz bağlı değil".
+ *
+ * Lower-cased in the RESOLVED language (ADR-004 A1.7). It used a fixed
+ * 'tr-TR', which maps "I" to the dotless "ı": an English detail "It is…" would
+ * have been printed "ıt is…".
+ */
 function asClause(detail: string): string {
   const trimmed = detail.trim().replace(/[.!]+$/, '');
   if (trimmed.length === 0) return '';
-  return trimmed.charAt(0).toLocaleLowerCase('tr-TR') + trimmed.slice(1);
+  return lowerFirst(trimmed);
 }
 
 /**
@@ -148,10 +169,10 @@ function asClause(detail: string): string {
  * değil" being read as "not installed".
  */
 function metaFor(provider: ProviderSnapshot, enabled: boolean): string {
-  const where = enabled ? 'Ana panelde' : 'Ana panelde değil';
+  const where = enabled ? t('settings.where.enabled') : t('settings.where.notEnabled');
   const how = provider.connected
-    ? 'bağlı'
-    : asClause(provider.setupAction?.detail ?? '') || 'henüz bağlı değil';
+    ? t('settings.connected')
+    : asClause(provider.setupAction?.detail ?? '') || t('settings.notConnected');
   return where + ' · ' + how;
 }
 
@@ -280,7 +301,7 @@ function createThemeControl(ctx: SettingsContext): ThemeHandleLocal {
   const root = el(
     'fieldset',
     { class: 'theme', 'aria-describedby': THEME_HELP_ID },
-    el('legend', { class: 'u-sr', id: THEME_TITLE_ID }, 'Görünüm'),
+    el('legend', { class: 'u-sr', id: THEME_TITLE_ID }, t('settings.theme.legend')),
     help,
     options,
   );
@@ -299,18 +320,107 @@ function createThemeControl(ctx: SettingsContext): ThemeHandleLocal {
     setAttr(root, 'aria-busy', state.themePending ? 'true' : null);
 
     const resolved = document.documentElement.getAttribute('data-theme') === 'light'
-      ? 'açık'
-      : 'koyu';
+      ? t('theme.resolvedLight')
+      : t('theme.resolvedDark');
     setText(
       help,
       state.theme === 'system'
-        ? `Windows'un koyu/açık ayarı izleniyor — şu anda ${resolved}. ` +
-            'Ayar değişince panel de değişir.'
-        : 'Panelin rengi. Sistem seçilirse Windows ayarı izlenir.',
+        ? t('settings.theme.helpSystem', { resolved })
+        : t('settings.theme.help'),
     );
   }
 
   return { el: root, update };
+}
+
+/**
+ * The language control. Same native-radio fieldset as the theme, for the same
+ * reasons, and the same CSS (`.theme`): two identical controls one above the
+ * other should look identical.
+ *
+ * The option labels are ENDONYMS — "Türkçe" and "English" in both languages —
+ * because a user who cannot read the current language has to be able to find
+ * their own. Only "Sistem"/"System" follows the language.
+ *
+ * NOT OPTIMISTIC. The radio moves on the gesture (it is a native radio), but
+ * nothing else does: the words on screen change only when main pushes the
+ * newly resolved language, because main also rewrites the tray tooltip, the
+ * menu and the setup text, and a panel that switched ahead of main could show
+ * one language beside a tooltip in the other.
+ */
+interface LanguageHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+  focusChecked(): void;
+}
+
+function createLanguageControl(ctx: SettingsContext): LanguageHandleLocal {
+  const CHOICES: ReadonlyArray<{ v: LanguageChoice; label: string }> = [
+    { v: 'tr', label: t('language.endonym.tr') },
+    { v: 'en', label: t('language.endonym.en') },
+    { v: 'system', label: t('language.system') },
+  ];
+
+  const inputs = new Map<LanguageChoice, HTMLInputElement>();
+  const options = el('div', { class: 'theme__opts' });
+
+  for (const choice of CHOICES) {
+    const id = 'language-' + choice.v;
+    const input = el('input', {
+      type: 'radio',
+      name: 'usage-notch-language',
+      id,
+      value: choice.v,
+      class: 'theme__radio',
+    }) as HTMLInputElement;
+    // The endonym is also marked with its own language, so a screen reader
+    // reading an English panel pronounces "Türkçe" as Turkish.
+    const langAttr = choice.v === 'system' ? {} : { lang: choice.v };
+    const label = el('label', { class: 'theme__opt', for: id, ...langAttr }, choice.label);
+    on(input, 'change', () => {
+      if (input.checked) ctx.onLanguage(choice.v);
+    });
+    inputs.set(choice.v, input);
+    options.appendChild(input);
+    options.appendChild(label);
+  }
+
+  const help = el('p', { class: 'theme__help', id: LANGUAGE_HELP_ID }, '');
+
+  const root = el(
+    'fieldset',
+    { class: 'theme theme--language', 'aria-describedby': LANGUAGE_HELP_ID },
+    el('legend', { class: 'u-sr', id: LANGUAGE_TITLE_ID }, t('settings.language.legend')),
+    help,
+    options,
+  );
+
+  function update(state: PanelState): void {
+    for (const [choice, input] of inputs) {
+      const on_ = state.language === choice;
+      if (input.checked !== on_) input.checked = on_;
+    }
+    setAttr(root, 'data-pending', state.languagePending ? 'true' : null);
+    setAttr(root, 'data-revert', state.languageReverted ? 'true' : null);
+    setAttr(root, 'aria-busy', state.languagePending ? 'true' : null);
+
+    const resolvedName =
+      currentLanguage() === 'tr' ? t('language.name.tr') : t('language.name.en');
+    setText(
+      help,
+      state.language === 'system'
+        ? t('settings.language.helpSystem', { language: resolvedName })
+        : t('settings.language.help'),
+    );
+  }
+
+  function focusChecked(): void {
+    const target =
+      [...inputs.values()].find((input) => input.checked) ?? inputs.get('system') ?? null;
+    target?.focus({ preventScroll: true });
+  }
+
+  return { el: root, update, focusChecked };
 }
 
 /**
@@ -346,10 +456,10 @@ interface UsageHandleLocal {
 /** The amount cell's text, framed and honest. Never a bare "$0,00". */
 function amountText(period: PeriodUsage): string {
   if (!period.hasUsage) return '—';
-  if (period.costUsd > 0) return (period.isFloor ? 'en az ' : '') + usd(period.costUsd);
+  if (period.costUsd > 0) return period.isFloor ? atLeast(usd(period.costUsd)) : usd(period.costUsd);
   // Usage happened, but none of it could be priced: say so rather than print a
   // zero that reads as "free".
-  return period.unpricedModels.length > 0 ? 'fiyatlanamadı' : '—';
+  return period.unpricedModels.length > 0 ? t('settings.amount.unpriced') : '—';
 }
 
 /**
@@ -359,8 +469,8 @@ function amountText(period: PeriodUsage): string {
  * events carried no billable tokens) reads "—" rather than a misleading "free".
  */
 function modelAmountText(model: PeriodModelCost): string {
-  if (model.costUsd === null) return 'fiyatlanamadı';
-  if (model.costUsd > 0) return (model.isFloor ? 'en az ' : '') + usd(model.costUsd);
+  if (model.costUsd === null) return t('settings.amount.unpriced');
+  if (model.costUsd > 0) return model.isFloor ? atLeast(usd(model.costUsd)) : usd(model.costUsd);
   return '—';
 }
 
@@ -369,20 +479,24 @@ function createUsageSection(): UsageHandleLocal {
   let current: UsageHistory | null = null;
   let hasData = false;
 
+  // "yaklaşık maliyet" (approximate cost) is gone (ADR-004 A1.6): "approximate"
+  // claims error in both directions beside figures whose only known error is
+  // one-directional, which is why they say "en az". ADR-002's framing instead:
+  // what this usage WOULD HAVE COST at published API prices. The data source
+  // is a separate, per-provider sentence, so a second provider's history does
+  // not require rewriting the claim.
   const intro = el(
     'p',
     { class: 'usage__intro' },
-    'Yayımlanan API fiyatlarıyla dönem dönem yaklaşık maliyet. Bu bir fatura ' +
-      'değildir — abonelik kapsamında bu tutar (ABD doları) ödenmez. Yalnızca ' +
-      'yerel Claude Code transkriptlerinden hesaplanır.',
+    `${t('settings.usage.intro')} ${t('provider.claude.usageSource')}`,
   );
 
   const GRAINS: ReadonlyArray<{ v: UsageGrain; label: string }> = [
-    { v: 'month', label: 'Aylık' },
-    { v: 'week', label: 'Haftalık' },
+    { v: 'month', label: t('settings.grain.month') },
+    { v: 'week', label: t('settings.grain.week') },
   ];
   const radios = new Map<UsageGrain, HTMLInputElement>();
-  const toggle = el('div', { class: 'seg', role: 'group', 'aria-label': 'Dönem aralığı' });
+  const toggle = el('div', { class: 'seg', role: 'group', 'aria-label': t('settings.grain.legend') });
   for (const g of GRAINS) {
     const id = 'usage-grain-' + g.v;
     const input = el('input', {
@@ -437,7 +551,11 @@ function createUsageSection(): UsageHandleLocal {
    */
   function renderDisclosure(period: PeriodUsage, regionId: string): readonly HTMLElement[] {
     const chev = el('span', { class: 'usage__chev', 'aria-hidden': 'true' }, chevronIcon());
-    const label = el('span', { class: 'usage__toggle-label' }, integer(period.byModel.length) + ' model');
+    const label = el(
+      'span',
+      { class: 'usage__toggle-label' },
+      t('quota.models', { count: period.byModel.length }),
+    );
     const toggle = el(
       'button',
       {
@@ -445,7 +563,7 @@ function createUsageSection(): UsageHandleLocal {
         class: 'usage__toggle',
         'aria-expanded': 'false',
         'aria-controls': regionId,
-        title: 'Modele göre dağılım',
+        title: t('settings.models.breakdown'),
       },
       label,
       chev,
@@ -501,7 +619,7 @@ function createUsageSection(): UsageHandleLocal {
       list.hidden = true;
       note.hidden = true;
       empty.hidden = false;
-      setText(empty, 'Kullanım geçmişi yükleniyor…');
+      setText(empty, t('settings.usage.loading'));
       return;
     }
 
@@ -510,7 +628,7 @@ function createUsageSection(): UsageHandleLocal {
       list.hidden = true;
       note.hidden = true;
       empty.hidden = false;
-      setText(empty, 'Henüz yerel kullanım kaydı bulunamadı.');
+      setText(empty, t('settings.usage.empty'));
       return;
     }
 
@@ -523,9 +641,8 @@ function createUsageSection(): UsageHandleLocal {
     setText(
       note,
       current && current.pricesAsOf
-        ? `Fiyatlar ${priceDate(current.pricesAsOf)} tarihli listeye göre. ` +
-            '“En az”, fiyatlanamayan kullanım toplama katılmadığı için alt sınır demektir.'
-        : 'Fiyat listesinin tarihi bildirilmedi.',
+        ? t('settings.usage.note', { date: priceDate(current.pricesAsOf) })
+        : t('settings.usage.noteNoDate'),
     );
   }
 
@@ -590,7 +707,10 @@ function createAccordionSection(
  * `hidden` on the region are the two things kept in sync, and they are the two
  * a screen reader and a Tab key respectively depend on.
  */
-function wireAccordion(sections: readonly AccordionSection[], defaultOpenId: string | null): void {
+function wireAccordion(
+  sections: readonly AccordionSection[],
+  defaultOpenId: string | null,
+): (id: string) => void {
   const setOpen = (section: AccordionSection, open: boolean): void => {
     setAttr(section.trigger, 'aria-expanded', open ? 'true' : 'false');
     section.region.hidden = !open;
@@ -606,6 +726,10 @@ function wireAccordion(sections: readonly AccordionSection[], defaultOpenId: str
       }
     });
   }
+  // Programmatic open, with the same one-open invariant as a click.
+  return (id: string) => {
+    for (const other of sections) setOpen(other, other.id === id);
+  };
 }
 
 export function createSettings(ctx: SettingsContext): SettingsHandle {
@@ -614,8 +738,8 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   const back = el('button', {
     type: 'button',
     class: 'iconbtn',
-    'aria-label': 'Ayarlardan çık, kullanım listesine dön',
-    title: 'Geri (Esc)',
+    'aria-label': t('settings.back'),
+    title: t('settings.backTitle'),
   }) as HTMLButtonElement;
   back.appendChild(backIcon());
   on(back, 'click', () => ctx.onBack());
@@ -624,15 +748,14 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     'div',
     { class: 'settings__bar' },
     back,
-    el('h2', { class: 'settings__title', id: SETTINGS_TITLE_ID }, 'Ayarlar'),
+    el('h2', { class: 'settings__title', id: SETTINGS_TITLE_ID }, t('header.settings')),
   );
 
   // --- "Model Yönetimi": which rows exist ---------------------------------
   const help = el(
     'p',
     { class: 'settings__help', id: SETTINGS_HELP_ID },
-    'Ana panelde hangi araçların görüneceğini seçin. Kaldırılan araç yalnızca ' +
-      'listeden çıkar — bağlantısı kesilmez, hiçbir veri silinmez.',
+    t('settings.models.help'),
   );
 
   const list = el('ul', {
@@ -651,7 +774,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     'models',
     MODELS_HEADER_ID,
     MODELS_REGION_ID,
-    'Model Yönetimi',
+    t('settings.section.models'),
     [help, list, status],
   );
 
@@ -661,23 +784,28 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     'usage',
     USAGE_HEADER_ID,
     USAGE_REGION_ID,
-    'Toplam Kullanım',
+    t('settings.section.usage'),
     [usage.el],
   );
 
-  // --- "Görünüm": the theme ----------------------------------------------
+  // --- "Görünüm ve dil": the theme and the language ---------------------
+  // One section for both: they are the two preferences about how the panel
+  // presents itself, and a fourth accordion section would push the list down
+  // in a 360px panel. The id stays 'theme' so existing hooks keep working.
   const theme = createThemeControl(ctx);
+  const languageControl = createLanguageControl(ctx);
   const themeSection = createAccordionSection(
     'theme',
     THEME_HEADER_ID,
     THEME_REGION_ID,
-    'Görünüm',
-    [theme.el],
+    t('settings.section.appearance'),
+    [theme.el, languageControl.el],
   );
 
   const sections = [modelsSection, usageSection, themeSection];
-  // First section open; the tab path (back -> first switch) is unchanged.
-  wireAccordion(sections, 'models');
+  // First section open. The tab path is back -> "Model Yönetimi" header ->
+  // first switch: each section header is a real button and a tab stop.
+  const openSection = wireAccordion(sections, 'models');
 
   const acc = el('div', { class: 'acc' }, ...sections.map((s) => s.el));
 
@@ -744,6 +872,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     // with no recognised tools must still be able to pick a theme and see its
     // history.
     theme.update(state);
+    languageControl.update(state);
     usage.update(state.snapshot?.usageHistory ?? null, state.hasData);
 
     // Three states for the models list, told apart in words. "Still scanning"
@@ -751,7 +880,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     if (!state.hasData) {
       list.hidden = true;
       status.hidden = false;
-      setText(status, 'Araçlar taranıyor…');
+      setText(status, t('settings.scanning'));
       setAttr(status, 'aria-busy', 'true');
       return;
     }
@@ -759,7 +888,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     if (providers.length === 0) {
       list.hidden = true;
       status.hidden = false;
-      setText(status, 'Bu makinede tanınan bir yapay zekâ aracı bulunamadı.');
+      setText(status, t('providers.noneFound'));
       return;
     }
     list.hidden = false;
@@ -771,6 +900,10 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     render,
     focusFirst(): void {
       back.focus({ preventScroll: true });
+    },
+    focusLanguage(): void {
+      openSection('theme');
+      languageControl.focusChecked();
     },
   };
 }

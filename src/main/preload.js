@@ -25,6 +25,7 @@ const CH = {
   SET_ENABLED: 'providers:set-enabled',
   PREFERENCES: 'prefs:changed',
   SET_THEME: 'prefs:set-theme',
+  SET_LANGUAGE: 'prefs:set-language',
   INITIAL_SNAPSHOT: 'usage:initial-snapshot',
   INITIAL_PREFERENCES: 'prefs:initial',
 };
@@ -166,6 +167,21 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   setTheme: (theme) => ipcRenderer.invoke(CH.SET_THEME, String(theme)),
+
+  /**
+   * Persists the language choice.
+   *
+   * Same coercion-for-convenience as `setTheme`; main validates against the
+   * three literals of `LanguageChoice`. NOT optimistic: the renderer applies
+   * the new language only when the PREFERENCES push arrives, because main has
+   * to re-resolve it and re-translate the tray and the snapshot first.
+   *
+   * `{ok:false}` means nothing changed anywhere.
+   *
+   * @param {'tr'|'en'|'system'} language
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setLanguage: (language) => ipcRenderer.invoke(CH.SET_LANGUAGE, String(language)),
 
   close: () => ipcRenderer.send(CH.PANEL_CLOSE),
   pin: () => ipcRenderer.send(CH.PANEL_PIN),

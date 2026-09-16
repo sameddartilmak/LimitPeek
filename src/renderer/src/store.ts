@@ -8,6 +8,7 @@
 
 import type {
   AnchorPayload,
+  LanguageChoice,
   ProviderSnapshot,
   RefreshNotice,
   Snapshot,
@@ -114,6 +115,18 @@ export interface PanelState {
    * provider switches.
    */
   themeReverted: boolean;
+  /**
+   * The language CHOICE the radio group reflects ('tr' | 'en' | 'system').
+   *
+   * Only the radio is optimistic. What language the words are in is decided by
+   * main's `resolvedLanguage`, applied in app.ts when main pushes it — never
+   * from this field, which can say 'system' while the panel reads Turkish.
+   */
+  language: LanguageChoice;
+  /** True while a setLanguage call is in flight. */
+  languagePending: boolean;
+  /** Set briefly when main refused a language change and the radio went back. */
+  languageReverted: boolean;
 }
 
 const INITIAL: PanelState = {
@@ -136,6 +149,9 @@ const INITIAL: PanelState = {
   theme: DEFAULT_THEME,
   themePending: false,
   themeReverted: false,
+  language: 'system',
+  languagePending: false,
+  languageReverted: false,
 };
 
 type Listener = (state: PanelState) => void;

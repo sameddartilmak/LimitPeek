@@ -61,6 +61,7 @@ import {
   sinceCapture,
   tokens,
 } from '../format.js';
+import { t } from '../i18n.js';
 import { createCost, type CostHandle } from './cost.js';
 import { createQuotas, type QuotaHandle } from './quotas.js';
 import { gripDots, providerMark } from './logo.js';
@@ -215,12 +216,12 @@ function shapeKeyOf(p: ProviderSnapshot): string {
 
 function tokensTitle(p: ProviderSnapshot): string {
   if (!p.tokens) return '';
-  const t = p.tokens;
+  const tk = p.tokens;
   return [
-    `Girdi ${compact(t.input)}`,
-    `Çıktı ${compact(t.output)}`,
-    `Önbellek yazma ${compact(t.cacheWrite)}`,
-    `Önbellek okuma ${compact(t.cacheRead)} (faturalanan toplama dahil değil)`,
+    t('row.tokens.input', { value: compact(tk.input) }),
+    t('row.tokens.output', { value: compact(tk.output) }),
+    t('row.tokens.cacheWrite', { value: compact(tk.cacheWrite) }),
+    t('row.tokens.cacheRead', { value: compact(tk.cacheRead) }),
   ].join(' · ');
 }
 
@@ -233,15 +234,15 @@ function modelsTitle(p: ProviderSnapshot): string {
 function errorText(code: string | undefined): string {
   switch (code) {
     case 'bridge-missing':
-      return 'Köprü kurulu değil';
+      return t('row.error.bridgeMissing');
     case 'permission-denied':
-      return 'Dosyalara erişilemedi';
+      return t('row.error.permissionDenied');
     case 'parse-failed':
-      return 'Kayıtlar okunamadı';
+      return t('row.error.parseFailed');
     case 'timeout':
-      return 'Zaman aşımı';
+      return t('row.error.timeout');
     default:
-      return 'Güncellenemedi';
+      return t('row.error.generic');
   }
 }
 
@@ -287,7 +288,7 @@ function buildPassive(
 ): void {
   const name = el('span', { class: 'row__name' }, p.displayName);
   const detailId = `setup-detail-${p.id}`;
-  const detailText = p.setupAction?.detail || 'Bu araç henüz bağlı değil.';
+  const detailText = p.setupAction?.detail || t('row.notConnected');
   const detail = el(
     'span',
     { class: 'row__meta-detail', id: detailId, title: detailText },
@@ -384,7 +385,7 @@ function buildLive(
     // to that model's group, so the number changes as the user switches model.
     // Qualify the label — "seçili model", a role and not a name — so the change
     // has a visible cause. The name itself is only in the disclosure below.
-    const fiveHourNote = p.modelQuotas?.selectedModel ? 'seçili model' : undefined;
+    const fiveHourNote = p.modelQuotas?.selectedModel ? t('row.selectedModel') : undefined;
     meter = createMeter(p.fiveHour, p.sevenDay, p.status === 'stale', fiveHourNote);
     meter.update(p.fiveHour, p.sevenDay, p.status === 'stale', now);
     meterNode = meter.el;
@@ -392,7 +393,7 @@ function buildLive(
     meterNode = el(
       'div',
       { class: 'row__unknown' },
-      el('span', {}, 'Kullanım oranı bilinmiyor'),
+      el('span', {}, t('row.unknownUsage')),
     );
   }
 
@@ -408,8 +409,8 @@ function buildLive(
     const message = el('span', {}, errorText(p.errorCode));
     retry = el(
       'button',
-      { type: 'button', class: 'btn', 'aria-label': `${p.displayName}: yeniden dene` },
-      'Yeniden dene',
+      { type: 'button', class: 'btn', 'aria-label': t('row.retryLabel', { name: p.displayName }) },
+      t('row.retry'),
     ) as HTMLButtonElement;
     on(retry, 'click', () => ctx.onRetry(p.id));
     const err = el('div', { class: 'row__err', role: 'status' }, message, retry);
@@ -446,13 +447,13 @@ function buildLive(
       if (p.burnRatePerHour !== null) {
         metaBurn = el(
           'span',
-          { title: modelsTitle(p) || 'Etkin penceredeki faturalanan token hızı' },
+          { title: modelsTitle(p) || t('row.burnTitle') },
           burnRate(p.burnRatePerHour),
         );
         metaChildren.push(metaBurn);
       }
       if (metaChildren.length === 0) {
-        metaChildren.push(el('span', {}, 'Token bilgisi yok'));
+        metaChildren.push(el('span', {}, t('row.noTokens')));
       }
     }
 
@@ -561,26 +562,23 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     setAttr(
       root,
       'aria-label',
-      p.status === 'loading' ? `${p.displayName}: yükleniyor` : null,
+      p.status === 'loading' ? t('row.loadingLabel', { name: p.displayName }) : null,
     );
 
     // --- the grip -------------------------------------------------------
     const tray = context.isTrayRow(p.id);
     setAttr(refs.grip, 'data-tray', tray ? 'true' : null);
-    setAttr(refs.grip, 'aria-label', `${p.displayName}: sırayı değiştir`);
+    setAttr(refs.grip, 'aria-label', t('row.gripLabel', { name: p.displayName }));
     // The tray consequence is stated on the control that causes it, and it is
     // stated honestly: a provider with no five-hour window drives an empty
     // ring, not a donut.
+    const title = t('row.gripTitle', { name: p.displayName });
     const trayNote = tray
       ? p.connected
-        ? ' Tepsi simgesi bu aracı gösteriyor.'
-        : ' Tepsi simgesi bu aracı gösteriyor, ancak bu araç bağlı olmadığı için veri çizilmiyor.'
+        ? t('row.gripTray')
+        : t('row.gripTrayNoData')
       : '';
-    setAttr(
-      refs.grip,
-      'title',
-      `${p.displayName} — sürükleyerek taşıyın.${trayNote}`,
-    );
+    setAttr(refs.grip, 'title', trayNote ? `${title} ${trayNote}` : title);
     refs.grip.disabled = p.status === 'loading';
     context.attachGrip(refs.grip, p.id, p.displayName);
   }
@@ -593,8 +591,8 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
       const since = parseInstant(refs.staleAge.getAttribute('data-since'));
       if (since !== null) {
         const elapsed = Math.max(0, atNow - since);
-        setText(refs.staleAge, `${ago(elapsed)} güncellendi`);
-        setAttr(refs.staleAge, 'title', `Son doğru değer: ${agoSpoken(elapsed)}`);
+        setText(refs.staleAge, t('row.staleAge', { ago: ago(elapsed) }));
+        setAttr(refs.staleAge, 'title', t('row.staleAgeTitle', { ago: agoSpoken(elapsed) }));
       }
     }
   }
@@ -706,7 +704,7 @@ export function createSkeletonRow(): HTMLLIElement {
     role: 'listitem',
     'data-status': 'loading',
     'aria-busy': 'true',
-    'aria-label': 'Yükleniyor',
+    'aria-label': t('row.skeletonLabel'),
   }) as HTMLLIElement;
 
   const body = el('div', { class: 'row__body' });

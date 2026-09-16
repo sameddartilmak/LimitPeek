@@ -607,6 +607,13 @@ export const IPC = {
    * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
    */
   SET_THEME: 'prefs:set-theme',
+  /**
+   * renderer -> main invoke(language). Persists, then main re-resolves, rebuilds
+   * the tray tooltip and menu, re-publishes the snapshot (so setup text is
+   * re-translated) and pushes PREFERENCES. NOT optimistic: the renderer applies
+   * the new language only when the push arrives. Returns { ok: boolean }.
+   */
+  SET_LANGUAGE: 'prefs:set-language',
 } as const;
 
 /**
@@ -615,8 +622,26 @@ export const IPC = {
  */
 export type ThemeChoice = 'dark' | 'light' | 'system';
 
+/** ADR-004. 'system' resolves in MAIN from the OS display language. */
+export type LanguageChoice = 'tr' | 'en' | 'system';
+
 export interface Preferences {
   theme: ThemeChoice;
+  /** What the user chose. */
+  language: LanguageChoice;
+  /**
+   * What main resolved it to. Main is the only place this is decided, because
+   * main also writes user-facing text (tray tooltip, menu, dialogs, setup
+   * labels carried in the snapshot) — two resolvers could disagree, and the
+   * tooltip would then speak a different language from the panel.
+   */
+  resolvedLanguage: 'tr' | 'en';
+  /**
+   * BCP 47 locale for numbers, currency, percent, dates and clocks. tr -> tr-TR.
+   * en -> the OS region when the OS locale is en-* (en-GB, en-AU, ...),
+   * otherwise en-US. Resolved in main for the same reason as resolvedLanguage.
+   */
+  formatLocale: string;
 }
 
 /**
@@ -714,6 +739,8 @@ export interface UsageNotchApi {
   onPreferences(cb: (p: Preferences) => void): () => void;
   /** Persist the theme choice. See IPC.SET_THEME. */
   setTheme(theme: ThemeChoice): Promise<{ ok: boolean }>;
+  /** Persist the language choice. See IPC.SET_LANGUAGE. */
+  setLanguage(language: LanguageChoice): Promise<{ ok: boolean }>;
   /** Tell main the panel opened, so it can raise its refresh cadence. */
   panelOpened(): void;
   close(): void;

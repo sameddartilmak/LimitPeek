@@ -15,6 +15,7 @@
 import type {
   AnchorPayload,
   Certainty,
+  LanguageChoice,
   Preferences,
   CostByClass,
   FigureSource,
@@ -59,6 +60,7 @@ const ROW_STATUSES = new Set<RowStatus>(['loading', 'ok', 'stale', 'error', 'pas
 const CERTAINTIES = new Set<Certainty>(['known', 'estimated', 'unknown']);
 const SETUP_KINDS = new Set<SetupKind>(['install-bridge', 'add-api-key', 'not-installed']);
 const THEME_CHOICES = new Set<ThemeChoice>(['dark', 'light', 'system']);
+const LANGUAGE_CHOICES = new Set<LanguageChoice>(['tr', 'en', 'system']);
 
 /**
  * The three discriminants the contract added for the Antigravity IDE reader.
@@ -734,10 +736,74 @@ export function isThemeChoice(value: unknown): value is ThemeChoice {
   return THEME_CHOICES.has(value as ThemeChoice);
 }
 
+export function isLanguageChoice(value: unknown): value is LanguageChoice {
+  return LANGUAGE_CHOICES.has(value as LanguageChoice);
+}
+
+/** A language the catalogs carry. 'system' is a choice, never a resolution. */
+export function isResolvedLanguage(value: unknown): value is 'tr' | 'en' {
+  return value === 'tr' || value === 'en';
+}
+
+/**
+ * ADR-004's resolution rule, for the ONE case main did not resolve for us (an
+ * absent or older preload): `tr*` -> tr, anything else -> en. Everywhere else
+ * the renderer takes main's `resolvedLanguage` and never decides on its own,
+ * because the tray tooltip is written by main and must match the panel.
+ */
+export function fallbackLanguage(tag: unknown): 'tr' | 'en' {
+  return typeof tag === 'string' && /^tr(?:[-_]|$)/i.test(tag) ? 'tr' : 'en';
+}
+
+/** The format locale main would choose when it has no OS region to offer. */
+export function defaultFormatLocale(language: 'tr' | 'en'): string {
+  return language === 'tr' ? 'tr-TR' : 'en-US';
+}
+
+/**
+ * True when Intl accepts the tag. The format locale is handed straight to Intl
+ * constructors, which throw a RangeError on a malformed tag — so an unusable
+ * one is replaced here rather than allowed to blank the panel.
+ */
+export function isUsableLocale(tag: unknown): tag is string {
+  if (typeof tag !== 'string' || tag.length === 0 || tag.length > 35) return false;
+  try {
+    return Intl.getCanonicalLocales(tag).length === 1;
+  } catch {
+    return false;
+  }
+}
+
+function navigatorLanguage(): string | undefined {
+  try {
+    return (globalThis as { navigator?: { language?: string } }).navigator?.language;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The theme is the gate: without a usable theme the payload is refused (null),
+ * exactly as before. The language fields are COERCED rather than refused,
+ * because refusing them would also throw away a good theme and flash the other
+ * palette. Coercion follows the same rule main applies, so a coerced value is
+ * one main could have sent.
+ */
 export function sanitizePreferences(raw: unknown): Preferences | null {
   if (!raw || typeof raw !== 'object') return null;
-  const theme = (raw as Record<string, unknown>).theme;
-  return isThemeChoice(theme) ? { theme } : null;
+  const source = raw as Record<string, unknown>;
+  const theme = source.theme;
+  if (!isThemeChoice(theme)) return null;
+  const language = isLanguageChoice(source.language) ? source.language : 'system';
+  const resolvedLanguage = isResolvedLanguage(source.resolvedLanguage)
+    ? source.resolvedLanguage
+    : language !== 'system'
+      ? language
+      : fallbackLanguage(navigatorLanguage());
+  const formatLocale = isUsableLocale(source.formatLocale)
+    ? source.formatLocale
+    : defaultFormatLocale(resolvedLanguage);
+  return { theme, language, resolvedLanguage, formatLocale };
 }
 
 /** Returns null when the payload is not a usable Snapshot at all. */

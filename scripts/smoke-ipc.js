@@ -20,6 +20,13 @@ const { PanelWindow, isPlausibleDipRect } = require('../src/main/panel-window');
 const { isProviderId } = require('../src/core/providers');
 const { withEnabled } = require('../src/core/enabled');
 const { isTheme } = require('../src/core/theme');
+const i18n = require('../src/core/i18n');
+const { usageNotchApiMethods } = require('../test/helpers/contract-api');
+const {
+  osLocale, createSetLanguageHandler, createLocaleResolver, createApplyLanguage, createPreferences,
+} = require('../src/main/language-ipc');
+const { createRefreshHandler } = require('../src/main/refresh-ipc');
+const settingsStore = require('../src/main/settings');
 const security = require('../src/main/security');
 
 security.applyAll();
@@ -87,21 +94,69 @@ app.whenReady().then(async () => {
   // unset on this channel hangs the renderer before its first paint, which is
   // the failure the synchronous getter exists to trade against.
   let theme = 'system';
-  ipcMain.on(IPC_EXT.INITIAL_PREFERENCES, (e) => {
-    const ours = Boolean(panel && panel.win && !panel.win.isDestroyed() && e.sender === panel.win.webContents);
-    e.returnValue = ours ? { theme } : null;
+  // The language half runs the REAL SET_LANGUAGE handler from language-ipc.js,
+  // the one index.js registers, with the real settings store. Persistence goes
+  // to a throwaway directory, never the user's settings file.
+  const langDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'usage-notch-smoke-lang-'));
+  const langSettings = settingsStore.load(langDir);
+  // The same factories index.js builds its resolver, apply and preferences()
+  // from, so the smoke runs that code rather than a re-typed copy of it.
+  const resolveLocale = createLocaleResolver({
+    getSettings: () => langSettings,
+    readOs: () => osLocale(app),
+    setLocale: i18n.setLocale,
+    log: { info: () => {} },
   });
+  let locale = resolveLocale();
+  let languagePushes = 0;
+  let languageApplies = 0;
+  const currentPrefs = createPreferences({
+    getSettings: () => ({ ...langSettings, theme }),
+    currentLocale: () => locale,
+    readOs: () => osLocale(app),
+  });
+  const applyLanguage = createApplyLanguage({
+    refreshLocale: () => { languageApplies += 1; locale = resolveLocale(); return locale; },
+    getTray: () => null, // no tray in the smoke, so no menu rebuild
+    trayMenuOptions: () => ({}),
+    resetTooltip: () => {},
+    getCollector: () => collector,
+  });
+  const ours = (e) => Boolean(panel && panel.win && !panel.win.isDestroyed() && e.sender === panel.win.webContents);
+  ipcMain.on(IPC_EXT.INITIAL_PREFERENCES, (e) => {
+    e.returnValue = ours(e) ? currentPrefs() : null;
+  });
+  ipcMain.handle(IPC.SET_LANGUAGE, createSetLanguageHandler({
+    fromPanel: ours,
+    getSettings: () => langSettings,
+    save: (next) => settingsStore.save(langDir, next),
+    // Re-resolve, switch main's t(), and RE-PUBLISH the snapshot through the
+    // collector — the step that reaches the panel.
+    apply: applyLanguage,
+    push: () => { languagePushes += 1; panel.send(IPC.PREFERENCES, currentPrefs()); },
+    log: { warn: (m) => say(`warn: ${m}`) },
+  }));
   ipcMain.handle(IPC.SET_THEME, (_event, value) => {
     // Mirrors src/main/index.js: validated against the three literals, then
     // applied. Persistence is skipped so the smoke run never writes the real
     // user's settings file.
     if (!isTheme(value)) return { ok: false };
     theme = value;
-    panel.send(IPC.PREFERENCES, { theme });
+    panel.send(IPC.PREFERENCES, currentPrefs());
     return { ok: true };
   });
 
-  ipcMain.handle(IPC.REQUEST_REFRESH, async () => collector.refreshNow());
+  // The real handler from refresh-ipc.js. No process is spawned here: the probe
+  // answers 'unknown', which never produces a notice; what is exercised is the
+  // scan and the reply read after it.
+  ipcMain.handle(IPC.REQUEST_REFRESH, createRefreshHandler({
+    fromPanel: ours,
+    startProbe: async () => 'unknown',
+    refresh: () => collector.refreshNow(),
+    awaitProbe: (probe) => probe,
+    latestSnapshot: () => collector.snapshot,
+    log: { warn: (m) => say(`warn: ${m}`) },
+  }));
   ipcMain.handle(IPC.RUN_SETUP, async (_event, id) => ({ ok: false, message: `stub:${id}` }));
   let enabledSeen = null;
   ipcMain.handle(IPC.SET_ENABLED, (_event, id, enabled) => {
@@ -135,10 +190,13 @@ app.whenReady().then(async () => {
   check('no generic passthrough on the bridge',
     await ev('typeof window.usageNotch.invoke === "undefined" && typeof window.usageNotch.send === "undefined"'));
 
+  // Derived from contract.ts through the same parser contract-mirror.test.js
+  // uses. This list was hand-typed here and drifted twice (onPanelVisibility,
+  // then setLanguage) while the unit test that parsed the contract stayed green.
   const api = await ev('Object.keys(window.usageNotch).sort().join(",")');
-  check('bridge surface is exactly UsageNotchApi',
-    api === 'close,initialPreferences,initialSnapshot,onAnchor,onPreferences,onSnapshot,panelOpened,'
-      + 'pin,requestRefresh,runSetup,setEnabled,setOrder,setTheme', api);
+  const declaredApi = usageNotchApiMethods().join(',');
+  check('bridge surface is exactly UsageNotchApi, as parsed from contract.ts',
+    api === declaredApi, api === declaredApi ? api : `exposed=${api} declared=${declaredApi}`);
 
   // The whole point of initialSnapshot: real data, synchronously, frame one.
   const sync = await ev('(function () { var s = window.usageNotch.initialSnapshot(); return s === null ? "null" : (typeof s.generatedAt) + ":" + s.providers.length; })()');
@@ -198,15 +256,83 @@ app.whenReady().then(async () => {
     badTheme === false && theme === 'light', `ok=${badTheme} theme=${theme}`);
   await ev('window.usageNotch.setTheme("system")');
 
+  // ---- hidden means hidden --------------------------------------------------
+  // Since c388115 the OS window is composited ONCE in create() and never hidden
+  // again: "hidden" is `panel.isVisible() === false` (the logical flag) plus a
+  // window rect that lies on no display. `win.isVisible()` is true for the
+  // whole process life and says nothing about what the user sees, so it is not
+  // read here. These are PRECONDITIONS for the checks below; a broken one
+  // reports as itself rather than as a failure of whatever runs next.
+  const onNoDisplay = () => {
+    const b = panel.win.getBounds();
+    return screen.getAllDisplays().every((d) => {
+      const r = d.bounds;
+      return b.x + b.width <= r.x || b.x >= r.x + r.width || b.y + b.height <= r.y || b.y >= r.y + r.height;
+    });
+  };
+  const hiddenState = () => `logical=${panel.isVisible()} onNoDisplay=${onNoDisplay()} bounds=${JSON.stringify(panel.win.getBounds())}`;
+  const isHidden = () => panel.isVisible() === false && onNoDisplay();
+  check('precondition: the panel is hidden before the language checks', isHidden(), hiddenState());
+
+  // A plain re-publish with no language change: the snapshot emit path alone
+  // must not bring a hidden panel on screen.
+  collector.rebuild();
+  await new Promise((r) => setTimeout(r, 200));
+  check('a plain collector.rebuild() leaves a hidden panel hidden', isHidden(), hiddenState());
+
+  // ---- language -----------------------------------------------------------
+  // SET_LANGUAGE through the real handler. Not optimistic: the renderer learns
+  // the language only from the PREFERENCES push, so the push is checked, not
+  // just the reply. Set tr first so the switch to en is a real change on any
+  // machine, whatever its OS language.
+  const initialLang = await ev('(function () { var p = window.usageNotch.initialPreferences(); return p && p.language + "/" + p.resolvedLanguage + "/" + p.formatLocale; })()');
+  check('initialPreferences() carries language, resolvedLanguage and formatLocale',
+    typeof initialLang === 'string' && /^system\/(tr|en)\/[a-z]{2}-[A-Z0-9]+$/.test(initialLang), initialLang);
+
+  const toTr = await ev('window.usageNotch.setLanguage("tr").then(function (r) { return r.ok; })');
+  check('setLanguage("tr") is accepted and resolves to Turkish',
+    toTr === true && locale.resolvedLanguage === 'tr' && locale.formatLocale === 'tr-TR',
+    `ok=${toTr} resolved=${locale.resolvedLanguage} format=${locale.formatLocale}`);
+
+  const langPushed = ev('new Promise(function (res) { var off = window.usageNotch.onPreferences(function (p) { off(); res(p.language + "/" + p.resolvedLanguage + "/" + p.formatLocale); }); })');
+  await new Promise((r) => setTimeout(r, 100));
+  const pushesBefore = languagePushes;
+  const toEn = await ev('window.usageNotch.setLanguage("en").then(function (r) { return r.ok; })');
+  check('setLanguage("en") persists to settings.json',
+    toEn === true && settingsStore.load(langDir).language === 'en', `ok=${toEn} onDisk=${settingsStore.load(langDir).language}`);
+  check('resolvedLanguage changed from tr to en in main', locale.resolvedLanguage === 'en', locale.resolvedLanguage);
+  const pushedLang = await langPushed;
+  check('the new language is pushed on PREFERENCES, after it was applied',
+    languagePushes === pushesBefore + 1 && /^en\/en\/en-/.test(pushedLang), `pushed=${pushedLang}`);
+
+  const applyBefore = languageApplies;
+  const pushBefore = languagePushes;
+  const fileBefore = fs.readFileSync(path.join(langDir, 'settings.json'), 'utf8');
+  const badLang = await ev('window.usageNotch.setLanguage("de").then(function (r) { return JSON.stringify(r); })');
+  await new Promise((r) => setTimeout(r, 200));
+  check('a language outside the three literals is {ok:false} and changes nothing',
+    badLang === '{"ok":false}'
+      && fs.readFileSync(path.join(langDir, 'settings.json'), 'utf8') === fileBefore
+      && languageApplies === applyBefore && languagePushes === pushBefore
+      && locale.resolvedLanguage === 'en' && langSettings.language === 'en',
+    `reply=${badLang} applies=+${languageApplies - applyBefore} pushes=+${languagePushes - pushBefore}`);
+  try { fs.rmSync(langDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  // Two language switches, each re-publishing the snapshot, and the panel is
+  // still where it was: off every display, logically closed.
+  check('changing the language leaves a hidden panel hidden', isHidden(), hiddenState());
+  i18n.setLocale('tr', 'tr-TR');
+
+  check('precondition: the panel is hidden before PANEL_OPENED is sent', isHidden(), hiddenState());
   await ev('window.usageNotch.panelOpened()');
   await new Promise((r) => setTimeout(r, 300));
   check('PANEL_OPENED reached main', panelOpenedSeen);
   // The renderer sends panelOpened() while mounting, which happens with the
   // window still hidden. Believing it there would pin the collector at the
   // 15s open cadence for the whole session and disable the watcher gating.
+  // Hidden is the LOGICAL state plus an off-display rect — see above.
   check('a hidden panel is not treated as open, however loudly it announces itself',
-    collector.panelOpen === false && panel.win.isVisible() === false,
-    `panelOpen=${collector.panelOpen} visible=${panel.win.isVisible()}`);
+    collector.panelOpen === false && isHidden(),
+    `panelOpen=${collector.panelOpen} ${hiddenState()}`);
 
   // Anchoring: the renderer needs the scale factor of the display that owns
   // the tray icon, not the primary display.

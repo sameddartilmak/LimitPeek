@@ -41,7 +41,12 @@ const { stripTypeScriptTypes } = require('node:module');
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
 
-const strip = (file) => stripTypeScriptTypes(fs.readFileSync(file, 'utf8'), { mode: 'strip' });
+const { inlineJsonImports } = require('../src/renderer/inline-json.cjs');
+
+// Strip, then inline catalog JSON as build.mjs does: format.ts now takes its
+// words from src/shared/i18n through i18n.ts (ADR-004).
+const strip = (file) =>
+  inlineJsonImports(stripTypeScriptTypes(fs.readFileSync(file, 'utf8'), { mode: 'strip' }), file).code;
 
 let dir = null;
 let R;
@@ -52,6 +57,14 @@ test.before(async () => {
   const files = [
     ['package.json', '{"type":"module"}'],
     [path.join('shared', 'contract.js'), strip(path.join(SRC, 'shared', 'contract.ts'))],
+    [
+      path.join('renderer', 'src', 'sanitize.js'),
+      strip(path.join(SRC, 'renderer', 'src', 'sanitize.ts')),
+    ],
+    [
+      path.join('renderer', 'src', 'i18n.js'),
+      strip(path.join(SRC, 'renderer', 'src', 'i18n.ts')),
+    ],
     [
       path.join('renderer', 'src', 'format.js'),
       strip(path.join(SRC, 'renderer', 'src', 'format.ts')),

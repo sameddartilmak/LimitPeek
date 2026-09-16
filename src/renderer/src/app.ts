@@ -7,6 +7,8 @@
  */
 
 import type {
+  LanguageChoice,
+  Preferences,
   ProviderSnapshot,
   SetupAction,
   Snapshot,
@@ -17,6 +19,8 @@ import { bindVisibility, everySecond } from './clock.js';
 import { captureExpired } from './components/row.js';
 import { createPanel, type PanelContext } from './components/panel.js';
 import { trimMessage } from './format.js';
+import { formatLocale, language, setLocale, t } from './i18n.js';
+import { defaultFormatLocale, fallbackLanguage } from './sanitize.js';
 import { freshnessOf, shouldDegrade, Store } from './store.js';
 import { createTheme, DEFAULT_THEME } from './theme.js';
 
@@ -42,6 +46,25 @@ function findProvider(snapshot: Snapshot | null, id: string): ProviderSnapshot |
   return snapshot?.providers.find((p) => p.id === id) ?? null;
 }
 
+/**
+ * Put main's resolved language and format locale into effect for everything
+ * built after this call, and on the document.
+ *
+ * Main is the only resolver (contract.ts `Preferences`): it also writes the
+ * tray tooltip, the menu and the setup text, and a second resolver here could
+ * disagree with it. The one exception is `prefs === null` — no preload at all —
+ * where there is no main to ask, and ADR-004's own rule is applied to the
+ * browser's language instead.
+ */
+function applyLocale(prefs: Preferences | null): void {
+  const resolved = prefs?.resolvedLanguage ?? fallbackLanguage(globalThis.navigator?.language);
+  setLocale(resolved, prefs?.formatLocale ?? defaultFormatLocale(resolved));
+  // Screen readers choose a voice from `lang`: an English panel under
+  // lang="tr" is read with Turkish pronunciation.
+  document.documentElement.setAttribute('lang', language());
+  document.title = t('header.title');
+}
+
 export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const store = new Store();
   const disposers: Array<() => void> = [];
@@ -50,10 +73,13 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   //
   // `initialPreferences()` is synchronous for the same reason
   // `initialSnapshot()` is: the panel gets one first frame, and a theme applied
-  // after it is a visible flash of the other palette. Nothing above this line
-  // may touch the DOM.
-  const theme = createTheme(bridge.initialPreferences()?.theme ?? DEFAULT_THEME);
-  store.set({ theme: theme.choice() });
+  // after it is a visible flash of the other palette. The language has the
+  // same deadline for the same reason — frame one in the wrong language is a
+  // flash of the other one. Nothing above this line may touch the DOM.
+  const initialPrefs = bridge.initialPreferences();
+  applyLocale(initialPrefs);
+  const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
+  store.set({ theme: theme.choice(), language: initialPrefs?.language ?? 'system' });
   disposers.push(() => theme.destroy());
   let closing = false;
   /** Provider whose consent prompt is currently open, if any. */
@@ -77,6 +103,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onSettingsToggle: () => toggleSettings(),
     onToggleProvider: (id, enabled) => void applyEnabled(id, enabled),
     onThemeChange: (choice) => void applyTheme(choice),
+    onLanguageChange: (choice) => void applyLanguage(choice),
+    coachDismissed: false,
     onReorder: (ids) => void applyOrder(ids),
     onKeepAlive: () => bridge.panelOpened(),
     // The user read it and is done with it. Only ever reaches a notice the
@@ -94,11 +122,13 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     },
     onConsentCancel: () => {
       awaitingConsent = null;
-      store.set({ consent: null, notice: 'Kurulum iptal edildi. Hiçbir dosya değiştirilmedi.' });
+      store.set({ consent: null, notice: t('app.setupCancelled') });
     },
   };
 
-  const panel = createPanel(ctx);
+  // `let`, not `const`: a language change replaces the panel wholesale (see
+  // rebuildPanel). Every closure below reads this binding, never a copy.
+  let panel = createPanel(ctx);
   container.appendChild(panel.el);
 
   function render(): void {
@@ -145,7 +175,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
           store.set({ refreshNotice: 'ANTIGRAVITY_NOT_RUNNING' });
         }
       } else if (bridge.available) {
-        store.set({ notice: 'Yenilenemedi. Birazdan yeniden denenecek.' });
+        store.set({ notice: t('app.refreshFailed') });
       }
     } finally {
       if (providerId) store.markBusy(providerId, false);
@@ -212,7 +242,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       orderRequest = null;
       store.set({
         order: null,
-        notice: 'Sıralama kaydedilemedi. Önceki sıra geri alındı.',
+        notice: t('app.orderNotSaved'),
       });
     }
   }
@@ -253,7 +283,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       generatedAt >= orderRequest.at
     ) {
       orderRequest = null;
-      store.set({ order: null, notice: 'Sıralama kaydedilmedi. Önceki sıra geri alındı.' });
+      store.set({ order: null, notice: t('app.orderNotPersisted') });
     }
   }
 
@@ -320,7 +350,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     store.set({
       enabledOverride: override,
       revertedId: providerId,
-      notice: `${nameOf(providerId)}: ayar kaydedilemedi. Değişiklik geri alındı.`,
+      notice: t('app.enabledNotSaved', { name: nameOf(providerId) }),
     });
     // The flag only has to outlive the flash; the notice keeps the message.
     window.setTimeout(() => {
@@ -361,7 +391,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     store.set({
       enabledOverride: next,
       notice: stranded
-        ? 'Araç ayarı kaydedilmedi. Önceki durum geri alındı.'
+        ? t('app.enabledNotPersisted')
         : store.get().notice ?? null,
     });
   }
@@ -374,6 +404,13 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    * in flight when the radio was pressed.
    */
   let themeRequest: { theme: ThemeChoice; at: number } | null = null;
+  /**
+   * The theme main is KNOWN to hold: the frame-one value, then only an ok reply
+   * or a PREFERENCES push. A failure reverts to this, never to whatever the
+   * store showed at click time — after two quick picks that value is the first
+   * pick, which main may never have persisted.
+   */
+  let confirmedTheme: ThemeChoice = theme.choice();
 
   /**
    * Optimistic, then reconciled — the palette flips on the gesture and main is
@@ -383,27 +420,33 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    * setting that will not survive a restart.
    */
   async function applyTheme(next: ThemeChoice): Promise<void> {
-    const previous = store.get().theme;
-    if (next === previous) return;
+    if (next === store.get().theme) return;
 
-    const at = Date.now();
-    themeRequest = { theme: next, at };
+    // Identity, not the timestamp, says which request is newest: two picks in
+    // the same millisecond must still be told apart.
+    const request = { theme: next, at: Date.now() };
+    themeRequest = request;
     theme.apply(next);
     store.set({ theme: next, themePending: true, themeReverted: false, notice: null });
 
     const ok = await bridge.setTheme(next);
+    // An ok reply confirms THIS value was persisted, even when a newer pick has
+    // since replaced it on screen: if that newer pick then fails, this is what
+    // main holds and what the revert must show.
+    if (ok) confirmedTheme = next;
 
     // A newer pick owns the choice from here on; this call must not undo it.
-    if (!themeRequest || themeRequest.at !== at) return;
+    if (themeRequest !== request) return;
     themeRequest = null;
     store.set({ themePending: false });
     if (ok) return;
 
+    const previous = confirmedTheme;
     theme.apply(previous);
     store.set({
       theme: previous,
       themeReverted: true,
-      notice: 'Görünüm kaydedilemedi. Önceki tema geri alındı.',
+      notice: t('app.themeNotSaved'),
     });
     // The flag only has to outlive the flash; the notice keeps the message.
     window.setTimeout(() => {
@@ -417,11 +460,134 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    * override covers, for the same reason: a push that crossed the request in
    * flight would snap the palette back under the user's hand.
    */
-  function acceptPreferences(choice: ThemeChoice): void {
+  function acceptPreferences(prefs: Preferences): void {
+    acceptLanguage(prefs);
+    const choice = prefs.theme;
+    // A push is main's persisted state, so it confirms even while a pick is in
+    // flight and is not yet drawn.
+    confirmedTheme = choice;
     if (themeRequest !== null) return;
     if (choice === store.get().theme) return;
     theme.apply(choice);
     store.set({ theme: choice });
+  }
+
+  // --- language -----------------------------------------------------------
+
+  /** The newest language asked of main, and when. Same shape as themeRequest. */
+  let languageRequest: { language: LanguageChoice; at: number } | null = null;
+  /** Same role as `confirmedTheme`: what main is known to hold. */
+  let confirmedLanguage: LanguageChoice = store.get().language;
+
+  /**
+   * Ask main to persist a language choice.
+   *
+   * Only the RADIO is optimistic. The words on screen do not change here: main
+   * re-resolves 'system', rebuilds the tray tooltip and menu, re-publishes the
+   * snapshot with translated setup text, and pushes PREFERENCES — and that push
+   * (acceptLanguage) is what switches the panel. Switching ahead of it could
+   * put an English panel beside a Turkish tooltip, which is the one outcome
+   * ADR-004 names.
+   *
+   * `{ok:false}` means nothing changed anywhere, so the radio goes back and the
+   * user is told, in the language still on screen.
+   */
+  async function applyLanguage(next: LanguageChoice): Promise<void> {
+    if (next === store.get().language && languageRequest === null) return;
+
+    const request = { language: next, at: Date.now() };
+    languageRequest = request;
+    store.set({ language: next, languagePending: true, languageReverted: false, notice: null });
+
+    const ok = await bridge.setLanguage(next);
+    if (ok) confirmedLanguage = next;
+
+    // A newer pick owns the choice from here on; this call must not undo it.
+    if (languageRequest !== request) return;
+    languageRequest = null;
+    store.set({ languagePending: false });
+    if (ok) return;
+
+    store.set({
+      language: confirmedLanguage,
+      languageReverted: true,
+      notice: t('app.languageNotSaved'),
+    });
+    window.setTimeout(() => {
+      if (store.get().languageReverted) store.set({ languageReverted: false });
+    }, 1_600);
+  }
+
+  /**
+   * Main's language, pushed. The choice follows the push unless the user has a
+   * different pick in flight; the RESOLVED language and format locale always
+   * follow it, because main is the only resolver and the tooltip it just
+   * rewrote is already in that language.
+   */
+  function acceptLanguage(prefs: Preferences): void {
+    confirmedLanguage = prefs.language;
+    if (languageRequest === null || languageRequest.language === prefs.language) {
+      if (prefs.language !== store.get().language) store.set({ language: prefs.language });
+    }
+    if (prefs.resolvedLanguage === language() && prefs.formatLocale === formatLocale()) return;
+
+    // Where focus was decides where it goes back. The radio the user just
+    // pressed is destroyed with the old panel; leaving focus to fall to <body>
+    // would drop a keyboard user out of the dialog on every language change.
+    const active = document.activeElement;
+    const inLanguage = active instanceof Element && active.closest('.theme--language') !== null;
+    const inPanel = active instanceof Element && panel.el.contains(active);
+
+    applyLocale(prefs);
+    dropConsentForLanguageChange();
+    rebuildPanel();
+
+    if (inLanguage) panel.focusLanguage();
+    else if (inPanel) panel.focus();
+  }
+
+  /**
+   * An open consent prompt does not survive a language change: it is CLEARED,
+   * not rebuilt.
+   *
+   * Rebuilding it from the snapshot looks kinder and is not safe. The prompt's
+   * words are main's `setupAction` text, and on a language change main
+   * re-publishes the snapshot on its own schedule — the PREFERENCES push can
+   * land before it, so "rebuild now" would re-show the OLD language, and
+   * "rebuild when the snapshot lands" would show whatever action main carries
+   * by then, which may not be the action the user pressed, or none. Either way
+   * the user could be asked to consent to something they did not ask about.
+   * Clearing cannot do that: nothing ran (setup only runs from Confirm), the
+   * notice says so in the new language, and the setup button is still there.
+   */
+  function dropConsentForLanguageChange(): void {
+    if (awaitingConsent === null) return;
+    awaitingConsent = null;
+    store.set({ consent: null, notice: t('app.setupCancelled') });
+  }
+
+  /**
+   * Replace the panel with one built in the current language.
+   *
+   * A rebuild rather than a re-render because most words are written once, at
+   * construction (labels, help text, aria names), and chasing every one of
+   * them into an update path is a second copy of the build that would drift.
+   * State lives in the store and in `ctx`, so nothing the user did is lost:
+   * view, pin, order and switch overrides, pending flags, the dismissed coach.
+   * What is NOT carried is purely local disclosure state (an expanded cost or
+   * quota block, the open settings section — which focusLanguage reopens).
+   *
+   * Opened BEFORE it is attached, so the entrance transition does not replay:
+   * the element's first computed style is already the open one.
+   */
+  function rebuildPanel(): void {
+    const open = store.get().open;
+    panel.destroy();
+    panel = createPanel(ctx);
+    panel.setOpen(open);
+    container.appendChild(panel.el);
+    render();
+    requestAnimationFrame(() => panel.enableAnimation());
   }
 
   async function runSetup(providerId: string, confirmed: boolean): Promise<void> {
@@ -432,7 +598,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       const result = await bridge.runSetup(providerId, confirmed);
       const message = trimMessage(result.message);
       store.set({
-        notice: message || (result.ok ? 'Bağlantı kuruldu.' : 'Kurulum tamamlanamadı.'),
+        notice: message || (result.ok ? t('app.setupConnected') : t('app.setupFailed')),
       });
       if (result.ok) {
         const snapshot = await bridge.requestRefresh();
@@ -516,7 +682,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   bridge.panelOpened();
 
   disposers.push(bridge.onSnapshot((snapshot) => acceptSnapshot(snapshot)));
-  disposers.push(bridge.onPreferences((prefs) => acceptPreferences(prefs.theme)));
+  disposers.push(bridge.onPreferences((prefs) => acceptPreferences(prefs)));
   // Replays the entrance on EVERY open, not just at app start.
   //
   // The window lives always-composited and is revealed by moving on-screen and

@@ -102,12 +102,18 @@ try {
   writeWhole(OUT_FILE, JSON.stringify(snapshot, null, 2));
 
   // Render something useful so the user's status line is not blank.
+  //
+  // LANGUAGE-NEUTRAL (ADR-004 Amendment 1, ruling 5). This runs inside Claude
+  // Code's terminal, not in our app, and has no access to the user's language
+  // preference; reading a locale file from here would couple two processes for
+  // one short string. `5h`/`7d` and a trailing percent read the same in both
+  // languages, and the fallback is the product name, which is not translated.
   const f = snapshot.fiveHour?.usedPercentage;
   const d = snapshot.sevenDay?.usedPercentage;
   const parts = [];
-  if (f != null) parts.push(`5sa %${f.toFixed(0)}`);
-  if (d != null) parts.push(`7g %${d.toFixed(0)}`);
-  process.stdout.write(parts.length ? parts.join('  ·  ') : 'Usage Notch bagli');
+  if (f != null) parts.push(`5h ${f.toFixed(0)}%`);
+  if (d != null) parts.push(`7d ${d.toFixed(0)}%`);
+  process.stdout.write(parts.length ? parts.join(' · ') : 'Usage Notch');
 } catch {
   process.stdout.write('');
 }

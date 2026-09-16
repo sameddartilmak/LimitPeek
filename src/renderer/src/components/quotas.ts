@@ -40,7 +40,8 @@
 
 import type { ModelQuotaDetail, ModelQuotaGroup } from '../../../shared/contract.js';
 import { el, on, replaceChildrenWith, setAttr, setText } from '../dom.js';
-import { asOf, clockTimeWithDay, integer, parseInstant, percent, stateFor } from '../format.js';
+import { asOf, clockTimeWithDay, parseInstant, percent, stateFor } from '../format.js';
+import { t } from '../i18n.js';
 
 export interface QuotaHandle {
   el: HTMLElement;
@@ -64,19 +65,18 @@ function memberCount(groups: readonly ModelQuotaGroup[]): number {
  */
 function summaryText(detail: ModelQuotaDetail): string {
   const models = memberCount(detail.groups);
-  const base = `Modele göre kota · ${integer(models)} model`;
-  return detail.diverged ? `${base}, ${integer(detail.groups.length)} farklı oran` : base;
+  const base = t('quota.summary', { count: models });
+  return detail.diverged
+    ? t('quota.summaryDiverged', { base, count: detail.groups.length })
+    : base;
 }
 
 function spokenSummary(detail: ModelQuotaDetail, providerName: string): string {
   const models = memberCount(detail.groups);
   const shape = detail.diverged
-    ? `${integer(detail.groups.length)} farklı oranda`
-    : 'hepsi aynı oranda';
-  return (
-    `${providerName}: kota ${integer(models)} model için ayrı tutuluyor, ${shape}. ` +
-    'Modele göre dökümü açmak için etkinleştirin.'
-  );
+    ? t('quota.shapeDiverged', { count: detail.groups.length })
+    : t('quota.shapeSame');
+  return t('quota.spoken', { provider: providerName, count: models, shape });
 }
 
 /**
@@ -88,10 +88,10 @@ function spokenSummary(detail: ModelQuotaDetail, providerName: string): string {
  * and `clockTimeWithDay` stays correct for a reset that is days out.
  */
 function groupHeadText(group: ModelQuotaGroup): string {
-  const parts = [`${percent(group.usedPercentage)} kullanıldı`];
-  parts.push(`${integer(group.members.length)} model`);
+  const parts = [t('quota.used', { percent: percent(group.usedPercentage) })];
+  parts.push(t('quota.models', { count: group.members.length }));
   const resetsAt = parseInstant(group.resetsAt);
-  if (resetsAt !== null) parts.push(`yenilenme ${clockTimeWithDay(resetsAt)}`);
+  if (resetsAt !== null) parts.push(t('quota.resets', { time: clockTimeWithDay(resetsAt) }));
   return parts.join(' · ');
 }
 
@@ -175,11 +175,11 @@ export function createQuotas(providerId: string): QuotaHandle {
               'li',
               { class: 'quota__model quota__model--selected' },
               el('span', { class: 'quota__model-name' }, name),
-              el('span', { class: 'quota__sel' }, 'seçili'),
+              el('span', { class: 'quota__sel' }, t('quota.selected')),
             );
             // Spoken as the name plus "seçili model", no figure — the group
             // heading above already carries the percentage.
-            setAttr(li, 'aria-label', `${name} — seçili model`);
+            setAttr(li, 'aria-label', t('quota.selectedLabel', { name }));
             members.appendChild(li);
           } else {
             // A text node, and nothing else in the row. No figure is appended
@@ -194,7 +194,7 @@ export function createQuotas(providerId: string): QuotaHandle {
         setAttr(
           box,
           'aria-label',
-          `${groupHeadText(group)}. Bu orana sahip modeller:`,
+          t('quota.groupLabel', { head: groupHeadText(group) }),
         );
         return box;
       }),
@@ -215,8 +215,7 @@ export function createQuotas(providerId: string): QuotaHandle {
         el(
           'p',
           { class: 'quota__note' },
-          'Bu oranlar aracın kendi yerel veri deposundan çözüldü. Belgelenmiş bir ' +
-            'arayüz değil; araç güncellendiğinde sessizce değişebilir.',
+          t('quota.derived'),
         ),
       );
     }
@@ -226,7 +225,7 @@ export function createQuotas(providerId: string): QuotaHandle {
         el(
           'p',
           { class: 'quota__note' },
-          'Bu araçtan gelen veriler güncel değil; oranlar son okunabilen ölçüme ait.',
+          t('quota.degraded'),
         ),
       );
     }
@@ -254,16 +253,11 @@ export function createQuotas(providerId: string): QuotaHandle {
     setText(summary, summaryText(detailData));
     setAttr(toggle, 'aria-label', spokenSummary(detailData, providerName));
 
-    setText(lead, 'Kota, model ailesine göre ayrı tutuluyor.');
+    setText(lead, t('quota.lead'));
     // Deliberately does not suffix the provider's name: Turkish would need an
     // apostrophe and a vowel-harmonised suffix on a string that comes from a
     // snapshot, and getting that wrong on screen is worse than not doing it.
-    setText(
-      denial,
-      'Bu oranlar yalnızca bu aracın kendi kotasıdır. Aşağıdaki model adları ' +
-        'burada çalıştırdığınız modelleri gösterir; panelde kendi satırı olan ' +
-        'araçların kotasıyla ilgileri yoktur.',
-    );
+    setText(denial, t('quota.denial'));
 
     renderGroups(detailData.groups, detailData.selectedModel ?? null, detailData.selectedGroupIndex ?? null);
     renderNotes(detailData, degraded);

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { stripTypeScriptTypes } = require('node:module');
+const { inlineJsonImports } = require('../src/renderer/inline-json.cjs');
 
 /**
  * `src/renderer/index.html` loads `./dist/renderer/src/main.js`, so the
@@ -45,10 +46,15 @@ test('every renderer module the app loads is built from the current source', () 
       stale.push(`${path.relative(ROOT, out)} (never built)`);
       continue;
     }
-    const expected = stripTypeScriptTypes(fs.readFileSync(file, 'utf8'), {
-      mode: 'strip',
-      sourceUrl: path.resolve(file),
-    });
+    // Same two steps as build.mjs: strip, then inline catalog JSON. A catalog
+    // edit with no rebuild is therefore stale too, not only a .ts edit.
+    const expected = inlineJsonImports(
+      stripTypeScriptTypes(fs.readFileSync(file, 'utf8'), {
+        mode: 'strip',
+        sourceUrl: path.resolve(file),
+      }),
+      path.resolve(file),
+    ).code;
     if (expected !== fs.readFileSync(out, 'utf8')) {
       stale.push(path.relative(ROOT, out));
     }

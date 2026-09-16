@@ -50,7 +50,7 @@
  * place allowed to hold an optimistic override.
  */
 
-import { integer } from './format.js';
+import { t } from './i18n.js';
 
 /** How far the pointer must travel before a press becomes a drag. */
 const DRAG_THRESHOLD = 4;
@@ -240,8 +240,8 @@ function idsOf(list: HTMLElement): string[] {
  * separately because it is the one with a consequence outside the panel.
  */
 function movedText(name: string, index: number, total: number): string {
-  const base = `${name} ${integer(index + 1)}. sıraya taşındı, ${integer(total)} araç içinde.`;
-  return index === 0 ? `${base} Tepsi simgesi artık bu aracı gösteriyor.` : base;
+  const base = t('reorder.moved', { name, position: index + 1, total });
+  return index === 0 ? `${base} ${t('reorder.nowTray')}` : base;
 }
 
 interface Session {
@@ -401,7 +401,7 @@ export function createReorder(host: ReorderHost): ReorderHandle {
       host.commit(next);
       host.announce(movedText(s.name, s.to, next.length));
     } else if (!commit) {
-      host.announce(`Taşıma iptal edildi. ${s.name} ${integer(s.from + 1)}. sırada kaldı.`);
+      host.announce(t('reorder.cancelled', { name: s.name, position: s.from + 1 }));
     }
     host.onDragEnd();
   }
@@ -522,15 +522,15 @@ export function createReorder(host: ReorderHost): ReorderHandle {
     event.stopPropagation();
 
     if (!host.enabled()) {
-      host.announce('Arka plan servisine ulaşılamadığı için sıra değiştirilemiyor.');
+      host.announce(t('reorder.unavailable'));
       return;
     }
     if (to < 0) {
-      host.announce(`${name} zaten en üstte.`);
+      host.announce(t('reorder.atTop', { name }));
       return;
     }
     if (to > ids.length - 1) {
-      host.announce(`${name} zaten en altta.`);
+      host.announce(t('reorder.atBottom', { name }));
       return;
     }
     if (to === from) return;

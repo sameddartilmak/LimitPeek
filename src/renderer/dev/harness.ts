@@ -10,7 +10,13 @@
  * it, so a shape drift in the real preload shows up here first.
  */
 
-import type { AnchorPayload, Preferences, Snapshot, ThemeChoice } from '../../shared/contract.js';
+import type {
+  AnchorPayload,
+  LanguageChoice,
+  Preferences,
+  Snapshot,
+  ThemeChoice,
+} from '../../shared/contract.js';
 import { mountApp, type AppHandle } from '../src/app.js';
 import type { Bridge, SetupResult } from '../src/bridge.js';
 import { el, on, setAttr } from '../src/dom.js';
@@ -43,7 +49,7 @@ let failTheme = false;
  * remount, so switching scenario does not silently reset the theme — which is
  * exactly what main's on-disk settings do.
  */
-let prefs: Preferences = { theme: 'system' };
+let prefs: Preferences = { theme: 'system', language: 'system', resolvedLanguage: 'tr', formatLocale: 'tr-TR' };
 let prefsCb: ((p: Preferences) => void) | null = null;
 
 const logBox = el('div', { class: 'hx-log', role: 'log', 'aria-label': 'Köprü çağrıları' });
@@ -191,9 +197,30 @@ function makeBridge(scenario: Scenario): Bridge {
         log('setTheme() -> hata');
         return false;
       }
-      prefs = { theme: next };
+      prefs = { ...prefs, theme: next };
       prefsCb?.(prefs);
       log('setTheme() -> ok');
+      return true;
+    },
+
+    /**
+     * Stands in for main: persist, RESOLVE, push. 'system' resolves with
+     * ADR-004's rule on the browser language, and en uses en-US, so the
+     * harness exercises the same push-driven rebuild the app does.
+     */
+    async setLanguage(next: LanguageChoice): Promise<boolean> {
+      log(`setLanguage("${next}")`);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const resolvedLanguage =
+        next === 'system' ? (/^tr/i.test(navigator.language) ? 'tr' : 'en') : next;
+      prefs = {
+        ...prefs,
+        language: next,
+        resolvedLanguage,
+        formatLocale: resolvedLanguage === 'tr' ? 'tr-TR' : 'en-US',
+      };
+      prefsCb?.(prefs);
+      log('setLanguage() -> ok');
       return true;
     },
 

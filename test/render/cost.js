@@ -646,6 +646,59 @@ app.whenReady().then(async () => {
   check('no leaf node is a bare currency amount outside the breakdown table',
     bare.length === 0, bare);
 
+  // ---- English: the collapsed claim wraps, it is never cut -------------
+  //
+  // ADR-004 Amendment 2.3 as ruled: honesty copy is never truncated to fit. In
+  // English a floored summary cannot fit one line at 360px ("Would have cost
+  // at least $226.81 at published API prices" is wider than the line), and an
+  // ellipsis there cuts the claim itself. Reached the way main does it: the
+  // language is persisted, then PREFERENCES is pushed.
+  await js('window.__probe.setDeferPrefs(true)');
+  await js(`window.usageNotch.setLanguage('en')`);
+  await js('window.__probe.flushPrefs()');
+  await js('window.__probe.setDeferPrefs(false)');
+  await sleep(300);
+  const enSummary = await js(`(() => {
+    const s = ${q('codex')}.querySelector('.cost__summary');
+    const cs = getComputedStyle(s);
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+    const out = {
+      lang: document.documentElement.getAttribute('lang'),
+      text: s.textContent,
+      scrollW: s.scrollWidth,
+      clientW: s.clientWidth,
+      textOverflow: cs.textOverflow,
+      lines: Math.round(s.getBoundingClientRect().height / lh),
+    };
+    // Control: the pre-ruling CSS, restored inline for one measurement. If
+    // this does NOT clip, the check above it is vacuous — the text would have
+    // fitted anyway and the wrap would be untested.
+    const keep = s.style.cssText;
+    s.style.whiteSpace = 'nowrap';
+    s.style.overflow = 'hidden';
+    s.style.textOverflow = 'ellipsis';
+    out.nowrapScrollW = s.scrollWidth;
+    out.nowrapClientW = s.clientWidth;
+    s.style.cssText = keep;
+    return out;
+  })()`);
+  say('english summary: ' + JSON.stringify(enSummary));
+  check('the English panel is reached through the PREFERENCES push',
+    enSummary.lang === 'en', enSummary.lang);
+  check('the floored English summary carries the counterfactual and the floor',
+    /^Would have cost at least \$/.test(enSummary.text) && /at published API prices$/.test(enSummary.text),
+    enSummary.text);
+  check('the floored English summary is not clipped',
+    enSummary.scrollW <= enSummary.clientW, enSummary);
+  check('and it is not ellipsized: it wraps onto a second line instead',
+    enSummary.textOverflow !== 'ellipsis' && enSummary.lines >= 2, enSummary);
+  check('control: under the old nowrap+ellipsis rule the same text WOULD clip',
+    enSummary.nowrapScrollW > enSummary.nowrapClientW, enSummary);
+
+  // Back to Turkish, so the closing state is the one this suite always ended in.
+  await js(`window.usageNotch.setLanguage('tr')`);
+  await sleep(300);
+
   await js(`${q('claude')}.querySelector('.cost__toggle').click()`);
   await js(`document.querySelector('.panel__band--list').scrollTop = 220`);
   await sleep(250);

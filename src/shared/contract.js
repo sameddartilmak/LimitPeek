@@ -33,6 +33,7 @@ const IPC = {
   SET_ENABLED: 'providers:set-enabled',
   PREFERENCES: 'prefs:changed',
   SET_THEME: 'prefs:set-theme',
+  SET_LANGUAGE: 'prefs:set-language',
 };
 
 /**

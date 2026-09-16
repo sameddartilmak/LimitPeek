@@ -654,7 +654,13 @@
  * reason: an absence the user needs to notice is not a footnote. */
 .cost[data-unpriced="true"] .cost__toggle { color: var(--ink-200); }
 .cost[data-unpriced="true"] { border-top-color: var(--ink-600); }
-.cost__summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Wraps rather than ellipsizes. The collapsed line is the only framing seen
+ * unexpanded (ADR-004 Amendment 2.3), and in English a floor cannot fit one
+ * line at 360px: "would have cost at least $1,234.56 at published API prices"
+ * measures ~280px against a 264px line. An ellipsis there cuts the claim
+ * itself ("at publ…"), so the line takes a second row instead. Turkish copy
+ * measured one line in every fixture state, so its geometry is unchanged. */
+.cost__summary { min-width: 0; overflow-wrap: break-word; }
 
 /* A rotating caret, drawn in CSS so there is no seventh glyph to maintain. */
 .cost__chev {

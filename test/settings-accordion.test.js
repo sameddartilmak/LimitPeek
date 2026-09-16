@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { stripTypeScriptTypes } = require('node:module');
+const { inlineJsonImports } = require('../src/renderer/inline-json.cjs');
 
 /**
  * The settings accordion (src/renderer/src/components/settings.ts).
@@ -207,7 +208,9 @@ function mirrorRenderer() {
     const rel = path.relative(SRC, file).replace(/\.ts$/, '.js');
     const out = path.join(dir, rel);
     fs.mkdirSync(path.dirname(out), { recursive: true });
-    fs.writeFileSync(out, stripTypeScriptTypes(fs.readFileSync(file, 'utf8'), { mode: 'strip' }), 'utf8');
+    // Catalog JSON inlined as build.mjs does (ADR-004), so i18n.ts resolves.
+    const js = stripTypeScriptTypes(fs.readFileSync(file, 'utf8'), { mode: 'strip' });
+    fs.writeFileSync(out, inlineJsonImports(js, file).code, 'utf8');
   }
   return dir;
 }
@@ -325,4 +328,72 @@ test('aria-expanded and region.hidden stay in lockstep across a sequence of clic
       );
     }
   }
+});
+
+// ------------------------------------------------ language (ADR-004)
+
+/** The i18n and store modules of the SAME mirror, so setLocale reaches settings.js. */
+async function mirrorModule(...parts) {
+  return import(pathToFileURL(path.join(mirrorDir, 'renderer', 'src', ...parts)).href);
+}
+
+function stateWith(store, patch) {
+  const s = new store.Store();
+  s.set({ hasData: true, ...patch });
+  return s.get();
+}
+
+function uninstalled(detail) {
+  return {
+    id: 'codex',
+    displayName: 'Codex',
+    connected: false,
+    enabled: false,
+    accent: '#10a37f',
+    setupAction: { kind: 'not-installed', label: 'x', detail },
+  };
+}
+
+test('the setup detail becomes a clause lower-cased in the RESOLVED language (A1.7)', async () => {
+  const i18n = await mirrorModule('i18n.js');
+  const store = await mirrorModule('store.js');
+  const metaOf = (detail) => {
+    const handle = settingsMod.createSettings({ onToggle() {}, onTheme() {}, onLanguage() {}, onBack() {} });
+    handle.render(stateWith(store, {}), [uninstalled(detail)]);
+    const meta = findById(handle.el, 'settings-meta-codex');
+    assert.ok(meta, 'no meta line for the provider');
+    return meta.textContent;
+  };
+  try {
+    i18n.setLocale('tr', 'tr-TR');
+    const tr = metaOf('Işık bulunamadı.');
+    assert.ok(tr.endsWith('ışık bulunamadı'), tr);
+    assert.ok(metaOf('İzmir kurulu değil.').endsWith('izmir kurulu değil'));
+
+    i18n.setLocale('en', 'en-US');
+    const en = metaOf('It is not installed.');
+    assert.ok(en.endsWith('it is not installed'), en);
+    assert.equal(/ıt is/.test(en), false, 'English "I" lower-cased with Turkish rules');
+  } finally {
+    i18n.setLocale('tr', 'tr-TR');
+  }
+});
+
+test('picking a language only asks: the component does not switch the words itself', async () => {
+  const i18n = await mirrorModule('i18n.js');
+  const store = await mirrorModule('store.js');
+  i18n.setLocale('tr', 'tr-TR');
+  const asked = [];
+  const handle = settingsMod.createSettings({
+    onToggle() {}, onTheme() {}, onBack() {}, onLanguage: (choice) => asked.push(choice),
+  });
+  handle.render(stateWith(store, { language: 'tr' }), []);
+  const en = findById(handle.el, 'language-en');
+  assert.ok(en, 'no English radio');
+  en.checked = true;
+  en.dispatch('change');
+  assert.deepEqual(asked, ['en']);
+  // Main has not pushed PREFERENCES: the resolved language is unchanged.
+  assert.equal(i18n.language(), 'tr');
+  assert.equal(i18n.formatLocale(), 'tr-TR');
 });

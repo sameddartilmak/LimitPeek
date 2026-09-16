@@ -234,7 +234,7 @@ const FIXTURES = {
 const which = process.env.RENDER_FIXTURE === 'cost' ? 'cost' : 'panel';
 const snapshot = { generatedAt: now.toISOString(), providers: FIXTURES[which]() };
 
-const calls = { setOrder: [], setEnabled: [], setTheme: [], panelOpened: 0, pin: 0, close: 0 };
+const calls = { setOrder: [], setEnabled: [], setTheme: [], setLanguage: [], panelOpened: 0, pin: 0, close: 0 };
 let snapshotCb = null;
 let anchorCb = null;
 let failOrder = false;
@@ -262,8 +262,17 @@ let setupResult = { ok: false, message: '' };
  * Main's persisted preferences. 'dark' rather than 'system' so the suite's
  * baseline does not depend on whatever the machine running it is set to.
  */
-let prefs = { theme: 'dark' };
+let prefs = { theme: 'dark', language: 'tr', resolvedLanguage: 'tr', formatLocale: 'tr-TR' };
 let prefsCb = null;
+/**
+ * When true, setLanguage persists and answers {ok:true} but HOLDS the
+ * PREFERENCES push until `__probe.flushPrefs()`. Main pushes before it replies,
+ * so in the real order the two are indistinguishable from the renderer; held
+ * apart here, the suite can prove the words follow the PUSH and not the reply
+ * (ADR-004 A1.7: the renderer is not optimistic about the language).
+ */
+let deferPrefs = false;
+let heldPrefs = null;
 /** Main owns the mode; the renderer only asks. Mirrored here. */
 let mode = 'hover';
 
@@ -301,6 +310,9 @@ contextBridge.exposeInMainWorld('usageNotch', {
   panelOpened: () => {
     calls.panelOpened++;
   },
+  /** Main's reveal/conceal push. The suite never drives it; present so the
+   *  fixture matches UsageNotchApi and bridge.ts reports nothing missing. */
+  onPanelVisibility: () => () => {},
   requestRefresh: async () => {
     if (refreshDelay > 0) await new Promise((r) => setTimeout(r, refreshDelay));
     // A COPY carries refreshNotices, so the notice rides only this reply and
@@ -348,8 +360,26 @@ contextBridge.exposeInMainWorld('usageNotch', {
       await new Promise((r) => setTimeout(r, 300));
       return { ok: false };
     }
-    prefs = { theme };
+    prefs = { ...prefs, theme };
     if (prefsCb) prefsCb({ ...prefs });
+    return { ok: true };
+  },
+  /**
+   * Main's order of events for a language change (contract.ts SET_LANGUAGE):
+   * persist, re-resolve, push PREFERENCES. The suite pins Turkish as its
+   * baseline (its checks read Turkish copy), so 'system' resolves to tr here.
+   */
+  setLanguage: async (language) => {
+    calls.setLanguage.push(language);
+    const resolvedLanguage = language === 'en' ? 'en' : 'tr';
+    prefs = {
+      ...prefs,
+      language,
+      resolvedLanguage,
+      formatLocale: resolvedLanguage === 'en' ? 'en-US' : 'tr-TR',
+    };
+    if (deferPrefs) heldPrefs = { ...prefs };
+    else if (prefsCb) prefsCb({ ...prefs });
     return { ok: true };
   },
   close: () => {
@@ -397,6 +427,17 @@ contextBridge.exposeInMainWorld('__probe', {
   },
   setFailTheme: (v) => {
     failTheme = v;
+  },
+  /** Hold the next language PREFERENCES push until flushPrefs(). */
+  setDeferPrefs: (v) => {
+    deferPrefs = !!v;
+  },
+  /** Deliver a held PREFERENCES push. Returns whether one was held. */
+  flushPrefs: () => {
+    const held = heldPrefs;
+    heldPrefs = null;
+    if (held && prefsCb) prefsCb(held);
+    return held !== null;
   },
   /** What main currently holds, so a revert can be checked against it. */
   prefs: () => ({ ...prefs }),

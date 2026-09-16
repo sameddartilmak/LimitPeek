@@ -1,4 +1,18 @@
 'use strict';
+const { t } = require('../i18n');
+
+/**
+ * A provider's setup action, in the language main currently speaks.
+ *
+ * Exposed as a GETTER on each registry entry rather than stored text: the
+ * snapshot copies `{ ...p.setupAction }` on every build, so a language change
+ * followed by `collector.rebuild()` re-translates the label and detail without
+ * a second registry per language (ADR-004 A1, ruling 3). `kind` is not text
+ * and never changes.
+ */
+function setup(kind, labelKey, detailKey, detailParams) {
+  return { kind, label: t(labelKey), detail: t(detailKey, detailParams) };
+}
 
 /**
  * The provider registry. A static array, on purpose: ADR-001 rules out a
@@ -28,10 +42,8 @@ const PROVIDERS = [
     accent: '#C96442',
     live: true,
     enabledByDefault: true,
-    setupAction: {
-      kind: 'install-bridge',
-      label: 'Bağla',
-      detail: 'Claude Code durum satırına bir köprü eklenir; yalnızca kullanım yüzdesi ve sıfırlanma zamanı okunur.',
+    get setupAction() {
+      return setup('install-bridge', 'provider.setup.connect', 'provider.claude.detail');
     },
   },
   {
@@ -40,13 +52,11 @@ const PROVIDERS = [
     accent: '#10A37F',
     live: true,
     enabledByDefault: false,
-    setupAction: {
-      // Codex writes its rate limits into its own session rollout, so there is
-      // nothing for us to install — this chip only appears when Codex itself is
-      // not on the machine, as an informational "not found", never an action.
-      kind: 'not-installed',
-      label: 'Ekle',
-      detail: 'Codex bu makinede bulunamadı.',
+    // Codex writes its rate limits into its own session rollout, so there is
+    // nothing for us to install — this chip only appears when Codex itself is
+    // not on the machine, as an informational "not found", never an action.
+    get setupAction() {
+      return setup('not-installed', 'provider.setup.add', 'provider.codex.notFound');
     },
   },
   {
@@ -55,10 +65,8 @@ const PROVIDERS = [
     accent: '#4386F5',
     live: false,
     enabledByDefault: false,
-    setupAction: {
-      kind: 'not-installed',
-      label: 'Ekle',
-      detail: 'Gemini bu sürümde henüz desteklenmiyor.',
+    get setupAction() {
+      return setup('not-installed', 'provider.setup.add', 'provider.notSupportedYet', { provider: 'Gemini' });
     },
   },
   {
@@ -67,10 +75,8 @@ const PROVIDERS = [
     accent: '#8B5CF6',
     live: false,
     enabledByDefault: false,
-    setupAction: {
-      kind: 'not-installed',
-      label: 'Ekle',
-      detail: 'GitHub Copilot bu sürümde henüz desteklenmiyor.',
+    get setupAction() {
+      return setup('not-installed', 'provider.setup.add', 'provider.notSupportedYet', { provider: 'GitHub Copilot' });
     },
   },
   {
@@ -82,11 +88,8 @@ const PROVIDERS = [
     accent: '#E8B84B',
     live: true,
     enabledByDefault: false,
-    setupAction: {
-      kind: 'install-bridge',
-      label: 'Bağla',
-      detail: 'Antigravity CLI kurulu değilse indirilip kurulur (onayınızla), sonra durum '
-        + 'satırına köprü eklenir; yalnızca kalan kota oranı ve sıfırlanma zamanı okunur.',
+    get setupAction() {
+      return setup('install-bridge', 'provider.setup.connect', 'provider.antigravity.detail');
     },
   },
   {
@@ -95,10 +98,8 @@ const PROVIDERS = [
     accent: '#2B6BE8',
     live: false,
     enabledByDefault: false,
-    setupAction: {
-      kind: 'not-installed',
-      label: 'Ekle',
-      detail: 'Kimi bu sürümde henüz desteklenmiyor.',
+    get setupAction() {
+      return setup('not-installed', 'provider.setup.add', 'provider.notSupportedYet', { provider: 'Kimi' });
     },
   },
 ];

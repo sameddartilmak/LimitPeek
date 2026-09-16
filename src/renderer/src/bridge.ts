@@ -15,12 +15,14 @@
 
 import type {
   AnchorPayload,
+  LanguageChoice,
   Preferences,
   Snapshot,
   ThemeChoice,
   UsageNotchApi,
 } from '../../shared/contract.js';
 import { sanitizeAnchor, sanitizePreferences, sanitizeSnapshot } from './sanitize.js';
+import { t } from './i18n.js';
 
 export interface SetupResult {
   ok: boolean;
@@ -78,6 +80,13 @@ export interface Bridge {
    * will not survive a restart.
    */
   setTheme(theme: ThemeChoice): Promise<boolean>;
+  /**
+   * Persist the language choice (IPC.SET_LANGUAGE). `false` means main wrote
+   * nothing. Unlike setTheme, a `true` does NOT mean the panel should change
+   * language yet: main re-resolves and pushes PREFERENCES, and that push is
+   * what the panel applies (contract.ts, ADR-004).
+   */
+  setLanguage(language: LanguageChoice): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
@@ -102,12 +111,13 @@ function nullBridge(): Bridge {
     onPanelVisibility: () => () => {},
     panelOpened: () => {},
     requestRefresh: async () => null,
-    runSetup: async () => ({ ok: false, message: 'Arka plan servisine ulaşılamıyor.' }),
+    runSetup: async () => ({ ok: false, message: t('bridge.unreachable') }),
     setOrder: async () => false,
     setEnabled: async () => false,
     initialPreferences: () => null,
     onPreferences: () => () => {},
     setTheme: async () => false,
+    setLanguage: async () => false,
     close: () => {},
     pin: () => {},
   };
@@ -211,7 +221,7 @@ export function createBridge(): Bridge {
       } catch {
         /* fall through */
       }
-      return { ok: false, message: 'Kurulum tamamlanamadı.' };
+      return { ok: false, message: t('app.setupFailed') };
     },
 
     /**
@@ -291,6 +301,20 @@ export function createBridge(): Bridge {
       }
       try {
         const result = await api.setTheme(theme);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** Mirrors setTheme: any failure is a real instruction to revert. */
+    async setLanguage(language: LanguageChoice): Promise<boolean> {
+      if (typeof api.setLanguage !== 'function') {
+        missing('setLanguage');
+        return false;
+      }
+      try {
+        const result = await api.setLanguage(language);
         return !!result && result.ok === true;
       } catch {
         return false;

@@ -32,7 +32,17 @@
 
 import type { CostByClass, ModelCost, WeeklyCost } from '../../../shared/contract.js';
 import { el, on, replaceChildrenWith, setAttr, setText } from '../dom.js';
-import { compact, dayRange, integer, priceDate, share, usd, usdWithUnit } from '../format.js';
+import {
+  atLeast,
+  dayRange,
+  multiplier,
+  priceDate,
+  share,
+  tokens as tokenCount,
+  usd,
+  usdWithUnit,
+} from '../format.js';
+import { t, type MessageKey } from '../i18n.js';
 
 export interface CostHandle {
   el: HTMLElement;
@@ -43,13 +53,13 @@ export interface CostHandle {
 
 type ClassKey = keyof CostByClass;
 
-/** Fixed labels; order is by value at render time, largest first. */
-const CLASS_LABEL: Record<ClassKey, string> = {
-  cacheRead: 'Önbellek okuma',
-  output: 'Çıktı',
-  cacheWrite1h: 'Önbellek yazma · 1 sa',
-  cacheWrite5m: 'Önbellek yazma · 5 dk',
-  input: 'Girdi',
+/** Fixed labels, as catalog keys so they follow the language; order is by value at render time. */
+const CLASS_LABEL: Record<ClassKey, MessageKey> = {
+  cacheRead: 'cost.class.cacheRead',
+  output: 'cost.class.output',
+  cacheWrite1h: 'cost.class.cacheWrite1h',
+  cacheWrite5m: 'cost.class.cacheWrite5m',
+  input: 'cost.class.input',
 };
 
 const CLASS_KEYS: readonly ClassKey[] = [
@@ -63,8 +73,8 @@ const CLASS_KEYS: readonly ClassKey[] = [
 /** `usage.speed` is a raw string from the transcript, so unknown values are
  *  shown verbatim rather than mapped to a guess. */
 function speedLabel(speed: string): string {
-  if (speed === 'standard') return 'standart';
-  if (speed === 'fast') return 'hızlı';
+  if (speed === 'standard') return t('cost.speed.standard');
+  if (speed === 'fast') return t('cost.speed.fast');
   return speed;
 }
 
@@ -128,11 +138,13 @@ function isFloor(cost: WeeklyCost, degraded: boolean): boolean {
  */
 function windowLabel(cost: WeeklyCost, now: number): string {
   const range = dayRange(cost.windowStart, cost.windowEnd);
-  if (!cost.windowAnchored) return range ? `Son 7 gün · ${range}` : 'Son 7 gün';
+  if (!cost.windowAnchored) {
+    return range ? t('cost.window.last7Range', { range }) : t('cost.window.last7');
+  }
   const end = Date.parse(cost.windowEnd);
   const ongoing = Number.isFinite(end) && now < end;
-  const base = range ? `${range} kota haftası` : 'Bu kota haftası';
-  return ongoing ? `${base} · sürüyor` : base;
+  const base = range ? t('cost.window.quotaWeekRange', { range }) : t('cost.window.quotaWeek');
+  return ongoing ? t('cost.window.ongoing', { base }) : base;
 }
 
 export function createCost(providerId: string): CostHandle {
@@ -211,7 +223,7 @@ export function createCost(providerId: string): CostHandle {
           return el(
             'div',
             { class: 'cost__row' },
-            el('span', { class: 'cost__k' }, CLASS_LABEL[slice.key]),
+            el('span', { class: 'cost__k' }, t(CLASS_LABEL[slice.key])),
             el('span', { class: 'cost__v u-num' }, usd(slice.usd)),
             el('span', { class: 'cost__p u-num' }, share(slice.fraction)),
             fill,
@@ -237,7 +249,7 @@ export function createCost(providerId: string): CostHandle {
     const rows = unpricedRows(cost);
     const names = rows.length > 0
       ? rows.map((row) => {
-          const tokens = row.tokens ? ` · ${compact(row.tokens.billable)} token` : '';
+          const tokens = row.tokens ? ` · ${tokenCount(row.tokens.billable)}` : '';
           return `${row.model} · ${speedLabel(row.speed)}${tokens}`;
         })
       : cost.unpricedModels.slice();
@@ -249,10 +261,7 @@ export function createCost(providerId: string): CostHandle {
         el(
           'p',
           { class: 'cost__caveat' },
-          allUnpriced
-            ? 'Bu haftaki kullanımın tamamı fiyat listesinde bulunamadı, ' +
-              'bu yüzden bir tutar gösterilmiyor. Kullanılan modeller:'
-            : 'Bu kullanımın bir bölümü fiyat listesinde bulunamadı ve toplama katılmadı:',
+          allUnpriced ? t('cost.caveat.allUnpriced') : t('cost.caveat.someUnpriced'),
         ),
       );
       const list = el('ul', { class: 'cost__unpriced' });
@@ -270,15 +279,19 @@ export function createCost(providerId: string): CostHandle {
       const total = cost.cacheWriteEvents;
       const scope =
         total >= cost.fallbackWriteEvents && total > 0
-          ? `${integer(cost.fallbackWriteEvents)} / ${integer(total)} önbellek yazma kaydında ` +
-            `(${share(cost.fallbackWriteEvents / total)})`
-          : `${integer(cost.fallbackWriteEvents)} önbellek yazma kaydında`;
+          ? t('cost.caveat.ttlScope', {
+              // `count` is the TOTAL: the noun agrees with it in English
+              // ("1 of 1 cache-write record", "3 of 5 … records").
+              written: cost.fallbackWriteEvents,
+              count: total,
+              share: share(cost.fallbackWriteEvents / total),
+            })
+          : t('cost.caveat.ttlScopeCount', { count: cost.fallbackWriteEvents });
       nodes.push(
         el(
           'p',
           { class: 'cost__caveat' },
-          `${scope} TTL ayrımı yoktu. Hepsi 1,25× ile fiyatlandırıldı; 1 saatlik ` +
-            'yazmalar gerçekte 2× olduğu için toplam bir alt sınır.',
+          t('cost.caveat.ttl', { scope, low: multiplier(1.25), high: multiplier(2) }),
         ),
       );
     }
@@ -288,8 +301,7 @@ export function createCost(providerId: string): CostHandle {
         el(
           'p',
           { class: 'cost__caveat' },
-          'Bu araçtan gelen veriler güncel değil. Tutar yalnızca son okunabilen ' +
-            'olayları kapsıyor, bu yüzden pencerenin tamamını anlatmıyor.',
+          t('cost.caveat.degraded'),
         ),
       );
     }
@@ -347,30 +359,28 @@ export function createCost(providerId: string): CostHandle {
     const floor = hasFigure && isFloor(cost, degraded);
 
     if (hasFigure) {
-      const amount = floor ? `en az ${usd(cost.totalUsd)}` : usd(cost.totalUsd);
-      setText(summary, `Yayımlanan API fiyatlarıyla ${amount} tutardı`);
+      // The floor word is bound to the figure by atLeast(), so the English
+      // word order ("{amount} at published API prices") cannot separate them.
+      const amount = floor ? atLeast(usd(cost.totalUsd)) : usd(cost.totalUsd);
+      setText(summary, t('cost.summary', { amount }));
       // The spoken name carries the whole frame plus the denial, because a
       // screen reader user gets the button label with no surrounding layout to
       // qualify it.
+      const named = usdWithUnit(cost.totalUsd);
       setAttr(
         toggle,
         'aria-label',
-        `${providerName}: bu haftaki kullanım, yayımlanan API fiyatlarıyla ` +
-          `${floor ? 'en az ' : ''}${usdWithUnit(cost.totalUsd)} tutardı. ` +
-          'Bu bir fatura değildir; abonelik kapsamında bu tutar ödenmez. ' +
-          'Dökümü açmak için etkinleştirin.',
+        t('cost.toggleLabel', {
+          provider: providerName,
+          amount: floor ? atLeast(named) : named,
+        }),
       );
     } else {
       // No number anywhere in this branch — not zero, not a bound. The user is
       // told that usage happened and that we could not price it, and the model
       // list below carries the token counts that prove the first half.
-      setText(summary, 'Bu haftaki kullanım fiyat listesinde bulunamadı');
-      setAttr(
-        toggle,
-        'aria-label',
-        `${providerName}: bu haftaki kullanım yayımlanan fiyat listesinde bulunamadı, ` +
-          'bu yüzden bir tutar hesaplanamıyor. Kullanılan modelleri görmek için etkinleştirin.',
-      );
+      setText(summary, t('cost.unpricedSummary'));
+      setAttr(toggle, 'aria-label', t('cost.unpricedToggleLabel', { provider: providerName }));
     }
 
     renderBar(slices);
@@ -380,24 +390,22 @@ export function createCost(providerId: string): CostHandle {
     const top = slices.filter((slice) => slice.usd > 0).slice(0, 2);
     setText(
       caption,
-      top.map((slice) => `${CLASS_LABEL[slice.key]} ${share(slice.fraction)}`).join(' · '),
+      top.map((slice) => `${t(CLASS_LABEL[slice.key])} ${share(slice.fraction)}`).join(' · '),
     );
     caption.hidden = top.length === 0;
 
     setText(
       detailLead,
       hasFigure
-        ? `Yayımlanan API fiyatlarıyla ${floor ? 'en az ' : ''}${usdWithUnit(cost.totalUsd)}`
-        : 'Bu kullanım için bir karşılık hesaplanamadı',
+        ? t('cost.detailLead', {
+            amount: floor ? atLeast(usdWithUnit(cost.totalUsd)) : usdWithUnit(cost.totalUsd),
+          })
+        : t('cost.detailLeadUnpriced'),
     );
     // The denial answers "is this money I owe?". With no amount on screen there
     // is nothing to deny, and printing it anyway would imply a figure exists.
     detailDenial.hidden = !hasFigure;
-    setText(
-      detailDenial,
-      'Bu bir fatura değil: abonelik kapsamında bu tutar ödenmiyor. Aynı kullanımın ' +
-        'API üzerinden karşılığıdır.',
-    );
+    setText(detailDenial, t('cost.denial'));
 
     renderTable(slices);
     renderCaveats(cost, !hasFigure, degraded);
@@ -412,8 +420,8 @@ export function createCost(providerId: string): CostHandle {
         'span',
         cost.pricesAsOf ? {} : { class: 'cost__gap' },
         cost.pricesAsOf
-          ? `Fiyatlar ${priceDate(cost.pricesAsOf)} tarihli listeye göre`
-          : 'Fiyat listesinin tarihi bildirilmedi',
+          ? t('cost.pricesAsOf', { date: priceDate(cost.pricesAsOf) })
+          : t('cost.pricesDateMissing'),
       ),
     ]);
 

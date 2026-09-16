@@ -9,6 +9,7 @@ const { installClaudeStatusLine, statusLineState } = require('../src/core/setup/
 const { installAntigravityStatusLine } = require('../src/core/setup/antigravity-bridge');
 const messages = require('../src/core/setup/messages');
 const { NOTICE_MAX } = messages;
+const i18n = require('../src/core/i18n');
 
 function sandbox() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-notch-setup-'));
@@ -275,25 +276,94 @@ test.describe('every setup notice fits the renderer cap', () => {
     return out;
   }
 
-  test('no installer branch produces a notice the renderer would cut', () => {
-    const notices = everyNotice();
-    assert.ok(notices.length >= 13, `only ${notices.length} branches exercised; the walk is wrong`);
-    const over = notices.filter((n) => n.message.length > NOTICE_MAX)
-      .map((n) => `${n.branch}: ${n.message.length} chars`);
-    assert.deepEqual(over, []);
+  /** ADR-004: every budget runs in both languages, and English is not always shorter. */
+  const LOCALES = [['tr', 'tr-TR'], ['en', 'en-US']];
+  function eachLanguage(body) {
+    try {
+      for (const [language, locale] of LOCALES) {
+        i18n.setLocale(language, locale);
+        body(language);
+      }
+    } finally {
+      i18n.setLocale('tr', 'tr-TR');
+    }
+  }
+
+  test('no installer branch produces a notice the renderer would cut, in either language', () => {
+    eachLanguage((language) => {
+      const notices = everyNotice();
+      assert.ok(notices.length >= 13, `only ${notices.length} branches exercised; the walk is wrong`);
+      const over = notices.filter((n) => n.message.length > NOTICE_MAX)
+        .map((n) => `${language} ${n.branch}: ${n.message.length} chars`);
+      assert.deepEqual(over, []);
+    });
   });
 
-  test('and none of them is empty, which the ladder could otherwise produce', () => {
-    for (const n of everyNotice()) {
-      assert.ok(n.message.length > 0, n.branch);
-      assert.equal(n.message.endsWith('…'), false, `${n.branch} looks pre-truncated`);
+  test('the notices really are in the language asked for', () => {
+    eachLanguage((language) => {
+      for (const n of everyNotice()) {
+        if (language === 'en') {
+          assert.doesNotMatch(n.message, /[çğıöşüÇĞİÖŞÜ]/, `${n.branch}: ${n.message}`);
+        }
+      }
+    });
+  });
+
+  test('every notice translates cleanly: no missing key or param, in either language', () => {
+    // Throw mode turns a key absent from main.json, or a `{placeholder}` the
+    // code does not supply (a rename in both catalogs that the code did not
+    // follow), into an exception — instead of a literal "{tool}" on screen.
+    // Belt and braces: a leftover brace pair in the output fails too.
+    i18n.setMissingMode('throw');
+    try {
+      eachLanguage((language) => {
+        let notices;
+        assert.doesNotThrow(() => { notices = everyNotice(); }, `${language}: an installer branch asked for something the catalog lacks`);
+        for (const n of notices) {
+          assert.doesNotMatch(n.message, /\{[A-Za-z][A-Za-z0-9]*\}/, `${language} ${n.branch}: ${n.message}`);
+        }
+      });
+    } finally {
+      i18n.setMissingMode('report');
     }
   });
 
-  test('no fixed sentence in the setup lane is over budget on its own', () => {
-    // Catches a future long literal that no branch above happens to reach —
-    // including the two `runSetup` paths in `main/bridge-install.js`, which
-    // need an Electron stub to drive and have none yet.
+  test('and none of them is empty, which the ladder could otherwise produce', () => {
+    eachLanguage((language) => {
+      for (const n of everyNotice()) {
+        assert.ok(n.message.length > 0, `${language} ${n.branch}`);
+        assert.equal(n.message.endsWith('…'), false, `${language} ${n.branch} looks pre-truncated`);
+      }
+    });
+  });
+
+  test('no main-process sentence is over budget on its own, in either catalog', () => {
+    // Catches a future long sentence that no branch above happens to reach —
+    // including the `runSetup` paths in `main/bridge-install.js`, which need an
+    // Electron stub to drive and have none yet. The sentences live in the
+    // catalogs now, so that is where they are measured: every entry of
+    // main.json in both languages, placeholders left as written (a `{tool}` is
+    // shorter than any tool name, so entries that carry one are measured with
+    // the longest real value substituted).
+    const LONGEST = { tool: 'Antigravity CLI', provider: 'GitHub Copilot' };
+    for (const language of ['tr', 'en']) {
+      const catalog = JSON.parse(fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'shared', 'i18n', language, 'main.json'), 'utf8',
+      ));
+      for (const [key, entry] of Object.entries(catalog)) {
+        // Dialog text is a native modal with no cap. Notices are capped by
+        // `trimMessage`, and `provider.*.detail` by `sanitize.ts` (`detail`,
+        // 160) — the English Antigravity detail was 190 on its first draft.
+        if (key.startsWith('dialog.') || key.startsWith('tray.') || key.startsWith('tooltip.')) continue;
+        const text = String(entry).replace(/\{(tool|provider)\}/g, (_, name) => LONGEST[name]);
+        assert.ok(text.length <= NOTICE_MAX, `${language} "${key}": ${text.length} chars`);
+      }
+    }
+  });
+
+  test('the setup lane carries no user-facing literal of its own any more', () => {
+    // Every sentence goes through t(). A Turkish literal left in these files is
+    // a sentence an English user reads in Turkish.
     const files = [
       'src/core/setup/claude-bridge.js',
       'src/core/setup/antigravity-bridge.js',
@@ -302,14 +372,10 @@ test.describe('every setup notice fits the renderer cap', () => {
     ];
     for (const rel of files) {
       const src = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
-      // Line by line, so a quote that opens on one line and closes on another
-      // is never mistaken for one very long sentence.
-      for (const line of src.split('\n')) {
-        for (const m of line.matchAll(/'([^']{40,})'/g)) {
-          // Turkish prose only; identifiers, paths and SQL are not notices.
-          if (!/[şğıçöüŞĞİÇÖÜ]/.test(m[1])) continue;
-          assert.ok(m[1].length <= NOTICE_MAX, `${rel}: ${m[1].length} chars: ${m[1].slice(0, 60)}…`);
-        }
+      const code = src.split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n');
+      for (const m of code.matchAll(/'([^'\n]*)'|`([^`]*)`/g)) {
+        const text = m[1] !== undefined ? m[1] : m[2];
+        assert.doesNotMatch(text, /[şğıçöüŞĞİÇÖÜ]/, `${rel}: ${text.slice(0, 60)}`);
       }
     }
   });

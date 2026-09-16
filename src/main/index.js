@@ -7,7 +7,8 @@ const { Collector } = require('../core/collector');
 const { isProviderId, getProvider } = require('../core/providers');
 const { sanitizeOrder } = require('../core/order');
 const { withEnabled } = require('../core/enabled');
-const { isTheme, sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
+const { isTheme } = require('../core/theme');
+const i18n = require('../core/i18n');
 const { traySpecFromSnapshot, trayIconKey } = require('../core/tray-spec');
 const { buildTooltip } = require('../core/tray-tooltip');
 const paths = require('../core/paths');
@@ -17,6 +18,14 @@ const security = require('./security');
 const settingsStore = require('./settings');
 const { PanelWindow } = require('./panel-window');
 const { TrayController } = require('./tray');
+const {
+  osLocale,
+  createSetLanguageHandler,
+  createLocaleResolver,
+  createApplyLanguage,
+  createPreferences,
+} = require('./language-ipc');
+const { createRefreshHandler } = require('./refresh-ipc');
 const { buildTrayImage } = require('./tray-icon');
 const {
   runClaudeSetup,
@@ -42,6 +51,8 @@ let isQuitting = false;
 /** Last icon actually drawn, and last tooltip actually set. See updateTray(). */
 let trayIconDrawnKey = null;
 let trayTooltipShown = null;
+/** The resolved language and format locale. See refreshLocale(). */
+let locale = null;
 
 /**
  * Upper bound on a SET_ORDER payload. The registry has six providers; anything
@@ -92,66 +103,21 @@ function openPinned() {
 const PROBE_WAIT_MS = 1200;
 
 /**
- * Are the Antigravity figures THE USER SEES old — the only thing the "open
- * Antigravity" notice explains?
+ * The probe's answer within PROBE_WAIT_MS, or 'unknown' past it.
  *
- * Reads the ROW, not the raw IDE store. Since the agy CLI can now drive the
- * windows — its capture carries live figures and the forward resets the IDE
- * store never persists — the store on disk being stale no longer means the
- * figures are stale. When any fresh source is current the row is 'ok', the
- * values ARE updating, and there is nothing to explain. That is exactly the
- * false "Antigravity açık değil" the user hit while agy was feeding live data
- * with the IDE closed: the notice keyed off the stale IDE store and ignored the
- * fresh CLI. It fires only when the row itself is dimmed 'stale' — i.e. no
- * fresh source is driving it — and never on a row the user never added.
+ * Only the waiting lives here. WHETHER to probe, whether to wait, and whether
+ * the answer becomes a notice are all decided in refresh-ipc.js, against the
+ * row in the snapshot the reply actually carries — so a row re-published as
+ * live during this wait can never ship beside "Antigravity is not running".
  */
-function antigravityRowIsStale() {
-  const row = collector.snapshot
-    && collector.snapshot.providers.find((p) => p.id === 'antigravity');
-  return Boolean(row) && row.enabled === true && row.status === 'stale';
-}
-
-/**
- * Starts the process probe, or returns null when there is nothing to explain.
- *
- * Deliberately conditional. The probe spawns a process, and doing that on
- * every refresh — including the overwhelmingly common one where the IDE is
- * open and the store is current — would spend half a second to learn
- * something we can already see in the data. It is asked only when the reading
- * is old, which is exactly when the user is owed a reason.
- *
- * Decided from the PRE-refresh reading so the probe can overlap the scan; the
- * post-refresh reading gets the final say in `collectRefreshNotices`.
- */
-function startAntigravityProbe() {
-  // Only worth a probe when the figures the user sees are actually old. A fresh
-  // CLI capture with the IDE closed is not "the IDE is not running" — the row
-  // is live, so there is nothing to explain.
-  if (!antigravityRowIsStale()) return null;
-  return isAntigravityRunning();
-}
-
-/**
- * Turns the probe into notices, bounded in time and re-checked against the
- * reading the refresh actually produced.
- *
- * `unknown` produces nothing: saying "your editor is closed" while it is open
- * is a wrong statement, and this whole app exists to not make those.
- */
-async function collectRefreshNotices(probe) {
-  if (!probe) return [];
-  // The scan may have found a fresh source (the IDE store, or a new agy
-  // capture) while we were asking. Then the row is live again, there is nothing
-  // to explain, and the probe's answer is discarded.
-  if (!antigravityRowIsStale()) return [];
+async function awaitAntigravityProbe(probe) {
   let timer = null;
   const budget = new Promise((resolve) => {
     timer = setTimeout(() => resolve('unknown'), PROBE_WAIT_MS);
     if (timer.unref) timer.unref();
   });
   try {
-    const answer = await Promise.race([probe, budget]);
-    return answer === 'not-running' ? ['ANTIGRAVITY_NOT_RUNNING'] : [];
+    return await Promise.race([probe, budget]);
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -159,17 +125,35 @@ async function collectRefreshNotices(probe) {
 
 /* ------------------------------------------------------------ preferences */
 
+// The Preferences object the renderer is entitled to see: the theme
+// re-sanitised off disk, the language fields from the current `locale`.
+// Built in language-ipc.js, where it is tested.
+const preferences = createPreferences({
+  getSettings: () => settings,
+  currentLocale: () => locale,
+  // osLocale(): which Electron APIs report the OS language, and which one is
+  // deliberately not used, is documented where it is measured (language-ipc.js).
+  readOs: () => osLocale(app),
+});
+
+// Re-resolves the language and hands it to main's t(), so the tray, the dialogs
+// and the snapshot's setup text cannot disagree.
+const resolveLocale = createLocaleResolver({
+  getSettings: () => settings,
+  readOs: () => osLocale(app),
+  setLocale: i18n.setLocale,
+  log,
+});
+
 /**
- * The Preferences object the renderer is entitled to see.
- *
- * Re-sanitised on the way out rather than trusted from `settings`: the value
- * came off disk, and an unrecognised one has to reach the renderer as the
- * DEFAULT, never as itself. A renderer handed `theme: 'nocturne'` would match
- * no palette and paint nothing — corruption tolerance that stops at the file
- * boundary is corruption tolerance that ends in a blank UI.
+ * Re-reads the OS and the stored choice into `locale`. Called at bootstrap and
+ * after a successful SET_LANGUAGE write. Not on every read: the tray tooltip,
+ * the menu and the snapshot are built from `locale`, and they must all be built
+ * from the same answer the renderer was pushed.
  */
-function preferences() {
-  return { theme: settings ? sanitizeTheme(settings.theme) : DEFAULT_THEME };
+function refreshLocale() {
+  locale = resolveLocale();
+  return locale;
 }
 
 function pushPreferences() {
@@ -389,35 +373,43 @@ function registerIpc() {
     return { ok: true };
   });
 
-  ipcMain.handle(IPC.REQUEST_REFRESH, async (event) => {
-    if (!fromPanel(event)) return null;
-    // Started BEFORE the scan so the two overlap. `tasklist` costs about half
-    // a second on this machine, and the refresh must not visibly wait for it.
-    const probe = startAntigravityProbe();
-    let snapshot;
-    try {
-      snapshot = await collector.refreshNow();
-    } catch (err) {
-      log.warn(`refresh failed: code=${(err && err.code) || 'UNKNOWN'}`);
-      snapshot = collector.snapshot;
-    }
-    const refreshNotices = await collectRefreshNotices(probe);
-    // A COPY, so the notice rides the invoke reply only. The object the
-    // collector pushes on its own schedule must not start carrying the answer
-    // to a question the user asked once.
-    return refreshNotices.length ? { ...snapshot, refreshNotices } : snapshot;
-  });
+  // Persist, apply, then push; rollback and no push on failure. The handler
+  // lives in language-ipc.js so the unit tests and the Electron smoke run this
+  // exact function rather than a copy of it.
+  ipcMain.handle(IPC.SET_LANGUAGE, createSetLanguageHandler({
+    fromPanel,
+    getSettings: () => settings,
+    save: (s) => settingsStore.save(userDataDir(), s),
+    apply: applyLanguage,
+    push: pushPreferences,
+    log,
+  }));
+
+  // The probe is started BEFORE the scan so the two overlap: `tasklist` costs
+  // about half a second on this machine, and the refresh must not visibly wait
+  // for it. The reply is read from the collector AFTER the probe wait, and the
+  // notice is judged against that same snapshot, so neither a language
+  // re-publish nor a row turning live in that gap is contradicted
+  // (refresh-ipc.js).
+  ipcMain.handle(IPC.REQUEST_REFRESH, createRefreshHandler({
+    fromPanel,
+    startProbe: () => isAntigravityRunning(),
+    refresh: () => collector.refreshNow(),
+    awaitProbe: awaitAntigravityProbe,
+    latestSnapshot: () => collector.snapshot,
+    log,
+  }));
 
   ipcMain.handle(IPC.RUN_SETUP, async (event, providerId, confirmed) => {
-    if (!fromPanel(event)) return { ok: false, message: 'Geçersiz istek.' };
+    if (!fromPanel(event)) return { ok: false, message: i18n.t('ipc.invalidRequest') };
     if (!isProviderId(providerId)) {
-      return { ok: false, message: 'Bilinmeyen sağlayıcı.' };
+      return { ok: false, message: i18n.t('ipc.unknownProvider') };
     }
     const provider = getProvider(providerId);
 
     // The four passive providers: never throws, never writes anything.
     if (provider.setupAction.kind === 'not-installed') {
-      return { ok: false, message: `${provider.displayName} bu sürümde henüz desteklenmiyor.` };
+      return { ok: false, message: i18n.t('provider.notSupportedYet', { provider: provider.displayName }) };
     }
 
     if (provider.id === 'claude') {
@@ -447,7 +439,7 @@ function registerIpc() {
         return result;
       } catch (err) {
         log.warn(`setup failed: code=${(err && err.code) || 'UNKNOWN'}`);
-        return { ok: false, message: 'Kurulum tamamlanamadı; hiçbir değişiklik yapılmadı.' };
+        return { ok: false, message: i18n.t('setup.failed') };
       }
     }
 
@@ -467,11 +459,11 @@ function registerIpc() {
         return result;
       } catch (err) {
         log.warn(`antigravity setup failed: code=${(err && err.code) || 'UNKNOWN'}`);
-        return { ok: false, message: 'Kurulum tamamlanamadı; hiçbir değişiklik yapılmadı.' };
+        return { ok: false, message: i18n.t('setup.failed') };
       }
     }
 
-    return { ok: false, message: 'Bu işlem bu sürümde desteklenmiyor.' };
+    return { ok: false, message: i18n.t('ipc.actionUnsupported') };
   });
 }
 
@@ -496,10 +488,47 @@ function applyAutostart(enabled) {
   }
 }
 
+/**
+ * The tray menu's inputs, in one place, so bootstrap and a language change
+ * build the menu from the same handlers. Built fresh on every call because
+ * `autostart` is read at build time and the checkbox must show the current
+ * value, not the one from launch.
+ */
+function trayMenuOptions() {
+  return {
+    autostart: settings.autostart,
+    onToggleAutostart: (checked) => {
+      settings.autostart = Boolean(checked);
+      settingsStore.save(userDataDir(), settings);
+      applyAutostart(settings.autostart);
+    },
+    onQuit: () => {
+      isQuitting = true;
+      app.quit();
+    },
+  };
+}
+
+// Re-resolves the language and re-renders every surface MAIN writes text on:
+// the tray menu, the tray tooltip (cache cleared, then repainted by the
+// 'snapshot' listener's updateTray), and the snapshot. Throws are left to the
+// SET_LANGUAGE handler, which owns the rollback. Order is tested in
+// language-ipc.js's factory.
+const applyLanguage = createApplyLanguage({
+  refreshLocale,
+  getTray: () => tray,
+  trayMenuOptions,
+  resetTooltip: () => { trayTooltipShown = null; },
+  getCollector: () => collector,
+});
+
 function bootstrap() {
   // Anchors every later `+NNNNms` offset to something nameable in the log.
   log.trace('app.bootstrap');
   settings = settingsStore.load(userDataDir());
+  // Before the collector, the tray and the window: all three build text from
+  // it, and the renderer's synchronous initialPreferences() reads it.
+  refreshLocale();
   applyAutostart(settings.autostart);
 
   // Refresh the copy of the bridge that Claude Code executes, on every launch.
@@ -612,18 +641,7 @@ function bootstrap() {
       if (act !== 'noop') openPanel();
     },
   });
-  tray.create({
-    autostart: settings.autostart,
-    onToggleAutostart: (checked) => {
-      settings.autostart = Boolean(checked);
-      settingsStore.save(userDataDir(), settings);
-      applyAutostart(settings.autostart);
-    },
-    onQuit: () => {
-      isQuitting = true;
-      app.quit();
-    },
-  });
+  tray.create(trayMenuOptions());
 
   // The user flipping Windows between light and dark changes no snapshot
   // field, so nothing else in this process would ever ask for a repaint. The
@@ -745,7 +763,14 @@ app.on('before-quit', () => {
 
 app.whenReady().then(bootstrap).catch((err) => {
   log.error(`startup failed: code=${(err && err.code) || (err && err.name) || 'UNKNOWN'}`);
-  dialog.showErrorBox('Usage Notch', 'Uygulama başlatılamadı.');
+  // The failure may have happened before bootstrap() resolved the language, so
+  // resolve it here: `settings` if it loaded, the OS otherwise. Every read in
+  // osLocale() is guarded, and this path must not throw on its way to saying
+  // that the app could not start.
+  try {
+    refreshLocale();
+  } catch { /* the dialog still shows, in the default language */ }
+  dialog.showErrorBox('Usage Notch', i18n.t('app.startupFailed'));
   app.quit();
 });
 
