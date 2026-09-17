@@ -1,8 +1,8 @@
 # Usage Notch
 
 Windows görev çubuğunda duran, yapay zekâ kodlama araçlarının kullanım
-limitlerini gösteren küçük bir tepsi uygulaması. Simgenin üzerine gelince
-panel açılır.
+limitlerini gösteren küçük bir tepsi uygulaması. Simgeye tıklayınca panel
+açılır; üzerine gelince yalnızca özet ipucu görünür.
 
 ## Neden bu uygulama sayı uydurmuyor
 
@@ -225,10 +225,15 @@ dosyasına kendisi yazıyor, uygulama yalnızca bu dosyaları okur.
 Maliyet, abonelikteki kullanımın **OpenAI'nin yayımlanan API fiyatlarıyla ne
 tutacağıdır**, fatura değil. Fiyat model ve katmana (tier) göre seçilir:
 
-- Fast mod (`priority`/`fast`) kendi fiyat satırıyla, ayrı fiyatlanır.
-- Katmanı belirlenemeyen kullanım (Codex bir oturumun başında katmanı yazmıyor)
-  **fiyatlanmaz** — Standart varsayılmaz. Fiyat listesinde olmayan model, katman
-  veya 272.000 token üstü bir istem de öyle.
+- Fast mod (`priority`/`fast`) kaydı yalnızca **istenen** katmandır, faturalanan
+  değil; bu kullanım Standart fiyatla hesaplanır ve tutar **en az** olur
+  ("Fast istendi" nedeni).
+- Codex bir oturumun başında katmanı yazmıyor. Katman yazılmadan önceki
+  kullanım, oturumun kaydettiği tüm katmanlar `default`/`priority`/`fast` ise
+  (ya da hiç katman yoksa) Standart fiyatla hesaplanır ve tutar **en az** olur;
+  oturum `flex`, `ultrafast` ya da başka bir katman kaydediyorsa **fiyatlanmaz**.
+- Fiyat listesinde olmayan model, fiyat satırı olmayan katman veya 272.000 token
+  üstü bir istem **fiyatlanmaz**.
 - Codex önbellek yazmalarını her kayıtta 0 yazıyor; yazma ücreti olan modelde
   bu, tutarı **en az** yapar. Yazma sayısı tahmin edilmez.
 
@@ -314,7 +319,7 @@ Kararların gerekçesi: `ADR-001` (orkestratör karar kaydı).
 (IDE deposundan beş saatlik yüzde + model kırılımı; `agy` kuruluysa haftalık
 yüzde; token/maliyet yok), Codex canlı (rollout'tan 5 saatlik ve haftalık
 yüzde, token sayıları ve model/katman bazlı API fiyatı karşılığı), açılışta
-başlatma, tepsi simgesi, hover paneli, altı sağlayıcı satırı, Bağla/Ekle
+başlatma, tepsi simgesi, tıklamayla açılan panel, altı sağlayıcı satırı, Bağla/Ekle
 düğmeleri.
 
 **Yok:** Kimi, Copilot, Gemini için canlı veri. Bunların her biri farklı bir

@@ -176,7 +176,17 @@ const ALL_CAUSES_COST = {
   ...CODEX_TIER_COST,
   fallbackWriteEvents: 1412,
   cacheWriteEvents: 1781,
+  assumedTierEvents: 30,
+  fastRequestedEvents: 23,
   sourceIncomplete: true,
+};
+/** ADR-004 A3, the owner's screenshot: 235 unrecorded writes, 30 records with no
+ *  recorded tier and 23 with Fast requested. Nothing unpriced, logs read. */
+const OWNER_TIERS_COST = {
+  ...CODEX_UNRECORDED_ONLY_COST,
+  unrecordedWriteEvents: 235,
+  assumedTierEvents: 30,
+  fastRequestedEvents: 23,
 };
 /**
  * F5: the reader missed records and priced nothing. Must NOT hide the block
@@ -218,6 +228,7 @@ const MANY_UNPRICED_COST = {
   unrecordedWriteEvents: 0,
 };
 const NAMED_COSTS = {
+  ownerTiers: OWNER_TIERS_COST,
   tierFloor: TIER_FLOOR_COST,
   manyUnpriced: MANY_UNPRICED_COST,
   incompleteNoFigure: INCOMPLETE_NO_FIGURE_COST,

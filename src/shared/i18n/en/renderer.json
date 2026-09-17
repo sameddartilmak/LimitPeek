@@ -152,35 +152,13 @@
   "cost.window.quotaWeek": "This quota week",
   "cost.window.quotaWeekRange": "Quota week {range}",
   "cost.window.ongoing": "{base} · in progress",
-  "cost.caveat.allUnpriced": "This week's usage is not in the price list at all, so no amount is shown. Models used:",
-  "cost.caveat.someUnpriced": "Some of this usage is not in the price list and is not included in the total:",
-  "cost.caveat.ttlScope": {
-    "one": "{written} of {count} cache-write record ({share})",
-    "other": "{written} of {count} cache-write records ({share})"
-  },
-  "cost.caveat.ttlScopeCount": {
-    "one": "{count} cache-write record",
-    "other": "{count} cache-write records"
-  },
-  "cost.caveat.ttl": "{scope} did not record a TTL. A write without a TTL is priced at {low}; 1-hour writes actually cost {high}, so the total is a lower bound.",
-  "cost.caveat.unrecordedWrites": {
-    "one": "{count} record recorded 0 cache writes on a model that charges for them, although it read from the cache or sent a prompt long enough to be cached (1,024+ tokens), so the total is a lower bound.",
-    "other": "{count} records recorded 0 cache writes on a model that charges for them, although they read from the cache or sent a prompt long enough to be cached (1,024+ tokens), so the total is a lower bound."
-  },
-  "cost.caveat.degraded": "Some local records for this tool could not be read. The amount covers only the records that could be read, so it is a lower bound.",
+  "cost.caveat.ttl": "No write duration recorded; counted at the lower {low} rate (1-hour writes cost {high}).",
+  "cost.caveat.unrecordedWrites": "Codex didn't record these writes; the model charges for them, but they aren't in the total.",
+  "cost.caveat.degraded": "Some local records couldn't be read; the amount covers only what was read.",
   "cost.caveat.degradedNoFigure": "Some local records for this tool could not be read, so no amount can be given.",
-  "cost.caveat.assumedTier": {
-    "one": "{count} record came before Codex had recorded its service tier. Standard is the cheapest tier Codex can send, so this record was priced at Standard; the amount is a lower bound.",
-    "other": "{count} records came before Codex had recorded its service tier. Standard is the cheapest tier Codex can send, so these records were priced at Standard; the amount is a lower bound."
-  },
-  "cost.caveat.fastRequested": {
-    "one": "{count} record requested Fast, but the record does not show that Fast was actually applied. It was priced at Standard; if Fast was applied, the real cost is higher.",
-    "other": "{count} records requested Fast, but the records do not show that Fast was actually applied. They were priced at Standard; if Fast was applied, the real cost is higher."
-  },
-  "cost.caveat.unpricedMore": {
-    "one": "… {count} more entry",
-    "other": "… {count} more entries"
-  },
+  "cost.caveat.unpriced": "Not in the price list, so not included in the total.",
+  "cost.caveat.assumedTier": "No tier was recorded; counted at Standard, the cheapest tier.",
+  "cost.caveat.fastRequested": "Fast isn't recorded as applied; counted at Standard. If it was, the real cost is higher.",
   "cost.cause.assumedTier": {
     "one": "Requests with no recorded tier (priced at Standard): {count} record",
     "other": "Requests with no recorded tier (priced at Standard): {count} records"
@@ -205,6 +183,7 @@
   "cost.cause.sourceIncomplete": "Some records could not be read",
   "cost.why.toggle": "Why at least?",
   "cost.why.toggleUnpriced": "Why no amount?",
+  "cost.why.lead": "So the amount is a lower bound; the real cost may be higher.",
   "cost.summary": "Would have cost {amount} at published API prices",
   "cost.toggleLabel": "{provider}: this week's usage would have cost {amount} at published API prices. This is not a bill; you do not pay this amount under your subscription. Activate to open the breakdown.",
   "cost.unpricedSummary": "This week's usage is not in the price list",

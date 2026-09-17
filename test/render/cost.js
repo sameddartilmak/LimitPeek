@@ -236,7 +236,7 @@ app.whenReady().then(async () => {
           w: r.querySelector('.cost__rowbar').style.getPropertyValue('--w'),
         })),
         caveats: [...c.querySelectorAll('.cost__caveat')].map(p => p.textContent),
-        unpriced: [...c.querySelectorAll('.cost__unpriced li')].map(li => li.textContent),
+        unpriced: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map(li => li.textContent.replace(/^(Fiyatlanamadı|Could not be priced): /, '')),
         causeBlockHidden: c.querySelector('.cost__cause-block').hidden,
         causes: [...c.querySelectorAll('.cost__cause')].map(li => li.textContent),
         prov: [...c.querySelectorAll('.cost__prov span')].map(s => s.textContent),
@@ -277,17 +277,17 @@ app.whenReady().then(async () => {
       && /^Fiyatlanamadı: claude-opus-4-8 · hızlı · /.test(detail.codex.causes[0])
       && detail.codex.causes[1] === 'Süresi kaydedilmemiş önbellek yazması: 1.412 kayıt',
     detail.codex.causes);
-  check('both caveats render, as two separate sentences', detail.codex.caveats.length === 2,
+  check('both causes get their own short explanation', detail.codex.caveats.length === 2,
     detail.codex.caveats);
-  check('the unpriced caveat says the usage was EXCLUDED from the total',
-    /toplama katılmadı/.test(detail.codex.caveats[0]), detail.codex.caveats[0]);
-  check('the fallback caveat says the total is a FLOOR, and counts events',
-    /alt sınır/.test(detail.codex.caveats[1]) && /1\.412/.test(detail.codex.caveats[1])
-      && /önbellek yazma kaydında/.test(detail.codex.caveats[1]), detail.codex.caveats[1]);
-  check('the fallback caveat carries the denominator and the proportion',
-    /1\.412 \/ 1\.781 önbellek yazma kaydında \(%79\)/.test(detail.codex.caveats[1]),
+  check('the unpriced explanation says the usage was EXCLUDED from the total',
+    detail.codex.caveats[0] === 'Fiyat listesinde olmadığı için toplama katılmadı.', detail.codex.caveats[0]);
+  check('the TTL explanation says how the writes were counted, with both rates',
+    detail.codex.caveats[1] === 'Yazma süresi kaydedilmemiş; düşük olan 1,25× fiyattan sayıldı (1 saatlik yazma 2×).',
     detail.codex.caveats[1]);
-  check('the two caveats are not merged into one sentence',
+  check('counts stay on the cause line, never repeated in the explanation (ADR-004 A3.2)',
+    /1\.412/.test(detail.codex.causes[1]) && !detail.codex.caveats.some((t) => /\d{3}/.test(t)),
+    [detail.codex.causes, detail.codex.caveats]);
+  check('the two explanations are not merged into one sentence',
     detail.codex.caveats[0] !== detail.codex.caveats[1]);
   check('unpriced usage is named as a (model, speed) pair, not a bare model',
     detail.codex.unpriced.length === 1 && /claude-opus-4-8/.test(detail.codex.unpriced[0])
@@ -309,7 +309,7 @@ app.whenReady().then(async () => {
         denialHidden: c.querySelector('.cost__denial').hidden,
         rows: c.querySelectorAll('.cost__row').length,
         caveats: [...c.querySelectorAll('.cost__caveat')].map(p => p.textContent),
-        unpriced: [...c.querySelectorAll('.cost__unpriced li')].map(li => li.textContent),
+        unpriced: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map(li => li.textContent.replace(/^(Fiyatlanamadı|Could not be priced): /, '')),
         causes: [...c.querySelectorAll('.cost__cause')].map(li => li.textContent),
         why: c.querySelector('.cost__whytext').textContent,
         flag: c.dataset.unpriced || null,
@@ -322,9 +322,10 @@ app.whenReady().then(async () => {
     !/\$/.test(noPrice.anti.lead) && /hesaplanamadı/.test(noPrice.anti.lead), noPrice.anti.lead);
   check('the bill denial is suppressed when there is no amount to deny',
     noPrice.anti.denialHidden === true);
-  check('the caveat says ALL of it, not "bir bölümü"',
-    /tamamı/.test(noPrice.anti.caveats[0]) && !/bir bölümü/.test(noPrice.anti.caveats[0]),
-    noPrice.anti.caveats[0]);
+  check('the all-unpriced explanation says why, and states no lower bound (there is no amount)',
+    noPrice.anti.caveats.length === 1
+      && noPrice.anti.caveats[0] === 'Fiyat listesinde olmadığı için toplama katılmadı.'
+      && !/alt sınır/.test(noPrice.anti.caveats.join(' ')), noPrice.anti.caveats);
   check('the models and their token counts are named, so the usage is visible',
     noPrice.anti.unpriced.length === 2
       && noPrice.anti.unpriced.every(u => /claude-opus-6/.test(u) && /token/.test(u))
@@ -403,9 +404,9 @@ app.whenReady().then(async () => {
       unrecorded: unrec ? unrec.textContent : null,
       unrecordedClipped: unrec ? clip(unrec) : null,
       unrecordedTov: unrec ? getComputedStyle(unrec).textOverflow : null,
-      unpriced: [...c.querySelectorAll('.cost__unpriced li')].map((li) => li.textContent),
-      unpricedClipped: [...c.querySelectorAll('.cost__unpriced li')].map(clip),
-      unpricedTov: [...c.querySelectorAll('.cost__unpriced li')].map((li) => getComputedStyle(li).textOverflow),
+      unpriced: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map((li) => li.textContent.replace(/^(Fiyatlanamadı|Could not be priced): /, '')),
+      unpricedClipped: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map(clip),
+      unpricedTov: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map((li) => getComputedStyle(li).textOverflow),
       causes: [...c.querySelectorAll('.cost__cause')].map((li) => li.textContent),
       unrecordedDrawn: unrec ? unrec.getClientRects().length > 0 : null,
     };
@@ -418,9 +419,9 @@ app.whenReady().then(async () => {
   say('codex tier (tr): ' + JSON.stringify(codexTr));
   check('unrecorded cache writes make the Codex figure a floor: "en az"',
     /^Yayımlanan API fiyatlarıyla en az \$/.test(codexTr.summary), codexTr.summary);
-  check('and the unrecorded-writes caveat says why, with its count',
-    /^38 kayıtta, önbellek yazmasını ücretlendiren bir modelde önbellek yazması 0 kaydedilmiş; oysa bu kayıtlar önbellekten okumuş ya da önbelleğe alınabilecek uzunlukta \(1\.024\+ token\) istem göndermiş\. Bu yüzden toplam bir alt sınır\.$/.test(codexTr.unrecorded || '')
-      && /alt sınır/.test(codexTr.unrecorded || ''), codexTr.unrecorded);
+  check('and the unrecorded-writes explanation says why, short',
+    codexTr.unrecorded === 'Codex bu yazmaları kaydetmedi; bu modelde ücretli oldukları hâlde toplamda yoklar.',
+    codexTr.unrecorded);
   check('the Claude TTL caveat is NOT shown for Codex: no 5m/1h split was missing',
     !codexTr.caveats.some((p) => /TTL/.test(p)), codexTr.caveats);
   check('an unknown-tier unpriced entry shows the Turkish label, not the code',
@@ -437,12 +438,12 @@ app.whenReady().then(async () => {
       && !codexTr.unpriced.some((u) => /^unknown/.test(u)), codexTr.unpriced);
   check('the full sentences were actually drawn when measured (why is open)',
     codexTr.unrecordedDrawn === true, codexTr.unrecordedDrawn);
-  check('four unpriced entries: two named lines and one counted line, then the unrecorded-writes line',
-    codexTr.causes.length === 4
+  check('open, all four unpriced entries are named (no more than eight), then the unrecorded-writes line',
+    codexTr.causes.length === 5
       && /^Fiyatlanamadı: gpt-5\.6-sol · katman belirlenemedi · /.test(codexTr.causes[0])
       && /^Fiyatlanamadı: gpt-5\.5 · /.test(codexTr.causes[1])
-      && codexTr.causes[2] === 'Fiyatlanamadı: 2 kalem daha'
-      && codexTr.causes[3] === 'Kaydedilmemiş önbellek yazması: 38 kayıt',
+      && !codexTr.causes.some((t) => /kalem daha/.test(t))
+      && codexTr.causes[4] === 'Kaydedilmemiş önbellek yazması: 38 kayıt',
     codexTr.causes);
   check('the unpriced lines wrap, they are never cut',
     codexTr.unpricedClipped.every((c) => c === false) && codexTr.unpricedTov.every((v) => v !== 'ellipsis'),
@@ -456,20 +457,19 @@ app.whenReady().then(async () => {
   await sleep(300);
   const codexEn = await js(readCodexCost);
   say('codex tier (en): ' + JSON.stringify(codexEn));
-  check('[en] the unrecorded-writes caveat is plural-aware and keeps the floor claim',
+  check('[en] the unrecorded-writes explanation is the short English line',
     codexEn.lang === 'en'
-      && /^38 records recorded 0 cache writes on a model that charges for them, although they read from the cache or sent a prompt long enough to be cached \(1,024\+ tokens\), so the total is a lower bound\.$/.test(codexEn.unrecorded || '')
-      && /lower bound/.test(codexEn.unrecorded || ''), codexEn.unrecorded);
+      && codexEn.unrecorded === "Codex didn't record these writes; the model charges for them, but they aren't in the total.",
+    codexEn.unrecorded);
   check('[en] the caveat wraps and is not clipped',
     codexEn.unrecordedClipped === false && codexEn.unrecordedTov !== 'ellipsis', codexEn);
   check('[en] tier labels are English and no raw code is printed',
     codexEn.unpriced.some((u) => /· tier not determinable, long context \(over 272K\) ·/.test(u))
       && codexEn.unpriced.some((u) => /^model not determinable · tier not determinable · /.test(u))
       && !codexEn.unpriced.some((u) => RAW_CODES.test(u) || /^unknown/.test(u)), codexEn.unpriced);
-  check('[en] the compact causes are English and plural-aware',
-    codexEn.causes.length === 4 && /^Could not be priced: gpt-5\.6-sol · tier not determinable · /.test(codexEn.causes[0])
-      && codexEn.causes[2] === 'Could not be priced: 2 more entries'
-      && codexEn.causes[3] === 'Unrecorded cache writes: 38 records', codexEn.causes);
+  check('[en] the causes are English and plural-aware',
+    codexEn.causes.length === 5 && /^Could not be priced: gpt-5\.6-sol · tier not determinable · /.test(codexEn.causes[0])
+      && codexEn.causes[4] === 'Unrecorded cache writes: 38 records', codexEn.causes);
   check('[en] the unpriced lines are not clipped either',
     codexEn.unpricedClipped.every((c) => c === false), codexEn.unpricedClipped);
 
@@ -492,9 +492,8 @@ app.whenReady().then(async () => {
   check('and exactly one cause line says so, with its count',
     onlyUnrec.causes.length === 1 && onlyUnrec.causes[0] === 'Kaydedilmemiş önbellek yazması: 1 kayıt',
     onlyUnrec.causes);
-  check('and the one caveat is the unrecorded-writes caveat, in the singular count',
-    // Singular: "bu kayıt", not "bu kayıtlar" (ADR-004 A2, same claim at count 1).
-    /^1 kayıtta, önbellek yazmasını ücretlendiren bir modelde önbellek yazması 0 kaydedilmiş; oysa bu kayıt önbellekten okumuş ya da önbelleğe alınabilecek uzunlukta \(1\.024\+ token\) istem göndermiş\. Bu yüzden toplam bir alt sınır\.$/.test(onlyUnrec.unrecorded || ''),
+  check('and the one explanation is the unrecorded-writes line; the count is only on the cause',
+    onlyUnrec.unrecorded === 'Codex bu yazmaları kaydetmedi; bu modelde ücretli oldukları hâlde toplamda yoklar.',
     onlyUnrec.unrecorded);
 
   // ---- ADR-002 A3.15/A3.16: sourceIncomplete, the compact causes, "why" ----
@@ -521,8 +520,8 @@ app.whenReady().then(async () => {
       mainExpanded: c.querySelector('.cost__toggle').getAttribute('aria-expanded'),
       whyChev: settled(why.querySelector('.cost__chev')),
       expanded: why.getAttribute('aria-expanded'),
-      panelHidden: panel ? panel.hidden : null,
-      panelDrawn: panel ? panel.getClientRects().length > 0 : null,
+      explanationsHidden: [...c.querySelectorAll('.cost__caveat')].every((n) => n.hidden && n.getClientRects().length === 0),
+      leadDrawn: [...c.querySelectorAll('.cost__why-lead')].some((n) => n.getClientRects().length > 0),
     };
     why.click();
     await new Promise((r) => setTimeout(r, 80));
@@ -542,23 +541,51 @@ app.whenReady().then(async () => {
       whyType: why.getAttribute('type'),
       whyName: why.getAttribute('aria-label'),
       whyTabbable: why.tabIndex >= 0 && !why.disabled,
-      panelIsControlled: !!panel && panel.contains(caveatNodes[0] || null),
+      panelIsControlled: !!panel && panel.contains(caveatNodes[0] || null) && !panel.hidden,
+      // Each explanation sits inside its own cause's list item, after its line.
+      explanationsTied: caveatNodes.every((n) => {
+        const g = n.closest('.cost__group');
+        const line = g ? g.querySelector('.cost__cause') : null;
+        return !!line && g.getAttribute('data-cause') === n.getAttribute('data-caveat')
+          && (line.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      }),
+      leads: [...c.querySelectorAll('.cost__why-lead')].filter((n) => !n.hidden && n.getClientRects().length > 0).map((n) => n.textContent),
+      leadFirst: (() => {
+        const l = c.querySelector('.cost__why-lead');
+        const first = c.querySelector('.cost__cause');
+        return !!(l && first) && (l.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      })(),
+      columnWidth: Math.round(c.querySelector('.cost__causes').getBoundingClientRect().width),
+      // Rendered line count of each explanation at the ADR-004 A3 reference
+      // column: the cause list is pinned to 264px for the measurement (the test
+      // window draws it at its own width), then released.
+      explanationLines: (() => {
+        const list = c.querySelector('.cost__causes');
+        const keep = list.style.width;
+        list.style.width = '264px';
+        const out = caveatNodes.map((n) => {
+          const lh = parseFloat(getComputedStyle(n).lineHeight);
+          return Math.round(n.getBoundingClientRect().height / lh);
+        });
+        list.style.width = keep;
+        return out;
+      })(),
       describedByList: !!list && list.tagName === 'UL' && list.contains(causeNodes[0] || null),
       closed,
       open: {
         expanded: why.getAttribute('aria-expanded'),
-        panelHidden: panel ? panel.hidden : null,
-        panelDrawn: panel ? panel.getClientRects().length > 0 : null,
+        panelDrawn: caveatNodes.length > 0 && caveatNodes.every((n) => !n.hidden && n.getClientRects().length > 0),
       },
       caveats: caveatNodes.map((n) => n.textContent),
       caveatsClipped: caveatNodes.map(clip),
       caveatsTov: caveatNodes.map((n) => getComputedStyle(n).textOverflow),
       sourceSentence: (c.querySelector('.cost__caveat[data-caveat="source-incomplete"]') || {}).textContent || null,
-      unpricedClipped: [...c.querySelectorAll('.cost__unpriced li')].map(clip),
+      unpricedClipped: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map(clip),
+      leadClipped: [...c.querySelectorAll('.cost__why-lead')].map(clip),
       // The main toggle's caret must not move when only "why" opens.
       mainChevMoved: mainChev() !== closed.mainChev,
       // Calm, measurement-first: no warning accent on the caveat panel.
-      panelBorder: panel ? getComputedStyle(panel).borderLeftColor : null,
+      panelBorder: caveatNodes[0] ? getComputedStyle(caveatNodes[0]).borderLeftColor : null,
       watch: (() => {
         const probe = document.createElement('span');
         probe.style.color = 'var(--watch)';
@@ -585,16 +612,22 @@ app.whenReady().then(async () => {
     incomplete.blockHidden === false && incomplete.causesDrawn === true
       && incomplete.causes.length === 1 && incomplete.causes[0] === 'Okunamayan kayıtlar var',
     incomplete.causes);
-  check('the full signed-off sentence is one click away, and only there',
-    incomplete.closed.panelHidden === true && incomplete.closed.panelDrawn === false
-      && incomplete.open.panelHidden === false && incomplete.open.panelDrawn === true
-      && /^Bu araca ait bazı yerel kayıtlar okunamadı\. Tutar yalnızca okunabilen kayıtları kapsıyor, bu yüzden bir alt sınır\.$/.test(incomplete.sourceSentence || '')
+  check('the explanation and the lead are one click away, and only there',
+    incomplete.closed.explanationsHidden === true && incomplete.closed.leadDrawn === false
+      && incomplete.open.panelDrawn === true
+      && incomplete.sourceSentence === 'Bazı yerel kayıtlar okunamadı; tutar yalnızca okunanları kapsıyor.'
       && incomplete.caveats.length === 1,
     [incomplete.closed, incomplete.open, incomplete.caveats]);
+  check('open, the shared lead appears exactly once, before the causes',
+    incomplete.leads.length === 1
+      && incomplete.leads[0] === 'Bu yüzden tutar bir alt sınır; gerçek maliyet daha yüksek olabilir.'
+      && incomplete.leadFirst === true, [incomplete.leads, incomplete.leadFirst]);
+  check('each explanation is tied to its own cause line, directly after it',
+    incomplete.explanationsTied === true, incomplete.explanationsTied);
   check('"why" is a real, tabbable button whose name is its visible text',
     incomplete.whyTag === 'BUTTON' && incomplete.whyType === 'button' && incomplete.whyTabbable === true
       && incomplete.whyText === 'Neden en az?' && incomplete.whyName === null, incomplete);
-  check('aria-expanded follows the panel, and aria-controls points at the panel holding the sentences',
+  check('aria-expanded follows the state, and aria-controls points at the region holding the explanations',
     incomplete.closed.expanded === 'false' && incomplete.open.expanded === 'true'
       && incomplete.panelIsControlled === true, incomplete);
   check('aria-describedby points at the visible cause list, so the spoken causes match the screen',
@@ -603,7 +636,7 @@ app.whenReady().then(async () => {
     incomplete.mainChevMoved === false
       && incomplete.closed.mainExpanded === 'true' && incomplete.closed.whyChev === 'none',
     [incomplete.mainChevMoved, incomplete.closed]);
-  check('the caveat panel carries no warning accent',
+  check('the explanations carry no warning accent',
     !!incomplete.panelBorder && !!incomplete.watch && incomplete.panelBorder !== incomplete.watch,
     [incomplete.panelBorder, incomplete.watch]);
 
@@ -650,6 +683,8 @@ app.whenReady().then(async () => {
       && noFig.open.panelDrawn === true && noFig.panelIsControlled === true
       && noFig.caveatsClipped.every((v) => v === false),
     noFig);
+  check('with no amount there is no lower-bound lead at all',
+    noFig.leads.length === 0, noFig.leads);
   check('with no amount, the sentence says no amount can be given, never "the amount is a lower bound"',
     noFig.sourceSentence === 'Bu araca ait bazı yerel kayıtlar okunamadı, bu yüzden bir tutar verilemiyor.'
       && !/alt sınır|Tutar/.test(noFig.sourceSentence || ''), noFig.sourceSentence);
@@ -671,9 +706,9 @@ app.whenReady().then(async () => {
     tierTr.causes.length === 2
       && tierTr.causes[0] === 'Katmanı kaydedilmemiş istek (Standart fiyattan): 24 kayıt'
       && tierTr.causes[1] === 'Fast istendi (Standart fiyattan): 1 kayıt', tierTr.causes);
-  check('and its own full sentence: Standard price, a lower bound; Fast possibly higher',
-    tierSentences.assumed === '24 kayıtta Codex hizmet katmanını henüz kaydetmemişti. Codex’in gönderebileceği en ucuz katman Standart olduğu için bu kayıtlar Standart fiyattan hesaplandı; tutar bir alt sınır.'
-      && tierSentences.fast === '1 kayıtta Fast istendi, ancak kayıt Fast’in gerçekten uygulandığını göstermiyor. Bu kayıt Standart fiyattan hesaplandı; Fast uygulandıysa gerçek tutar daha yüksek.',
+  check('and its own short explanation: counted at Standard; Fast possibly higher',
+    tierSentences.assumed === 'Katman kaydı yoktu; en ucuz katman olan Standart’tan sayıldı.'
+      && tierSentences.fast === 'Fast’in uygulandığı kayıtlı değil; Standart’tan sayıldı. Uygulandıysa gerçek tutar daha yüksek.',
     tierSentences);
   check('[tr] the tier lines and sentences are not clipped',
     tierTr.causesClipped.every((v) => v === false) && tierTr.caveatsClipped.every((v) => v === false)
@@ -685,10 +720,11 @@ app.whenReady().then(async () => {
   check('[en] the tier lines are English and plural-aware',
     tierEn.causes[0] === 'Requests with no recorded tier (priced at Standard): 24 records'
       && tierEn.causes[1] === 'Fast requested (priced at Standard): 1 record', tierEn.causes);
-  check('[en] the tier sentences keep their claims, whole',
-    tierEn.caveats.some((t) => /^24 records came before Codex had recorded its service tier\..*priced at Standard; the amount is a lower bound\.$/.test(t))
-      && tierEn.caveats.some((t) => /^1 record requested Fast, but the record does not show .*if Fast was applied, the real cost is higher\.$/.test(t))
-      && tierEn.caveatsClipped.every((v) => v === false), tierEn.caveats);
+  check('[en] the tier explanations keep their claims, whole',
+    tierEn.caveats[0] === 'No tier was recorded; counted at Standard, the cheapest tier.'
+      && tierEn.caveats[1] === "Fast isn't recorded as applied; counted at Standard. If it was, the real cost is higher."
+      && tierEn.leads[0] === 'So the amount is a lower bound; the real cost may be higher.'
+      && tierEn.caveatsClipped.every((v) => v === false), [tierEn.caveats, tierEn.leads]);
   await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
   await sleep(300);
 
@@ -697,21 +733,28 @@ app.whenReady().then(async () => {
     (await js(`window.__probe.setCostDirect('codex', 'manyUnpriced')`)) === true);
   await sleep(250);
   const many = await js(readCauses);
-  const manyList = await js(`(() => [...${q('codex')}.querySelectorAll('.cost__unpriced li')].map((li) => li.textContent))()`);
-  say('many unpriced (tr): ' + JSON.stringify([many.causes, manyList]));
-  check('the "why" list names eight unpriced entries and counts the other two',
-    manyList.length === 9 && manyList.slice(0, 8).every((u) => /^gpt-5\.\d-probe · katman belirlenemedi · /.test(u))
-      && manyList[8] === '… 2 kalem daha', manyList);
-  check('and the compact list still shows two lines plus a counted line',
-    many.causes.length === 3 && many.causes[2] === 'Fiyatlanamadı: 8 kalem daha', many.causes);
+  // readCauses closes "why" again on its way out: this is the collapsed list.
+  const manyClosed = await js(`(() => [...${q('codex')}.querySelectorAll('.cost__cause')].map((n) => n.textContent))()`);
+  say('many unpriced (tr): ' + JSON.stringify([many.causes, manyClosed]));
+  check('open, "why" names eight unpriced entries and counts the other two',
+    many.causes.length === 9 && many.causes.slice(0, 8).every((u) => /^Fiyatlanamadı: gpt-5\.\d-probe · katman belirlenemedi · /.test(u))
+      && many.causes[8] === 'Fiyatlanamadı: 2 kalem daha' && many.caveats.length === 1, many);
+  check('and collapsed, the list shows two lines plus a counted line',
+    manyClosed.length === 3 && manyClosed[2] === 'Fiyatlanamadı: 8 kalem daha', manyClosed);
 
   // Every cause at once, in all three formats: nothing is cut.
   check('the fixture swapped the every-cause week onto the codex row',
     (await js(`window.__probe.setCostDirect('codex', 'allCauses')`)) === true);
   await sleep(250);
   const clipCheck = (label, r) => {
-    check(`[${label}] all four kinds of cause render, in order`,
-      r.causes.length === 6 && r.caveats.length === 4, [r.causes, r.caveats.length]);
+    check(`[${label}] all six kinds of cause render, in order, one explanation each`,
+      r.causes.length === 9 && r.caveats.length === 6, [r.causes, r.caveats.length]);
+    check(`[${label}] the lead appears exactly once and is not clipped`,
+      r.leads.length === 1 && r.leadClipped.every((v) => v === false), [r.leads, r.leadClipped]);
+    check(`[${label}] every explanation is at most 2 lines at 264px (drawn column ${r.columnWidth}px)`,
+      r.explanationLines.length === 6 && r.explanationLines.every((n) => n >= 1 && n <= 2),
+      [r.columnWidth, r.explanationLines, r.caveats]);
+    check(`[${label}] every explanation sits under its own cause`, r.explanationsTied === true, r.explanationsTied);
     check(`[${label}] no cause line is clipped or ellipsized`,
       r.causesDrawn === true && r.causesClipped.every((v) => v === false)
         && r.causesTov.every((v) => v !== 'ellipsis'), [r.causesClipped, r.causesTov]);
@@ -723,10 +766,12 @@ app.whenReady().then(async () => {
   const allTr = await js(readCauses);
   say('all causes (tr): ' + JSON.stringify(allTr));
   clipCheck('tr', allTr);
-  check('[tr] the TTL, unrecorded-writes and unreadable lines are the short labels',
-    allTr.causes[3] === 'Süresi kaydedilmemiş önbellek yazması: 1.412 kayıt'
-      && allTr.causes[4] === 'Kaydedilmemiş önbellek yazması: 38 kayıt'
-      && allTr.causes[5] === 'Okunamayan kayıtlar var', allTr.causes);
+  check('[tr] the TTL, unrecorded-writes, tier and unreadable lines are the short labels',
+    allTr.causes[4] === 'Süresi kaydedilmemiş önbellek yazması: 1.412 kayıt'
+      && allTr.causes[5] === 'Kaydedilmemiş önbellek yazması: 38 kayıt'
+      && allTr.causes[6] === 'Katmanı kaydedilmemiş istek (Standart fiyattan): 30 kayıt'
+      && allTr.causes[7] === 'Fast istendi (Standart fiyattan): 23 kayıt'
+      && allTr.causes[8] === 'Okunamayan kayıtlar var', allTr.causes);
 
   await js(`window.__probe.setLocaleDirect('en', 'en-US')`);
   await sleep(300);
@@ -735,9 +780,9 @@ app.whenReady().then(async () => {
   check('[en-US] reached', allUs.lang === 'en', allUs.lang);
   clipCheck('en-US', allUs);
   check('[en-US] the short labels are English, with en-US digits',
-    allUs.causes[3] === 'Cache writes without a recorded TTL: 1,412 records'
-      && allUs.causes[4] === 'Unrecorded cache writes: 38 records'
-      && allUs.causes[5] === 'Some records could not be read'
+    allUs.causes[4] === 'Cache writes without a recorded TTL: 1,412 records'
+      && allUs.causes[5] === 'Unrecorded cache writes: 38 records'
+      && allUs.causes[8] === 'Some records could not be read'
       && allUs.whyText === 'Why at least?', allUs);
 
   await js(`window.__probe.setLocaleDirect('en', 'en-GB')`);
@@ -747,6 +792,20 @@ app.whenReady().then(async () => {
   clipCheck('en-GB', allGb);
   check('[en-GB] the figure keeps its floor in the en-GB currency form',
     /^Would have cost at least US\$/.test(allGb.summary), allGb.summary);
+
+  // ADR-004 A3, the owner's case: three causes, one lead, three short lines.
+  await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
+  await js(`window.__probe.setCostDirect('codex', 'ownerTiers')`);
+  await sleep(300);
+  const ownerTiers = await js(readCauses);
+  say('owner tiers (tr): ' + JSON.stringify(ownerTiers));
+  check('the owner\'s case opens to one lead and three short explanations, no paragraphs',
+    ownerTiers.leads.length === 1 && ownerTiers.causes.length === 3 && ownerTiers.caveats.length === 3
+      && ownerTiers.causes[0] === 'Kaydedilmemiş önbellek yazması: 235 kayıt'
+      && ownerTiers.causes[1] === 'Katmanı kaydedilmemiş istek (Standart fiyattan): 30 kayıt'
+      && ownerTiers.causes[2] === 'Fast istendi (Standart fiyattan): 23 kayıt'
+      && ownerTiers.explanationLines.every((n) => n <= 2) && ownerTiers.explanationsTied === true,
+    ownerTiers);
 
   await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
   await sleep(300);
