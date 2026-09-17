@@ -68,18 +68,32 @@ function dedupKey(record, message, fid, lineIndex) {
 /**
  * @param {string} text  whole file contents
  * @param {string} fid   hashed file id (never a path)
- * @returns {{events: Array, lines: number, parsed: number, failed: number}}
+ *
+ * `failedUnterminated` (0 or 1) says whether one of the `failed` lines was the
+ * file's LAST line with no terminating newline: a writer caught mid-append,
+ * not a record that could not be read. The file's size changes when that write
+ * completes, so the next scan re-reads it. A caller deciding whether usage
+ * records were LOST (ADR-002 A3.15) subtracts it; `failed` is unchanged.
+ *
+ * `droppedRecords` counts usage records that parsed, carry non-zero tokens and
+ * a real model, but whose timestamp is unusable: usage the file has and no
+ * window can hold (A3.15).
+ *
+ * @returns {{events: Array, lines: number, parsed: number, failed: number, failedUnterminated: number, droppedRecords: number}}
  */
 function extractEvents(text, fid) {
   const events = [];
   let lines = 0;
   let parsed = 0;
   let failed = 0;
+  let failedUnterminated = 0;
+  let droppedRecords = 0;
 
   let start = 0;
   const len = text.length;
   while (start <= len) {
     let end = text.indexOf('\n', start);
+    const terminated = end !== -1;
     if (end === -1) end = len;
     const line = text.slice(start, end);
     const lineIndex = lines;
@@ -98,6 +112,7 @@ function extractEvents(text, fid) {
       // The caught error is intentionally not inspected: JSON.parse embeds a
       // slice of the source text in its message.
       failed += 1;
+      if (!terminated) failedUnterminated = 1;
       log.parseFailure(fid, lineIndex);
       continue;
     }
@@ -113,7 +128,6 @@ function extractEvents(text, fid) {
     if (!model || model === SYNTHETIC_MODEL) continue;
 
     const ts = Date.parse(record.timestamp);
-    if (!Number.isFinite(ts)) continue;
 
     const input = num(usage.input_tokens);
     const output = num(usage.output_tokens);
@@ -138,6 +152,11 @@ function extractEvents(text, fid) {
 
     const cacheWrite = Math.max(num(usage.cache_creation_input_tokens), cw5 + cw1h);
     if (input + output + cacheWrite + cacheRead === 0) continue;
+    if (!Number.isFinite(ts)) {
+      // Real usage that cannot be placed in any window: a KNOWN loss.
+      droppedRecords += 1;
+      continue;
+    }
 
     const event = {
       f: fid,
@@ -160,7 +179,7 @@ function extractEvents(text, fid) {
     parsed += 1;
   }
 
-  return { events, lines, parsed, failed };
+  return { events, lines, parsed, failed, failedUnterminated, droppedRecords };
 }
 
 module.exports = { extractEvents, dedupKey, SYNTHETIC_MODEL };

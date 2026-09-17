@@ -1056,6 +1056,18 @@
   line-height: 1.45;
   color: var(--ink-300);
 }
+/* ADR-002 A3.20: some records could not be read. A measurement statement, not
+ * an alert: ink rule, no warning accent; wraps, never cut. */
+.usage__incomplete {
+  margin: 0 var(--s-4) var(--s-2);
+  padding-left: var(--s-2);
+  border-left: 1px solid var(--ink-600);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-300);
+  overflow-wrap: break-word;
+}
+.usage__incomplete[hidden] { display: none !important; }
 /* A period whose figure is not known yet: stated quietly, never as "—". */
 .usage__row[data-pending="true"] .usage__amount {
   color: var(--ink-400);

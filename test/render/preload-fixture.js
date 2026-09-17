@@ -63,6 +63,12 @@ const LIVE_COST = {
   unpricedModels: [],
   fallbackWriteEvents: 0,
   cacheWriteEvents: 1781,
+  // ADR-002 A3.15: every log in the window was read. Spread into the costs
+  // below, so the stale gemini row carries false too — its limit capture is
+  // old, its logs are not incomplete, and the cost block must not say so.
+  sourceIncomplete: false,
+  assumedTierEvents: 0,
+  fastRequestedEvents: 0,
   pricesAsOf: '2026-06-24',
   windowStart: iso(-4 * 864e5),
   windowEnd: iso(3 * 864e5),
@@ -116,6 +122,9 @@ const CODEX_TIER_COST = {
   fallbackWriteEvents: 0,
   cacheWriteEvents: 0,
   unrecordedWriteEvents: 38,
+  sourceIncomplete: false,
+  assumedTierEvents: 0,
+  fastRequestedEvents: 0,
   pricesAsOf: '2026-09-14',
   windowStart: iso(-4 * 864e5),
   windowEnd: iso(3 * 864e5),
@@ -135,10 +144,89 @@ const CODEX_UNRECORDED_ONLY_COST = {
   cacheWriteEvents: 0,
   unrecordedWriteEvents: 1,
 };
+/**
+ * ADR-002 A3.15: the cost reader KNOWS it missed events, and that is the ONLY
+ * floor cause. Everything else is LIVE_COST's clean week, so "en az" and the
+ * "could not be read" line can only come from `sourceIncomplete`.
+ */
+const SOURCE_INCOMPLETE_COST = {
+  ...LIVE_COST,
+  sourceIncomplete: true,
+};
+/**
+ * The owner's screenshot (2026-09-17), shape for shape: one unpriced Codex
+ * entry with an undeterminable tier and 202 records with unrecorded writes.
+ * `sourceIncomplete` is false: the logs were read, and the old third
+ * paragraph ("veriler güncel değil") was the false claim this replaces.
+ */
+const OWNER_CODEX_COST = {
+  ...CODEX_TIER_COST,
+  byModel: [
+    CODEX_TIER_COST.byModel[0],
+    { model: 'gpt-5.6-sol', speed: 'unknown-tier', pricedAs: null, usd: null,
+      tokens: { input: 120000, output: 19800, cacheWrite: 0, cacheRead: 30000, billable: 169800 } },
+  ],
+  unpricedModels: [],
+  unrecordedWriteEvents: 202,
+  sourceIncomplete: false,
+};
+/** Every compact cause at once, with a Claude-shaped TTL fallback beside the
+ *  Codex causes, so all four short lines can be measured together. */
+const ALL_CAUSES_COST = {
+  ...CODEX_TIER_COST,
+  fallbackWriteEvents: 1412,
+  cacheWriteEvents: 1781,
+  sourceIncomplete: true,
+};
+/**
+ * F5: the reader missed records and priced nothing. Must NOT hide the block
+ * (hidden reads as "no usage") and must not say "not in the price list".
+ */
+const INCOMPLETE_NO_FIGURE_COST = {
+  ...LIVE_COST,
+  totalUsd: 0,
+  byClass: { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
+  byModel: [],
+  unpricedModels: [],
+  fallbackWriteEvents: 0,
+  cacheWriteEvents: 0,
+  unrecordedWriteEvents: 0,
+  sourceIncomplete: true,
+};
+/**
+ * ADR-002 A3.17/A3.18/A3.21: the two tier floors as the ONLY causes. 24 events
+ * before Codex recorded a tier, 1 event where Fast was only requested (the
+ * singular, so the plural forms are both exercised across the two lines).
+ */
+const TIER_FLOOR_COST = {
+  ...CODEX_UNRECORDED_ONLY_COST,
+  unrecordedWriteEvents: 0,
+  assumedTierEvents: 24,
+  fastRequestedEvents: 1,
+};
+/** Ten unpriced entries: the "why" list names eight and counts two. */
+const MANY_UNPRICED_COST = {
+  ...CODEX_TIER_COST,
+  byModel: [
+    CODEX_TIER_COST.byModel[0],
+    ...Array.from({ length: 10 }, (_, i) => ({
+      model: `gpt-5.${i}-probe`, speed: 'unknown-tier', pricedAs: null, usd: null,
+      tokens: { input: 1000 * (i + 1), output: 100, cacheWrite: 0, cacheRead: 0, billable: 1100 * (i + 1) },
+    })),
+  ],
+  unpricedModels: [],
+  unrecordedWriteEvents: 0,
+};
 const NAMED_COSTS = {
+  tierFloor: TIER_FLOOR_COST,
+  manyUnpriced: MANY_UNPRICED_COST,
+  incompleteNoFigure: INCOMPLETE_NO_FIGURE_COST,
   codexTier: CODEX_TIER_COST,
   codexUnrecordedOnly: CODEX_UNRECORDED_ONLY_COST,
   caveat: CAVEAT_COST,
+  sourceIncomplete: SOURCE_INCOMPLETE_COST,
+  owner: OWNER_CODEX_COST,
+  allCauses: ALL_CAUSES_COST,
 };
 // An older or partly-broken main: the figure is there, everything ABOUT the
 // figure is missing. Must degrade, never vanish.
@@ -556,6 +644,16 @@ contextBridge.exposeInMainWorld('__probe', {
   },
   /** What main currently holds, so a revert can be checked against it. */
   prefs: () => ({ ...prefs }),
+  /**
+   * Push a resolved language and format locale directly, as main would after
+   * resolving one. `setLanguage('en')` always resolves en-US; this is how the
+   * suite reaches en-GB (same words, different number and date formatting).
+   */
+  setLocaleDirect: (resolvedLanguage, formatLocale) => {
+    prefs = { ...prefs, language: resolvedLanguage, resolvedLanguage, formatLocale };
+    if (prefsCb) prefsCb({ ...prefs });
+    return true;
+  },
   setRefreshDelay: (ms) => {
     refreshDelay = ms;
   },
@@ -617,6 +715,33 @@ contextBridge.exposeInMainWorld('__probe', {
       pricesAsOfByProvider: byProvider === undefined ? fresh.pricesAsOfByProvider : byProvider,
       pricesAsOf: pricesAsOf === undefined ? fresh.pricesAsOf : pricesAsOf,
     };
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
+  /**
+   * Reshape the history for the A3.20 "no data" cases, and push:
+   * 'emptyFloor'  the empty month becomes a floor (records in it were unread);
+   * 'noPeriods'   no periods at all, with Codex known to be incomplete.
+   * Anything else puts the fixture's own history back.
+   */
+  setHistoryShapeDirect: (name) => {
+    const fresh = usageHistoryFixture();
+    if (name === 'emptyFloor') {
+      fresh.months = fresh.months.map((m, i) => (i === 2 ? { ...m, isFloor: true } : m));
+      fresh.incompleteProviders = ['codex'];
+    } else if (name === 'noPeriods') {
+      fresh.months = [];
+      fresh.weeks = [];
+      fresh.incompleteProviders = ['codex'];
+    }
+    snapshot.usageHistory = fresh;
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+    return true;
+  },
+  /** Set `usageHistory.incompleteProviders` (ADR-002 A3.20), and push. */
+  setHistoryIncompleteDirect: (ids) => {
+    snapshot.usageHistory = { ...snapshot.usageHistory, incompleteProviders: Array.isArray(ids) ? ids.slice() : [] };
     snapshot.generatedAt = new Date().toISOString();
     if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
   },

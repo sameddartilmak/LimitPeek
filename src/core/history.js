@@ -72,6 +72,9 @@ const DEFAULT_MAX_MONTHS = 12;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Tools whose local usage feeds the history, in the order they are listed. */
+const INCOMPLETE_ORDER = ['claude', 'codex'];
+
 /** Local midnight of the day containing `ms`. */
 function startOfDayMs(ms) {
   const d = new Date(ms);
@@ -226,9 +229,12 @@ function byModelUsageFrom(events, startMs, endExclusiveMs) {
  *            tier or long-context row beside a priced one), or when a priced
  *            event on a model with a write price recorded 0 writes although
  *            it read cache or sent an uncached prompt of >= 1,024 tokens
- *            (rule 3, A3.9). Every cause pushes the true figure up.
+ *            (rule 3, A3.9), or when a priced event's tier was assumed Standard
+ *            or requested Fast and priced at Standard (A3.17-18). Every cause
+ *            pushes the true figure up.
  *
- * @param {{cost: object|null, writeFloorByModel: Map<string, number>}} detail
+ * @param {{cost: object|null, writeFloorByModel: Map<string, number>,
+ *          tierFloorByModel?: Map<string, number>}} detail
  *        `codexPricing.codexCostDetail` result for the period
  * @returns {Array<{provider:'codex', model:string, costUsd:number|null, isFloor:boolean}>}
  */
@@ -250,11 +256,13 @@ function codexByModelFrom(detail) {
     }
   }
   const floors = detail.writeFloorByModel || new Map();
+  const tierFloors = detail.tierFloorByModel || new Map();
   return [...byModel.values()].map((e) => ({
     provider: 'codex',
     model: e.model,
     costUsd: e.anyPriced ? round(e.priced) : null,
-    isFloor: (e.anyPriced && e.anyUnpriced) || (floors.get(e.model) || 0) > 0,
+    isFloor: (e.anyPriced && e.anyUnpriced) || (floors.get(e.model) || 0) > 0
+      || (tierFloors.get(e.model) || 0) > 0,
   }));
 }
 
@@ -272,8 +280,15 @@ function codexByModelFrom(detail) {
  * @param {number} endExclusiveMs   exclusive period end (next period start)
  * @param {string} key
  * @param {Array}  [codexEvents]    Codex per-turn deltas (codex/usage.js)
+ * @param {Set<string>|string[]|boolean} [knownIncomplete] the tools with a
+ *        known-unread range overlapping this period (ADR-002 A3.20); `true`
+ *        means both. The period is then a floor, and so is every model entry of
+ *        an affected tool (review F6).
  */
-function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents) {
+function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, knownIncomplete = false) {
+  const incomplete = knownIncomplete === true
+    ? new Set(INCOMPLETE_ORDER)
+    : new Set(knownIncomplete instanceof Set ? knownIncomplete : (Array.isArray(knownIncomplete) ? knownIncomplete : []));
   const lastDayMs = startOfDayMs(endExclusiveMs - 1);
   const base = {
     key,
@@ -291,7 +306,8 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents) {
       costUsd: 0,
       byClass: emptyByClass(),
       byModel: [],
-      isFloor: false,
+      // Nothing was READ here; if usage is known to be unread, $0 is a floor.
+      isFloor: incomplete.size > 0,
       unpricedModels: [],
       hasUsage: false,
     };
@@ -309,7 +325,11 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents) {
   // Codex adds its own floor cause (Amendment 3 rule 3, A3.9): writes recorded
   // as 0 on a model that charges for them, although the turn read cache or sent
   // a cacheable (>= 1,024-token) uncached prompt.
-  const isFloor = floorOf(cost) || floorOf(cxCost) || cxDetail.writeFloorEvents > 0;
+  // A3.17-18: turns priced at Standard although their tier was only assumed or
+  // was Fast REQUESTED. A3.20: a known-unread range overlaps the period.
+  const isFloor = floorOf(cost) || floorOf(cxCost) || cxDetail.writeFloorEvents > 0
+    || cxDetail.assumedTierEvents > 0 || cxDetail.fastRequestedEvents > 0
+    || incomplete.size > 0;
 
   // Dollars are added across the two tools, class by class; token counts never are.
   const byClass = emptyByClass();
@@ -320,7 +340,10 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents) {
   const byModel = [
     ...(cost ? byModelUsageFrom(events, startMs, endExclusiveMs) : []),
     ...codexByModelFrom(cxDetail),
-  ].sort(compareModelEntries);
+  ]
+    // A tool with usage known unread in this period: each of its figures is a floor.
+    .map((entry) => (incomplete.has(entry.provider) && !entry.isFloor ? { ...entry, isFloor: true } : entry))
+    .sort(compareModelEntries);
 
   const unpricedModels = [...new Set([
     ...(cost ? cost.unpricedModels : []),
@@ -350,8 +373,10 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents) {
  * @param {number} max
  * @param {'week'|'month'} kind
  * @param {Array}  [codexEvents]
+ * @param {(startMs:number, endMs:number) => Set<string>} [incompleteIn] the tools
+ *        with a known-unread range overlapping [startMs, endMs)
  */
-function bucketsOf(events, firstMs, now, max, kind, codexEvents) {
+function bucketsOf(events, firstMs, now, max, kind, codexEvents, incompleteIn = () => new Set()) {
   if (!Number.isFinite(firstMs)) return [];
   const startOf = kind === 'week' ? weekStartMs : monthStartMs;
   const nextOf = kind === 'week' ? nextWeekStartMs : nextMonthStartMs;
@@ -374,7 +399,8 @@ function bucketsOf(events, firstMs, now, max, kind, codexEvents) {
   const kept = starts.slice(Math.max(0, starts.length - max));
   const out = [];
   for (let i = kept.length - 1; i >= 0; i -= 1) {
-    out.push(periodUsageFrom(events, kept[i], nextOf(kept[i]), keyOf(kept[i]), codexEvents));
+    const end = nextOf(kept[i]);
+    out.push(periodUsageFrom(events, kept[i], end, keyOf(kept[i]), codexEvents, incompleteIn(kept[i], end)));
   }
   return out;
 }
@@ -416,8 +442,15 @@ function historyStartMs(now, opts) {
  *
  * @param {Array} events         deduped usage events, each with `ts`
  * @param {number} now
- * @param {{maxWeeks?:number, maxMonths?:number, codexEvents?:Array}} [opts]
- * @returns {{weeks:Array, months:Array, pricesAsOf:string, pricesAsOfByProvider:Object}}
+ * `opts.unreadRanges` maps a tool id to the `{ fromMs, throughMs }` ranges of
+ * usage its reader KNOWS it could not read (ADR-002 A3.20). A period overlapping
+ * one is a floor, and `incompleteProviders` lists every tool with a range
+ * overlapping any listed period, so the renderer can show one note.
+ *
+ * @param {{maxWeeks?:number, maxMonths?:number, codexEvents?:Array,
+ *          unreadRanges?:Object<string, Array<{fromMs:number, throughMs:number}>>}} [opts]
+ * @returns {{weeks:Array, months:Array, pricesAsOf:string, pricesAsOfByProvider:Object,
+ *            incompleteProviders:string[]}}
  */
 function usageHistory(events, now, opts) {
   const list = Array.isArray(events) ? events : [];
@@ -446,11 +479,40 @@ function usageHistory(events, now, opts) {
   if (claudeUsed) pricesAsOfByProvider.claude = pricing.PRICES_AS_OF;
   if (codexUsed) pricesAsOfByProvider.codex = codexPricing.PRICES_AS_OF;
 
+  const unread = [];
+  const rawRanges = opts && opts.unreadRanges && typeof opts.unreadRanges === 'object' ? opts.unreadRanges : {};
+  for (const provider of INCOMPLETE_ORDER) {
+    const ranges = Array.isArray(rawRanges[provider]) ? rawRanges[provider] : [];
+    for (const r of ranges) {
+      if (r && Number.isFinite(r.fromMs) && Number.isFinite(r.throughMs)) unread.push({ provider, ...r });
+    }
+  }
+  const affected = new Set();
+  const incompleteIn = (startMs, endMs) => {
+    const hit = new Set();
+    for (const r of unread) {
+      if (r.throughMs >= startMs && r.fromMs < endMs) {
+        affected.add(r.provider);
+        hit.add(r.provider);
+      }
+    }
+    return hit;
+  };
+
+  const weeks = bucketsOf(list, firstMs, when, maxWeeks, 'week', codexList, incompleteIn);
+  const months = bucketsOf(list, firstMs, when, maxMonths, 'month', codexList, incompleteIn);
+  // No period at all (nothing READ yet): still name the tools with unread usage
+  // in the span the history would cover, so "no records found" is not claimed
+  // over a known gap (review F6).
+  if (weeks.length === 0 && months.length === 0) {
+    incompleteIn(historyStartMs(when, { maxWeeks, maxMonths }), when + 1);
+  }
   return {
-    weeks: bucketsOf(list, firstMs, when, maxWeeks, 'week', codexList),
-    months: bucketsOf(list, firstMs, when, maxMonths, 'month', codexList),
+    weeks,
+    months,
     pricesAsOf: pricing.PRICES_AS_OF,
     pricesAsOfByProvider,
+    incompleteProviders: INCOMPLETE_ORDER.filter((id) => affected.has(id)),
   };
 }
 

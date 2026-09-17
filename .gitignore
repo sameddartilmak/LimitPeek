@@ -18,3 +18,6 @@ dist/
 agent-orchestrator/logs/
 
 *.log
+
+# landing page: generated screenshots
+site/screenshots/

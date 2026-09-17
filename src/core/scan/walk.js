@@ -36,6 +36,11 @@ async function walkJsonlFiles(root, options = {}) {
   // Distinguished from a per-directory failure: if the ROOT cannot be read we
   // must not report "no usage" as though it were a fact.
   let rootError = null;
+  // Directories and files that exist but could not be read (locked, access
+  // denied). Their transcripts drop out of the scan, so the cost reader must
+  // be able to say it KNOWS it missed records (ADR-002 A3.15). A path that
+  // vanished between listing and reading (ENOENT) is gone, not unreadable.
+  let unreadable = 0;
 
   while (queue.length > 0) {
     const { dir, depth } = queue.shift();
@@ -47,6 +52,7 @@ async function walkJsonlFiles(root, options = {}) {
       entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch (err) {
       if (dir === root) rootError = (err && err.code) || 'EREADDIR';
+      else if (!err || err.code !== 'ENOENT') unreadable += 1;
       log.fileFailure(fileId(dir), err);
       continue;
     }
@@ -68,6 +74,7 @@ async function walkJsonlFiles(root, options = {}) {
       try {
         st = await fs.promises.lstat(full);
       } catch (err) {
+        if (!err || err.code !== 'ENOENT') unreadable += 1;
         log.fileFailure(fileId(full), err);
         continue;
       }
@@ -78,7 +85,7 @@ async function walkJsonlFiles(root, options = {}) {
     if (truncated) break;
   }
 
-  return { files: out, dirsVisited, truncated, rootError };
+  return { files: out, dirsVisited, truncated, rootError, unreadable };
 }
 
 module.exports = { walkJsonlFiles, DEFAULT_MAX_DEPTH };

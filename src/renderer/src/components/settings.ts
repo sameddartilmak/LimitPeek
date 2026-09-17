@@ -466,11 +466,22 @@ function amountText(period: PeriodUsage, pending: boolean): string {
   // A figure that IS present stays unqualified — pending is not a floor ("en
   // az"), it is incomplete, and the section's note says so.
   if (pending && (!period.hasUsage || period.costUsd <= 0)) return t('settings.amount.pending');
-  if (!period.hasUsage) return '—';
   if (period.costUsd > 0) return period.isFloor ? atLeast(usd(period.costUsd)) : usd(period.costUsd);
   // Usage happened, but none of it could be priced: say so rather than print a
   // zero that reads as "free".
-  return period.unpricedModels.length > 0 ? t('settings.amount.unpriced') : '—';
+  if (period.hasUsage && period.unpricedModels.length > 0) return t('settings.amount.unpriced');
+  // A floor with no figure: records in this period could not be read (A3.20).
+  // "—" would claim the period is empty; the word says why there is no figure.
+  if (isIncompleteAmount(period, pending)) return t('settings.amount.incomplete');
+  return '—';
+}
+
+/** True when the amount cell reads "okunamadı" rather than a figure or "—". */
+function isIncompleteAmount(period: PeriodUsage, pending: boolean): boolean {
+  if (pending && (!period.hasUsage || period.costUsd <= 0)) return false;
+  if (period.costUsd > 0) return false;
+  if (period.hasUsage && period.unpricedModels.length > 0) return false;
+  return period.isFloor;
 }
 
 /**
@@ -540,8 +551,22 @@ function createUsageSection(): UsageHandleLocal {
   // total below it means, and it must be read before them.
   const pendingNote = el('p', { class: 'usage__pending', role: 'status' }, '');
   pendingNote.hidden = true;
+  // ADR-002 A3.20. Also above the list, for the same reason: it qualifies the
+  // totals below it. Shown only when some tool had records it could not read.
+  const incompleteNote = el('p', { class: 'usage__incomplete' }, '');
+  incompleteNote.hidden = true;
 
-  const root = el('div', { class: 'usage' }, intro, toggle, pendingNote, list, empty, note);
+  const root = el(
+    'div',
+    { class: 'usage' },
+    intro,
+    toggle,
+    pendingNote,
+    incompleteNote,
+    list,
+    empty,
+    note,
+  );
 
   function periodsFor(): PeriodUsage[] {
     if (!current) return [];
@@ -644,7 +669,9 @@ function createUsageSection(): UsageHandleLocal {
       bar.hidden = true;
     }
     const row = el('li', { class: 'usage__row', role: 'listitem' }, range, amount, bar) as HTMLElement;
-    setAttr(row, 'data-empty', period.hasUsage || pending ? null : 'true');
+    const incomplete = isIncompleteAmount(period, pending);
+    setAttr(row, 'data-empty', period.hasUsage || pending || incomplete ? null : 'true');
+    setAttr(row, 'data-incomplete', incomplete ? 'true' : null);
     setAttr(row, 'data-pending', pending && (!period.hasUsage || period.costUsd <= 0) ? 'true' : null);
     setAttr(row, 'data-floor', period.isFloor ? 'true' : null);
     // Only a period with a per-model split gets a disclosure — an empty period
@@ -659,7 +686,11 @@ function createUsageSection(): UsageHandleLocal {
 
   /** "Codex" / "Claude Code ve Codex", in the panel's language. */
   function pendingToolsText(): string {
-    const names = pendingIds.map((id) => known.find((p) => p.id === id)?.displayName || id);
+    return toolsText(pendingIds);
+  }
+
+  function toolsText(ids: readonly string[]): string {
+    const names = ids.map((id) => known.find((p) => p.id === id)?.displayName || id);
     try {
       return new Intl.ListFormat(currentLanguage(), { style: 'long', type: 'conjunction' }).format(names);
     } catch {
@@ -676,6 +707,13 @@ function createUsageSection(): UsageHandleLocal {
     pendingNote.hidden = pendingIds.length === 0;
     setText(pendingNote, pendingIds.length > 0 ? t('settings.usage.pending', { tools: pendingToolsText() }) : '');
 
+    const incompleteIds = current?.incompleteProviders ?? [];
+    incompleteNote.hidden = incompleteIds.length === 0;
+    setText(
+      incompleteNote,
+      incompleteIds.length > 0 ? t('settings.usage.incomplete', { tools: toolsText(incompleteIds) }) : '',
+    );
+
     if (!hasData) {
       list.hidden = true;
       note.hidden = true;
@@ -690,8 +728,11 @@ function createUsageSection(): UsageHandleLocal {
       note.hidden = true;
       // "No records found" is a claim about the corpus; with a tool still
       // being read it is not yet true. The pending note above says what is.
-      empty.hidden = pendingIds.length > 0;
-      setText(empty, pendingIds.length > 0 ? '' : t('settings.usage.empty'));
+      // Likewise with records known to be unread (A3.20): the incomplete note
+      // above says why there is nothing to list.
+      const unread = (current?.incompleteProviders ?? []).length > 0;
+      empty.hidden = pendingIds.length > 0 || unread;
+      setText(empty, pendingIds.length > 0 || unread ? '' : t('settings.usage.empty'));
       return;
     }
 

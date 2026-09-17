@@ -155,7 +155,26 @@
     "one": "{count} kayıtta, önbellek yazmasını ücretlendiren bir modelde önbellek yazması 0 kaydedilmiş; oysa bu kayıt önbellekten okumuş ya da önbelleğe alınabilecek uzunlukta (1.024+ token) istem göndermiş. Bu yüzden toplam bir alt sınır.",
     "other": "{count} kayıtta, önbellek yazmasını ücretlendiren bir modelde önbellek yazması 0 kaydedilmiş; oysa bu kayıtlar önbellekten okumuş ya da önbelleğe alınabilecek uzunlukta (1.024+ token) istem göndermiş. Bu yüzden toplam bir alt sınır."
   },
-  "cost.caveat.degraded": "Bu araçtan gelen veriler güncel değil. Tutar yalnızca son okunabilen olayları kapsıyor, bu yüzden pencerenin tamamını anlatmıyor.",
+  "cost.caveat.degraded": "Bu araca ait bazı yerel kayıtlar okunamadı. Tutar yalnızca okunabilen kayıtları kapsıyor, bu yüzden bir alt sınır.",
+  "cost.caveat.degradedNoFigure": "Bu araca ait bazı yerel kayıtlar okunamadı, bu yüzden bir tutar verilemiyor.",
+  "cost.caveat.assumedTier": {
+    "one": "{count} kayıtta Codex hizmet katmanını henüz kaydetmemişti. Codex’in gönderebileceği en ucuz katman Standart olduğu için bu kayıt Standart fiyattan hesaplandı; tutar bir alt sınır.",
+    "other": "{count} kayıtta Codex hizmet katmanını henüz kaydetmemişti. Codex’in gönderebileceği en ucuz katman Standart olduğu için bu kayıtlar Standart fiyattan hesaplandı; tutar bir alt sınır."
+  },
+  "cost.caveat.fastRequested": {
+    "one": "{count} kayıtta Fast istendi, ancak kayıt Fast’in gerçekten uygulandığını göstermiyor. Bu kayıt Standart fiyattan hesaplandı; Fast uygulandıysa gerçek tutar daha yüksek.",
+    "other": "{count} kayıtta Fast istendi, ancak kayıtlar Fast’in gerçekten uygulandığını göstermiyor. Bu kayıtlar Standart fiyattan hesaplandı; Fast uygulandıysa gerçek tutar daha yüksek."
+  },
+  "cost.caveat.unpricedMore": { "other": "… {count} kalem daha" },
+  "cost.cause.assumedTier": { "other": "Katmanı kaydedilmemiş istek (Standart fiyattan): {count} kayıt" },
+  "cost.cause.fastRequested": { "other": "Fast istendi (Standart fiyattan): {count} kayıt" },
+  "cost.cause.unpriced": "Fiyatlanamadı: {item}",
+  "cost.cause.unpricedMore": { "other": "Fiyatlanamadı: {count} kalem daha" },
+  "cost.cause.ttl": { "other": "Süresi kaydedilmemiş önbellek yazması: {count} kayıt" },
+  "cost.cause.unrecordedWrites": { "other": "Kaydedilmemiş önbellek yazması: {count} kayıt" },
+  "cost.cause.sourceIncomplete": "Okunamayan kayıtlar var",
+  "cost.why.toggle": "Neden en az?",
+  "cost.why.toggleUnpriced": "Neden tutar yok?",
   "cost.summary": "Yayımlanan API fiyatlarıyla {amount} tutardı",
   "cost.toggleLabel": "{provider}: bu haftaki kullanım, yayımlanan API fiyatlarıyla {amount} tutardı. Bu bir fatura değildir; abonelik kapsamında bu tutar ödenmez. Dökümü açmak için etkinleştirin.",
   "cost.unpricedSummary": "Bu haftaki kullanım fiyat listesinde bulunamadı",
@@ -207,14 +226,16 @@
   "settings.grain.week": "Haftalık",
   "settings.amount.unpriced": "fiyatlanamadı",
   "settings.amount.pending": "hesaplanıyor…",
+  "settings.amount.incomplete": "okunamadı",
   "settings.models.breakdown": "Modele göre dağılım",
   "settings.usage.loading": "Kullanım geçmişi yükleniyor…",
   "settings.usage.pending": "{tools} kullanımı hâlâ hesaplanıyor; toplamlar henüz eksik.",
   "settings.usage.empty": "Henüz yerel kullanım kaydı bulunamadı.",
   "settings.usage.note": "Fiyatlar {date} tarihli listeye göre. “En az” alt sınır demektir, şu nedenlerden biriyle: fiyatlanamayan kullanım toplama katılmadığı için; ya da TTL ayrımı olmayan önbellek yazmaları {low} ile fiyatlandırıldığı, 1 saatlik yazmalar ise gerçekte {high} olduğu için.",
-  "settings.usage.noteByProvider": "Claude Code fiyatları {claude}, Codex fiyatları {codex} tarihli listelere göre. “En az” alt sınır demektir, şu nedenlerden biriyle: fiyatlanamayan kullanım toplama katılmadığı için; Claude Code’da TTL ayrımı olmayan önbellek yazmaları {low} ile fiyatlandırıldığı, 1 saatlik yazmalar ise gerçekte {high} olduğu için; Codex’te ise Codex’in kaydetmediği önbellek yazmaları, bunları ücretlendiren modellerde toplamda yer almadığı için.",
+  "settings.usage.noteByProvider": "Claude Code fiyatları {claude}, Codex fiyatları {codex} tarihli listelere göre. “En az” alt sınır demektir, şu nedenlerden biriyle: fiyatlanamayan kullanım toplama katılmadığı için; Claude Code’da TTL ayrımı olmayan önbellek yazmaları {low} ile fiyatlandırıldığı, 1 saatlik yazmalar ise gerçekte {high} olduğu için; Codex’te ise Codex’in kaydetmediği önbellek yazmaları bunları ücretlendiren modellerde toplamda yer almadığı ya da hizmet katmanı doğrulanamadığı (katman kaydedilmemişse veya Fast istendiyse Standart fiyat kullanılır) için.",
   "cost.model.unknown": "model belirlenemedi",
-  "settings.usage.noteCodexOnly": "Codex fiyatları {codex} tarihli listeye göre. “En az” alt sınır demektir, iki nedenden biriyle: fiyatlanamayan kullanım toplama katılmadığı için ya da Codex’in kaydetmediği önbellek yazmaları, bunları ücretlendiren modellerde toplamda yer almadığı için.",
+  "settings.usage.noteCodexOnly": "Codex fiyatları {codex} tarihli listeye göre. “En az” alt sınır demektir, şu nedenlerden biriyle: fiyatlanamayan kullanım toplama katılmadığı için ya da Codex’te Codex’in kaydetmediği önbellek yazmaları bunları ücretlendiren modellerde toplamda yer almadığı veya hizmet katmanı doğrulanamadığı (katman kaydedilmemişse ya da Fast istendiyse Standart fiyat kullanılır) için.",
   "settings.usage.modelOf": "{tool} modeli",
-  "settings.usage.noteNoDate": "Fiyat listesinin tarihi bildirilmedi."
+  "settings.usage.noteNoDate": "Fiyat listesinin tarihi bildirilmedi.",
+  "settings.usage.incomplete": "{tools} için bazı yerel kayıtlar okunamadı; etkilenen dönemler bir alt sınırdır."
 }

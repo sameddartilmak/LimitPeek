@@ -7,6 +7,7 @@ const agg = require('./aggregate');
 const history = require('./history');
 const codexUsage = require('./codex/usage');
 const codexPricing = require('./codex/pricing');
+const { RETENTION_DAYS, DAY_MS } = require('./scan/scanner');
 
 /**
  * Builds the Snapshot described by `src/shared/contract.ts`.
@@ -206,6 +207,56 @@ function absenceOf(reading, raw, supplies, now) {
   return 'no-capture';
 }
 
+/**
+ * The known-unread instant ranges of one tool (ADR-002 A3.15, A3.20): the
+ * scan's own `{ fromMs, throughMs }` hull, plus — when the latest scan failed
+ * and an older result is served — everything from when that result was read
+ * up to now. Invalid entries are dropped.
+ */
+function unreadRangesOf(scanRange, failed, failedFromMs, now) {
+  const out = [];
+  if (scanRange && Number.isFinite(scanRange.fromMs) && Number.isFinite(scanRange.throughMs)) {
+    out.push({ fromMs: scanRange.fromMs, throughMs: scanRange.throughMs });
+  }
+  // A failure's range always has width: from strictly before now (review F4).
+  if (failed) out.push({ fromMs: Number.isFinite(failedFromMs) ? Math.min(failedFromMs, now - 1) : 0, throughMs: now });
+  return out;
+}
+
+/**
+ * Does any range overlap the window [startMs, endMs]? Inclusive at the end: a
+ * range's instants are inclusive, and a window ending at now must still meet a
+ * range that starts at now (review F4).
+ */
+function overlapsAny(ranges, startMs, endMs) {
+  return ranges.some((r) => r.throughMs >= startMs && r.fromMs <= endMs);
+}
+
+/**
+ * A WeeklyCost with nothing readable in it, for a source KNOWN to be incomplete
+ * (ADR-002 A3.19): the block states the gap instead of the row reading "no
+ * token data". Every figure is an honest zero of "nothing READ"; the renderer
+ * reads `sourceIncomplete` and never presents it as a lower-bound amount.
+ */
+function emptyWeeklyCost(startMs, endMs, anchored, pricesAsOf) {
+  return {
+    totalUsd: 0,
+    byClass: { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
+    byModel: [],
+    unpricedModels: [],
+    fallbackWriteEvents: 0,
+    cacheWriteEvents: 0,
+    unrecordedWriteEvents: 0,
+    assumedTierEvents: 0,
+    fastRequestedEvents: 0,
+    sourceIncomplete: true,
+    pricesAsOf,
+    windowStart: new Date(startMs).toISOString(),
+    windowEnd: new Date(endMs).toISOString(),
+    windowAnchored: Boolean(anchored),
+  };
+}
+
 function claudeRowState(rl, scanOk, captureFresh, rolledOver) {
   switch (rl.state) {
     case 'missing':
@@ -295,6 +346,13 @@ function lastGoodAtFor(scanGoodAtMs, capturedAtMs, rateLimitState) {
  * @param {object} input.rateLimits  result of readClaudeRateLimits()
  * @param {boolean} input.scanOk
  * @param {number} [input.scanGoodAtMs] when the transcript data was last good
+ * @param {{fromMs:number, throughMs:number}|null} [input.scanUnreadRange] instants
+ *        of transcript records the last scan knew it could not read (A3.15)
+ * @param {boolean} [input.codexReadFailed] the latest Codex usage scan failed or
+ *        timed out, so `codexEvents` is an older result
+ * @param {number|null} [input.codexReadGoodAtMs] when the held Codex result was read
+ * @param {{fromMs:number, throughMs:number}|null} [input.codexUnreadRange] instants
+ *        of Codex turns the last rollout scan knew it could not read
  * @param {string|null} input.planLabel  from app settings only. Never inferred,
  *        and never read from the credentials file.
  * @param {string[]} [input.order]  persisted provider order. Applied here so
@@ -359,7 +417,23 @@ function buildSnapshot(input) {
   const weekWin = agg.sevenDayWindow(now, weekAnchorMs);
   // Same deduped set as every other figure: the 115.3% replay inflation would
   // otherwise land directly on the money.
-  const weeklyCost = pricing.weeklyCost(deduped, weekWin.start, weekWin.end, weekWin.anchored);
+  // ADR-002 A3.15: only the transcript scan's OWN completeness — never the
+  // rate-limit capture's freshness or rollover, which say nothing about whether
+  // the logs were read. A failed scan serves the previous store, which holds
+  // nothing older than the retention window.
+  const claudeUnread = unreadRangesOf(
+    input.scanUnreadRange,
+    !scanOk,
+    Number.isFinite(input.scanGoodAtMs) ? input.scanGoodAtMs : now - RETENTION_DAYS * DAY_MS,
+    now,
+  );
+  const claudeIncomplete = overlapsAny(claudeUnread, weekWin.start, weekWin.end);
+  let weeklyCost = pricing.weeklyCost(deduped, weekWin.start, weekWin.end, weekWin.anchored);
+  if (weeklyCost) weeklyCost.sourceIncomplete = claudeIncomplete;
+  else if (claudeIncomplete) {
+    // A3.19: nothing readable in the window, and KNOWN not to be the whole story.
+    weeklyCost = emptyWeeklyCost(weekWin.start, weekWin.end, weekWin.anchored, pricing.PRICES_AS_OF);
+  }
 
   const row = claudeRowState(rl, scanOk, captureFresh, anyWindowRolledOver(rl, now));
   const lastGoodAt = lastGoodAtFor(
@@ -568,7 +642,17 @@ function buildSnapshot(input) {
   const cxSevenResetsAtMs = cx.sevenDay ? cx.sevenDay.resetsAtMs : null;
   const cxWeekAnchorMs = Number.isFinite(cxSevenResetsAtMs) && now < cxSevenResetsAtMs ? cxSevenResetsAtMs : null;
   const cxWeekWin = agg.sevenDayWindow(now, cxWeekAnchorMs);
-  const cxWeeklyCost = codexPricing.codexCost(cxEvents, cxWeekWin.start, cxWeekWin.end, cxWeekWin.anchored);
+  // ADR-002 A3.15, as for Claude: the rollout scan's own completeness only.
+  // While pending there is no result to be incomplete (pendingUsage says so).
+  const codexUnread = Array.isArray(input.codexEvents)
+    ? unreadRangesOf(input.codexUnreadRange, input.codexReadFailed === true, input.codexReadGoodAtMs, now)
+    : [];
+  const cxIncomplete = overlapsAny(codexUnread, cxWeekWin.start, cxWeekWin.end);
+  let cxWeeklyCost = codexPricing.codexCost(cxEvents, cxWeekWin.start, cxWeekWin.end, cxWeekWin.anchored);
+  if (cxWeeklyCost) cxWeeklyCost.sourceIncomplete = cxIncomplete;
+  else if (cxIncomplete) {
+    cxWeeklyCost = emptyWeeklyCost(cxWeekWin.start, cxWeekWin.end, cxWeekWin.anchored, codexPricing.PRICES_AS_OF);
+  }
 
   const providers = PROVIDERS.map((p) => {
     if (p.id === 'antigravity') {
@@ -671,7 +755,11 @@ function buildSnapshot(input) {
     // history any more than it can on the weekly total. Codex joins it from the
     // SAME scanned turn deltas its row's tokens and weekly cost are built from,
     // priced by its own table; the settings section names both sources.
-    usageHistory: history.usageHistory(deduped, now, { codexEvents: cxEvents }),
+    // Periods overlapping a known-unread range are floors (A3.20).
+    usageHistory: history.usageHistory(deduped, now, {
+      codexEvents: cxEvents,
+      unreadRanges: { claude: claudeUnread, codex: codexUnread },
+    }),
     // ADR-002 A3.12. The collector passes `codexEvents: null` until the Codex
     // worker's first result, so its empty figures above read as NOT READ YET.
     // Claude never needs an entry: before its first scan the collector sends

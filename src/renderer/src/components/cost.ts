@@ -22,8 +22,10 @@
  * On this machine cache reads are 65% of the figure while being the cheapest
  * class per token, because there are 294 million of them. A single number
  * asserts; the composition explains. So the stacked bar and the two largest
- * classes are always visible, and only the table, the caveats and the
- * provenance are behind the toggle.
+ * classes are always visible, and only the table and the provenance are
+ * behind the toggle. The causes of a floor are visible too, as one short line
+ * each; their full sentences are behind their own "why" disclosure (ADR-002
+ * A3.16), so "en az" is never on screen without a reason beside it.
  *
  * The composition bar is deliberately NOT on the state ramp. The ramp means
  * "distance to a limit"; this is a share of a whole with no limit in it, and
@@ -47,9 +49,14 @@ import { t, type MessageKey } from '../i18n.js';
 
 export interface CostHandle {
   el: HTMLElement;
-  /** `degraded` is the row's effective status being 'stale' or 'error': the
-   *  events behind the figure stop before the window does, so it is a floor. */
-  update(cost: WeeklyCost | null, providerName: string, degraded?: boolean, pending?: boolean): void;
+  /**
+   * There is deliberately no `degraded` parameter (ADR-002 A3.15). The row's
+   * status says whether the RATE-LIMIT capture is fresh; it says nothing about
+   * whether the token logs behind this figure were read. The only completeness
+   * signal this block honours is the cost source's own
+   * `WeeklyCost.sourceIncomplete`.
+   */
+  update(cost: WeeklyCost | null, providerName: string, pending?: boolean): void;
 }
 
 /**
@@ -142,30 +149,84 @@ function unpricedRows(cost: WeeklyCost): ModelCost[] {
   return cost.byModel.filter((entry) => entry.usd === null);
 }
 
+/** How many unpriced (model, tier) lines the compact list names before the
+ *  rest collapse into one counted line. Three reads at a glance; the "why"
+ *  disclosure names up to MAX_UNPRICED_LISTED and counts the rest. */
+const MAX_UNPRICED_CAUSES = 3;
+
+/** How many unpriced entries the "why" disclosure names before a counted
+ *  "… N more" line. Every entry is either named or counted, never dropped. */
+const MAX_UNPRICED_LISTED = 8;
+
 /**
- * Anything excluded from the total, priced through a floor, or measured from a
- * feed that has stopped, makes the figure a lower bound. Every one of them is
- * one-way: an unpriced model adds cost that is missing, a 1-hour write charged
- * at 1.25x instead of 2x is undercharged, and a stale row's events stop before
- * the window does. None can make the true figure smaller.
+ * The compact cause list (ADR-002 A3.16): one short line per reason the figure
+ * is not exact. Every entry is one-way: an unpriced model adds cost that is
+ * missing, a 1-hour write charged at 1.25x is undercharged, a write Codex
+ * recorded as 0 is missing, and events the reader could not read are missing.
+ * None can make the true figure smaller.
  *
- * `degraded` is the row's own status. The meter above dims itself and the row
- * reports its own age when the data stops, but the cost block underneath was
- * still asserting a window ending today from events that may stop days
- * earlier. Putting that qualification in the NUMBER rather than in the
- * expanded caveat is deliberate: a caveat behind a disclosure most users never
- * open is not a caveat.
+ * THE FLOOR IS DERIVED FROM THIS LIST, not from a parallel predicate. "en az"
+ * is printed exactly when this returns at least one line, so a floor with no
+ * visible cause is not a state the code can reach (A3.16), and a cause with no
+ * floor is not one either.
+ *
+ * `sourceIncomplete` is the cost reader's own statement that it missed events
+ * in the window (A3.15). The row's status is NOT read here: it describes the
+ * limit capture, and the stale-limit caveat it used to drive was false for a
+ * user who had simply not used the tool lately.
  */
-function isFloor(cost: WeeklyCost, degraded: boolean): boolean {
-  return (
-    degraded ||
-    cost.fallbackWriteEvents > 0 ||
-    // ADR-002 Amendment 3 rule 3: zero RECORDED cache writes are not zero
-    // writes, on a model that bills them. Its own claim, its own count.
-    cost.unrecordedWriteEvents > 0 ||
-    cost.unpricedModels.length > 0 ||
-    unpricedRows(cost).length > 0
-  );
+function causeLines(cost: WeeklyCost): string[] {
+  const lines: string[] = [];
+
+  // Named from byModel, not from `unpricedModels`: see renderCaveats().
+  const items = unpricedItems(cost);
+  if (items.length > MAX_UNPRICED_CAUSES) {
+    // One line each up to the cap; past it, the first two and a COUNTED line.
+    // A count keeps the claim ("more was not priced") without a fourth or
+    // eighth model id pushing the figure's own row off the hover panel.
+    const shown = MAX_UNPRICED_CAUSES - 1;
+    for (const item of items.slice(0, shown)) lines.push(t('cost.cause.unpriced', { item }));
+    lines.push(t('cost.cause.unpricedMore', { count: items.length - shown }));
+  } else {
+    for (const item of items) lines.push(t('cost.cause.unpriced', { item }));
+  }
+
+  if (cost.fallbackWriteEvents > 0) {
+    lines.push(t('cost.cause.ttl', { count: cost.fallbackWriteEvents }));
+  }
+  if (cost.unrecordedWriteEvents > 0) {
+    lines.push(t('cost.cause.unrecordedWrites', { count: cost.unrecordedWriteEvents }));
+  }
+  // ADR-002 A3.17/A3.21: no recorded tier yet, priced at Standard as a floor.
+  if (cost.assumedTierEvents > 0) {
+    lines.push(t('cost.cause.assumedTier', { count: cost.assumedTierEvents }));
+  }
+  // A3.18: Fast was REQUESTED, not proven billed; priced at Standard as a floor.
+  if (cost.fastRequestedEvents > 0) {
+    lines.push(t('cost.cause.fastRequested', { count: cost.fastRequestedEvents }));
+  }
+  if (cost.sourceIncomplete) {
+    lines.push(t('cost.cause.sourceIncomplete'));
+  }
+  return lines;
+}
+
+/**
+ * Unpriced usage as "model · tier · tokens". Named from byModel, because
+ * `unpricedModels` is de-duplicated by model and DROPS the speed
+ * (src/core/pricing.js:261): it would say "claude-opus-4-8 is unpriced" while
+ * a priced standard-speed row for the same model sits in the table. ADR-002
+ * amendment 2 added ModelCost.speed for exactly this contradiction. The bare
+ * list is only a fallback for a payload whose rows were rejected.
+ */
+function unpricedItems(cost: WeeklyCost): string[] {
+  const rows = unpricedRows(cost);
+  return rows.length > 0
+    ? rows.map((row) => {
+        const tokens = row.tokens ? ` · ${tokenCount(row.tokens.billable)}` : '';
+        return `${modelName(row.model)} · ${speedLabel(row.speed)}${tokens}`;
+      })
+    : cost.unpricedModels.slice();
 }
 
 /**
@@ -201,11 +262,39 @@ export function createCost(providerId: string): CostHandle {
   const bar = el('div', { class: 'cost__bar', 'aria-hidden': 'true' });
   const caption = el('p', { class: 'cost__caption' });
 
+  // --- causes (ADR-002 A3.16) ----------------------------------------------
+  // Always visible whenever the figure is a floor or absent: "en az" is in the
+  // collapsed summary, so its reasons must be too. Short lines only; the
+  // signed-off sentences sit behind `whyToggle`, one click away.
+  const causesId = `cost-causes-${providerId}`;
+  const whyId = `cost-why-${providerId}`;
+  const causes = el('ul', { class: 'cost__causes', id: causesId });
+  const whyChevron = el('span', { class: 'cost__chev', 'aria-hidden': 'true' });
+  const whyText = el('span', { class: 'cost__whytext' });
+  // The accessible name IS the visible text (label-in-name), and the cause
+  // list is its description, so a reader tabbing between rows hears which
+  // causes this "why" belongs to without a second, divergent label.
+  const whyToggle = el(
+    'button',
+    {
+      type: 'button',
+      class: 'cost__why',
+      'aria-expanded': 'false',
+      'aria-controls': whyId,
+      'aria-describedby': causesId,
+    },
+    whyChevron,
+    whyText,
+  ) as HTMLButtonElement;
+  const caveats = el('div', { class: 'cost__caveats', id: whyId });
+  caveats.hidden = true;
+  const causeBlock = el('div', { class: 'cost__cause-block' }, causes, whyToggle, caveats);
+  causeBlock.hidden = true;
+
   // --- expanded ----------------------------------------------------------
   const detailLead = el('p', { class: 'cost__lead' });
   const detailDenial = el('p', { class: 'cost__denial' });
   const table = el('div', { class: 'cost__table' });
-  const caveats = el('div', { class: 'cost__caveats' });
   const provenance = el('div', { class: 'cost__prov' });
   const detail = el(
     'div',
@@ -213,7 +302,6 @@ export function createCost(providerId: string): CostHandle {
     detailLead,
     detailDenial,
     table,
-    caveats,
     provenance,
   );
   detail.hidden = true;
@@ -224,7 +312,7 @@ export function createCost(providerId: string): CostHandle {
   const pendingLine = el('p', { class: 'cost__pending' });
   pendingLine.hidden = true;
 
-  const root = el('div', { class: 'cost' }, pendingLine, toggle, bar, caption, detail);
+  const root = el('div', { class: 'cost' }, pendingLine, toggle, bar, caption, causeBlock, detail);
   root.hidden = true;
 
   let expanded = false;
@@ -236,6 +324,19 @@ export function createCost(providerId: string): CostHandle {
   on(toggle, 'click', () => {
     expanded = !expanded;
     applyExpanded();
+  });
+
+  // Its own state, independent of the breakdown: a user who only wants to
+  // know why the figure is a bound should not have to open the table too.
+  let whyExpanded = false;
+  function applyWhy(): void {
+    caveats.hidden = !whyExpanded;
+    setAttr(whyToggle, 'aria-expanded', whyExpanded ? 'true' : 'false');
+    setAttr(causeBlock, 'data-why', whyExpanded ? 'true' : 'false');
+  }
+  on(whyToggle, 'click', () => {
+    whyExpanded = !whyExpanded;
+    applyWhy();
   });
 
   function renderBar(slices: readonly Slice[]): void {
@@ -277,26 +378,17 @@ export function createCost(providerId: string): CostHandle {
   }
 
   /**
-   * The two caveats are separate sentences on purpose. They are different
-   * failures: one is usage that is MISSING from the total, the other is usage
-   * that is IN the total at too low a rate. Merging them into "some numbers
-   * may be off" would lose which of the two is happening.
+   * The full, signed-off sentences behind the "why" disclosure. They stay
+   * separate statements on purpose: usage MISSING from the total, usage IN the
+   * total at too low a rate, writes never recorded, and events never read are
+   * four different failures, and merging them into "some numbers may be off"
+   * would lose which is happening. The compact list above names the same
+   * causes in the same order.
    */
-  function renderCaveats(cost: WeeklyCost, allUnpriced: boolean, degraded: boolean): void {
+  function renderCaveats(cost: WeeklyCost, noFigure: boolean): void {
     const nodes: HTMLElement[] = [];
 
-    // Named from byModel, not from `unpricedModels`: that array is
-    // de-duplicated by model and DROPS the speed (src/core/pricing.js:261), so
-    // it would say "claude-opus-4-8 is unpriced" while a priced standard-speed
-    // row for the same model sits in the table above. ADR-002 amendment 2 added
-    // ModelCost.speed for exactly this contradiction.
-    const rows = unpricedRows(cost);
-    const names = rows.length > 0
-      ? rows.map((row) => {
-          const tokens = row.tokens ? ` · ${tokenCount(row.tokens.billable)}` : '';
-          return `${modelName(row.model)} · ${speedLabel(row.speed)}${tokens}`;
-        })
-      : cost.unpricedModels.slice();
+    const names = unpricedItems(cost);
 
     if (names.length > 0) {
       // "bir bölümü" is a lie when it is all of it, and that is exactly the
@@ -305,12 +397,21 @@ export function createCost(providerId: string): CostHandle {
         el(
           'p',
           { class: 'cost__caveat' },
-          allUnpriced ? t('cost.caveat.allUnpriced') : t('cost.caveat.someUnpriced'),
+          noFigure ? t('cost.caveat.allUnpriced') : t('cost.caveat.someUnpriced'),
         ),
       );
       const list = el('ul', { class: 'cost__unpriced' });
-      for (const name of names.slice(0, 8)) {
+      for (const name of names.slice(0, MAX_UNPRICED_LISTED)) {
         list.appendChild(el('li', {}, name));
+      }
+      if (names.length > MAX_UNPRICED_LISTED) {
+        list.appendChild(
+          el(
+            'li',
+            { class: 'cost__unpriced-more' },
+            t('cost.caveat.unpricedMore', { count: names.length - MAX_UNPRICED_LISTED }),
+          ),
+        );
       }
       nodes.push(list);
     }
@@ -353,24 +454,48 @@ export function createCost(providerId: string): CostHandle {
       );
     }
 
-    if (degraded) {
+    // ADR-002 A3.15: only the reader's own statement that it missed events.
+    // Never the row status — that is the limit capture's age, and this
+    // sentence was false for every user who had simply not used the tool
+    // recently.
+    if (cost.assumedTierEvents > 0) {
       nodes.push(
         el(
           'p',
-          { class: 'cost__caveat' },
-          t('cost.caveat.degraded'),
+          { class: 'cost__caveat', 'data-caveat': 'assumed-tier' },
+          t('cost.caveat.assumedTier', { count: cost.assumedTierEvents }),
+        ),
+      );
+    }
+    if (cost.fastRequestedEvents > 0) {
+      nodes.push(
+        el(
+          'p',
+          { class: 'cost__caveat', 'data-caveat': 'fast-requested' },
+          t('cost.caveat.fastRequested', { count: cost.fastRequestedEvents }),
+        ),
+      );
+    }
+
+    // With no amount on screen, "the amount is a lower bound" describes a
+    // figure that is not there (A3.19): the no-figure sentence says instead
+    // that no amount can be given.
+    if (cost.sourceIncomplete) {
+      nodes.push(
+        el(
+          'p',
+          { class: 'cost__caveat', 'data-caveat': 'source-incomplete' },
+          noFigure ? t('cost.caveat.degradedNoFigure') : t('cost.caveat.degraded'),
         ),
       );
     }
 
     replaceChildrenWith(caveats, nodes);
-    caveats.hidden = nodes.length === 0;
   }
 
   function update(
     cost: WeeklyCost | null,
     providerName: string,
-    degraded = false,
     pending = false,
   ): void {
     // Pending wins over any figure: until the first scan result the cost is
@@ -382,6 +507,7 @@ export function createCost(providerId: string): CostHandle {
       setText(pendingLine, t('cost.pending'));
       bar.hidden = true;
       caption.hidden = true;
+      causeBlock.hidden = true;
       detail.hidden = true;
       root.hidden = false;
       return;
@@ -394,12 +520,8 @@ export function createCost(providerId: string): CostHandle {
     }
 
     const { slices, sum } = slicesOf(cost.byClass);
-    const rows = unpricedRows(cost);
-    const hasCaveat =
-      cost.fallbackWriteEvents > 0 ||
-      cost.unrecordedWriteEvents > 0 ||
-      rows.length > 0 ||
-      cost.unpricedModels.length > 0;
+    const lines = causeLines(cost);
+    const hasCaveat = lines.length > 0;
 
     /**
      * THE MOST IMPORTANT LINE IN THIS FILE.
@@ -436,7 +558,17 @@ export function createCost(providerId: string): CostHandle {
     root.hidden = false;
     setAttr(root, 'data-unpriced', hasFigure ? null : 'true');
 
-    const floor = hasFigure && isFloor(cost, degraded);
+    // No figure AND nothing unpriced: the causes are all there is to say (in
+    // practice sourceIncomplete: the reader missed records and priced none).
+    // Hiding the block would read as "no usage", and cost.unpricedSummary
+    // ("not in the price list") would be false, so the block is the cause
+    // list and its "why" alone: no toggle, no amount, no breakdown.
+    const causesOnly = !hasFigure && unpricedItems(cost).length === 0;
+    setAttr(root, 'data-causes-only', causesOnly ? 'true' : null);
+    toggle.hidden = causesOnly;
+
+    // A floor exactly when there is a visible cause for it (A3.16).
+    const floor = hasFigure && lines.length > 0;
 
     if (hasFigure) {
       // The floor word is bound to the figure by atLeast(), so the English
@@ -488,7 +620,25 @@ export function createCost(providerId: string): CostHandle {
     setText(detailDenial, t('cost.denial'));
 
     renderTable(slices);
-    renderCaveats(cost, !hasFigure, degraded);
+
+    replaceChildrenWith(
+      causes,
+      lines.map((line) => el('li', { class: 'cost__cause' }, line)),
+    );
+    causeBlock.hidden = lines.length === 0;
+    setText(whyText, hasFigure ? t('cost.why.toggle') : t('cost.why.toggleUnpriced'));
+    renderCaveats(cost, !hasFigure);
+    // A cause list that empties closes its disclosure, so a later floor does
+    // not reappear already open with no click behind it.
+    if (lines.length === 0) whyExpanded = false;
+    applyWhy();
+    if (causesOnly) {
+      bar.hidden = true;
+      caption.hidden = true;
+      detail.hidden = true;
+      setAttr(root, 'data-expanded', 'false');
+      return;
+    }
 
     // ADR-002 rule 3 obliges the figure to say when its prices were current.
     // When main did not tell us, SAYING SO discharges that obligation; quietly

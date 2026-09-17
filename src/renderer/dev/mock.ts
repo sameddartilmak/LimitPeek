@@ -101,6 +101,11 @@ function weeklyCost(patch: Partial<WeeklyCost> = {}): WeeklyCost {
     cacheWriteEvents: 1_781,
     // Claude never has unrecorded writes (ADR-002 A3 rule 3 is Codex's).
     unrecordedWriteEvents: 0,
+    // Every log was read (ADR-002 A3.15). Never inferred from a stale row.
+    sourceIncomplete: false,
+    // Claude has no Codex service tier (ADR-002 A3.17-18).
+    assumedTierEvents: 0,
+    fastRequestedEvents: 0,
     pricesAsOf: '2026-06-24',
     windowStart: iso(-5 * 24 * HOUR),
     // Anchored means the window ends at the weekly reset, which is in the

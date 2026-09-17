@@ -672,7 +672,7 @@
   border-bottom: 3.5px solid transparent;
   transition: transform 120ms var(--ease-open);
 }
-.cost[data-expanded="true"] .cost__chev { transform: rotate(90deg); }
+.cost[data-expanded="true"] .cost__toggle .cost__chev { transform: rotate(90deg); }
 
 /* The composition, always visible. One hue, stepping down with rank, so the
  * segments read as "sorted by size" rather than as five categories. */
@@ -785,24 +785,70 @@
   transform: scaleX(var(--w, 0));
 }
 
-/* ------------------------------------------------------------- caveats */
-/* Two separate statements: one is usage MISSING from the total, the other is
- * usage IN the total at too low a rate. Merging them would lose which. */
+/* ------------------------------------------------------------- causes */
+/* ADR-002 A3.16: why the figure is "en az", as one short line per cause,
+ * visible without opening anything. Measurement copy, not an alert: ink, not
+ * the state ramp, and no warning accent. Lines WRAP (honesty copy is never
+ * cut, ADR-004 A2.3); a model id has no spaces, so it may break anywhere. */
 
-.cost__caveats { display: flex; flex-direction: column; gap: var(--s-1); }
+.cost__cause-block { display: flex; flex-direction: column; gap: 2px; }
+.cost__cause-block[hidden] { display: none !important; }
+
+.cost__causes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  color: var(--ink-300);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.cost__cause { overflow-wrap: anywhere; }
+
+.cost__why {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s-1);
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-400);
+  font: inherit;
+  font-size: var(--fs-micro);
+  text-align: left;
+  cursor: pointer;
+}
+.cost__why:hover { color: var(--ink-100); }
+.cost__why .cost__chev { border-left-width: 3.5px; border-top-width: 3px; border-bottom-width: 3px; }
+.cost__cause-block[data-why="true"] .cost__why .cost__chev { transform: rotate(90deg); }
+
+/* The full, signed-off sentences. Separate statements: usage MISSING from the
+ * total, usage IN it at too low a rate, writes never recorded, events never
+ * read. Merging them would lose which. */
+.cost__caveats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin-top: 2px;
+  padding-left: var(--s-2);
+  border-left: 1px solid var(--ink-600);
+}
 .cost__caveats[hidden] { display: none !important; }
 
 .cost__caveat {
   margin: 0;
-  padding-left: var(--s-2);
-  border-left: 2px solid var(--watch);
   font-size: var(--fs-micro);
   line-height: 1.45;
   color: var(--ink-300);
+  overflow-wrap: break-word;
 }
 .cost__unpriced {
   margin: 0;
-  padding-left: calc(var(--s-2) + var(--s-3));
+  padding-left: var(--s-3);
   list-style: none;
   font-size: var(--fs-micro);
   color: var(--ink-200);

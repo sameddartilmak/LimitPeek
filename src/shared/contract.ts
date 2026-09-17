@@ -282,6 +282,47 @@ export interface WeeklyCost {
    * folded into it. Always present: Codex fills it, Claude is always 0.
    */
   unrecordedWriteEvents: number;
+  /**
+   * Priced events with NO recorded tier — Codex turns before the rollout's first
+   * settings record — priced at Standard because every tier that rollout
+   * records is default/priority/fast (ADR-002 A3.17: Codex core sends only a
+   * tier the model catalog advertises, and no observed catalog lists the
+   * cheaper Flex). Non-zero means the figure is a FLOOR ("en az") with its own
+   * cause. A rollout recording any other tier leaves such turns unpriced (they
+   * appear in `byModel` with `usd: null` and speed 'unknown-tier'), so they are
+   * never counted here. Always present: Codex fills it, Claude is always 0.
+   */
+  assumedTierEvents: number;
+  /**
+   * Priced events whose recorded tier is `priority`/`fast` — the tier
+   * REQUESTED, not proven billed — priced at STANDARD (ADR-002 A3.18): a Fast
+   * price could exceed the true cost and break "en az". Non-zero means the
+   * figure is a FLOOR with its own cause ("Fast requested: if applied, the real
+   * cost is higher"). Their `byModel` row keeps speed 'fast' while `pricedAs`
+   * names the Standard row. Always present: Codex fills it, Claude is always 0.
+   */
+  fastRequestedEvents: number;
+  /**
+   * true ONLY when the cost reader KNOWS it could not read usage records that
+   * may fall inside this window (ADR-002 A3.15): the last local scan failed or
+   * timed out and an older result is being served, a log file or directory in
+   * reach of the window could not be read (locked, access denied, refused as a
+   * network target), or a usage record in the window was present but could not
+   * be decoded. The figure then omits usage it knows exists, so it is a FLOOR
+   * and the "data not current" caveat is true.
+   *
+   * Never derived from the rate-limit capture: a stale or rolled-over 5h/weekly
+   * reading, or simply no recent use of the tool, says nothing about whether
+   * the logs were read, and is `false` here. Drive the cost block's degraded
+   * caveat and its floor from this field, never from `ProviderSnapshot.status`.
+   *
+   * A known-incomplete source is delivered even when NOTHING readable is left in
+   * the window (A3.19): main then sends an empty WeeklyCost — `totalUsd` 0, empty
+   * `byModel`/`unpricedModels`, every count 0 — with `sourceIncomplete: true`.
+   * That zero is "nothing read", not an amount: render the gap in its own
+   * no-figure sentence, never "en az $0" or "the amount is a lower bound".
+   */
+  sourceIncomplete: boolean;
   windowStart: string;
   windowEnd: string;
   /** true when anchored to sevenDay.resetsAt; false for a trailing 7 days. */
@@ -323,9 +364,11 @@ export interface PeriodModelCost {
   costUsd: number | null;
   /**
    * true when `costUsd` is a LOWER BOUND for this model: a cache-write TTL split
-   * was missing (priced at the 1.25x floor) or part of the model's usage was at
-   * an unpriced speed and excluded. Every cause pushes the true figure up, so
-   * the renderer prints "en az" — exactly as at the period level.
+   * was missing (priced at the 1.25x floor), part of the model's usage was at
+   * an unpriced speed and excluded, or (Codex) writes were unrecorded or a tier
+   * was assumed Standard / Fast requested and priced at Standard (A3.17-18).
+   * Every cause pushes the true figure up, so the renderer prints "en az" —
+   * exactly as at the period level.
    */
   isFloor: boolean;
 }
@@ -372,9 +415,15 @@ export interface PeriodUsage {
    */
   byModel: PeriodModelCost[];
   /**
-   * true when `costUsd` is a LOWER BOUND: unpriced models were excluded, or a
-   * cache-write TTL split was missing and priced at the 1.25x floor. Every such
-   * cause can only push the true figure up, so the renderer prints "en az".
+   * true when `costUsd` is a LOWER BOUND: unpriced models were excluded, a
+   * cache-write TTL split was missing and priced at the 1.25x floor, Codex
+   * writes were unrecorded (`WeeklyCost.unrecordedWriteEvents`), a Codex tier
+   * was assumed Standard or Fast was requested and priced at Standard
+   * (`assumedTierEvents` / `fastRequestedEvents`, A3.17-18), or a range of
+   * usage a reader KNOWS it could not read overlaps the period (A3.20; see
+   * `UsageHistory.incompleteProviders`). Every such cause can only push the
+   * true figure up, so the renderer prints "en az". An empty period
+   * (`hasUsage: false`) can be a floor through the last cause alone.
    */
   isFloor: boolean;
   /** Model ids seen in the period with no price-table entry. Presence only —
@@ -414,6 +463,20 @@ export interface UsageHistory {
    * independently per vendor, so one date for all would be false for some.
    */
   pricesAsOfByProvider: Partial<Record<ProviderSnapshot['id'], string>>;
+  /**
+   * Tools whose reader KNOWS it could not read usage in a range overlapping at
+   * least one listed period (ADR-002 A3.20) — the history counterpart of
+   * `WeeklyCost.sourceIncomplete`, never derived from rate-limit freshness.
+   * Every affected period has `isFloor: true`, and so does every `byModel`
+   * entry of an affected tool in it. Always present; empty when no listed
+   * period is affected. Lets the renderer show ONE note naming the cause, only
+   * when some period is affected.
+   *
+   * When there are NO periods at all (`weeks` and `months` empty), it lists the
+   * tools with a known-unread range inside the span the history covers, so the
+   * renderer does not claim "no records found" over a known gap.
+   */
+  incompleteProviders: ProviderSnapshot['id'][];
 }
 
 /**

@@ -501,6 +501,16 @@ function weeklyCost(raw: unknown): WeeklyCost | null {
     // integer is one. Anything else is not this field and reads as 0 — which
     // only drops a floor the producer failed to state, never invents one.
     unrecordedWriteEvents: eventCount(source.unrecordedWriteEvents),
+    // ADR-002 A3.21: Codex events priced at Standard as a floor, because no tier
+    // was recorded yet (A3.17) or Fast was only requested (A3.18). Counts, so
+    // only a non-negative integer is one; anything else reads as 0.
+    assumedTierEvents: eventCount(source.assumedTierEvents),
+    fastRequestedEvents: eventCount(source.fastRequestedEvents),
+    // ADR-002 A3.15: the reader KNOWS it missed events in the window. Only a
+    // literal true is that claim; anything else (absent on an older main,
+    // "true", 1) is not, and reads as false rather than inventing a floor
+    // and a "could not be read" line the producer never stated.
+    sourceIncomplete: source.sourceIncomplete === true,
     windowStart,
     windowEnd,
     windowAnchored: source.windowAnchored === true,
@@ -632,7 +642,15 @@ function usageHistory(raw: unknown): UsageHistory | null {
       if (iso !== null) pricesAsOfByProvider[id as ProviderSnapshot['id']] = iso;
     }
   }
-  return { weeks, months, pricesAsOf, pricesAsOfByProvider };
+  // ADR-002 A3.20: tools with a known-unread range. Known ids only, each once;
+  // anything else is dropped rather than named in the note.
+  const incompleteProviders: UsageHistory['incompleteProviders'] = [];
+  for (const id of Array.isArray(source.incompleteProviders) ? source.incompleteProviders : []) {
+    if (!PROVIDER_IDS.has(id as ProviderSnapshot['id'])) continue;
+    if (incompleteProviders.includes(id as ProviderSnapshot['id'])) continue;
+    incompleteProviders.push(id as ProviderSnapshot['id']);
+  }
+  return { weeks, months, pricesAsOf, pricesAsOfByProvider, incompleteProviders };
 }
 
 function setupAction(raw: unknown): SetupAction | null {

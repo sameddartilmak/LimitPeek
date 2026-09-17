@@ -226,6 +226,15 @@ test('the usage history main produces has exactly the shape contract.ts declares
   }
   assert.deepEqual([...providers].sort(), ['claude', 'codex']);
   assert.deepEqual(Object.keys(out.pricesAsOfByProvider).sort(), ['claude', 'codex']);
+  // ADR-002 A3.20: always present, a list of tool ids, empty for complete sources.
+  assert.ok(interfaceFields('UsageHistory').includes('incompleteProviders'), 'contract.ts declares incompleteProviders');
+  assert.deepEqual(out.incompleteProviders, []);
+  const affected = history.usageHistory([], now, {
+    codexEvents: [{ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 0, cacheWrite: 0, output: 10 }],
+    unreadRanges: { codex: [{ fromMs: at, throughMs: at }] },
+  });
+  assert.deepEqual(Object.keys(affected).sort(), interfaceFields('UsageHistory'));
+  assert.deepEqual(affected.incompleteProviders, ['codex']);
 });
 
 test('both weekly costs main produces have exactly the WeeklyCost shape contract.ts declares', () => {
@@ -249,6 +258,30 @@ test('both weekly costs main produces have exactly the WeeklyCost shape contract
   assert.deepEqual(Object.keys(codex).sort(), fields);
   assert.equal(claude.unrecordedWriteEvents, 0);
   assert.equal(codex.unrecordedWriteEvents, 1, 'cached read, 0 recorded writes, on a model with a write price');
+  // ADR-002 A3.15: always present on both, a boolean, and false for a fully
+  // read corpus — the renderer's degraded caveat and floor read only this.
+  assert.ok(fields.includes('sourceIncomplete'), 'contract.ts declares sourceIncomplete');
+  // ADR-002 A3.17-18: always present, 0 for Claude.
+  for (const key of ['assumedTierEvents', 'fastRequestedEvents']) {
+    assert.ok(fields.includes(key), `contract.ts declares ${key}`);
+    assert.equal(claude[key], 0);
+    assert.equal(codex[key], 0, 'tier recorded as standard: no tier floor');
+  }
+  assert.equal(claude.sourceIncomplete, false);
+  assert.equal(codex.sourceIncomplete, false);
+  const failed = buildSnapshot({
+    now,
+    events: [{ f: 'f', key: 'k', ts: at, model: 'claude-opus-5', input: 0, output: 1000, cacheWrite: 0, cacheRead: 0, cw5: 0, cw1h: 0 }],
+    rateLimits: null,
+    codexEvents: [{ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 90, cacheWrite: 0, output: 10 }],
+    codexReadFailed: true,
+    scanOk: false,
+  });
+  for (const id of ['claude', 'codex']) {
+    const cost = failed.providers.find((p) => p.id === id).weeklyCost;
+    assert.deepEqual(Object.keys(cost).sort(), fields);
+    assert.equal(cost.sourceIncomplete, true, `${id}: a failed scan is a known-incomplete source`);
+  }
 });
 
 test('every snapshot main emits carries pendingUsage, and no key contract.ts does not declare', () => {

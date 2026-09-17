@@ -64,6 +64,14 @@ function cursorsDiffer(a, b) {
   return false;
 }
 
+/** A `{ fromMs, throughMs }` range from a scan result, or null when unusable. */
+function rangeOrNull(r) {
+  return r && typeof r === 'object' && Number.isFinite(r.fromMs) && Number.isFinite(r.throughMs)
+    && r.fromMs <= r.throughMs
+    ? { fromMs: r.fromMs, throughMs: r.throughMs }
+    : null;
+}
+
 class Collector extends EventEmitter {
   constructor(options) {
     super();
@@ -100,6 +108,18 @@ class Collector extends EventEmitter {
      */
     this._codexEvents = null;
     this._codexStats = null;
+    /**
+     * Known gaps in the Codex usage figures (ADR-002 A3.15). `_codexReadFailed`:
+     * the latest scan request failed, timed out or could not be dispatched, so
+     * `_codexEvents` is an OLDER result that may predate turns written since.
+     * `_codexResultAtMs`: the `now` of the scan that produced `_codexEvents`,
+     * where a failure's unread range begins. `_codexUnreadRange`: from the last
+     * result, `{ fromMs, throughMs }` of turns the scanner knows it could not
+     * read, or null.
+     */
+    this._codexReadFailed = false;
+    this._codexResultAtMs = null;
+    this._codexUnreadRange = null;
     this.codexWorkerPath = options.codexWorkerPath || path.join(__dirname, 'codex', 'scan-worker.js');
     this._codexWorker = null;
     /** The request the worker is running: { id, now, full, timer } or null. */
@@ -143,6 +163,9 @@ class Collector extends EventEmitter {
     this.panelOpen = false;
     /** When the transcript data was last known-good. Feeds `lastGoodAt`. */
     this.scanGoodAtMs = null;
+    /** From the last successful transcript scan: `{ fromMs, throughMs }` of
+     *  usage records it knows it could not read, or null (ADR-002 A3.15). */
+    this.scanUnreadRange = null;
     /**
      * Last VALID Claude figure per window, `{ resetsAtMs, usedPercentage }`.
      * Owned here, not in the reader, on purpose: the bridge OVERWRITES its
@@ -321,8 +344,12 @@ class Collector extends EventEmitter {
       antigravityIde,
       codexRateLimits,
       codexEvents,
+      codexReadFailed: this._codexReadFailed,
+      codexReadGoodAtMs: this._codexResultAtMs,
+      codexUnreadRange: this._codexUnreadRange,
       scanOk: this.scanOk,
       scanGoodAtMs: this.scanGoodAtMs,
+      scanUnreadRange: this.scanUnreadRange,
       planLabel: this.planLabel,
       order: this.order,
       enabled: this.enabled,
@@ -501,6 +528,7 @@ class Collector extends EventEmitter {
     if (result && result.ok) {
       this.scanOk = true;
       this.scanGoodAtMs = Date.now();
+      this.scanUnreadRange = rangeOrNull(result.unreadRange);
       // A no-op scan still produces a full result, and persisting it rewrites
       // and fsyncs the entire store for data identical to what is already on
       // disk. During an active Claude Code session that is hundreds of MB of
@@ -731,6 +759,12 @@ class Collector extends EventEmitter {
       worker = this._ensureCodexWorker();
     } catch (err) {
       log.warn(`codex scan worker unavailable: code=${(err && err.code) || 'UNKNOWN'}`);
+      // Nothing could be read: whatever result is held is now of unknown age.
+      // When this runs inside rebuild()'s own tick, the transition's rebuild is
+      // nested and the outer one then emits again with the same flag — one
+      // extra snapshot, on a failure path; a dispatch from a timer or a worker
+      // message has no outer rebuild, and this is the one that repaints.
+      this._markCodexReadFailed();
       return;
     }
     const id = ++this._codexSeq;
@@ -777,6 +811,9 @@ class Collector extends EventEmitter {
     if (msg.type === 'result' && Array.isArray(msg.events)) {
       this._codexEvents = msg.events;
       this._codexStats = msg.stats || null;
+      this._codexReadFailed = false;
+      this._codexResultAtMs = Number.isFinite(flight.now) ? flight.now : Date.now();
+      this._codexUnreadRange = rangeOrNull(msg.unreadRange);
       this.emit('codex-scan', this._codexStats);
       // Not before Claude has settled: that rebuild would replace the loading
       // snapshot with one built from an empty Claude store (A3.14). Claude's
@@ -784,6 +821,7 @@ class Collector extends EventEmitter {
       if (!this._stopped && this._claudeSettled) this.rebuild();
     } else if (msg.type === 'error') {
       log.warn(`codex usage scan failed: code=${msg.code || 'UNKNOWN'}`);
+      this._markCodexReadFailed();
       if (flight.full) this._codexFullAt = 0; // retry the full scan next time
     }
     if (!this._stopped) this._requestCodexScan({}, Date.now());
@@ -793,11 +831,26 @@ class Collector extends EventEmitter {
   _onCodexWorkerGone(worker) {
     if (worker !== this._codexWorker) return;
     this._codexWorker = null;
+    // Set first: the rebuild below must already ask for a full scan.
+    this._codexFullAt = 0;
     if (this._codexInFlight) {
       clearTimeout(this._codexInFlight.timer);
       this._codexInFlight = null;
+      // A request died with it (crash or timeout): the held result was not
+      // brought up to date.
+      this._markCodexReadFailed();
     }
-    this._codexFullAt = 0;
+  }
+
+  /**
+   * The held Codex result is known to be behind its logs (ADR-002 A3.15). On
+   * the false -> true transition the snapshot is rebuilt at once, so the cost
+   * block says so now rather than at the next sweep (review F7).
+   */
+  _markCodexReadFailed() {
+    if (this._codexReadFailed) return;
+    this._codexReadFailed = true;
+    if (!this._stopped && this._claudeSettled && this._codexEvents !== null) this.rebuild();
   }
 
   /** Tools whose local usage is not read yet (Snapshot.pendingUsage). */
