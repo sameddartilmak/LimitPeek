@@ -15,6 +15,7 @@
 import type {
   AnchorPayload,
   Certainty,
+  LanguageChoice,
   Preferences,
   CostByClass,
   FigureSource,
@@ -59,6 +60,7 @@ const ROW_STATUSES = new Set<RowStatus>(['loading', 'ok', 'stale', 'error', 'pas
 const CERTAINTIES = new Set<Certainty>(['known', 'estimated', 'unknown']);
 const SETUP_KINDS = new Set<SetupKind>(['install-bridge', 'add-api-key', 'not-installed']);
 const THEME_CHOICES = new Set<ThemeChoice>(['dark', 'light', 'system']);
+const LANGUAGE_CHOICES = new Set<LanguageChoice>(['tr', 'en', 'system']);
 
 /**
  * The three discriminants the contract added for the Antigravity IDE reader.
@@ -121,6 +123,12 @@ function finite(value: unknown): number | null {
 function nonNegative(value: unknown): number | null {
   const n = finite(value);
   return n === null || n < 0 ? null : n;
+}
+
+/** A count of records: a non-negative integer, else 0. */
+function eventCount(value: unknown): number {
+  const n = nonNegative(value);
+  return n !== null && Number.isInteger(n) ? n : 0;
 }
 
 function percentage(value: unknown): number | null {
@@ -415,7 +423,18 @@ function modelCost(raw: unknown): ModelCost | null {
     model,
     // A model can be priced at one speed and unpriced at another, so the
     // speed is part of the row's identity, not a decoration.
-    speed: text(source.speed, 24) ?? 'standard',
+    // 40, not 24: Codex's group label is a tier of up to 24 characters plus
+    // "-long-context" (src/core/codex/pricing.js speedOf). At 24,
+    // "unknown-tier-long-context" (25) was cut to "unknown-tier-long-conte…",
+    // and cost.ts could no longer tell it was long context.
+    // A missing or unusable speed is NOT 'standard': that would be a price-tier
+    // claim the payload never made. 'other' is the neutral code cost.ts
+    // renders as "tanınmayan fiyat katmanı" (it is also what Codex's own
+    // normalizeTier emits for an unrecognisable tier). Safe for priced rows:
+    // speed is only ever read for UNPRICED rows (cost.ts unpricedRows), and
+    // both producers always emit a string (core/pricing.js speedOf defaults
+    // it; codex/pricing.js speedOf always builds one).
+    speed: text(source.speed, 40) ?? 'other',
     pricedAs: text(source.pricedAs, 64),
     // null means "no price for this model". A missing price must never be
     // coerced to 0, or an unpriced model quietly reads as a free one.
@@ -478,6 +497,10 @@ function weeklyCost(raw: unknown): WeeklyCost | null {
     // presence into a proportion. Zero is legitimate — a window whose only
     // usage is output tokens has no cache writes at all.
     cacheWriteEvents: nonNegative(source.cacheWriteEvents) ?? 0,
+    // ADR-002 Amendment 3 rule 3: a COUNT of records, so only a non-negative
+    // integer is one. Anything else is not this field and reads as 0 — which
+    // only drops a floor the producer failed to state, never invents one.
+    unrecordedWriteEvents: eventCount(source.unrecordedWriteEvents),
     windowStart,
     windowEnd,
     windowAnchored: source.windowAnchored === true,
@@ -517,7 +540,11 @@ function periodModelCost(raw: unknown): PeriodModelCost | null {
   const source = raw as Record<string, unknown>;
   const model = text(source.model, 64);
   if (model === null) return null;
+  // Same rule as the model name: the provider is part of the entry's label (a
+  // period lists two tools' models), and there is no honest default to invent.
+  if (!PROVIDER_IDS.has(source.provider as ProviderSnapshot['id'])) return null;
   return {
+    provider: source.provider as ProviderSnapshot['id'],
     model,
     costUsd: nonNegative(source.costUsd),
     isFloor: source.isFloor === true,
@@ -594,7 +621,18 @@ function usageHistory(raw: unknown): UsageHistory | null {
   // is empty, and the renderer branches on it to say the date was not given
   // rather than printing an empty one.
   const pricesAsOf = isoInstant(source.pricesAsOf) ?? '';
-  return { weeks, months, pricesAsOf };
+  // Per-tool price dates. Unknown tools and unparseable dates are dropped, not
+  // blanked: an absent key already reads as "that table's date was not given".
+  const pricesAsOfByProvider: UsageHistory['pricesAsOfByProvider'] = {};
+  const byProvider = source.pricesAsOfByProvider;
+  if (byProvider && typeof byProvider === 'object' && !Array.isArray(byProvider)) {
+    for (const [id, date] of Object.entries(byProvider as Record<string, unknown>)) {
+      if (!PROVIDER_IDS.has(id as ProviderSnapshot['id'])) continue;
+      const iso = isoInstant(date);
+      if (iso !== null) pricesAsOfByProvider[id as ProviderSnapshot['id']] = iso;
+    }
+  }
+  return { weeks, months, pricesAsOf, pricesAsOfByProvider };
 }
 
 function setupAction(raw: unknown): SetupAction | null {
@@ -734,13 +772,99 @@ export function isThemeChoice(value: unknown): value is ThemeChoice {
   return THEME_CHOICES.has(value as ThemeChoice);
 }
 
+export function isLanguageChoice(value: unknown): value is LanguageChoice {
+  return LANGUAGE_CHOICES.has(value as LanguageChoice);
+}
+
+/** A language the catalogs carry. 'system' is a choice, never a resolution. */
+export function isResolvedLanguage(value: unknown): value is 'tr' | 'en' {
+  return value === 'tr' || value === 'en';
+}
+
+/**
+ * ADR-004's resolution rule, for the ONE case main did not resolve for us (an
+ * absent or older preload): `tr*` -> tr, anything else -> en. Everywhere else
+ * the renderer takes main's `resolvedLanguage` and never decides on its own,
+ * because the tray tooltip is written by main and must match the panel.
+ */
+export function fallbackLanguage(tag: unknown): 'tr' | 'en' {
+  return typeof tag === 'string' && /^tr(?:[-_]|$)/i.test(tag) ? 'tr' : 'en';
+}
+
+/** The format locale main would choose when it has no OS region to offer. */
+export function defaultFormatLocale(language: 'tr' | 'en'): string {
+  return language === 'tr' ? 'tr-TR' : 'en-US';
+}
+
+/**
+ * True when Intl accepts the tag. The format locale is handed straight to Intl
+ * constructors, which throw a RangeError on a malformed tag — so an unusable
+ * one is replaced here rather than allowed to blank the panel.
+ */
+export function isUsableLocale(tag: unknown): tag is string {
+  if (typeof tag !== 'string' || tag.length === 0 || tag.length > 35) return false;
+  try {
+    return Intl.getCanonicalLocales(tag).length === 1;
+  } catch {
+    return false;
+  }
+}
+
+function navigatorLanguage(): string | undefined {
+  try {
+    return (globalThis as { navigator?: { language?: string } }).navigator?.language;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The theme is the gate: without a usable theme the payload is refused (null),
+ * exactly as before. The language fields are COERCED rather than refused,
+ * because refusing them would also throw away a good theme and flash the other
+ * palette. Coercion follows the same rule main applies, so a coerced value is
+ * one main could have sent.
+ */
 export function sanitizePreferences(raw: unknown): Preferences | null {
   if (!raw || typeof raw !== 'object') return null;
-  const theme = (raw as Record<string, unknown>).theme;
-  return isThemeChoice(theme) ? { theme } : null;
+  const source = raw as Record<string, unknown>;
+  const theme = source.theme;
+  if (!isThemeChoice(theme)) return null;
+  const language = isLanguageChoice(source.language) ? source.language : 'system';
+  const resolvedLanguage = isResolvedLanguage(source.resolvedLanguage)
+    ? source.resolvedLanguage
+    : language !== 'system'
+      ? language
+      : fallbackLanguage(navigatorLanguage());
+  const formatLocale = isUsableLocale(source.formatLocale)
+    ? source.formatLocale
+    : defaultFormatLocale(resolvedLanguage);
+  return { theme, language, resolvedLanguage, formatLocale };
 }
 
 /** Returns null when the payload is not a usable Snapshot at all. */
+/**
+ * ADR-002 A3.12: the tools whose local usage scan has not produced its FIRST
+ * result yet. Known provider ids only, de-duplicated; anything else is dropped
+ * and a missing or malformed field is []. An unknown id is not a pending tool,
+ * and a malformed payload must not put every row into a "calculating" state.
+ */
+function pendingUsage(raw: unknown): ProviderSnapshot['id'][] {
+  if (!Array.isArray(raw)) return [];
+  const out: ProviderSnapshot['id'][] = [];
+  for (const entry of raw) {
+    if (PROVIDER_IDS.has(entry as ProviderSnapshot['id']) && !out.includes(entry)) {
+      out.push(entry as ProviderSnapshot['id']);
+    }
+  }
+  return out;
+}
+
+/** The pending tools on a snapshot, [] when there is no snapshot yet. */
+export function pendingUsageOf(snapshot: Snapshot | null | undefined): readonly string[] {
+  return snapshot?.pendingUsage ?? [];
+}
+
 export function sanitizeSnapshot(raw: unknown): Snapshot | null {
   if (!raw || typeof raw !== 'object') return null;
   const source = raw as Record<string, unknown>;
@@ -765,7 +889,13 @@ export function sanitizeSnapshot(raw: unknown): Snapshot | null {
   // state, which is the same thing an older main process should produce.
   const history = usageHistory(source.usageHistory);
 
-  return notices.length > 0
-    ? { generatedAt, providers, refreshNotices: notices, usageHistory: history }
-    : { generatedAt, providers, usageHistory: history };
+  const pending = pendingUsage(source.pendingUsage);
+
+  const base: Snapshot = {
+    generatedAt,
+    providers,
+    usageHistory: history,
+    pendingUsage: pending,
+  };
+  return notices.length > 0 ? { ...base, refreshNotices: notices } : base;
 }

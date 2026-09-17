@@ -48,6 +48,7 @@ import {
   percentSpoken,
   stateFor,
 } from '../format.js';
+import { t } from '../i18n.js';
 
 export type WindowKind = '5h' | '7d';
 
@@ -59,14 +60,16 @@ interface WindowCopy {
 }
 
 /**
- * Turkish copy, one place. No `toUpperCase()` and no `text-transform` — the
- * reference layout's ALL-CAPS section labels are not available to us, so the
- * hierarchy is carried by size, weight and ink instead (see row.css).
+ * Window copy, one place, read in the current language. No `toUpperCase()` and
+ * no `text-transform` — the reference layout's ALL-CAPS section labels are not
+ * available to us, so the hierarchy is carried by size, weight and ink instead
+ * (see row.css).
  */
-const COPY: Record<WindowKind, WindowCopy> = {
-  '5h': { label: '5 saatlik pencere', spoken: 'Beş saatlik pencere' },
-  '7d': { label: 'Haftalık pencere', spoken: 'Haftalık pencere' },
-};
+function copyFor(kind: WindowKind): WindowCopy {
+  return kind === '5h'
+    ? { label: t('meter.window5h.label'), spoken: t('meter.window5h.spoken') }
+    : { label: t('meter.window7d.label'), spoken: t('meter.window7d.spoken') };
+}
 
 /**
  * What is printed in place of the figure, per `WindowAbsence`.
@@ -104,7 +107,7 @@ const COPY: Record<WindowKind, WindowCopy> = {
  * slot would be the same fact in two places, and the worse copy would be the
  * one without the number in it.
  */
-const NO_FIGURE = 'bilinmiyor';
+const NO_FIGURE = (): string => t('absence.unknown');
 
 interface AbsenceCopy {
   /** Replaces the figure. */
@@ -115,21 +118,26 @@ interface AbsenceCopy {
   reason: string | null;
 }
 
-const ABSENCE: Partial<Record<WindowAbsence, AbsenceCopy>> = {
+/**
+ * The words live in the shared catalogs (common.json `absence.*` — the SAME
+ * keys the tray tooltip reads, so the panel and the tooltip cannot name one
+ * absence two ways). The record is built per call so it follows the language.
+ */
+function absenceTable(): Partial<Record<WindowAbsence, AbsenceCopy>> {
+  return {
   'not-supplied': {
-    figure: 'bildirilmiyor',
+    figure: t('absence.notReported'),
     // "yayımlamıyor" — does not PUBLISH it. Deliberately not "vermiyor" or
     // "yok": the limit exists and the user can see it elsewhere; what is
     // missing is a published number for us to read. Denying the limit would be
     // the same falsifiable claim in different words.
-    reason: 'Bu araç bu limiti yayımlamıyor',
-    spoken: (label) =>
-      `${label}: bu araç bu limiti yayımlamıyor, bu yüzden bir oran gösterilemiyor.`,
+    reason: t('meter.notSupplied.reason'),
+    spoken: (label) => t('meter.notSupplied.spoken', { label }),
   },
   'rolled-over': {
-    figure: 'yenileniyor',
+    figure: t('absence.resetting'),
     reason: null,
-    spoken: (label) => `${label}: şu anda yenileniyor.`,
+    spoken: (label) => t('meter.rolledOver.spoken', { label }),
   },
   // Connected and current, but the number for THIS window has not landed yet.
   // Deliberately not "bilinmiyor" (which reads as "we did not look") and not
@@ -137,19 +145,20 @@ const ABSENCE: Partial<Record<WindowAbsence, AbsenceCopy>> = {
   // so far). No reason line: the word already says the whole of it, and the
   // reset countdown beneath still carries when the window turns over.
   'awaiting-report': {
-    figure: 'yeni veri bekleniyor',
+    figure: t('absence.awaiting'),
     reason: null,
-    spoken: (label) => `${label}: yeni veri bekleniyor.`,
+    spoken: (label) => t('meter.awaiting.spoken', { label }),
   },
-};
+  };
+}
 
 function absenceCopy(usage: WindowUsage | null | undefined): AbsenceCopy {
-  const found = usage?.absence ? ABSENCE[usage.absence] : undefined;
+  const found = usage?.absence ? absenceTable()[usage.absence] : undefined;
   return (
     found ?? {
-      figure: NO_FIGURE,
+      figure: NO_FIGURE(),
       reason: null,
-      spoken: (label: string) => `${label}: kullanım oranı bilinmiyor.`,
+      spoken: (label: string) => t('meter.unknown.spoken', { label }),
     }
   );
 }
@@ -191,32 +200,39 @@ function valueText(usage: WindowUsage, label: string, now: number): string {
   const parts: string[] = [];
 
   if (usage.certainty === 'estimated') {
-    parts.push(`${label}: yaklaşık ${percentSpoken(value)} kullanıldı.`);
+    parts.push(t('meter.value.estimated', { label, percent: percentSpoken(value) }));
     if (typeof usage.confidenceLo === 'number' && typeof usage.confidenceHi === 'number') {
       parts.push(
-        `Tahmini değer, ${percentSpoken(usage.confidenceLo)} ile ` +
-          `${percentSpoken(usage.confidenceHi)} arasında.`,
+        t('meter.value.range', {
+          low: percentSpoken(usage.confidenceLo),
+          high: percentSpoken(usage.confidenceHi),
+        }),
       );
     } else {
-      parts.push('Tahmini değer.');
+      parts.push(t('meter.value.estimatedOnly'));
     }
   } else {
-    parts.push(`${label}: ${percentSpoken(value)} kullanıldı.`);
+    parts.push(t('meter.value.known', { label, percent: percentSpoken(value) }));
     if (usage.capturedAt) {
       // Speak the capture instant, or a screen reader user hears a bare
       // percentage with none of the staleness the sighted layout carries.
-      parts.push(`Bu değer saat ${clockTime(usage.capturedAt)} itibarıyla ölçüldü.`);
+      parts.push(t('meter.value.measuredAt', { time: clockTime(usage.capturedAt) }));
       if (typeof usage.billableSinceCapture === 'number' && usage.billableSinceCapture > 0) {
-        parts.push(`O zamandan beri ${compact(usage.billableSinceCapture)} token daha harcandı.`);
+        parts.push(
+          t('meter.value.sinceCapture', {
+            count: usage.billableSinceCapture,
+            value: compact(usage.billableSinceCapture),
+          }),
+        );
       }
     } else {
-      parts.push('Kesin değer.');
+      parts.push(t('meter.value.exact'));
     }
   }
 
   const resetsAt = parseInstant(usage.resetsAt);
   if (resetsAt !== null) {
-    parts.push(`${countdownSpoken(resetsAt - now)} sonra sıfırlanır.`);
+    parts.push(t('meter.value.resetsIn', { duration: countdownSpoken(resetsAt - now) }));
   }
   return parts.join(' ');
 }
@@ -250,7 +266,7 @@ function createBlock(
   stale: boolean,
   note?: string,
 ): BlockHandle {
-  const copy = COPY[kind];
+  const copy = copyFor(kind);
   // An optional qualifier on the window's own label, printed and spoken right
   // where the figure is. Used by the Antigravity row to say "· seçili model"
   // on the five-hour block, so the headline percentage — which main ties to
@@ -265,7 +281,7 @@ function createBlock(
   const pct = el(
     'span',
     { class: drawable ? 'win__pct' : 'win__pct win__pct--none' },
-    drawable ? null : NO_FIGURE,
+    drawable ? null : NO_FIGURE(),
   );
 
   const head = el('div', { class: 'win__head' }, label, el('span', { class: 'win__gap' }), pct);
@@ -335,7 +351,7 @@ function createBlock(
     } else {
       reset.hidden = false;
       setText(reset, countdownRemaining(at - now));
-      setAttr(reset, 'title', `Sıfırlanma ${clockTime(at)}`);
+      setAttr(reset, 'title', t('meter.resetTitle', { time: clockTime(at) }));
     }
     // An empty foot would still eat its gap; hide it outright.
     //
@@ -389,7 +405,7 @@ function createBlock(
           const capturedAt = isStale ? usage.capturedAt : null;
           if (capturedAt) {
             setText(asOfLabel, asOf(capturedAt));
-            setAttr(asOfLabel, 'title', `Bu oran ${clockTime(capturedAt)} itibarıyla ölçüldü`);
+            setAttr(asOfLabel, 'title', t('meter.asOfTitle', { time: clockTime(capturedAt) }));
             asOfLabel.hidden = false;
           } else {
             setText(asOfLabel, '');

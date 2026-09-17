@@ -9,6 +9,7 @@ const {
 } = require('../paths');
 const { isAgyInstalled } = require('../antigravity/cli-install');
 const messages = require('./messages');
+const { t } = require('../i18n');
 const log = require('../log');
 
 /**
@@ -121,14 +122,14 @@ function installAntigravityStatusLine(opts) {
     return {
       ok: false,
       code: 'NOT_CONFIRMED',
-      message: 'Onayınız olmadan Antigravity ayar dosyanıza yazmıyoruz.',
+      message: t('setup.notConfirmed', { tool: 'Antigravity' }),
     };
   }
   if (typeof bridgePath !== 'string' || bridgePath.length === 0) {
-    return { ok: false, code: 'NO_BRIDGE', message: 'Köprü betiği bulunamadı.' };
+    return { ok: false, code: 'NO_BRIDGE', message: t('setup.noBridge') };
   }
   if (!fs.existsSync(bridgePath)) {
-    return { ok: false, code: 'NO_BRIDGE', message: 'Köprü betiği bulunamadı.' };
+    return { ok: false, code: 'NO_BRIDGE', message: t('setup.noBridge') };
   }
 
   if (antigravityHomeOverridden(homeDir)) {
@@ -157,7 +158,7 @@ function installAntigravityStatusLine(opts) {
     return {
       ok: false,
       code: 'MKDIR_FAILED',
-      message: 'Antigravity ayar klasörü oluşturulamadı; hiçbir değişiklik yapılmadı.',
+      message: t('setup.mkdirFailedNothingChanged', { tool: 'Antigravity' }),
     };
   }
 
@@ -175,7 +176,7 @@ function installAntigravityStatusLine(opts) {
       return {
         ok: false,
         code: 'SETTINGS_UNREADABLE',
-        message: 'Antigravity ayar dosyası okunamadı. Dosya izinlerini kontrol edin.',
+        message: t('setup.settingsUnreadable', { tool: 'Antigravity' }),
       };
     }
   }
@@ -188,14 +189,14 @@ function installAntigravityStatusLine(opts) {
       return {
         ok: false,
         code: 'SETTINGS_INVALID',
-        message: 'Antigravity ayar dosyası geçerli JSON değil. Düzeltip tekrar deneyin.',
+        message: t('setup.settingsInvalidJson', { tool: 'Antigravity' }),
       };
     }
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
       return {
         ok: false,
         code: 'SETTINGS_INVALID',
-        message: 'Antigravity ayar dosyası beklenen biçimde değil.',
+        message: t('setup.settingsUnexpected', { tool: 'Antigravity' }),
       };
     }
     if (settings.statusLine != null) {
@@ -221,7 +222,7 @@ function installAntigravityStatusLine(opts) {
       return {
         ok: false,
         code: 'BACKUP_FAILED',
-        message: 'Ayar dosyasının yedeği alınamadı; hiçbir değişiklik yapılmadı.',
+        message: t('setup.backupFailed'),
       };
     }
   }
@@ -250,8 +251,7 @@ function installAntigravityStatusLine(opts) {
         return {
           ok: false,
           code: 'SETTINGS_CHANGED',
-          message: 'Ayar dosyası bu sırada başka bir işlem tarafından değiştirildi; '
-            + 'hiçbir değişiklik yapılmadı. Tekrar deneyin.',
+          message: t('setup.changedDuringWrite'),
         };
       }
     }
@@ -271,7 +271,7 @@ function installAntigravityStatusLine(opts) {
     return {
       ok: false,
       code: 'WRITE_FAILED',
-      message: 'Ayar dosyası yazılamadı; hiçbir değişiklik yapılmadı.',
+      message: t('setup.writeFailed'),
     };
   }
 
@@ -299,36 +299,36 @@ function removeAntigravityStatusLine(opts = {}) {
     original = fs.readFileSync(settingsFile, 'utf8');
   } catch (err) {
     if (err && err.code === 'ENOENT') {
-      return { ok: true, code: 'ALREADY_ABSENT', message: 'Köprü zaten kurulu değil.' };
+      return { ok: true, code: 'ALREADY_ABSENT', message: t('setup.alreadyAbsent') };
     }
-    return { ok: false, code: 'SETTINGS_UNREADABLE', message: 'Antigravity ayar dosyası okunamadı.' };
+    return { ok: false, code: 'SETTINGS_UNREADABLE', message: t('setup.settingsUnreadableShort', { tool: 'Antigravity' }) };
   }
 
   let settings;
   try {
     settings = JSON.parse(original);
   } catch {
-    return { ok: false, code: 'SETTINGS_INVALID', message: 'Antigravity ayar dosyası geçerli JSON değil.' };
+    return { ok: false, code: 'SETTINGS_INVALID', message: t('setup.settingsInvalidJsonShort', { tool: 'Antigravity' }) };
   }
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-    return { ok: false, code: 'SETTINGS_INVALID', message: 'Antigravity ayar dosyası beklenen biçimde değil.' };
+    return { ok: false, code: 'SETTINGS_INVALID', message: t('setup.settingsUnexpected', { tool: 'Antigravity' }) };
   }
 
   const cmd = settings.statusLine && settings.statusLine.command;
   const ours = typeof cmd === 'string' && cmd.includes('antigravity-statusline.mjs');
   if (settings.statusLine == null) {
-    return { ok: true, code: 'ALREADY_ABSENT', message: 'Köprü zaten kurulu değil.' };
+    return { ok: true, code: 'ALREADY_ABSENT', message: t('setup.alreadyAbsent') };
   }
   if (!ours) {
     // Never touch a statusLine we did not write.
-    return { ok: false, code: 'STATUSLINE_FOREIGN', message: 'Bu statusLine bize ait değil; kaldırmıyoruz.' };
+    return { ok: false, code: 'STATUSLINE_FOREIGN', message: t('setup.statusLineForeign') };
   }
 
   const backupFile = backupName(settingsFile, now);
   try {
     fs.writeFileSync(backupFile, original, { encoding: 'utf8', flag: 'wx' });
   } catch {
-    return { ok: false, code: 'BACKUP_FAILED', message: 'Ayar dosyasının yedeği alınamadı; hiçbir değişiklik yapılmadı.' };
+    return { ok: false, code: 'BACKUP_FAILED', message: t('setup.backupFailed') };
   }
 
   delete settings.statusLine;
@@ -346,9 +346,9 @@ function removeAntigravityStatusLine(opts = {}) {
     try { fs.unlinkSync(tmp); } catch { /* best effort */ }
     try { fs.unlinkSync(backupFile); } catch { /* best effort */ }
     log.warn(`antigravity statusline removal failed: code=${(err && err.code) || 'UNKNOWN'}`);
-    return { ok: false, code: 'WRITE_FAILED', message: 'Ayar dosyası yazılamadı; hiçbir değişiklik yapılmadı.' };
+    return { ok: false, code: 'WRITE_FAILED', message: t('setup.writeFailed') };
   }
-  return { ok: true, code: 'REMOVED', message: 'Bağlantı kaldırıldı. Haftalık limit artık okunmayacak.' };
+  return { ok: true, code: 'REMOVED', message: t('setup.agy.removed') };
 }
 
 /**

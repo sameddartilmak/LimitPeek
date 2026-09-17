@@ -1,12 +1,16 @@
 'use strict';
 const { leadProvider, windowPercentage, windowResetting, READING_HORIZON_MS } = require('./tray-spec');
+const i18n = require('./i18n');
+
+const { t } = i18n;
 
 /**
  * The native tray tooltip.
  *
  * This is the FOURTH surface printing the same number — the panel meter, the
  * donut, the panel's text and now this — so it obeys the same two rules the
- * other three do: tr-TR formatting, and the ROUNDED value, always. A tooltip
+ * other three do: the format locale main resolved, and the ROUNDED value,
+ * always. A tooltip
  * carrying `%61,6` beside a panel printing `%62` would be the one place in the
  * product that disagrees with itself about what the usage is.
  *
@@ -54,15 +58,29 @@ const { leadProvider, windowPercentage, windowResetting, READING_HORIZON_MS } = 
 const TOOLTIP_MAX = 120;
 
 /**
- * tr-TR digits, no fractional part. One formatter for both the percentage and
- * the countdown's units: they are the same rendering rule, and two identically
- * configured instances are two places for that rule to drift.
+ * The percentage formatter for the current format locale, rebuilt only when
+ * the locale changes. Same options as `percent` in `src/renderer/src/format.ts`
+ * — `style: 'percent'`, no fraction digits — so the sign's placement comes from
+ * Intl in both surfaces: `%62` in tr-TR, `62%` in en-US and en-GB.
  */
-const nfInt = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 });
+let percentFormat = null;
+let percentLocale = '';
+function percentFormatter() {
+  const locale = i18n.formatLocale();
+  if (!percentFormat || percentLocale !== locale) {
+    percentFormat = new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 });
+    percentLocale = locale;
+  }
+  return percentFormat;
+}
 
-/** Turkish, sign first, ROUNDED — `%20`, never `%20,0`. */
-function formatPercentTr(value) {
-  return nfInt.format(Math.round(value));
+/**
+ * ROUNDED first, then formatted as a fraction — `%20` / `20%`, never `%20,0`.
+ * The printed integer is exactly `Math.round(value)` in every locale, which is
+ * what the donut's state compares.
+ */
+function formatPercent(value) {
+  return percentFormatter().format(Math.round(value) / 100);
 }
 
 /**
@@ -71,10 +89,11 @@ function formatPercentTr(value) {
  * Restated rather than imported because that file is TypeScript owned by the
  * renderer lane and cannot be required from a CommonJS main process. The
  * duplication is deliberate and narrow: same units, same dropped-zero rule,
- * same tr-TR digits, so the tooltip and the row read alike.
+ * and the SAME catalog keys, so the tooltip and the row read alike in either
+ * language. `tooltip-parity.test.js` runs both.
  */
 function countdown(msRemaining) {
-  if (!Number.isFinite(msRemaining) || msRemaining < 1000) return 'sıfırlanıyor';
+  if (!Number.isFinite(msRemaining) || msRemaining < 1000) return t('countdown.resetting');
   const totalSec = Math.floor(msRemaining / 1000);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
@@ -82,11 +101,17 @@ function countdown(msRemaining) {
   if (h >= 48) {
     const d = Math.floor(h / 24);
     const rh = h % 24;
-    return rh === 0 ? `${nfInt.format(d)} gün` : `${nfInt.format(d)} gün ${nfInt.format(rh)} sa`;
+    return rh === 0
+      ? t('duration.short.days', { d })
+      : t('duration.short.daysHours', { d, h: rh });
   }
-  if (h > 0) return m === 0 ? `${nfInt.format(h)} sa` : `${nfInt.format(h)} sa ${nfInt.format(m)} dk`;
-  if (m > 0) return `${nfInt.format(m)} dk`;
-  return `${nfInt.format(s)} sn`;
+  if (h > 0) {
+    return m === 0
+      ? t('duration.short.hours', { h })
+      : t('duration.short.hoursMinutes', { h, m });
+  }
+  if (m > 0) return t('duration.short.minutes', { m });
+  return t('duration.short.seconds', { s });
 }
 
 /**
@@ -124,7 +149,8 @@ function remaining(win, now) {
   const at = Date.parse(win.resetsAt);
   if (!Number.isFinite(at)) return null;
   if (windowResetting(win, now)) return null;
-  return `${countdown(at - now)} ${REMAINING}`;
+  // `countdownRemaining()` in format.ts, key for key.
+  return t('countdown.remaining', { duration: countdown(at - now) });
 }
 
 /**
@@ -136,18 +162,22 @@ function remaining(win, now) {
  * Spelled out, each line is a plain "this thing: this value" pair the eye can
  * scan down, and the three labels line up in the same shape.
  *
- * Still Turkish, still short enough that the value is the widest thing on the
+ * Short enough in both languages that the value is the widest thing on the
  * line, which is what makes the numbers easy to find.
+ *
+ * Every word below is read from the catalog at CALL time, never captured at
+ * load: a language change must re-word the next tooltip without a restart.
  */
-const FIVE_LABEL = '5 saatlik limit';
-const WEEK_LABEL = 'Haftalık limit';
+const fiveLabel = () => t('tooltip.fiveHourLabel');
+const weekLabel = () => t('tooltip.weeklyLabel');
 /**
  * The word that turns a bare duration into a countdown inside the
  * parenthetical. Was the label `Yenilenmesine kalan:` on a line of its own; as
- * a suffix it says the same thing in one word, and it is the SAME word the
- * panel row uses, so the two surfaces read alike.
+ * a suffix it says the same thing in one word, and it is the SAME catalog
+ * entry the panel row uses (`countdown.remaining`), so the two surfaces read
+ * alike. Exported for tests as the entry with its duration removed.
  */
-const REMAINING = 'kaldı';
+const remainingWord = () => t('countdown.remaining', { duration: '' }).trim();
 
 /**
  * Said INSTEAD of a percentage when we cannot defend one.
@@ -156,7 +186,7 @@ const REMAINING = 'kaldı';
  * the subject on its own; under `5 saatlik limit:` it is already stated by the
  * label, and repeating it made the line longer without making it clearer.
  */
-const NO_PERCENT = 'bilinmiyor';
+const noPercent = () => t('absence.unknown');
 /**
  * Said INSTEAD of `bilinmiyor` when the source does not publish this window at
  * all.
@@ -169,7 +199,7 @@ const NO_PERCENT = 'bilinmiyor';
  * less believable for it. `bildirilmiyor` says the true thing: there is a
  * limit, this source does not report it.
  */
-const NOT_SUPPLIED = 'bildirilmiyor';
+const notSupplied = () => t('absence.notReported');
 /**
  * Said INSTEAD of the number when the window is at or past its reset.
  *
@@ -184,7 +214,7 @@ const NOT_SUPPLIED = 'bildirilmiyor';
  * label saying which limit it is, `yenileniyor` states the same fact in the
  * user's vocabulary.
  */
-const RESETTING = 'yenileniyor';
+const resetting = () => t('absence.resetting');
 
 /**
  * The line for one window: a figure with its countdown, a reset notice, or an
@@ -205,11 +235,11 @@ function windowLine(label, provider, key, now) {
     // for separately — "we cannot state this", "this is not reported" and "it
     // just reset" are three different sentences, and the last two are the
     // useful ones.
-    if (windowResetting(win, now)) return `${label}: ${RESETTING}`;
-    if (win && win.absence === 'not-supplied') return `${label}: ${NOT_SUPPLIED}`;
-    return `${label}: ${NO_PERCENT}`;
+    if (windowResetting(win, now)) return `${label}: ${resetting()}`;
+    if (win && win.absence === 'not-supplied') return `${label}: ${notSupplied()}`;
+    return `${label}: ${noPercent()}`;
   }
-  const figure = `${label}: %${formatPercentTr(pct)}`;
+  const figure = `${label}: ${formatPercent(pct)}`;
   const left = remaining(win, now);
   return left === null ? figure : `${figure} (${left})`;
 }
@@ -236,7 +266,7 @@ function tooltipParts(snapshot, now = Date.now()) {
     // on screen.
     return {
       head: 'Usage Notch',
-      five: 'Panelde sağlayıcı yok',
+      five: t('tooltip.noProviders'),
       week: null,
     };
   }
@@ -245,8 +275,8 @@ function tooltipParts(snapshot, now = Date.now()) {
   // Identical treatment, on purpose. The weekly window resets far more rarely,
   // which makes it easier to forget and no less wrong when it happens — and
   // its countdown is the one the user asked for.
-  const five = windowLine(FIVE_LABEL, provider, 'fiveHour', now);
-  const week = windowLine(WEEK_LABEL, provider, 'sevenDay', now);
+  const five = windowLine(fiveLabel(), provider, 'fiveHour', now);
+  const week = windowLine(weekLabel(), provider, 'sevenDay', now);
 
   return { head, five, week };
 }
@@ -286,12 +316,19 @@ module.exports = {
   buildTooltip,
   tooltipParts,
   countdown,
-  formatPercentTr,
+  formatPercent,
   TOOLTIP_MAX,
   COUNTDOWN_FLOOR_MS,
-  RESETTING,
-  NO_PERCENT,
-  FIVE_LABEL,
-  WEEK_LABEL,
-  REMAINING,
 };
+
+// The words, for tests, in the language current at the moment they are READ.
+// Getters rather than values: a value captured at require time would pin
+// whichever language was active when the test file loaded.
+Object.defineProperties(module.exports, {
+  RESETTING: { enumerable: true, get: resetting },
+  NO_PERCENT: { enumerable: true, get: noPercent },
+  NOT_SUPPLIED: { enumerable: true, get: notSupplied },
+  FIVE_LABEL: { enumerable: true, get: fiveLabel },
+  WEEK_LABEL: { enumerable: true, get: weekLabel },
+  REMAINING: { enumerable: true, get: remainingWord },
+});

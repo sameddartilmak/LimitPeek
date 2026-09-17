@@ -49,6 +49,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const log = require('../log');
 
 /** A capture older than this is `stale`. Same budget as the Claude reader. */
 const MAX_AGE_MS = 30 * 60 * 1000;
@@ -68,12 +69,174 @@ const RESET_SKEW_MS = {
 const RESET_MIN_MS = Date.parse('2020-01-01T00:00:00Z');
 const RESET_MAX_MS = Date.parse('2100-01-01T00:00:00Z');
 
-function codexHome() {
-  return process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+/**
+ * A UNC (`\\server\share`), device (`\\?\`, `\\.\`) or `//host` path. Reading
+ * one is a network round-trip (SMB) or a raw-device path, and this app makes
+ * zero outbound connections (ADR-001, security F11). So such a Codex home is
+ * treated as "Codex not found".
+ */
+function isNetworkPath(p) {
+  return typeof p === 'string' && /^[\\/]{2}/.test(p);
 }
 
+let networkHomeWarned = false;
+function warnNetworkHome() {
+  if (networkHomeWarned) return;
+  networkHomeWarned = true;
+  // A fixed message: the path itself is never logged.
+  log.warn('codex home is a network or device path; Codex is treated as not found');
+}
+
+/** `CODEX_HOME` or `~/.codex`, or null when that is a network/device path. */
+function codexHome() {
+  const home = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  if (isNetworkPath(home)) {
+    warnNetworkHome();
+    return null;
+  }
+  return home;
+}
+
+/** The sessions root, or null when there is no usable (local) Codex home. */
 function codexSessionsDir(home) {
-  return path.join(home || codexHome(), 'sessions');
+  const base = home || codexHome();
+  if (!base) return null;
+  if (isNetworkPath(base)) {
+    warnNetworkHome();
+    return null;
+  }
+  return path.join(base, 'sessions');
+}
+
+/**
+ * Is a RESOLVED path on the network? UNC (`\\server\share`), the long UNC
+ * form (`\\?\UNC\server`) and `//host`. A local long path (`\\?\C:\`) or a
+ * volume GUID path (`\\?\Volume{…}`) is local and allowed.
+ */
+function isNetworkResolved(p) {
+  if (typeof p !== 'string') return true;
+  if (/^[\\/]{2}[?.][\\/]/.test(p)) return /^[\\/]{2}[?.][\\/]UNC[\\/]/i.test(p);
+  return /^[\\/]{2}/.test(p);
+}
+
+let refusedDirWarned = false;
+
+/**
+ * Paths refused (network) or whose resolution FAILED for a reason other than
+ * "not there yet", remembered for the life of the process (ADR-003 A3.3): a
+ * stalled share must not be retried on the main thread on every rebuild.
+ * ENOENT/ENOTDIR are not remembered — a day folder that does not exist yet
+ * will exist tomorrow.
+ * @type {Map<string, string>} path -> fixed reason code
+ */
+const refusedPaths = new Map();
+
+function refuse(key, code) {
+  refusedPaths.set(key, code);
+  if (code === 'NETWORK_TARGET' && !refusedDirWarned) {
+    refusedDirWarned = true;
+    log.warn('codex sessions directory refused: code=NETWORK_TARGET');
+  }
+  return null;
+}
+
+const MAX_LINK_DEPTH = 16;
+
+/**
+ * Walk every component of an absolute path with lstat — which never follows
+ * the component itself — and, for each symbolic link or junction, read its
+ * target with readlink (also not followed). A target on the network refuses
+ * the whole path BEFORE anything opens, resolves or watches it (ADR-003 A3.1).
+ * A local target is itself pre-checked (a local link can point at another
+ * local link that points at a share), up to MAX_LINK_DEPTH.
+ *
+ * Returns null when the path is safe to resolve, else a fixed reason code.
+ *
+ * ACCEPTED RESIDUAL (ADR-003 A3.4): a MAPPED network drive letter (Z: -> a
+ * share) looks exactly like a local drive to pure Node before it is opened.
+ * If the user keeps their Codex home on one, the first lstat contacts the
+ * share. That is the user's own configuration of their own tool, not a
+ * connection this app initiates, and it is deliberately not detected.
+ */
+function precheck(abs, depth = 0) {
+  if (isNetworkResolved(abs)) return 'NETWORK_TARGET';
+  if (depth > MAX_LINK_DEPTH) return 'LINK_DEPTH';
+  const parsed = path.parse(abs);
+  const parts = abs.slice(parsed.root.length).split(/[\\/]+/).filter(Boolean);
+  let cur = parsed.root;
+  for (const part of parts) {
+    cur = path.join(cur, part);
+    let st;
+    try {
+      st = fs.lstatSync(cur);
+    } catch (err) {
+      return (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) ? 'ENOENT' : 'LSTAT_FAILED';
+    }
+    if (!st.isSymbolicLink()) continue;
+    let target;
+    try {
+      target = fs.readlinkSync(cur);
+    } catch {
+      return 'READLINK_FAILED';
+    }
+    if (isNetworkResolved(target)) return 'NETWORK_TARGET';
+    const targetAbs = path.isAbsolute(target) ? target : path.resolve(path.dirname(cur), target);
+    const inner = precheck(targetAbs, depth + 1);
+    if (inner) return inner;
+  }
+  return null;
+}
+
+/**
+ * A directory under the Codex sessions tree, RESOLVED through links and
+ * junctions, or null (review F7, ADR-003 Amendment 3).
+ *
+ *  1. The path string and every link target along it are checked WITHOUT
+ *     following (`precheck`); a network target is refused before any open,
+ *     realpath or watch.
+ *  2. Only then is it resolved, and the resolved path is checked again.
+ *  3. Refusals and non-ENOENT failures are remembered for the process.
+ *
+ * Users junction `~/.codex/sessions` to another local drive, so local links
+ * are followed. Refusals log one fixed code, never the path. Rollout FILES are
+ * separately required to be regular files by lstat.
+ */
+function resolveLocalDir(p) {
+  if (typeof p !== 'string' || p.length === 0) return null;
+  if (isNetworkResolved(p)) return refuse(p, 'NETWORK_TARGET');
+  const abs = path.resolve(p);
+  if (refusedPaths.has(abs)) return null;
+  const pre = precheck(abs);
+  if (pre === 'ENOENT') return null;
+  if (pre) return refuse(abs, pre);
+  let real;
+  try {
+    real = fs.realpathSync.native(abs);
+  } catch (err) {
+    if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) return null;
+    return refuse(abs, 'REALPATH_FAILED');
+  }
+  if (isNetworkResolved(real)) return refuse(abs, 'NETWORK_TARGET');
+  try {
+    return fs.statSync(real).isDirectory() ? real : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Test seam: forget remembered refusals and the once-per-process log flag. */
+function _resetPathGuardForTests() {
+  refusedPaths.clear();
+  refusedDirWarned = false;
+}
+
+/** Names in `dir` that are all digits of length `len`, or [] (readdir only). */
+function digitNames(dir, len) {
+  try {
+    return fs.readdirSync(dir).filter((n) => n.length === len && /^\d+$/.test(n));
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -95,23 +258,26 @@ function classifyWindow(minutes) {
  * NAMES are listed here (cheap); the day-folders themselves are not opened
  * until the caller has narrowed to the newest few.
  */
-function allDayDirs(sessionsDir) {
+function newestDayDirs(sessionsDir, wanted) {
+  const root = sessionsDir ? resolveLocalDir(sessionsDir) : null;
+  if (!root) return [];
+  // Names only (review F8): this runs on the main thread on every rebuild, and
+  // only the newest folders are used, so only those — and their parents — are
+  // resolved and checked.
   const out = [];
-  let years;
-  try {
-    years = fs.readdirSync(sessionsDir);
-  } catch {
-    return out;
-  }
+  const years = digitNames(root, 4).sort().reverse();
   for (const y of years) {
-    const yDir = path.join(sessionsDir, y);
-    let months;
-    try { months = fs.readdirSync(yDir); } catch { continue; }
-    for (const m of months) {
-      const mDir = path.join(yDir, m);
-      let days;
-      try { days = fs.readdirSync(mDir); } catch { continue; }
-      for (const d of days) out.push({ dir: path.join(mDir, d), key: `${y}/${m}/${d}` });
+    const yDir = resolveLocalDir(path.join(root, y));
+    if (!yDir) continue;
+    for (const m of digitNames(yDir, 2).sort().reverse()) {
+      const mDir = resolveLocalDir(path.join(yDir, m));
+      if (!mDir) continue;
+      for (const d of digitNames(mDir, 2).sort().reverse()) {
+        const dDir = resolveLocalDir(path.join(mDir, d));
+        if (!dDir) continue;
+        out.push({ dir: dDir, key: `${y}/${m}/${d}` });
+        if (out.length >= wanted) return out;
+      }
     }
   }
   return out;
@@ -125,10 +291,9 @@ function allDayDirs(sessionsDir) {
  * mtime, i.e. by which session last took a turn.
  */
 function newestRollout(sessionsDir) {
-  const dayDirs = allDayDirs(sessionsDir).sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0));
   let best = null;
   let bestMs = -1;
-  for (const { dir } of dayDirs.slice(0, 2)) {
+  for (const { dir } of newestDayDirs(sessionsDir, 2)) {
     let files;
     try {
       files = fs.readdirSync(dir);
@@ -140,10 +305,11 @@ function newestRollout(sessionsDir) {
       const full = path.join(dir, f);
       let stat;
       try {
-        stat = fs.statSync(full);
+        stat = fs.lstatSync(full);
       } catch {
         continue;
       }
+      if (!stat.isFile() || stat.isSymbolicLink()) continue;
       if (stat.mtimeMs > bestMs) {
         bestMs = stat.mtimeMs;
         best = { file: full, mtimeMs: stat.mtimeMs };
@@ -200,13 +366,16 @@ function usedPercent(v) {
  * missing or not credible for a window of this length. Accepts either an
  * absolute `resets_at` (unix seconds) or a `resets_in_seconds` countdown.
  */
-function resetMsOf(win, slot, now) {
+function resetMsOf(win, slot, now, capturedAtMs) {
   let ms = null;
   if (typeof win.resets_at === 'number' && Number.isFinite(win.resets_at)) {
     ms = win.resets_at * 1000;
     if (ms < RESET_MIN_MS || ms > RESET_MAX_MS) return null;
   } else if (typeof win.resets_in_seconds === 'number' && Number.isFinite(win.resets_in_seconds)) {
-    ms = now + win.resets_in_seconds * 1000;
+    // A countdown runs from the moment it was WRITTEN, not from when we read
+    // it: adding it to the read time pushed a stale capture's reset (and the
+    // week anchored to it) into the future by the capture's age.
+    ms = capturedAtMs + win.resets_in_seconds * 1000;
   } else {
     return null;
   }
@@ -293,7 +462,7 @@ function readCodexRateLimits(options = {}) {
     if (!slot) continue;
     const used = usedPercent(win.used_percent);
     if (used === null) continue;
-    const w = { usedPercentage: used, resetsAtMs: resetMsOf(win, slot, now) };
+    const w = { usedPercentage: used, resetsAtMs: resetMsOf(win, slot, now, capturedAtMs) };
     if (slot === 'fiveHour') fiveHour = w;
     else sevenDay = w;
   }
@@ -317,7 +486,12 @@ module.exports = {
   readCodexRateLimits,
   codexHome,
   codexSessionsDir,
+  isNetworkPath,
+  isNetworkResolved,
+  resolveLocalDir,
+  _resetPathGuardForTests,
   newestRollout,
+  newestDayDirs,
   classifyWindow,
   MAX_AGE_MS,
 };

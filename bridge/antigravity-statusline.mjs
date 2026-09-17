@@ -44,7 +44,7 @@ const MAX_ID_LEN = 64;
  * same reason as `CONTROL_CHARS` in `src/renderer/src/sanitize.ts`: a string
  * carrying U+202E visually reverses everything printed after it. A bucket id
  * is echoed into the user's status line beside a percentage, so 64 harmless
- * characters are enough to render `kalan %10` as `%01` — a false statement
+ * characters are enough to render `10% left` as `tfel %01` — a false statement
  * about remaining quota, which is the one thing this project exists to
  * prevent.
  *
@@ -191,19 +191,25 @@ try {
   // conversion in this file. Printing a used percentage here would be a second
   // conversion site that could silently disagree with the app's.
   //
+  // Language-neutral like the Claude bridge (ADR-004 A1, ruling 5), with ONE
+  // short word: `left`. A bare `94%` beside Claude's USED figures would read
+  // as 94% used, a false claim; the neutral vocabulary is already short
+  // English (`5h`, `7d`), and `left` joins it.
+  //
   // The range test is the SAME one `usedFromRemaining` in
   // `src/core/ratelimits.js` applies, on purpose. A fraction of 1.4 is proof
   // the producer is wrong; the app refuses it, and this line must refuse it
-  // too, or the status line prints `kalan %140` beside a panel row that shows
+  // too, or the status line prints `140% left` beside a panel row that shows
   // nothing at all. Two surfaces reading one number must not disagree about
   // when that number is unusable.
   const parts = [];
   for (const [id, b] of Object.entries(buckets)) {
     const f = b.remainingFraction;
     if (typeof f !== 'number' || !Number.isFinite(f) || f < 0 || f > 1) continue;
-    parts.push(`${id} kalan %${(f * 100).toFixed(0)}`);
+    parts.push(`${id} ${(f * 100).toFixed(0)}% left`);
   }
-  process.stdout.write(parts.length ? parts.join('  ·  ') : 'Usage Notch bagli');
+  // The fallback is the product name: language-neutral, see the Claude bridge.
+  process.stdout.write(parts.length ? parts.join(' · ') : 'Usage Notch');
 } catch {
   process.stdout.write('');
 }

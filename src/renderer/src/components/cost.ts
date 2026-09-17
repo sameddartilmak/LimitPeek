@@ -32,63 +32,108 @@
 
 import type { CostByClass, ModelCost, WeeklyCost } from '../../../shared/contract.js';
 import { el, on, replaceChildrenWith, setAttr, setText } from '../dom.js';
-import { compact, dayRange, integer, priceDate, share, usd, usdWithUnit } from '../format.js';
+import {
+  atLeast,
+  dayRange,
+  modelName,
+  multiplier,
+  priceDate,
+  share,
+  tokens as tokenCount,
+  usd,
+  usdWithUnit,
+} from '../format.js';
+import { t, type MessageKey } from '../i18n.js';
 
 export interface CostHandle {
   el: HTMLElement;
   /** `degraded` is the row's effective status being 'stale' or 'error': the
    *  events behind the figure stop before the window does, so it is a floor. */
-  update(cost: WeeklyCost | null, providerName: string, degraded?: boolean): void;
+  update(cost: WeeklyCost | null, providerName: string, degraded?: boolean, pending?: boolean): void;
 }
 
-type ClassKey = keyof CostByClass;
+/**
+ * DISPLAY classes. The price model splits a cache WRITE into 5-minute and
+ * 1-hour tiers because they cost different multiples, but that split is a
+ * pricing internal, not something the reader needs two rows for — so they are
+ * shown as one cache-write line (`cost.class.cacheWrite`). Four rows read far
+ * more calmly than five, and the total is identical (the two tiers are simply
+ * summed for display). The TTL split still drives the PRICE (ADR-002 rule 1)
+ * and the 1.25x-fallback caveat below; only the display merges.
+ */
+type DisplayKey = 'input' | 'output' | 'cacheRead' | 'cacheWrite';
 
-/** Fixed labels; order is by value at render time, largest first. */
-const CLASS_LABEL: Record<ClassKey, string> = {
-  cacheRead: 'Önbellek okuma',
-  output: 'Çıktı',
-  cacheWrite1h: 'Önbellek yazma · 1 sa',
-  cacheWrite5m: 'Önbellek yazma · 5 dk',
-  input: 'Girdi',
+/** Fixed labels, as catalog keys so they follow the language; order is by value at render time, largest first. */
+const CLASS_LABEL: Record<DisplayKey, MessageKey> = {
+  cacheRead: 'cost.class.cacheRead',
+  output: 'cost.class.output',
+  cacheWrite: 'cost.class.cacheWrite',
+  input: 'cost.class.input',
 };
 
-const CLASS_KEYS: readonly ClassKey[] = [
-  'input',
-  'output',
-  'cacheWrite5m',
-  'cacheWrite1h',
-  'cacheRead',
-];
+const DISPLAY_KEYS: readonly DisplayKey[] = ['input', 'output', 'cacheWrite', 'cacheRead'];
 
-/** `usage.speed` is a raw string from the transcript, so unknown values are
- *  shown verbatim rather than mapped to a guess. */
+/** The long-context suffix Codex pricing appends to a tier it excluded
+ *  (src/core/codex/pricing.js `speedOf`: `${tier}-long-context`). */
+const LONG_CONTEXT_SUFFIX = '-long-context';
+
+/**
+ * `ModelCost.speed` as words. ONE mapping for both tools: Claude's speed
+ * ('standard' | 'fast') and Codex's tier group label, which is the tier
+ * ('standard' | 'fast' | another recorded tier), `unknown-tier`, or either of
+ * those with `-long-context` (src/core/codex/pricing.js `speedOf`).
+ *
+ * A code this table does not know is NEVER printed raw: a producer string is
+ * not copy, and "unknown-tier" beside a model name reads as a model variant.
+ * It degrades to a neutral label that still says the price tier is what could
+ * not be matched — which is the only thing an unpriced row's label claims.
+ */
 function speedLabel(speed: string): string {
-  if (speed === 'standard') return 'standart';
-  if (speed === 'fast') return 'hızlı';
-  return speed;
+  if (speed.endsWith(LONG_CONTEXT_SUFFIX) && speed.length > LONG_CONTEXT_SUFFIX.length) {
+    const tier = speed.slice(0, -LONG_CONTEXT_SUFFIX.length);
+    return t('cost.speed.longContext', { tier: tierLabel(tier) });
+  }
+  return tierLabel(speed);
+}
+
+function tierLabel(tier: string): string {
+  if (tier === 'standard') return t('cost.speed.standard');
+  if (tier === 'fast') return t('cost.speed.fast');
+  if (tier === 'unknown-tier') return t('cost.speed.unknownTier');
+  return t('cost.speed.other');
 }
 
 interface Slice {
-  key: ClassKey;
+  key: DisplayKey;
   usd: number;
   fraction: number;
+}
+
+/** A byClass value, or 0 when it is missing/negative/non-finite. */
+function pos(value: number | undefined): number {
+  return Number.isFinite(value) && (value as number) > 0 ? (value as number) : 0;
 }
 
 /**
  * Shares are computed against the SUM OF THE CLASSES, not against `totalUsd`.
  * They then always add to 100% whatever the producer's rounding does, and a
- * class can never claim a share of a total it was not part of.
+ * class can never claim a share of a total it was not part of. The two
+ * cache-write tiers are summed into the single display class here.
  */
 function slicesOf(byClass: CostByClass): { slices: Slice[]; sum: number } {
+  const usdByKey: Record<DisplayKey, number> = {
+    input: pos(byClass.input),
+    output: pos(byClass.output),
+    cacheRead: pos(byClass.cacheRead),
+    cacheWrite: pos(byClass.cacheWrite5m) + pos(byClass.cacheWrite1h),
+  };
   let sum = 0;
-  for (const key of CLASS_KEYS) {
-    const value = byClass[key];
-    if (Number.isFinite(value) && value > 0) sum += value;
-  }
-  const slices: Slice[] = CLASS_KEYS.map((key) => {
-    const value = Number.isFinite(byClass[key]) && byClass[key] > 0 ? byClass[key] : 0;
-    return { key, usd: value, fraction: sum > 0 ? value / sum : 0 };
-  }).sort((a, b) => b.usd - a.usd);
+  for (const key of DISPLAY_KEYS) sum += usdByKey[key];
+  const slices: Slice[] = DISPLAY_KEYS.map((key) => ({
+    key,
+    usd: usdByKey[key],
+    fraction: sum > 0 ? usdByKey[key] / sum : 0,
+  })).sort((a, b) => b.usd - a.usd);
   return { slices, sum };
 }
 
@@ -115,6 +160,9 @@ function isFloor(cost: WeeklyCost, degraded: boolean): boolean {
   return (
     degraded ||
     cost.fallbackWriteEvents > 0 ||
+    // ADR-002 Amendment 3 rule 3: zero RECORDED cache writes are not zero
+    // writes, on a model that bills them. Its own claim, its own count.
+    cost.unrecordedWriteEvents > 0 ||
     cost.unpricedModels.length > 0 ||
     unpricedRows(cost).length > 0
   );
@@ -128,11 +176,13 @@ function isFloor(cost: WeeklyCost, degraded: boolean): boolean {
  */
 function windowLabel(cost: WeeklyCost, now: number): string {
   const range = dayRange(cost.windowStart, cost.windowEnd);
-  if (!cost.windowAnchored) return range ? `Son 7 gün · ${range}` : 'Son 7 gün';
+  if (!cost.windowAnchored) {
+    return range ? t('cost.window.last7Range', { range }) : t('cost.window.last7');
+  }
   const end = Date.parse(cost.windowEnd);
   const ongoing = Number.isFinite(end) && now < end;
-  const base = range ? `${range} kota haftası` : 'Bu kota haftası';
-  return ongoing ? `${base} · sürüyor` : base;
+  const base = range ? t('cost.window.quotaWeekRange', { range }) : t('cost.window.quotaWeek');
+  return ongoing ? t('cost.window.ongoing', { base }) : base;
 }
 
 export function createCost(providerId: string): CostHandle {
@@ -168,7 +218,13 @@ export function createCost(providerId: string): CostHandle {
   );
   detail.hidden = true;
 
-  const root = el('div', { class: 'cost' }, toggle, bar, caption, detail);
+  // ADR-002 A3.12: the line shown while the tool's first scan is running. A
+  // hidden block would read as "no usage"; a "$0" would be a figure built out
+  // of data not yet read. Plain text, not the toggle: there is nothing to open.
+  const pendingLine = el('p', { class: 'cost__pending' });
+  pendingLine.hidden = true;
+
+  const root = el('div', { class: 'cost' }, pendingLine, toggle, bar, caption, detail);
   root.hidden = true;
 
   let expanded = false;
@@ -211,7 +267,7 @@ export function createCost(providerId: string): CostHandle {
           return el(
             'div',
             { class: 'cost__row' },
-            el('span', { class: 'cost__k' }, CLASS_LABEL[slice.key]),
+            el('span', { class: 'cost__k' }, t(CLASS_LABEL[slice.key])),
             el('span', { class: 'cost__v u-num' }, usd(slice.usd)),
             el('span', { class: 'cost__p u-num' }, share(slice.fraction)),
             fill,
@@ -237,8 +293,8 @@ export function createCost(providerId: string): CostHandle {
     const rows = unpricedRows(cost);
     const names = rows.length > 0
       ? rows.map((row) => {
-          const tokens = row.tokens ? ` · ${compact(row.tokens.billable)} token` : '';
-          return `${row.model} · ${speedLabel(row.speed)}${tokens}`;
+          const tokens = row.tokens ? ` · ${tokenCount(row.tokens.billable)}` : '';
+          return `${modelName(row.model)} · ${speedLabel(row.speed)}${tokens}`;
         })
       : cost.unpricedModels.slice();
 
@@ -249,10 +305,7 @@ export function createCost(providerId: string): CostHandle {
         el(
           'p',
           { class: 'cost__caveat' },
-          allUnpriced
-            ? 'Bu haftaki kullanımın tamamı fiyat listesinde bulunamadı, ' +
-              'bu yüzden bir tutar gösterilmiyor. Kullanılan modeller:'
-            : 'Bu kullanımın bir bölümü fiyat listesinde bulunamadı ve toplama katılmadı:',
+          allUnpriced ? t('cost.caveat.allUnpriced') : t('cost.caveat.someUnpriced'),
         ),
       );
       const list = el('ul', { class: 'cost__unpriced' });
@@ -270,15 +323,32 @@ export function createCost(providerId: string): CostHandle {
       const total = cost.cacheWriteEvents;
       const scope =
         total >= cost.fallbackWriteEvents && total > 0
-          ? `${integer(cost.fallbackWriteEvents)} / ${integer(total)} önbellek yazma kaydında ` +
-            `(${share(cost.fallbackWriteEvents / total)})`
-          : `${integer(cost.fallbackWriteEvents)} önbellek yazma kaydında`;
+          ? t('cost.caveat.ttlScope', {
+              // `count` is the TOTAL: the noun agrees with it in English
+              // ("1 of 1 cache-write record", "3 of 5 … records").
+              written: cost.fallbackWriteEvents,
+              count: total,
+              share: share(cost.fallbackWriteEvents / total),
+            })
+          : t('cost.caveat.ttlScopeCount', { count: cost.fallbackWriteEvents });
       nodes.push(
         el(
           'p',
           { class: 'cost__caveat' },
-          `${scope} TTL ayrımı yoktu. Hepsi 1,25× ile fiyatlandırıldı; 1 saatlik ` +
-            'yazmalar gerçekte 2× olduğu için toplam bir alt sınır.',
+          t('cost.caveat.ttl', { scope, low: multiplier(1.25), high: multiplier(2) }),
+        ),
+      );
+    }
+
+    // NOT the TTL caveat above: that one says a 5m/1h split was missing, which
+    // is false for Codex (OpenAI has no such split). This one says writes were
+    // recorded as 0 on a model that charges for them, so the total is a floor.
+    if (cost.unrecordedWriteEvents > 0) {
+      nodes.push(
+        el(
+          'p',
+          { class: 'cost__caveat', 'data-caveat': 'unrecorded-writes' },
+          t('cost.caveat.unrecordedWrites', { count: cost.unrecordedWriteEvents }),
         ),
       );
     }
@@ -288,8 +358,7 @@ export function createCost(providerId: string): CostHandle {
         el(
           'p',
           { class: 'cost__caveat' },
-          'Bu araçtan gelen veriler güncel değil. Tutar yalnızca son okunabilen ' +
-            'olayları kapsıyor, bu yüzden pencerenin tamamını anlatmıyor.',
+          t('cost.caveat.degraded'),
         ),
       );
     }
@@ -298,7 +367,27 @@ export function createCost(providerId: string): CostHandle {
     caveats.hidden = nodes.length === 0;
   }
 
-  function update(cost: WeeklyCost | null, providerName: string, degraded = false): void {
+  function update(
+    cost: WeeklyCost | null,
+    providerName: string,
+    degraded = false,
+    pending = false,
+  ): void {
+    // Pending wins over any figure: until the first scan result the cost is
+    // incomplete, and nothing here may present it as known, as zero or as none.
+    setAttr(root, 'data-pending', pending ? 'true' : null);
+    pendingLine.hidden = !pending;
+    toggle.hidden = pending;
+    if (pending) {
+      setText(pendingLine, t('cost.pending'));
+      bar.hidden = true;
+      caption.hidden = true;
+      detail.hidden = true;
+      root.hidden = false;
+      return;
+    }
+    detail.hidden = !expanded;
+
     if (!cost) {
       root.hidden = true;
       return;
@@ -307,7 +396,10 @@ export function createCost(providerId: string): CostHandle {
     const { slices, sum } = slicesOf(cost.byClass);
     const rows = unpricedRows(cost);
     const hasCaveat =
-      cost.fallbackWriteEvents > 0 || rows.length > 0 || cost.unpricedModels.length > 0;
+      cost.fallbackWriteEvents > 0 ||
+      cost.unrecordedWriteEvents > 0 ||
+      rows.length > 0 ||
+      cost.unpricedModels.length > 0;
 
     /**
      * THE MOST IMPORTANT LINE IN THIS FILE.
@@ -347,30 +439,28 @@ export function createCost(providerId: string): CostHandle {
     const floor = hasFigure && isFloor(cost, degraded);
 
     if (hasFigure) {
-      const amount = floor ? `en az ${usd(cost.totalUsd)}` : usd(cost.totalUsd);
-      setText(summary, `Yayımlanan API fiyatlarıyla ${amount} tutardı`);
+      // The floor word is bound to the figure by atLeast(), so the English
+      // word order ("{amount} at published API prices") cannot separate them.
+      const amount = floor ? atLeast(usd(cost.totalUsd)) : usd(cost.totalUsd);
+      setText(summary, t('cost.summary', { amount }));
       // The spoken name carries the whole frame plus the denial, because a
       // screen reader user gets the button label with no surrounding layout to
       // qualify it.
+      const named = usdWithUnit(cost.totalUsd);
       setAttr(
         toggle,
         'aria-label',
-        `${providerName}: bu haftaki kullanım, yayımlanan API fiyatlarıyla ` +
-          `${floor ? 'en az ' : ''}${usdWithUnit(cost.totalUsd)} tutardı. ` +
-          'Bu bir fatura değildir; abonelik kapsamında bu tutar ödenmez. ' +
-          'Dökümü açmak için etkinleştirin.',
+        t('cost.toggleLabel', {
+          provider: providerName,
+          amount: floor ? atLeast(named) : named,
+        }),
       );
     } else {
       // No number anywhere in this branch — not zero, not a bound. The user is
       // told that usage happened and that we could not price it, and the model
       // list below carries the token counts that prove the first half.
-      setText(summary, 'Bu haftaki kullanım fiyat listesinde bulunamadı');
-      setAttr(
-        toggle,
-        'aria-label',
-        `${providerName}: bu haftaki kullanım yayımlanan fiyat listesinde bulunamadı, ` +
-          'bu yüzden bir tutar hesaplanamıyor. Kullanılan modelleri görmek için etkinleştirin.',
-      );
+      setText(summary, t('cost.unpricedSummary'));
+      setAttr(toggle, 'aria-label', t('cost.unpricedToggleLabel', { provider: providerName }));
     }
 
     renderBar(slices);
@@ -380,24 +470,22 @@ export function createCost(providerId: string): CostHandle {
     const top = slices.filter((slice) => slice.usd > 0).slice(0, 2);
     setText(
       caption,
-      top.map((slice) => `${CLASS_LABEL[slice.key]} ${share(slice.fraction)}`).join(' · '),
+      top.map((slice) => `${t(CLASS_LABEL[slice.key])} ${share(slice.fraction)}`).join(' · '),
     );
     caption.hidden = top.length === 0;
 
     setText(
       detailLead,
       hasFigure
-        ? `Yayımlanan API fiyatlarıyla ${floor ? 'en az ' : ''}${usdWithUnit(cost.totalUsd)}`
-        : 'Bu kullanım için bir karşılık hesaplanamadı',
+        ? t('cost.detailLead', {
+            amount: floor ? atLeast(usdWithUnit(cost.totalUsd)) : usdWithUnit(cost.totalUsd),
+          })
+        : t('cost.detailLeadUnpriced'),
     );
     // The denial answers "is this money I owe?". With no amount on screen there
     // is nothing to deny, and printing it anyway would imply a figure exists.
     detailDenial.hidden = !hasFigure;
-    setText(
-      detailDenial,
-      'Bu bir fatura değil: abonelik kapsamında bu tutar ödenmiyor. Aynı kullanımın ' +
-        'API üzerinden karşılığıdır.',
-    );
+    setText(detailDenial, t('cost.denial'));
 
     renderTable(slices);
     renderCaveats(cost, !hasFigure, degraded);
@@ -412,8 +500,8 @@ export function createCost(providerId: string): CostHandle {
         'span',
         cost.pricesAsOf ? {} : { class: 'cost__gap' },
         cost.pricesAsOf
-          ? `Fiyatlar ${priceDate(cost.pricesAsOf)} tarihli listeye göre`
-          : 'Fiyat listesinin tarihi bildirilmedi',
+          ? t('cost.pricesAsOf', { date: priceDate(cost.pricesAsOf) })
+          : t('cost.pricesDateMissing'),
       ),
     ]);
 

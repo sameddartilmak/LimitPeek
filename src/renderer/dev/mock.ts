@@ -99,6 +99,8 @@ function weeklyCost(patch: Partial<WeeklyCost> = {}): WeeklyCost {
     fallbackWriteEvents: 0,
     // Live on this machine: 0 of 1.781 write events took the 1.25x fallback.
     cacheWriteEvents: 1_781,
+    // Claude never has unrecorded writes (ADR-002 A3 rule 3 is Codex's).
+    unrecordedWriteEvents: 0,
     pricesAsOf: '2026-06-24',
     windowStart: iso(-5 * 24 * HOUR),
     // Anchored means the window ends at the weekly reset, which is in the
@@ -390,6 +392,7 @@ export const SCENARIOS: readonly Scenario[] = [
     // five look stale, and must not claim it was updated just now either.
     snapshot: () => ({
       generatedAt: iso(-45_000),
+      pendingUsage: [],
       providers: [
         claudeOk(),
         codexUnknown(),
@@ -410,6 +413,7 @@ export const SCENARIOS: readonly Scenario[] = [
     bridgeAvailable: true,
     snapshot: () => ({
       generatedAt: iso(-20_000),
+      pendingUsage: [],
       providers: [
         {
           ...claudeOk(),
@@ -432,6 +436,7 @@ export const SCENARIOS: readonly Scenario[] = [
     bridgeAvailable: true,
     snapshot: () => ({
       generatedAt: iso(-4_000),
+      pendingUsage: [],
       providers: [
         claudeUnknown(),
         passive('codex', 'Codex CLI', '#7FB3D5', 'Bulundu, henüz bağlı değil.', 'add-api-key'),
@@ -454,6 +459,7 @@ export const SCENARIOS: readonly Scenario[] = [
     bridgeAvailable: true,
     snapshot: () => ({
       generatedAt: iso(-8_000),
+      pendingUsage: [],
       providers: [
         {
           ...claudeOk(),
@@ -479,6 +485,7 @@ export const SCENARIOS: readonly Scenario[] = [
     bridgeAvailable: true,
     snapshot: () => ({
       generatedAt: iso(-6_000),
+      pendingUsage: [],
       providers: [claudeStaleCapture(), claudeCaptureExpired2(), kimiPassive()],
     }),
   },
@@ -486,7 +493,7 @@ export const SCENARIOS: readonly Scenario[] = [
     id: 'bos',
     label: 'Araç yok',
     bridgeAvailable: true,
-    snapshot: () => ({ generatedAt: iso(-2_000), providers: [] }),
+    snapshot: () => ({ generatedAt: iso(-2_000), providers: [], pendingUsage: [] }),
   },
   {
     // The OTHER empty panel: six providers were found and the user removed
@@ -497,6 +504,7 @@ export const SCENARIOS: readonly Scenario[] = [
     bridgeAvailable: true,
     snapshot: () => ({
       generatedAt: iso(-9_000),
+      pendingUsage: [],
       providers: [
         { ...claudeOk(), enabled: false },
         { ...codexUnknown(), enabled: false },
@@ -513,6 +521,7 @@ export const SCENARIOS: readonly Scenario[] = [
     bridgeAvailable: false,
     snapshot: () => ({
       generatedAt: iso(-22 * 60_000),
+      pendingUsage: [],
       providers: [claudeOk(62, 41), kimiPassive()],
     }),
   },
@@ -522,6 +531,7 @@ export const SCENARIOS: readonly Scenario[] = [
 export function drift(snapshot: Snapshot, step: number): Snapshot {
   return {
     generatedAt: new Date().toISOString(),
+    pendingUsage: snapshot.pendingUsage,
     providers: snapshot.providers.map((provider) => {
       const bump = (usage: WindowUsage | null, amount: number): WindowUsage | null => {
         if (!usage || usage.usedPercentage === null) return usage;

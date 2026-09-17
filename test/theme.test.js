@@ -194,14 +194,14 @@ test.describe('the main-process wiring says what the contract says', () => {
     assert.ok(/setTheme:\s*\(theme\) => ipcRenderer\.invoke\(CH\.SET_THEME/.test(preload));
   });
 
-  test('the value leaving main is sanitised again, not passed through', () => {
-    // Corruption tolerance that stops at the file boundary ends in a blank UI:
-    // load() repairs the value, but a hand-edited settings.json read by an
-    // older build, or any future path that writes `settings.theme` directly,
-    // would otherwise reach the renderer unchecked.
-    const start = main.indexOf('function preferences()');
-    assert.notEqual(start, -1, 'no preferences() builder');
-    const body = main.slice(start, main.indexOf('\n}', start));
-    assert.ok(body.includes('sanitizeTheme('), body);
-  });
+  // "The value leaving main is sanitised again, not passed through" used to be
+  // a source-text check here against `function preferences()` in index.js.
+  // The builder moved to `createPreferences` in src/main/language-ipc.js and is
+  // now tested BEHAVIOURALLY in test/language.test.js:
+  //   - "preferences() re-sanitises the theme, and resolves on the spot before
+  //     any locale exists" (a stored 'nocturne' leaves main as 'system'), and
+  //   - the wiring test that index.js builds `preferences` through
+  //     createPreferences with the live settings.
+  // Corruption tolerance that stops at the file boundary ends in a blank UI;
+  // that claim is held there now, not restated here.
 });

@@ -1006,11 +1006,23 @@
 }
 .usage__model {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   align-items: baseline;
   column-gap: var(--s-2);
   padding: 1px 0;
 }
+/* Which tool the model belongs to — the list mixes Claude Code and Codex. The
+ * same mark as the provider rows, scaled to the micro text it sits beside, and
+ * the same connected/grey rule: `[data-connected]` on the row drives it through
+ * the shared `.mark` rules in row.css. No tile: at this size a ground would be
+ * louder than the model name it labels. */
+.usage__model-mark {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 14px; height: 14px;
+}
+.usage__model-mark .mark { width: 14px; height: 14px; }
 .usage__model-name {
   font-size: var(--fs-micro);
   color: var(--ink-300);
@@ -1029,6 +1041,23 @@
 .usage__model[data-floor="true"] .usage__model-amount { font-weight: 500; }
 /* An unpriced model ("fiyatlanamadı") is stated, quietly. */
 .usage__model[data-unpriced="true"] .usage__model-amount {
+  color: var(--ink-400);
+  font-weight: 500;
+}
+
+/* ADR-002 A3.12: a tool is still being counted, so every total below is
+ * incomplete. Above the list and in the caveat idiom (a watch-coloured rule),
+ * because it qualifies the figures rather than footnoting them. Wraps. */
+.usage__pending {
+  margin: 0 var(--s-4) var(--s-2);
+  padding-left: var(--s-2);
+  border-left: 2px solid var(--watch);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-300);
+}
+/* A period whose figure is not known yet: stated quietly, never as "—". */
+.usage__row[data-pending="true"] .usage__amount {
   color: var(--ink-400);
   font-weight: 500;
 }

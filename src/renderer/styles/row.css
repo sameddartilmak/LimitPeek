@@ -654,7 +654,13 @@
  * reason: an absence the user needs to notice is not a footnote. */
 .cost[data-unpriced="true"] .cost__toggle { color: var(--ink-200); }
 .cost[data-unpriced="true"] { border-top-color: var(--ink-600); }
-.cost__summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Wraps rather than ellipsizes. The collapsed line is the only framing seen
+ * unexpanded (ADR-004 Amendment 2.3), and in English a floor cannot fit one
+ * line at 360px: "would have cost at least $1,234.56 at published API prices"
+ * measures ~280px against a 264px line. An ellipsis there cuts the claim
+ * itself ("at publ…"), so the line takes a second row instead. Turkish copy
+ * measured one line in every fixture state, so its geometry is unchanged. */
+.cost__summary { min-width: 0; overflow-wrap: break-word; }
 
 /* A rotating caret, drawn in CSS so there is no seventh glyph to maintain. */
 .cost__chev {
@@ -697,6 +703,24 @@
   text-overflow: ellipsis;
 }
 .cost__caption[hidden] { display: none !important; }
+
+/* ADR-002 A3.12: the tool's first scan has not answered. A statement, not a
+ * figure: same micro size as the caption, never ellipsized (honesty copy). */
+.cost__pending {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--ink-300);
+  overflow-wrap: break-word;
+}
+.cost__pending[hidden] { display: none !important; }
+.cost__toggle[hidden] { display: none !important; }
+/* "Calculating", not "no data": wraps rather than inheriting the meta line's
+ * nowrap/ellipsis, so the claim is never cut. */
+.row__meta > span.row__pending {
+  white-space: normal;
+  overflow: visible;
+  color: var(--ink-300);
+}
 
 /* -------------------------------------------------------------- expanded */
 
@@ -783,10 +807,12 @@
   font-size: var(--fs-micro);
   color: var(--ink-200);
 }
+/* Wraps, never ellipsizes (ADR-004 Amendment 2.3 ruling). The line names WHAT
+ * could not be priced and why — "gpt-5.6-sol · katman belirlenemedi, uzun
+ * bağlam (272K üstü) · 117 B token" — and cutting it would drop the reason. A
+ * model id has no spaces, so it may break anywhere rather than overflow. */
 .cost__unpriced > li {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .cost__unpriced > li::before {
   content: "\2014\00A0";

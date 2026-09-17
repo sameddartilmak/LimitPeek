@@ -4,6 +4,7 @@ const path = require('node:path');
 const { sanitizeOrder } = require('../core/order');
 const { sanitizeEnabled } = require('../core/enabled');
 const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
+const { sanitizeLanguage, DEFAULT_LANGUAGE } = require('../core/language');
 
 /**
  * App settings, stored in the app's own userData. Small and hand-editable.
@@ -40,6 +41,12 @@ const DEFAULTS = Object.freeze({
    * through: a theme the renderer does not know is a panel with no palette.
    */
   theme: DEFAULT_THEME,
+  /**
+   * 'tr' | 'en' | 'system'. The WORD the user chose, never the resolved
+   * language; see `src/core/language.js`. An unrecognised value falls back to
+   * 'system' for the same reason the theme does.
+   */
+  language: DEFAULT_LANGUAGE,
 });
 
 function file(userDataDir) {
@@ -78,6 +85,9 @@ function load(userDataDir) {
     // future version or a non-string all become the shipped default here, so
     // nothing downstream has to decide what to do with a theme it cannot draw.
     theme: sanitizeTheme(raw.theme),
+    // And again for the language: a typo or a future value becomes 'system',
+    // never a language no catalog exists for.
+    language: sanitizeLanguage(raw.language),
   };
 }
 

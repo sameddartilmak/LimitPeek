@@ -239,6 +239,52 @@ test.describe('it fits in a buffer the shell truncates silently', () => {
     assert.ok(text.length <= 127, 'and inside NOTIFYICONDATAW.szTip either way');
   });
 
+  test('the budget holds in BOTH languages, for every state a line can be in (ADR-004)', () => {
+    // English is usually shorter, not always: "not reported" and "resetting"
+    // are words, not abbreviations. Every combination of the longest name,
+    // each line state and the widest countdown is measured in tr-TR, en-US
+    // and en-GB, and must fit WITHOUT dropping a line — the ladder is a
+    // guarantee against a pathological name, not a routine path.
+    const i18n = require('../src/core/i18n');
+    const widest = new Date(NOW + 6 * 86400e3 + 23 * 3600e3).toISOString();
+    const states = [
+      { usedPercentage: 100, certainty: 'known', resetsAt: widest },
+      { usedPercentage: null, certainty: 'unknown', resetsAt: null },
+      { usedPercentage: null, certainty: 'unknown', resetsAt: null, absence: 'not-supplied' },
+      { usedPercentage: 100, certainty: 'known', resetsAt: new Date(NOW - 1000).toISOString() },
+    ];
+    try {
+      for (const [language, locale] of [['tr', 'tr-TR'], ['en', 'en-US'], ['en', 'en-GB']]) {
+        i18n.setLocale(language, locale);
+        for (const fiveHour of states) {
+          for (const sevenDay of states) {
+            const text = buildTooltip(snap([row({ displayName: 'GitHub Copilot', fiveHour, sevenDay })]), NOW);
+            assert.ok(text.length <= TOOLTIP_MAX, `${locale} ${text.length} chars: ${JSON.stringify(text)}`);
+            assert.equal(text.split('\n').length, 3, `${locale}: a line was dropped: ${JSON.stringify(text)}`);
+          }
+        }
+      }
+    } finally {
+      i18n.setLocale('tr', 'tr-TR');
+    }
+  });
+
+  test('an English tooltip is English throughout, with the sign after the number', () => {
+    const i18n = require('../src/core/i18n');
+    i18n.setLocale('en', 'en-US');
+    try {
+      const text = buildTooltip(snap([row({
+        sevenDay: { usedPercentage: null, certainty: 'unknown', resetsAt: null, absence: 'not-supplied' },
+      })]), NOW);
+      assert.equal(text, 'Usage Notch — Claude Code\n5-hour limit: 62% (2h 14m left)\nWeekly limit: not reported');
+      assert.doesNotMatch(text, /[çğıöşüÇĞİÖŞÜ]|kaldı|sa |dk/);
+      const empty = buildTooltip(snap([]), NOW);
+      assert.equal(empty, 'Usage Notch\nNo providers in the panel');
+    } finally {
+      i18n.setLocale('tr', 'tr-TR');
+    }
+  });
+
   test('the weekly line is dropped first, not the 5h figure', () => {
     // 50 characters of provider name: enough that all three lines cannot fit,
     // not enough to threaten the five-hour line or the countdown riding on it.

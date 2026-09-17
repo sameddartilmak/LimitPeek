@@ -84,6 +84,62 @@ const CAVEAT_COST = {
   windowStart: new Date(Date.now() - 7 * 864e5).toISOString(),
   windowEnd: new Date(Date.now() - 1000).toISOString(),
 };
+/**
+ * A Codex-shaped week (ADR-002 Amendment 3), swapped onto the codex row by
+ * `__probe.setCostDirect('codex', 'codexTier')` so the Claude-shaped caveat
+ * checks above keep their own fixture.
+ *
+ * 38 records read from the cache with 0 recorded writes on a model that bills
+ * writes, so the figure is a floor with its OWN caveat (not the TTL one). The
+ * unpriced rows carry every group-label shape src/core/codex/pricing.js emits:
+ * an undeterminable tier, a long-context exclusion, and a tier with no
+ * published row ('flex'), none of which may be printed raw.
+ */
+const CODEX_TIER_COST = {
+  totalUsd: 226.8116,
+  byClass: { input: 21.4, output: 60.2, cacheWrite5m: 18.1, cacheWrite1h: 0, cacheRead: 127.1116 },
+  byModel: [
+    { model: 'gpt-5.6-sol', speed: 'standard', pricedAs: 'gpt-5.6-sol|standard', usd: 226.8116,
+      tokens: { input: 5350000, output: 3010000, cacheWrite: 3620000, cacheRead: 317779000, billable: 11980000 } },
+    { model: 'gpt-5.6-sol', speed: 'unknown-tier', pricedAs: null, usd: null,
+      tokens: { input: 60000, output: 21000, cacheWrite: 0, cacheRead: 36000, billable: 117000 } },
+    { model: 'gpt-5.5', speed: 'unknown-tier-long-context', pricedAs: null, usd: null,
+      tokens: { input: 300000, output: 12000, cacheWrite: 0, cacheRead: 100000, billable: 412000 } },
+    { model: 'gpt-5.6-terra', speed: 'flex', pricedAs: null, usd: null,
+      tokens: { input: 5000, output: 4000, cacheWrite: 0, cacheRead: 0, billable: 9000 } },
+    // An event whose model could not be resolved: usage.js writes exactly
+    // 'unknown', which must read as "model belirlenemedi", not as a model id.
+    { model: 'unknown', speed: 'unknown-tier', pricedAs: null, usd: null,
+      tokens: { input: 3000, output: 1000, cacheWrite: 0, cacheRead: 0, billable: 4000 } },
+  ],
+  unpricedModels: ['gpt-5.5', 'gpt-5.6-terra'],
+  fallbackWriteEvents: 0,
+  cacheWriteEvents: 0,
+  unrecordedWriteEvents: 38,
+  pricesAsOf: '2026-09-14',
+  windowStart: iso(-4 * 864e5),
+  windowEnd: iso(3 * 864e5),
+  windowAnchored: true,
+};
+/**
+ * qa F3: the zero-recorded-writes floor as the ONLY floor cause. Everything is
+ * priced, no TTL fallback, no unpriced model — so "en az" here can only come
+ * from `unrecordedWriteEvents`. CODEX_TIER_COST cannot prove that: its
+ * unpriced rows would floor the figure on their own.
+ */
+const CODEX_UNRECORDED_ONLY_COST = {
+  ...CODEX_TIER_COST,
+  byModel: [CODEX_TIER_COST.byModel[0]],
+  unpricedModels: [],
+  fallbackWriteEvents: 0,
+  cacheWriteEvents: 0,
+  unrecordedWriteEvents: 1,
+};
+const NAMED_COSTS = {
+  codexTier: CODEX_TIER_COST,
+  codexUnrecordedOnly: CODEX_UNRECORDED_ONLY_COST,
+  caveat: CAVEAT_COST,
+};
 // An older or partly-broken main: the figure is there, everything ABOUT the
 // figure is missing. Must degrade, never vanish.
 const PARTIAL_COST = {
@@ -231,10 +287,69 @@ const FIXTURES = {
   ],
 };
 
-const which = process.env.RENDER_FIXTURE === 'cost' ? 'cost' : 'panel';
-const snapshot = { generatedAt: now.toISOString(), providers: FIXTURES[which]() };
+/**
+ * A small `usageHistory` for the settings "Toplam Kullanım" section, shared by
+ * both fixtures (it lives in the settings view, so it moves no row geometry).
+ *
+ * The newest month lists a Claude Code AND a Codex model, because the section's
+ * point since the Codex merge is that one period mixes both tools and each
+ * model row has to say which tool it belongs to. One floor and one unpriced
+ * entry keep the framing rules ("en az", "fiyatlanamadı") in view. Both price
+ * dates are present, so the two-date note is the one rendered.
+ */
+function localMidnight(y, m, d) {
+  return new Date(y, m, d).toISOString();
+}
+function usageHistoryFixture() {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const zero = { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 };
+  const month = (offset, costUsd, byModel, extra) => ({
+    key: `${new Date(y, m - offset, 1).getFullYear()}-${String(new Date(y, m - offset, 1).getMonth() + 1).padStart(2, '0')}`,
+    startsAt: localMidnight(y, m - offset, 1),
+    endsAt: localMidnight(y, m - offset + 1, 0),
+    costUsd,
+    byClass: costUsd > 0 ? { input: 1.2, output: costUsd * 0.2, cacheWrite5m: costUsd * 0.1, cacheWrite1h: 0, cacheRead: costUsd * 0.7 - 1.2 } : zero,
+    byModel,
+    isFloor: false,
+    unpricedModels: [],
+    hasUsage: costUsd > 0,
+    ...extra,
+  });
+  const months = [
+    month(0, 412.37, [
+      { provider: 'claude', model: 'claude-opus-5', costUsd: 301.12, isFloor: true },
+      { provider: 'codex', model: 'gpt-5-codex', costUsd: 98.4, isFloor: false },
+      { provider: 'claude', model: 'claude-haiku-4-5-20251001', costUsd: 12.85, isFloor: false },
+      { provider: 'codex', model: 'codex-mini-preview', costUsd: null, isFloor: false },
+      // No resolvable model: shown as "model belirlenemedi", never as "unknown".
+      { provider: 'codex', model: 'unknown', costUsd: null, isFloor: false },
+    ], { isFloor: true, unpricedModels: ['codex-mini-preview', 'unknown'] }),
+    month(1, 87.5, [
+      { provider: 'claude', model: 'claude-opus-5', costUsd: 87.5, isFloor: false },
+    ]),
+    // An empty month. With Codex still being counted it must NOT read "—":
+    // its Codex usage has simply not been read yet (ADR-002 A3.12).
+    month(2, 0, []),
+  ];
+  return {
+    weeks: [],
+    months,
+    pricesAsOf: '2026-08-01T00:00:00.000Z',
+    pricesAsOfByProvider: { claude: '2026-08-01T00:00:00.000Z', codex: '2026-08-15T00:00:00.000Z' },
+  };
+}
 
-const calls = { setOrder: [], setEnabled: [], setTheme: [], panelOpened: 0, pin: 0, close: 0 };
+const which = process.env.RENDER_FIXTURE === 'cost' ? 'cost' : 'panel';
+const snapshot = {
+  generatedAt: now.toISOString(),
+  providers: FIXTURES[which](),
+  usageHistory: usageHistoryFixture(),
+  // ADR-002 A3.12. Always present, [] once every tool's first scan answered.
+  pendingUsage: [],
+};
+
+const calls = { setOrder: [], setEnabled: [], setTheme: [], setLanguage: [], panelOpened: 0, pin: 0, close: 0 };
 let snapshotCb = null;
 let anchorCb = null;
 let failOrder = false;
@@ -262,8 +377,17 @@ let setupResult = { ok: false, message: '' };
  * Main's persisted preferences. 'dark' rather than 'system' so the suite's
  * baseline does not depend on whatever the machine running it is set to.
  */
-let prefs = { theme: 'dark' };
+let prefs = { theme: 'dark', language: 'tr', resolvedLanguage: 'tr', formatLocale: 'tr-TR' };
 let prefsCb = null;
+/**
+ * When true, setLanguage persists and answers {ok:true} but HOLDS the
+ * PREFERENCES push until `__probe.flushPrefs()`. Main pushes before it replies,
+ * so in the real order the two are indistinguishable from the renderer; held
+ * apart here, the suite can prove the words follow the PUSH and not the reply
+ * (ADR-004 A1.7: the renderer is not optimistic about the language).
+ */
+let deferPrefs = false;
+let heldPrefs = null;
 /** Main owns the mode; the renderer only asks. Mirrored here. */
 let mode = 'hover';
 
@@ -301,6 +425,9 @@ contextBridge.exposeInMainWorld('usageNotch', {
   panelOpened: () => {
     calls.panelOpened++;
   },
+  /** Main's reveal/conceal push. The suite never drives it; present so the
+   *  fixture matches UsageNotchApi and bridge.ts reports nothing missing. */
+  onPanelVisibility: () => () => {},
   requestRefresh: async () => {
     if (refreshDelay > 0) await new Promise((r) => setTimeout(r, refreshDelay));
     // A COPY carries refreshNotices, so the notice rides only this reply and
@@ -348,8 +475,26 @@ contextBridge.exposeInMainWorld('usageNotch', {
       await new Promise((r) => setTimeout(r, 300));
       return { ok: false };
     }
-    prefs = { theme };
+    prefs = { ...prefs, theme };
     if (prefsCb) prefsCb({ ...prefs });
+    return { ok: true };
+  },
+  /**
+   * Main's order of events for a language change (contract.ts SET_LANGUAGE):
+   * persist, re-resolve, push PREFERENCES. The suite pins Turkish as its
+   * baseline (its checks read Turkish copy), so 'system' resolves to tr here.
+   */
+  setLanguage: async (language) => {
+    calls.setLanguage.push(language);
+    const resolvedLanguage = language === 'en' ? 'en' : 'tr';
+    prefs = {
+      ...prefs,
+      language,
+      resolvedLanguage,
+      formatLocale: resolvedLanguage === 'en' ? 'en-US' : 'tr-TR',
+    };
+    if (deferPrefs) heldPrefs = { ...prefs };
+    else if (prefsCb) prefsCb({ ...prefs });
     return { ok: true };
   },
   close: () => {
@@ -398,6 +543,17 @@ contextBridge.exposeInMainWorld('__probe', {
   setFailTheme: (v) => {
     failTheme = v;
   },
+  /** Hold the next language PREFERENCES push until flushPrefs(). */
+  setDeferPrefs: (v) => {
+    deferPrefs = !!v;
+  },
+  /** Deliver a held PREFERENCES push. Returns whether one was held. */
+  flushPrefs: () => {
+    const held = heldPrefs;
+    heldPrefs = null;
+    if (held && prefsCb) prefsCb(held);
+    return held !== null;
+  },
   /** What main currently holds, so a revert can be checked against it. */
   prefs: () => ({ ...prefs }),
   setRefreshDelay: (ms) => {
@@ -433,6 +589,37 @@ contextBridge.exposeInMainWorld('__probe', {
    * them has no row to act on. `setOrderDirect` cannot undo that — it maps ids
    * onto the providers that are still there, and there are none.
    */
+  /**
+   * Main's pending state (Snapshot.pendingUsage): the tools whose first local
+   * usage scan has not answered. `patches` reshapes those rows the way a real
+   * pending tool looks — no tokens, no cost yet — so "calculating" is tested
+   * against the data it replaces, not beside a figure that is already there.
+   */
+  setPendingDirect: (ids, patches) => {
+    snapshot.pendingUsage = Array.isArray(ids) ? ids.slice() : [];
+    if (patches) {
+      snapshot.providers = snapshot.providers.map((x) =>
+        patches[x.id] ? { ...x, ...patches[x.id] } : x,
+      );
+    }
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
+  /**
+   * Replace the history's price dates, and push. `byProvider` is the
+   * `pricesAsOfByProvider` map main sends; {} with a `pricesAsOf` mimics an
+   * older main. Pass nothing to put the fixture's own dates back.
+   */
+  setHistoryPricesDirect: (byProvider, pricesAsOf) => {
+    const fresh = usageHistoryFixture();
+    snapshot.usageHistory = {
+      ...snapshot.usageHistory,
+      pricesAsOfByProvider: byProvider === undefined ? fresh.pricesAsOfByProvider : byProvider,
+      pricesAsOf: pricesAsOf === undefined ? fresh.pricesAsOf : pricesAsOf,
+    };
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
   restore: () => {
     snapshot.providers = FIXTURES[which]();
     snapshot.generatedAt = new Date().toISOString();
@@ -460,6 +647,17 @@ contextBridge.exposeInMainWorld('__probe', {
     );
     snapshot.generatedAt = new Date().toISOString();
     if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+  },
+  /** Swap a provider's weeklyCost for a named fixture cost, and push. */
+  setCostDirect: (id, name) => {
+    const cost = NAMED_COSTS[name];
+    if (!cost) return false;
+    snapshot.providers = snapshot.providers.map((x) =>
+      x.id === id ? { ...x, weeklyCost: JSON.parse(JSON.stringify(cost)) } : x,
+    );
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+    return true;
   },
   /** Set `enabled` on the fixture directly, without going through setEnabled. */
   setEnabledDirect: (map) => {

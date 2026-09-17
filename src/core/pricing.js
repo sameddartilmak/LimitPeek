@@ -316,6 +316,8 @@ function weeklyCost(events, startMs, endMs, anchored) {
     unpricedModels,
     fallbackWriteEvents,
     cacheWriteEvents,
+    // Codex-only floor cause (ADR-002 A3 rule 3). Claude records its writes.
+    unrecordedWriteEvents: 0,
     pricesAsOf: PRICES_AS_OF,
     windowStart: new Date(startMs).toISOString(),
     windowEnd: new Date(endMs).toISOString(),

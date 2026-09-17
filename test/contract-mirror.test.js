@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { IPC } = require('../src/shared/contract');
+const { usageNotchApiMethods } = require('./helpers/contract-api');
 
 /**
  * `src/shared/contract.ts` is orchestrator-owned and cannot be edited by this
@@ -116,14 +117,9 @@ test('the anchor channel now comes from the contract, not from our extension', (
 });
 
 test('the preload exposes exactly the UsageNotchApi surface declared in contract.ts', () => {
-  const src = contractSource();
-  const start = src.indexOf('export interface UsageNotchApi');
-  assert.notEqual(start, -1, 'contract.ts no longer declares UsageNotchApi');
-  const block = src.slice(start, src.indexOf('\n}', start));
-  const declared = new Set();
-  const re = /^ {2}([a-zA-Z]+)\(/gm;
-  let m;
-  while ((m = re.exec(block)) !== null) declared.add(m[1]);
+  // The same parser the Electron smoke uses, so the two cannot disagree about
+  // what the contract declares (test/helpers/contract-api.js).
+  const declared = new Set(usageNotchApiMethods(contractSource()));
   assert.ok(declared.has('initialSnapshot'), 'parser failed to find the methods');
 
   const preload = fs.readFileSync(path.join(ROOT, 'src', 'main', 'preload.js'), 'utf8');
@@ -139,7 +135,8 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   assert.ok(declared.has('initialPreferences'), 'contract.ts should declare initialPreferences()');
   assert.ok(declared.has('setTheme'), 'contract.ts should declare setTheme()');
   assert.ok(declared.has('onPanelVisibility'), 'contract.ts should declare onPanelVisibility()');
-  assert.equal(declared.size, 14, `expected the 14 declared methods, saw ${[...declared].join(',')}`);
+  assert.ok(declared.has('setLanguage'), 'contract.ts should declare setLanguage()');
+  assert.equal(declared.size, 15, `expected the 15 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const STATE_THRESHOLDS = { ... } as const;`. */
@@ -194,6 +191,81 @@ test('the panel meter has not drifted from the same ramp', () => {
     literals, [expected.watch, expected.ember, expected.spent],
     'src/renderer/src/format.ts stateFor() no longer matches contract.ts STATE_THRESHOLDS',
   );
+});
+
+/** Top-level field names of `export interface <name> { ... }` in contract.ts. */
+function interfaceFields(name) {
+  const src = contractSource().replace(/\r\n/g, '\n');
+  const start = src.indexOf(`export interface ${name} {`);
+  assert.notEqual(start, -1, `contract.ts no longer declares ${name}`);
+  const body = src.slice(src.indexOf('{', start) + 1, src.indexOf('\n}', start));
+  // Strip comments, then take `name:` / `name?:` at the interface's own indent.
+  const code = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  return [...code.matchAll(/^ {2}([A-Za-z][A-Za-z0-9]*)\??:/gm)].map((m) => m[1]).sort();
+}
+
+test('the usage history main produces has exactly the shape contract.ts declares', () => {
+  // The history crosses to the renderer through sanitize.ts, which drops what
+  // the contract does not name. A field main adds without the contract (or the
+  // reverse) is a figure that silently never reaches the settings section.
+  const history = require('../src/core/history');
+  const HOUR = 60 * 60 * 1000;
+  const now = new Date(2026, 8, 9, 12, 0, 0).getTime();
+  const at = history.weekStartMs(now) + HOUR;
+  const out = history.usageHistory(
+    [{ f: 'f', key: 'k', ts: at, model: 'claude-opus-5', input: 0, output: 1000, cacheWrite: 0, cacheRead: 0, cw5: 0, cw1h: 0 }],
+    now,
+    { codexEvents: [{ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 0, cacheWrite: 0, output: 10 }] },
+  );
+  assert.deepEqual(Object.keys(out).sort(), interfaceFields('UsageHistory'));
+  assert.deepEqual(Object.keys(out.weeks[0]).sort(), interfaceFields('PeriodUsage'));
+  const providers = new Set();
+  for (const entry of out.weeks[0].byModel) {
+    assert.deepEqual(Object.keys(entry).sort(), interfaceFields('PeriodModelCost'));
+    providers.add(entry.provider);
+  }
+  assert.deepEqual([...providers].sort(), ['claude', 'codex']);
+  assert.deepEqual(Object.keys(out.pricesAsOfByProvider).sort(), ['claude', 'codex']);
+});
+
+test('both weekly costs main produces have exactly the WeeklyCost shape contract.ts declares', () => {
+  // `unrecordedWriteEvents` is always present (0 for Claude): a field the
+  // renderer's floor check reads must not be missing on one provider.
+  const { buildSnapshot } = require('../src/core/snapshot');
+  const now = new Date(2026, 8, 9, 12, 0, 0).getTime();
+  const at = now - 60 * 60 * 1000;
+  const snap = buildSnapshot({
+    now,
+    events: [{ f: 'f', key: 'k', ts: at, model: 'claude-opus-5', input: 0, output: 1000, cacheWrite: 0, cacheRead: 0, cw5: 0, cw1h: 0 }],
+    rateLimits: null,
+    codexEvents: [{ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 90, cacheWrite: 0, output: 10 }],
+    scanOk: true,
+  });
+  const fields = interfaceFields('WeeklyCost');
+  assert.ok(fields.includes('unrecordedWriteEvents'), 'contract.ts declares unrecordedWriteEvents');
+  const claude = snap.providers.find((p) => p.id === 'claude').weeklyCost;
+  const codex = snap.providers.find((p) => p.id === 'codex').weeklyCost;
+  assert.deepEqual(Object.keys(claude).sort(), fields);
+  assert.deepEqual(Object.keys(codex).sort(), fields);
+  assert.equal(claude.unrecordedWriteEvents, 0);
+  assert.equal(codex.unrecordedWriteEvents, 1, 'cached read, 0 recorded writes, on a model with a write price');
+});
+
+test('every snapshot main emits carries pendingUsage, and no key contract.ts does not declare', () => {
+  const { buildSnapshot, loadingSnapshot } = require('../src/core/snapshot');
+  const fields = interfaceFields('Snapshot');
+  assert.ok(fields.includes('pendingUsage'), 'contract.ts declares Snapshot.pendingUsage');
+  const now = new Date(2026, 8, 9, 12, 0, 0).getTime();
+  const pending = buildSnapshot({ now, events: [], rateLimits: null, codexEvents: null, scanOk: true });
+  const scanned = buildSnapshot({ now, events: [], rateLimits: null, codexEvents: [], scanOk: true });
+  const loading = loadingSnapshot(now);
+  for (const snap of [pending, scanned, loading]) {
+    for (const key of Object.keys(snap)) assert.ok(fields.includes(key), `undeclared Snapshot key "${key}"`);
+    assert.ok(Array.isArray(snap.pendingUsage), 'always present');
+  }
+  assert.deepEqual(pending.pendingUsage, ['codex'], 'no Codex result yet');
+  assert.deepEqual(scanned.pendingUsage, [], 'empty when nothing is pending');
+  assert.deepEqual(loading.pendingUsage, ['codex']);
 });
 
 test('the push cadence main implements matches the one the contract advertises', () => {

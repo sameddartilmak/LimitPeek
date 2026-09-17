@@ -251,7 +251,7 @@ test.describe('the per-model breakdown of a period', () => {
     const { weeks } = history.usageHistory([opus], NOW);
     const entry = weeks[0].byModel[0];
     // Exactly the three honest fields, and none of the forbidden token sums.
-    assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model']);
+    assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model', 'provider']);
     for (const banned of ['billable', 'tokens', 'tokensUsed', 'totalTokens', 'byClass']) {
       assert.equal(banned in entry, false, `per-model entry must not carry "${banned}"`);
     }
@@ -390,4 +390,165 @@ test('buildSnapshot attaches a usageHistory built from the deduped corpus', () =
 test('loadingSnapshot reports null history — "not looked yet" is not "used nothing"', () => {
   const { loadingSnapshot } = require('../src/core/snapshot');
   assert.equal(loadingSnapshot(NOW).usageHistory, null);
+});
+
+/* ------------------------------------------------ Claude and Codex, one list */
+
+test.describe('a period covers Claude Code and Codex together', () => {
+  const codexPricing = require('../src/core/codex/pricing');
+  const wStart = history.weekStartMs(NOW);
+  const endEx = history.nextWeekStartMs(wStart);
+  const at = wStart + HOUR;
+  const r6 = (x) => Math.round(x * 1e6) / 1e6;
+
+  /** A Codex turn delta, the shape codex/usage.js emits. */
+  function cx(over) {
+    return { ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 0, cachedInput: 0, cacheWrite: 0, output: 0, ...over };
+  }
+
+  test('costUsd is the sum of both tools, each priced by its own table', () => {
+    const claude = [ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 100000 })];
+    const codex = [cx({ output: 100000, inputUncached: 50000, cacheWrite: 1000, cachedInput: 200000 })];
+    const { weeks } = history.usageHistory(claude, NOW, { codexEvents: codex });
+    const claudeUsd = pricing.weeklyCost(claude, wStart, endEx, false).totalUsd;
+    const codexUsd = codexPricing.codexCost(codex, wStart, endEx, false).totalUsd;
+    assert.ok(claudeUsd > 0 && codexUsd > 0);
+    assert.equal(weeks[0].costUsd, r6(claudeUsd + codexUsd));
+    assert.equal(weeks[0].hasUsage, true);
+    assert.equal(weeks[0].isFloor, false, 'both sides fully priced: not a floor');
+  });
+
+  test('every per-model entry names its provider, and both tools share one order', () => {
+    const claude = [
+      ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 100000 }),
+      ev({ ts: at, key: 'h1', model: 'claude-haiku-4-5', output: 1000 }),
+    ];
+    const codex = [cx({ output: 200000 })];
+    const { weeks } = history.usageHistory(claude, NOW, { codexEvents: codex });
+    const byModel = weeks[0].byModel;
+    assert.deepEqual(byModel.map((e) => e.provider).sort(), ['claude', 'claude', 'codex']);
+    for (const entry of byModel) {
+      assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model', 'provider']);
+    }
+    for (let i = 1; i < byModel.length; i += 1) {
+      assert.ok(byModel[i - 1].costUsd >= byModel[i].costUsd, 'largest priced cost first across both tools');
+    }
+    const codexEntry = byModel.find((e) => e.provider === 'codex');
+    assert.equal(codexEntry.model, 'gpt-5.6-sol');
+    assert.equal(codexEntry.costUsd, codexPricing.codexCost(codex, wStart, endEx, false).totalUsd);
+  });
+
+  test('an unpriced Codex model is null (never $0), sorts last, and makes the period a floor', () => {
+    const claude = [ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 100000 })];
+    const codex = [cx({ model: 'gpt-9-imaginary', output: 1000000 })];
+    const { weeks } = history.usageHistory(claude, NOW, { codexEvents: codex });
+    const period = weeks[0];
+    const entry = period.byModel.find((e) => e.model === 'gpt-9-imaginary');
+    assert.equal(entry.provider, 'codex');
+    assert.equal(entry.costUsd, null);
+    assert.equal(period.byModel[period.byModel.length - 1], entry, 'unpriced last');
+    assert.equal(period.isFloor, true, 'Codex usage was excluded, so the total is a lower bound');
+    assert.deepEqual(period.unpricedModels, ['gpt-9-imaginary']);
+    assert.equal(period.costUsd, pricing.weeklyCost(claude, wStart, endEx, false).totalUsd, 'nothing added for it');
+  });
+
+  test('a Claude-side floor still floors a period that also has priced Codex usage', () => {
+    // No TTL split on the cache write: priced at 1.25x, a floor (ADR-002 rule 1).
+    const claude = [ev({ ts: at, key: 'o1', model: 'claude-opus-5', cacheWrite: 10000, cw5: 0, cw1h: 0 })];
+    const codex = [cx({ output: 100000 })];
+    const { weeks } = history.usageHistory(claude, NOW, { codexEvents: codex });
+    assert.equal(weeks[0].isFloor, true);
+    assert.equal(weeks[0].byModel.find((e) => e.provider === 'codex').isFloor, false);
+  });
+
+  test('a Codex-only period has usage, a figure and a Codex price date', () => {
+    const out = history.usageHistory([], NOW, { codexEvents: [cx({ output: 100000 })] });
+    assert.equal(out.weeks.length, 1);
+    assert.equal(out.weeks[0].hasUsage, true);
+    assert.ok(out.weeks[0].costUsd > 0);
+    // Only the tables that priced something are named (A3 review F10); the
+    // compatibility field still carries Claude's date.
+    assert.deepEqual(out.pricesAsOfByProvider, { codex: codexPricing.PRICES_AS_OF });
+    assert.equal(out.pricesAsOf, pricing.PRICES_AS_OF, 'pricesAsOf keeps meaning the Claude table');
+  });
+
+  test('without Codex usage there is no Codex price date to state', () => {
+    const out = history.usageHistory([ev({ ts: at, output: 1000 })], NOW);
+    assert.deepEqual(out.pricesAsOfByProvider, { claude: pricing.PRICES_AS_OF });
+  });
+
+  test('with no usage at all no price date is stated, but pricesAsOf stays for compatibility', () => {
+    const out = history.usageHistory([], NOW, { codexEvents: [] });
+    assert.deepEqual(out.pricesAsOfByProvider, {});
+    assert.equal(out.pricesAsOf, pricing.PRICES_AS_OF);
+  });
+
+  test('byClass adds dollars per class across tools; no token figure appears on the period', () => {
+    const claude = [ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 100000 })];
+    const codex = [cx({ output: 100000, cacheWrite: 1000, cachedInput: 200000 })];
+    const { weeks } = history.usageHistory(claude, NOW, { codexEvents: codex });
+    const c1 = pricing.weeklyCost(claude, wStart, endEx, false).byClass;
+    const c2 = codexPricing.codexCost(codex, wStart, endEx, false).byClass;
+    for (const k of Object.keys(c1)) {
+      assert.equal(weeks[0].byClass[k], r6(c1[k] + c2[k]), k);
+    }
+    for (const banned of ['billable', 'tokens', 'tokensUsed', 'totalTokens']) {
+      assert.equal(banned in weeks[0], false);
+    }
+  });
+
+  test('historyStartMs is exactly the older of the oldest kept month and the oldest kept week', () => {
+    const oldestMonth = new Date(history.monthStartMs(NOW));
+    oldestMonth.setMonth(oldestMonth.getMonth() - (history.DEFAULT_MAX_MONTHS - 1));
+    const oldestWeek = weeksBack(NOW, history.DEFAULT_MAX_WEEKS - 1);
+    assert.equal(history.historyStartMs(NOW), Math.min(oldestMonth.getTime(), oldestWeek));
+  });
+
+  test('buildSnapshot feeds the scanned Codex events into the history', () => {
+    const snap = buildSnapshot({
+      now: NOW,
+      events: [],
+      rateLimits: { state: 'missing', fiveHour: null, sevenDay: null },
+      codexEvents: [cx({ output: 100000 })],
+      scanOk: true,
+    });
+    const week = snap.usageHistory.weeks[0];
+    assert.ok(week.byModel.some((e) => e.provider === 'codex' && e.model === 'gpt-5.6-sol'));
+    assert.equal(snap.usageHistory.pricesAsOfByProvider.codex, codexPricing.PRICES_AS_OF);
+  });
+});
+
+test('the Codex weekly cost is anchored to the Codex seven-day reset while it is ahead, trailing otherwise', () => {
+  const at = NOW - 2 * HOUR;
+  const codexEvents = [{ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 1000, cachedInput: 0, cacheWrite: 1000, output: 100 }];
+  const base = { now: NOW, events: [], rateLimits: { state: 'missing', fiveHour: null, sevenDay: null }, codexEvents, scanOk: true };
+  const resetsAtMs = NOW + 3 * 24 * HOUR;
+  const anchored = buildSnapshot({
+    ...base,
+    codexRateLimits: { state: 'fresh', capturedAtMs: NOW - 60000, fiveHour: null, sevenDay: { usedPercentage: 10, resetsAtMs } },
+  }).providers.find((p) => p.id === 'codex').weeklyCost;
+  assert.equal(anchored.windowAnchored, true);
+  assert.equal(anchored.windowEnd, new Date(resetsAtMs).toISOString());
+  assert.equal(anchored.windowStart, new Date(resetsAtMs - 7 * 24 * HOUR).toISOString());
+
+  const trailing = buildSnapshot({
+    ...base,
+    codexRateLimits: { state: 'fresh', capturedAtMs: NOW - 60000, fiveHour: null, sevenDay: { usedPercentage: 10, resetsAtMs: NOW - HOUR } },
+  }).providers.find((p) => p.id === 'codex').weeklyCost;
+  assert.equal(trailing.windowAnchored, false, 'a reset already passed does not anchor');
+  assert.equal(trailing.windowEnd, new Date(NOW).toISOString());
+});
+
+test('the Codex row tokens use the Codex five-hour reset window while it is ahead, trailing 5h otherwise', () => {
+  const ev = (ts, input) => ({ ts, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: input, cachedInput: 0, cacheWrite: 0, output: 0 });
+  // Reset in 1h: the window is [now-4h, now+1h). A turn 4.5h ago is OUTSIDE it
+  // although it is inside a trailing 5h.
+  const codexEvents = [ev(NOW - 4.5 * HOUR, 7), ev(NOW - 3 * HOUR, 100)];
+  const base = { now: NOW, events: [], rateLimits: { state: 'missing', fiveHour: null, sevenDay: null }, codexEvents, scanOk: true };
+  const rl = (resetsAtMs) => ({ state: 'fresh', capturedAtMs: NOW - 60000, fiveHour: { usedPercentage: 5, resetsAtMs }, sevenDay: null });
+  const tokensWith = (limits) => buildSnapshot({ ...base, codexRateLimits: limits }).providers.find((p) => p.id === 'codex').tokens;
+
+  assert.equal(tokensWith(rl(NOW + HOUR)).input, 100, 'anchored: the 4.5h-old turn belongs to the previous window');
+  assert.equal(tokensWith(rl(NOW - HOUR)).input, 107, 'a passed reset does not anchor: trailing 5h');
+  assert.equal(tokensWith(undefined).input, 107, 'no rate limits: trailing 5h');
 });

@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { stripTypeScriptTypes } = require('node:module');
+const { inlineJsonImports } = require('../../src/renderer/inline-json.cjs');
 
 /**
  * Loads `src/renderer/src/format.ts` FROM SOURCE for the unit suites.
@@ -28,12 +29,31 @@ const { stripTypeScriptTypes } = require('node:module');
 const ROOT = path.join(__dirname, '..', '..');
 const SRC = path.join(ROOT, 'src');
 
+/**
+ * Strip, then inline catalog JSON exactly as `build.mjs` does. ADR-004: the
+ * formatters now take their words from `src/shared/i18n/`, and the shipped
+ * module has that JSON inlined — so the tests run that shape, not a JSON-module
+ * import the panel never performs.
+ */
 function strip(file) {
-  return stripTypeScriptTypes(fs.readFileSync(file, 'utf8'), { mode: 'strip' });
+  const js = stripTypeScriptTypes(fs.readFileSync(file, 'utf8'), { mode: 'strip' });
+  return inlineJsonImports(js, file).code;
 }
 
+/** The renderer modules format.ts reaches, relative to src/. */
+const MODULES = [
+  ['shared', 'contract'],
+  ['renderer', 'src', 'sanitize'],
+  ['renderer', 'src', 'i18n'],
+  ['renderer', 'src', 'format'],
+];
+
 /**
- * @returns {{ load: () => Promise<object>, cleanup: () => void }}
+ * `load()` resolves to the format module. `i18n()` resolves to the i18n module
+ * of the SAME load (same URL, so the same instance): `setLocale` on it changes
+ * what the loaded formatters print. Call it after `load()`.
+ *
+ * @returns {{ load: () => Promise<object>, i18n: () => Promise<object>, cleanup: () => void }}
  */
 function formatModule() {
   let dir = null;
@@ -43,11 +63,10 @@ function formatModule() {
       const files = [
         // No package.json means a bare `.js` is CommonJS and the import fails.
         ['package.json', '{"type":"module"}'],
-        [path.join('shared', 'contract.js'), strip(path.join(SRC, 'shared', 'contract.ts'))],
-        [
-          path.join('renderer', 'src', 'format.js'),
-          strip(path.join(SRC, 'renderer', 'src', 'format.ts')),
-        ],
+        ...MODULES.map((parts) => [
+          path.join(...parts) + '.js',
+          strip(path.join(SRC, ...parts) + '.ts'),
+        ]),
       ];
       for (const [rel, body] of files) {
         const out = path.join(dir, rel);
@@ -55,6 +74,15 @@ function formatModule() {
         fs.writeFileSync(out, body, 'utf8');
       }
       return import(pathToFileURL(path.join(dir, 'renderer', 'src', 'format.js')).href);
+    },
+    async i18n() {
+      if (!dir) throw new Error('load-format: call load() before i18n()');
+      return import(pathToFileURL(path.join(dir, 'renderer', 'src', 'i18n.js')).href);
+    },
+    /** The sanitize module of the SAME load, for the IPC input-gate suites. */
+    async sanitize() {
+      if (!dir) throw new Error('load-format: call load() before sanitize()');
+      return import(pathToFileURL(path.join(dir, 'renderer', 'src', 'sanitize.js')).href);
     },
     cleanup() {
       if (dir) fs.rmSync(dir, { recursive: true, force: true });

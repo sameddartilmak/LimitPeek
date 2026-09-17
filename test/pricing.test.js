@@ -554,7 +554,7 @@ test.describe('the snapshot carries it', () => {
     const cost = snap.providers.find((p) => p.id === 'claude').weeklyCost;
     assert.deepEqual(Object.keys(cost).sort(), [
       'byClass', 'byModel', 'cacheWriteEvents', 'fallbackWriteEvents',
-      'pricesAsOf', 'totalUsd', 'unpricedModels', 'windowAnchored',
+      'pricesAsOf', 'totalUsd', 'unpricedModels', 'unrecordedWriteEvents', 'windowAnchored',
       'windowEnd', 'windowStart',
     ].sort());
     assert.deepEqual(Object.keys(cost.byModel[0]).sort(),

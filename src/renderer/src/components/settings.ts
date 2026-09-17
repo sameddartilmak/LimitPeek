@@ -36,8 +36,8 @@
  * the focus ring is the shared :focus-visible one.
  *
  * DEFAULT OPEN: "Model Yönetimi", the first section. It is the view's original
- * job and keeps the tab path (back control -> first provider switch) exactly as
- * it was; the other two start collapsed. Clicking the open header collapses it,
+ * job, and it keeps the provider switches one tab stop away (back control ->
+ * its header -> first provider switch); the other two start collapsed. Clicking the open header collapses it,
  * so "all closed" is reachable too — the invariant is at most one open, which
  * is what "opening one closes the others" means.
  *
@@ -52,6 +52,7 @@
  */
 
 import type {
+  LanguageChoice,
   PeriodModelCost,
   PeriodUsage,
   ProviderSnapshot,
@@ -61,7 +62,9 @@ import type {
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { enabledOf, type PanelState } from '../store.js';
 import { themeLabel } from '../theme.js';
-import { dayRange, integer, priceDate, usd } from '../format.js';
+import { pendingUsageOf } from '../sanitize.js';
+import { atLeast, dayRange, lowerFirst, modelName, multiplier, priceDate, usd } from '../format.js';
+import { language as currentLanguage, t } from '../i18n.js';
 import { providerMark } from './logo.js';
 
 /** The id the header's settings button points `aria-controls` at. */
@@ -76,6 +79,8 @@ const THEME_REGION_ID = 'settings-sec-theme-r';
 const SETTINGS_HELP_ID = 'settings-help';
 const THEME_TITLE_ID = 'settings-theme-title';
 const THEME_HELP_ID = 'settings-theme-help';
+const LANGUAGE_TITLE_ID = 'settings-language-title';
+const LANGUAGE_HELP_ID = 'settings-language-help';
 
 /** The grain the usage section is showing. */
 type UsageGrain = 'week' | 'month';
@@ -92,6 +97,11 @@ export interface SettingsContext {
   onToggle(providerId: string, enabled: boolean): void;
   /** The user picked a theme. Optimistic; the app owns the revert. */
   onTheme(theme: ThemeChoice): void;
+  /**
+   * The user picked a language. NOT optimistic: main re-resolves and pushes,
+   * and the app rebuilds the panel from that push (ADR-004).
+   */
+  onLanguage(language: LanguageChoice): void;
   /** Leave settings and go back to the usage list. */
   onBack(): void;
 }
@@ -102,6 +112,12 @@ export interface SettingsHandle {
   /** Focus the way out. It is the first thing in the view, so tab order runs
    *  forwards from it into the list. */
   focusFirst(): void;
+  /**
+   * Open the appearance section and focus the checked language radio. Called
+   * after a language change rebuilds the panel, so the keyboard user lands
+   * back on the control they just operated instead of on <body>.
+   */
+  focusLanguage(): void;
 }
 
 function backIcon(): SVGElement {
@@ -135,11 +151,17 @@ function chevronIcon(): SVGElement {
   );
 }
 
-/** "Bulundu, henüz bağlı değil." -> "bulundu, henüz bağlı değil" */
+/**
+ * "Bulundu, henüz bağlı değil." -> "bulundu, henüz bağlı değil".
+ *
+ * Lower-cased in the RESOLVED language (ADR-004 A1.7). It used a fixed
+ * 'tr-TR', which maps "I" to the dotless "ı": an English detail "It is…" would
+ * have been printed "ıt is…".
+ */
 function asClause(detail: string): string {
   const trimmed = detail.trim().replace(/[.!]+$/, '');
   if (trimmed.length === 0) return '';
-  return trimmed.charAt(0).toLocaleLowerCase('tr-TR') + trimmed.slice(1);
+  return lowerFirst(trimmed);
 }
 
 /**
@@ -148,10 +170,10 @@ function asClause(detail: string): string {
  * değil" being read as "not installed".
  */
 function metaFor(provider: ProviderSnapshot, enabled: boolean): string {
-  const where = enabled ? 'Ana panelde' : 'Ana panelde değil';
+  const where = enabled ? t('settings.where.enabled') : t('settings.where.notEnabled');
   const how = provider.connected
-    ? 'bağlı'
-    : asClause(provider.setupAction?.detail ?? '') || 'henüz bağlı değil';
+    ? t('settings.connected')
+    : asClause(provider.setupAction?.detail ?? '') || t('settings.notConnected');
   return where + ' · ' + how;
 }
 
@@ -280,7 +302,7 @@ function createThemeControl(ctx: SettingsContext): ThemeHandleLocal {
   const root = el(
     'fieldset',
     { class: 'theme', 'aria-describedby': THEME_HELP_ID },
-    el('legend', { class: 'u-sr', id: THEME_TITLE_ID }, 'Görünüm'),
+    el('legend', { class: 'u-sr', id: THEME_TITLE_ID }, t('settings.theme.legend')),
     help,
     options,
   );
@@ -299,18 +321,107 @@ function createThemeControl(ctx: SettingsContext): ThemeHandleLocal {
     setAttr(root, 'aria-busy', state.themePending ? 'true' : null);
 
     const resolved = document.documentElement.getAttribute('data-theme') === 'light'
-      ? 'açık'
-      : 'koyu';
+      ? t('theme.resolvedLight')
+      : t('theme.resolvedDark');
     setText(
       help,
       state.theme === 'system'
-        ? `Windows'un koyu/açık ayarı izleniyor — şu anda ${resolved}. ` +
-            'Ayar değişince panel de değişir.'
-        : 'Panelin rengi. Sistem seçilirse Windows ayarı izlenir.',
+        ? t('settings.theme.helpSystem', { resolved })
+        : t('settings.theme.help'),
     );
   }
 
   return { el: root, update };
+}
+
+/**
+ * The language control. Same native-radio fieldset as the theme, for the same
+ * reasons, and the same CSS (`.theme`): two identical controls one above the
+ * other should look identical.
+ *
+ * The option labels are ENDONYMS — "Türkçe" and "English" in both languages —
+ * because a user who cannot read the current language has to be able to find
+ * their own. Only "Sistem"/"System" follows the language.
+ *
+ * NOT OPTIMISTIC. The radio moves on the gesture (it is a native radio), but
+ * nothing else does: the words on screen change only when main pushes the
+ * newly resolved language, because main also rewrites the tray tooltip, the
+ * menu and the setup text, and a panel that switched ahead of main could show
+ * one language beside a tooltip in the other.
+ */
+interface LanguageHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+  focusChecked(): void;
+}
+
+function createLanguageControl(ctx: SettingsContext): LanguageHandleLocal {
+  const CHOICES: ReadonlyArray<{ v: LanguageChoice; label: string }> = [
+    { v: 'tr', label: t('language.endonym.tr') },
+    { v: 'en', label: t('language.endonym.en') },
+    { v: 'system', label: t('language.system') },
+  ];
+
+  const inputs = new Map<LanguageChoice, HTMLInputElement>();
+  const options = el('div', { class: 'theme__opts' });
+
+  for (const choice of CHOICES) {
+    const id = 'language-' + choice.v;
+    const input = el('input', {
+      type: 'radio',
+      name: 'usage-notch-language',
+      id,
+      value: choice.v,
+      class: 'theme__radio',
+    }) as HTMLInputElement;
+    // The endonym is also marked with its own language, so a screen reader
+    // reading an English panel pronounces "Türkçe" as Turkish.
+    const langAttr = choice.v === 'system' ? {} : { lang: choice.v };
+    const label = el('label', { class: 'theme__opt', for: id, ...langAttr }, choice.label);
+    on(input, 'change', () => {
+      if (input.checked) ctx.onLanguage(choice.v);
+    });
+    inputs.set(choice.v, input);
+    options.appendChild(input);
+    options.appendChild(label);
+  }
+
+  const help = el('p', { class: 'theme__help', id: LANGUAGE_HELP_ID }, '');
+
+  const root = el(
+    'fieldset',
+    { class: 'theme theme--language', 'aria-describedby': LANGUAGE_HELP_ID },
+    el('legend', { class: 'u-sr', id: LANGUAGE_TITLE_ID }, t('settings.language.legend')),
+    help,
+    options,
+  );
+
+  function update(state: PanelState): void {
+    for (const [choice, input] of inputs) {
+      const on_ = state.language === choice;
+      if (input.checked !== on_) input.checked = on_;
+    }
+    setAttr(root, 'data-pending', state.languagePending ? 'true' : null);
+    setAttr(root, 'data-revert', state.languageReverted ? 'true' : null);
+    setAttr(root, 'aria-busy', state.languagePending ? 'true' : null);
+
+    const resolvedName =
+      currentLanguage() === 'tr' ? t('language.name.tr') : t('language.name.en');
+    setText(
+      help,
+      state.language === 'system'
+        ? t('settings.language.helpSystem', { language: resolvedName })
+        : t('settings.language.help'),
+    );
+  }
+
+  function focusChecked(): void {
+    const target =
+      [...inputs.values()].find((input) => input.checked) ?? inputs.get('system') ?? null;
+    target?.focus({ preventScroll: true });
+  }
+
+  return { el: root, update, focusChecked };
 }
 
 /**
@@ -340,16 +451,26 @@ function createThemeControl(ctx: SettingsContext): ThemeHandleLocal {
  */
 interface UsageHandleLocal {
   el: HTMLElement;
-  update(history: UsageHistory | null, hasData: boolean): void;
+  update(
+    history: UsageHistory | null,
+    hasData: boolean,
+    providers: readonly ProviderSnapshot[],
+    pending: readonly string[],
+  ): void;
 }
 
 /** The amount cell's text, framed and honest. Never a bare "$0,00". */
-function amountText(period: PeriodUsage): string {
+function amountText(period: PeriodUsage, pending: boolean): string {
+  // While a tool is still being counted, an empty or zero period is not known
+  // to be empty: that tool's usage in it has not been read. "—" would claim it.
+  // A figure that IS present stays unqualified — pending is not a floor ("en
+  // az"), it is incomplete, and the section's note says so.
+  if (pending && (!period.hasUsage || period.costUsd <= 0)) return t('settings.amount.pending');
   if (!period.hasUsage) return '—';
-  if (period.costUsd > 0) return (period.isFloor ? 'en az ' : '') + usd(period.costUsd);
+  if (period.costUsd > 0) return period.isFloor ? atLeast(usd(period.costUsd)) : usd(period.costUsd);
   // Usage happened, but none of it could be priced: say so rather than print a
   // zero that reads as "free".
-  return period.unpricedModels.length > 0 ? 'fiyatlanamadı' : '—';
+  return period.unpricedModels.length > 0 ? t('settings.amount.unpriced') : '—';
 }
 
 /**
@@ -359,8 +480,8 @@ function amountText(period: PeriodUsage): string {
  * events carried no billable tokens) reads "—" rather than a misleading "free".
  */
 function modelAmountText(model: PeriodModelCost): string {
-  if (model.costUsd === null) return 'fiyatlanamadı';
-  if (model.costUsd > 0) return (model.isFloor ? 'en az ' : '') + usd(model.costUsd);
+  if (model.costUsd === null) return t('settings.amount.unpriced');
+  if (model.costUsd > 0) return model.isFloor ? atLeast(usd(model.costUsd)) : usd(model.costUsd);
   return '—';
 }
 
@@ -368,21 +489,29 @@ function createUsageSection(): UsageHandleLocal {
   let grain: UsageGrain = DEFAULT_GRAIN;
   let current: UsageHistory | null = null;
   let hasData = false;
+  /** The snapshot's providers, for each model row's mark and tool name. */
+  let known: readonly ProviderSnapshot[] = [];
+  /** Tools whose first usage scan has not answered (Snapshot.pendingUsage). */
+  let pendingIds: readonly string[] = [];
 
+  // "yaklaşık maliyet" (approximate cost) is gone (ADR-004 A1.6): "approximate"
+  // claims error in both directions beside figures whose only known error is
+  // one-directional, which is why they say "en az". ADR-002's framing instead:
+  // what this usage WOULD HAVE COST at published API prices. The data source
+  // is a separate, per-provider sentence, so a second provider's history does
+  // not require rewriting the claim.
   const intro = el(
     'p',
     { class: 'usage__intro' },
-    'Yayımlanan API fiyatlarıyla dönem dönem yaklaşık maliyet. Bu bir fatura ' +
-      'değildir — abonelik kapsamında bu tutar (ABD doları) ödenmez. Yalnızca ' +
-      'yerel Claude Code transkriptlerinden hesaplanır.',
+    `${t('settings.usage.intro')} ${t('settings.usage.sources')}`,
   );
 
   const GRAINS: ReadonlyArray<{ v: UsageGrain; label: string }> = [
-    { v: 'month', label: 'Aylık' },
-    { v: 'week', label: 'Haftalık' },
+    { v: 'month', label: t('settings.grain.month') },
+    { v: 'week', label: t('settings.grain.week') },
   ];
   const radios = new Map<UsageGrain, HTMLInputElement>();
-  const toggle = el('div', { class: 'seg', role: 'group', 'aria-label': 'Dönem aralığı' });
+  const toggle = el('div', { class: 'seg', role: 'group', 'aria-label': t('settings.grain.legend') });
   for (const g of GRAINS) {
     const id = 'usage-grain-' + g.v;
     const input = el('input', {
@@ -407,8 +536,12 @@ function createUsageSection(): UsageHandleLocal {
   const list = el('ul', { class: 'usage__list', role: 'list' });
   const empty = el('p', { class: 'usage__empty' }, '');
   const note = el('p', { class: 'usage__note' }, '');
+  // ADR-002 A3.12. Above the list, not in the footnote: it changes what every
+  // total below it means, and it must be read before them.
+  const pendingNote = el('p', { class: 'usage__pending', role: 'status' }, '');
+  pendingNote.hidden = true;
 
-  const root = el('div', { class: 'usage' }, intro, toggle, list, empty, note);
+  const root = el('div', { class: 'usage' }, intro, toggle, pendingNote, list, empty, note);
 
   function periodsFor(): PeriodUsage[] {
     if (!current) return [];
@@ -421,11 +554,38 @@ function createUsageSection(): UsageHandleLocal {
    * so a model name decoded from a file cannot become markup.
    */
   function renderModelRow(model: PeriodModelCost): HTMLElement {
-    const name = el('span', { class: 'usage__model-name' }, model.model);
+    // Which tool the model belongs to: the list mixes Claude Code and Codex.
+    // The brand mark says it to the eye, with the same connected/grey rule as
+    // the settings rows (keyed off `data-connected` on this row). The mark is
+    // decorative, so the tool is ALSO named in text for a screen reader —
+    // "Codex model: gpt-5 …" — and never left to the picture alone.
+    const provider = known.find((p) => p.id === model.provider) ?? null;
+    const toolName = provider?.displayName || model.provider;
+    const toolLabel = t('settings.usage.modelOf', { tool: toolName });
+    // `title` for the pointer: the mark alone is a picture to someone who does
+    // not know the logo. The name's own title is the full id, which ellipsizes.
+    const mark = el('span', { class: 'usage__model-mark', 'aria-hidden': 'true', title: toolLabel });
+    mark.appendChild(providerMark(model.provider));
+    const name = el(
+      'span',
+      // An unresolved model is named as unresolved in the title too, never
+      // as a model called "unknown".
+      { class: 'usage__model-name', title: modelName(model.model) },
+      el('span', { class: 'u-sr' }, `${toolLabel}: `),
+      modelName(model.model),
+    );
     const amount = el('span', { class: 'usage__model-amount u-num' }, modelAmountText(model));
-    const row = el('li', { class: 'usage__model', role: 'listitem' }, name, amount) as HTMLElement;
+    const row = el(
+      'li',
+      { class: 'usage__model', role: 'listitem' },
+      mark,
+      name,
+      amount,
+    ) as HTMLElement;
     setAttr(row, 'data-floor', model.isFloor ? 'true' : null);
     setAttr(row, 'data-unpriced', model.costUsd === null ? 'true' : null);
+    setAttr(row, 'data-provider', model.provider);
+    setAttr(row, 'data-connected', provider?.connected ? 'true' : 'false');
     return row;
   }
 
@@ -437,7 +597,11 @@ function createUsageSection(): UsageHandleLocal {
    */
   function renderDisclosure(period: PeriodUsage, regionId: string): readonly HTMLElement[] {
     const chev = el('span', { class: 'usage__chev', 'aria-hidden': 'true' }, chevronIcon());
-    const label = el('span', { class: 'usage__toggle-label' }, integer(period.byModel.length) + ' model');
+    const label = el(
+      'span',
+      { class: 'usage__toggle-label' },
+      t('quota.models', { count: period.byModel.length }),
+    );
     const toggle = el(
       'button',
       {
@@ -445,7 +609,7 @@ function createUsageSection(): UsageHandleLocal {
         class: 'usage__toggle',
         'aria-expanded': 'false',
         'aria-controls': regionId,
-        title: 'Modele göre dağılım',
+        title: t('settings.models.breakdown'),
       },
       label,
       chev,
@@ -469,7 +633,8 @@ function createUsageSection(): UsageHandleLocal {
 
   function renderRow(period: PeriodUsage, maxCost: number, index: number): HTMLElement {
     const range = el('span', { class: 'usage__range' }, dayRange(period.startsAt, period.endsAt) || '—');
-    const amount = el('span', { class: 'usage__amount u-num' }, amountText(period));
+    const pending = pendingIds.length > 0;
+    const amount = el('span', { class: 'usage__amount u-num' }, amountText(period, pending));
     const bar = el('span', { class: 'usage__bar', 'aria-hidden': 'true' });
     if (maxCost > 0 && period.costUsd > 0) {
       const fill = el('i', { class: 'usage__fill' });
@@ -479,7 +644,8 @@ function createUsageSection(): UsageHandleLocal {
       bar.hidden = true;
     }
     const row = el('li', { class: 'usage__row', role: 'listitem' }, range, amount, bar) as HTMLElement;
-    setAttr(row, 'data-empty', period.hasUsage ? null : 'true');
+    setAttr(row, 'data-empty', period.hasUsage || pending ? null : 'true');
+    setAttr(row, 'data-pending', pending && (!period.hasUsage || period.costUsd <= 0) ? 'true' : null);
     setAttr(row, 'data-floor', period.isFloor ? 'true' : null);
     // Only a period with a per-model split gets a disclosure — an empty period
     // has nothing to break down. The region id is unique per grain+index so the
@@ -491,17 +657,30 @@ function createUsageSection(): UsageHandleLocal {
     return row;
   }
 
+  /** "Codex" / "Claude Code ve Codex", in the panel's language. */
+  function pendingToolsText(): string {
+    const names = pendingIds.map((id) => known.find((p) => p.id === id)?.displayName || id);
+    try {
+      return new Intl.ListFormat(currentLanguage(), { style: 'long', type: 'conjunction' }).format(names);
+    } catch {
+      return names.join(', ');
+    }
+  }
+
   function renderList(): void {
     for (const [v, input] of radios) {
       const on_ = grain === v;
       if (input.checked !== on_) input.checked = on_;
     }
 
+    pendingNote.hidden = pendingIds.length === 0;
+    setText(pendingNote, pendingIds.length > 0 ? t('settings.usage.pending', { tools: pendingToolsText() }) : '');
+
     if (!hasData) {
       list.hidden = true;
       note.hidden = true;
       empty.hidden = false;
-      setText(empty, 'Kullanım geçmişi yükleniyor…');
+      setText(empty, t('settings.usage.loading'));
       return;
     }
 
@@ -509,8 +688,10 @@ function createUsageSection(): UsageHandleLocal {
     if (periods.length === 0) {
       list.hidden = true;
       note.hidden = true;
-      empty.hidden = false;
-      setText(empty, 'Henüz yerel kullanım kaydı bulunamadı.');
+      // "No records found" is a claim about the corpus; with a tool still
+      // being read it is not yet true. The pending note above says what is.
+      empty.hidden = pendingIds.length > 0;
+      setText(empty, pendingIds.length > 0 ? '' : t('settings.usage.empty'));
       return;
     }
 
@@ -520,18 +701,49 @@ function createUsageSection(): UsageHandleLocal {
     replaceChildrenWith(list, periods.map((p, i) => renderRow(p, maxCost, i)));
 
     note.hidden = false;
+    // Each vendor's table has its own date. When Codex prices are in the
+    // figures, both dates are stated; a single date would be false for one.
+    //
+    // `pricesAsOfByProvider` lists a table only when it priced something in
+    // these figures, so a Codex-only history deliberately has no Claude date.
+    // The legacy `pricesAsOf` (always Claude's) is used ONLY when the map is
+    // absent or empty — an older main — never to fill a gap the map left on
+    // purpose, or a Codex-only user would read a date for a table that priced
+    // nothing.
+    const byProvider = current ? current.pricesAsOfByProvider : undefined;
+    const hasMap = !!byProvider && Object.keys(byProvider).length > 0;
+    const claudeDate = hasMap ? byProvider?.claude : current?.pricesAsOf;
+    const codexDate = hasMap ? byProvider?.codex : undefined;
+    // Every note names every floor cause of the tools it covers: unpriced usage
+    // (both), Claude's missing TTL split priced at the 1.25x floor (same facts
+    // as cost.caveat.ttl), and Codex's unrecorded cache writes.
+    const ttl = { low: multiplier(1.25), high: multiplier(2) };
     setText(
       note,
-      current && current.pricesAsOf
-        ? `Fiyatlar ${priceDate(current.pricesAsOf)} tarihli listeye göre. ` +
-            '“En az”, fiyatlanamayan kullanım toplama katılmadığı için alt sınır demektir.'
-        : 'Fiyat listesinin tarihi bildirilmedi.',
+      claudeDate && codexDate
+        ? t('settings.usage.noteByProvider', {
+            claude: priceDate(claudeDate),
+            codex: priceDate(codexDate),
+            ...ttl,
+          })
+        : codexDate
+          ? t('settings.usage.noteCodexOnly', { codex: priceDate(codexDate) })
+          : claudeDate
+            ? t('settings.usage.note', { date: priceDate(claudeDate), ...ttl })
+            : t('settings.usage.noteNoDate'),
     );
   }
 
-  function update(history: UsageHistory | null, dataArrived: boolean): void {
+  function update(
+    history: UsageHistory | null,
+    dataArrived: boolean,
+    providers: readonly ProviderSnapshot[],
+    pending: readonly string[],
+  ): void {
     current = history;
     hasData = dataArrived;
+    known = providers;
+    pendingIds = pending;
     renderList();
   }
 
@@ -590,7 +802,10 @@ function createAccordionSection(
  * `hidden` on the region are the two things kept in sync, and they are the two
  * a screen reader and a Tab key respectively depend on.
  */
-function wireAccordion(sections: readonly AccordionSection[], defaultOpenId: string | null): void {
+function wireAccordion(
+  sections: readonly AccordionSection[],
+  defaultOpenId: string | null,
+): (id: string) => void {
   const setOpen = (section: AccordionSection, open: boolean): void => {
     setAttr(section.trigger, 'aria-expanded', open ? 'true' : 'false');
     section.region.hidden = !open;
@@ -606,6 +821,10 @@ function wireAccordion(sections: readonly AccordionSection[], defaultOpenId: str
       }
     });
   }
+  // Programmatic open, with the same one-open invariant as a click.
+  return (id: string) => {
+    for (const other of sections) setOpen(other, other.id === id);
+  };
 }
 
 export function createSettings(ctx: SettingsContext): SettingsHandle {
@@ -614,8 +833,8 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   const back = el('button', {
     type: 'button',
     class: 'iconbtn',
-    'aria-label': 'Ayarlardan çık, kullanım listesine dön',
-    title: 'Geri (Esc)',
+    'aria-label': t('settings.back'),
+    title: t('settings.backTitle'),
   }) as HTMLButtonElement;
   back.appendChild(backIcon());
   on(back, 'click', () => ctx.onBack());
@@ -624,15 +843,14 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     'div',
     { class: 'settings__bar' },
     back,
-    el('h2', { class: 'settings__title', id: SETTINGS_TITLE_ID }, 'Ayarlar'),
+    el('h2', { class: 'settings__title', id: SETTINGS_TITLE_ID }, t('header.settings')),
   );
 
   // --- "Model Yönetimi": which rows exist ---------------------------------
   const help = el(
     'p',
     { class: 'settings__help', id: SETTINGS_HELP_ID },
-    'Ana panelde hangi araçların görüneceğini seçin. Kaldırılan araç yalnızca ' +
-      'listeden çıkar — bağlantısı kesilmez, hiçbir veri silinmez.',
+    t('settings.models.help'),
   );
 
   const list = el('ul', {
@@ -651,7 +869,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     'models',
     MODELS_HEADER_ID,
     MODELS_REGION_ID,
-    'Model Yönetimi',
+    t('settings.section.models'),
     [help, list, status],
   );
 
@@ -661,23 +879,28 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     'usage',
     USAGE_HEADER_ID,
     USAGE_REGION_ID,
-    'Toplam Kullanım',
+    t('settings.section.usage'),
     [usage.el],
   );
 
-  // --- "Görünüm": the theme ----------------------------------------------
+  // --- "Görünüm ve dil": the theme and the language ---------------------
+  // One section for both: they are the two preferences about how the panel
+  // presents itself, and a fourth accordion section would push the list down
+  // in a 360px panel. The id stays 'theme' so existing hooks keep working.
   const theme = createThemeControl(ctx);
+  const languageControl = createLanguageControl(ctx);
   const themeSection = createAccordionSection(
     'theme',
     THEME_HEADER_ID,
     THEME_REGION_ID,
-    'Görünüm',
-    [theme.el],
+    t('settings.section.appearance'),
+    [theme.el, languageControl.el],
   );
 
   const sections = [modelsSection, usageSection, themeSection];
-  // First section open; the tab path (back -> first switch) is unchanged.
-  wireAccordion(sections, 'models');
+  // First section open. The tab path is back -> "Model Yönetimi" header ->
+  // first switch: each section header is a real button and a tab stop.
+  const openSection = wireAccordion(sections, 'models');
 
   const acc = el('div', { class: 'acc' }, ...sections.map((s) => s.el));
 
@@ -744,14 +967,22 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     // with no recognised tools must still be able to pick a theme and see its
     // history.
     theme.update(state);
-    usage.update(state.snapshot?.usageHistory ?? null, state.hasData);
+    languageControl.update(state);
+    // The FULL snapshot list, not the added subset: a model row names its tool
+    // even when that tool's row was removed from the main panel.
+    usage.update(
+      state.snapshot?.usageHistory ?? null,
+      state.hasData,
+      state.snapshot?.providers ?? providers,
+      pendingUsageOf(state.snapshot),
+    );
 
     // Three states for the models list, told apart in words. "Still scanning"
     // and "this machine has nothing" are different claims.
     if (!state.hasData) {
       list.hidden = true;
       status.hidden = false;
-      setText(status, 'Araçlar taranıyor…');
+      setText(status, t('settings.scanning'));
       setAttr(status, 'aria-busy', 'true');
       return;
     }
@@ -759,7 +990,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     if (providers.length === 0) {
       list.hidden = true;
       status.hidden = false;
-      setText(status, 'Bu makinede tanınan bir yapay zekâ aracı bulunamadı.');
+      setText(status, t('providers.noneFound'));
       return;
     }
     list.hidden = false;
@@ -771,6 +1002,10 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     render,
     focusFirst(): void {
       back.focus({ preventScroll: true });
+    },
+    focusLanguage(): void {
+      openSection('theme');
+      languageControl.focusChecked();
     },
   };
 }

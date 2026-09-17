@@ -12,6 +12,7 @@ const { installAgy, isAgyInstalled } = require('../core/antigravity/cli-install'
 const { claudeSettingsPath, antigravitySettingsPath } = require('../core/paths');
 const messages = require('../core/setup/messages');
 const log = require('../core/log');
+const { t } = require('../core/i18n');
 
 /**
  * Materialises the bridge script somewhere Claude Code can actually run it and
@@ -72,14 +73,14 @@ function materialiseBridge(script = BRIDGE_SCRIPTS.claude) {
  */
 async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
   if (confirmed !== true) {
-    return { ok: false, message: 'Onayınız olmadan Claude Code ayar dosyanıza yazmıyoruz.' };
+    return { ok: false, message: t('setup.notConfirmed', { tool: 'Claude Code' }) };
   }
 
   const state = statusLineState();
   if (state === 'ours') {
     return {
       ok: false,
-      message: 'Köprü zaten kurulu. Yüzde görünmüyorsa Claude Code oturumunu yeniden başlatın.',
+      message: t('setup.alreadyInstalled', { tool: 'Claude Code' }),
     };
   }
   if (state === 'foreign') {
@@ -91,7 +92,7 @@ async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
   if (state === 'unreadable' || state === 'invalid') {
     return {
       ok: false,
-      message: 'Claude Code ayar dosyası okunamadı veya geçerli JSON değil. Düzeltip tekrar deneyin.',
+      message: t('setup.settingsUnreadableOrInvalid', { tool: 'Claude Code' }),
     };
   }
 
@@ -103,24 +104,21 @@ async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
   if (typeof beforePrompt === 'function') beforePrompt();
   const choice = await dialog.showMessageBox(parentWindow || undefined, {
     type: 'question',
-    buttons: ['Vazgeç', 'Ekle'],
+    buttons: [t('dialog.cancel'), t('dialog.add')],
     defaultId: 1,
     cancelId: 0,
     noLink: true,
-    title: 'Claude Code ayarına yazılsın mı?',
-    message: 'Claude Code durum satırına Usage Notch köprüsü eklensin mi?',
-    detail: `Şu dosya güncellenecek:\n${settingsFile}\n\n`
-      + 'Önce zaman damgalı bir yedek alınır. Köprü yalnızca kullanım yüzdesini ve '
-      + 'sıfırlanma zamanını okur; hiçbir metin, dosya yolu veya kimlik bilgisi kaydetmez '
-      + 've hiçbir ağ bağlantısı açmaz.',
+    title: t('dialog.writeSettings.title', { tool: 'Claude Code' }),
+    message: t('dialog.writeSettings.message', { tool: 'Claude Code' }),
+    detail: `${t('dialog.writeSettings.file', { file: settingsFile })}\n\n${t('dialog.claude.promise')}`,
   });
   if (choice.response !== 1) {
-    return { ok: false, message: 'İşlem iptal edildi. Hiçbir değişiklik yapılmadı.' };
+    return { ok: false, message: t('setup.cancelled') };
   }
 
   const bridgePath = materialiseBridge();
   if (!bridgePath) {
-    return { ok: false, message: 'Köprü betiği hazırlanamadı.' };
+    return { ok: false, message: t('setup.bridgePrepareFailed') };
   }
 
   const result = installClaudeStatusLine({ confirmed: true, bridgePath, settingsPath: settingsFile });
@@ -138,7 +136,7 @@ async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
  */
 async function runAntigravitySetup({ confirmed, parentWindow, beforePrompt, installFn }) {
   if (confirmed !== true) {
-    return { ok: false, message: 'Onayınız olmadan Antigravity ayar dosyanıza yazmıyoruz.' };
+    return { ok: false, message: t('setup.notConfirmed', { tool: 'Antigravity' }) };
   }
 
   const state = antigravityStatusLineState();
@@ -151,7 +149,7 @@ async function runAntigravitySetup({ confirmed, parentWindow, beforePrompt, inst
   if (state === 'ours') {
     return {
       ok: false,
-      message: 'Köprü zaten kurulu. Yüzde görünmüyorsa Antigravity CLI oturumunu yeniden başlatın.',
+      message: t('setup.alreadyInstalled', { tool: 'Antigravity CLI' }),
     };
   }
   if (state === 'foreign') {
@@ -163,7 +161,7 @@ async function runAntigravitySetup({ confirmed, parentWindow, beforePrompt, inst
   if (state === 'unreadable' || state === 'invalid') {
     return {
       ok: false,
-      message: 'Antigravity ayar dosyası okunamadı veya geçerli JSON değil. Düzeltip tekrar deneyin.',
+      message: t('setup.settingsUnreadableOrInvalid', { tool: 'Antigravity' }),
     };
   }
 
@@ -174,19 +172,16 @@ async function runAntigravitySetup({ confirmed, parentWindow, beforePrompt, inst
   if (typeof beforePrompt === 'function') beforePrompt();
   const choice = await dialog.showMessageBox(parentWindow || undefined, {
     type: 'question',
-    buttons: ['Vazgeç', 'Ekle'],
+    buttons: [t('dialog.cancel'), t('dialog.add')],
     defaultId: 1,
     cancelId: 0,
     noLink: true,
-    title: 'Antigravity ayarına yazılsın mı?',
-    message: 'Antigravity CLI durum satırına Usage Notch köprüsü eklensin mi?',
-    detail: `Şu dosya güncellenecek:\n${settingsFile}\n\n`
-      + 'Önce zaman damgalı bir yedek alınır. Köprü yalnızca kalan kota oranını ve '
-      + 'sıfırlanma zamanını okur; hiçbir metin, dosya yolu, e-posta veya kimlik bilgisi '
-      + 'kaydetmez ve hiçbir ağ bağlantısı açmaz.',
+    title: t('dialog.writeSettings.title', { tool: 'Antigravity' }),
+    message: t('dialog.writeSettings.message', { tool: 'Antigravity CLI' }),
+    detail: `${t('dialog.writeSettings.file', { file: settingsFile })}\n\n${t('dialog.agy.promise')}`,
   });
   if (choice.response !== 1) {
-    return { ok: false, message: 'İşlem iptal edildi. Hiçbir değişiklik yapılmadı.' };
+    return { ok: false, message: t('setup.cancelled') };
   }
 
   return configureAntigravityBridge();
@@ -199,7 +194,7 @@ async function runAntigravitySetup({ confirmed, parentWindow, beforePrompt, inst
 function configureAntigravityBridge() {
   const bridgePath = materialiseBridge(BRIDGE_SCRIPTS.antigravity);
   if (!bridgePath) {
-    return { ok: false, message: 'Köprü betiği hazırlanamadı.' };
+    return { ok: false, message: t('setup.bridgePrepareFailed') };
   }
   return installAntigravityStatusLine({
     confirmed: true,
@@ -208,10 +203,12 @@ function configureAntigravityBridge() {
   });
 }
 
-/** Fits the 160-char notice budget the renderer trims at. */
-const INSTALLED_AND_LOGIN =
-  'Antigravity CLI kuruldu ve köprü eklendi. Haftalık limit için CLI\'ı bir kez '
-  + 'çalıştırıp oturum açın.';
+/**
+ * Fits the 160-char notice budget the renderer trims at, in both languages
+ * (`setup.test.js` measures it). A function, not a constant: the language is
+ * the one current when the install finishes.
+ */
+const installedAndLogin = () => t('setup.agy.installedAndLogin');
 
 /**
  * One-click install of the `agy` CLI, then configure the statusline hook.
@@ -236,7 +233,7 @@ const INSTALLED_AND_LOGIN =
  */
 async function runAntigravityInstall({ confirmed, parentWindow, beforePrompt, installFn }) {
   if (confirmed !== true) {
-    return { ok: false, message: 'Onayınız olmadan indirme yapmıyoruz.' };
+    return { ok: false, message: t('setup.agy.noDownloadWithoutConsent') };
   }
 
   // Idempotent: if the binary is somehow already here, skip the download and
@@ -257,36 +254,31 @@ async function runAntigravityInstall({ confirmed, parentWindow, beforePrompt, in
   if (typeof beforePrompt === 'function') beforePrompt();
   const choice = await dialog.showMessageBox(parentWindow || undefined, {
     type: 'question',
-    buttons: ['Vazgeç', 'İndir ve kur'],
+    buttons: [t('dialog.cancel'), t('dialog.downloadAndInstall')],
     defaultId: 1,
     cancelId: 0,
     noLink: true,
-    title: 'Antigravity CLI kurulsun mu?',
-    message: 'Antigravity CLI (agy) indirilip kurulsun mu?',
+    title: t('dialog.agyInstall.title'),
+    message: t('dialog.agyInstall.message'),
     // Explicit about the MECHANISM, not just the destination. This step is
     // deliberate remote-code-execution and the app's sole network egress, so
     // the consent surface names it as plainly as the README does: it fetches
     // and runs the vendor's install script via PowerShell.
-    detail: 'Bu adım, Antigravity\'nin resmi kurulum betiğini (install.ps1) '
-      + 'antigravity.google adresinden indirip PowerShell ile çalıştırır — uygulamanın tek '
-      + 'ağ erişimi budur ve yalnızca şimdi, sizin onayınızla olur. Kurulumdan sonra durum '
-      + 'satırı köprüsü eklenir; köprü yalnızca kalan kota oranını ve sıfırlanma '
-      + 'zamanını okur.',
+    detail: t('dialog.agyInstall.detail'),
   });
   if (choice.response !== 1) {
-    return { ok: false, message: 'İşlem iptal edildi. Hiçbir değişiklik yapılmadı.' };
+    return { ok: false, message: t('setup.cancelled') };
   }
 
   const install = await (installFn || installAgy)();
   if (!install.ok && install.code !== 'already') {
     log.warn(`agy install failed: code=${install.code}${install.detail ? ` detail=${install.detail}` : ''}`);
     if (install.code === 'unsupported') {
-      return { ok: false, message: 'Otomatik kurulum yalnızca Windows\'ta destekleniyor.' };
+      return { ok: false, message: t('setup.agy.windowsOnly') };
     }
     return {
       ok: false,
-      message: 'Antigravity CLI indirilemedi veya kurulamadı; hiçbir değişiklik yapılmadı. '
-        + 'İnternet bağlantınızı kontrol edip tekrar deneyin.',
+      message: t('setup.agy.installFailed'),
     };
   }
 
@@ -297,11 +289,11 @@ async function runAntigravityInstall({ confirmed, parentWindow, beforePrompt, in
     log.warn(`agy installed but hook config failed: code=${configured.code || 'UNKNOWN'}`);
     return {
       ok: false,
-      message: 'Antigravity CLI kuruldu ama köprü eklenemedi. Panelden tekrar deneyin.',
+      message: t('setup.agy.installedBridgeFailed'),
     };
   }
 
-  return { ok: true, message: INSTALLED_AND_LOGIN };
+  return { ok: true, message: installedAndLogin() };
 }
 
 /**
@@ -311,7 +303,7 @@ async function runAntigravityInstall({ confirmed, parentWindow, beforePrompt, in
  */
 async function runAntigravityDisconnect({ confirmed }) {
   if (confirmed !== true) {
-    return { ok: false, message: 'Onayınız olmadan ayar dosyanıza dokunmuyoruz.' };
+    return { ok: false, message: t('setup.agy.noTouchWithoutConsent') };
   }
   const result = removeAntigravityStatusLine({ settingsPath: antigravitySettingsPath() });
   return { ok: result.ok, message: result.message };

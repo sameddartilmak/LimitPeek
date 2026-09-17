@@ -27,15 +27,16 @@ import type { ThemeChoice } from '../../shared/contract.js';
 // The one list of valid choices lives with the rest of the IPC input gate, so
 // a fourth theme cannot be accepted here and rejected there.
 import { isThemeChoice } from './sanitize.js';
+import { t } from './i18n.js';
 
 export type ResolvedTheme = 'dark' | 'light';
 
 /** The default when main has never told us anything. */
 export const DEFAULT_THEME: ThemeChoice = 'system';
 
-/** Turkish label for a choice. Sentence case; never uppercased (i -> I). */
+/** Label for a choice, in the current language. Sentence case; never uppercased (i -> I). */
 export function themeLabel(choice: ThemeChoice): string {
-  return choice === 'dark' ? 'Koyu' : choice === 'light' ? 'Açık' : 'Sistem';
+  return choice === 'dark' ? t('theme.dark') : choice === 'light' ? t('theme.light') : t('theme.system');
 }
 
 export interface ThemeHandle {

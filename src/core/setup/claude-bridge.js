@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { claudeSettingsPath } = require('../paths');
 const messages = require('./messages');
+const { t } = require('../i18n');
 const log = require('../log');
 
 /**
@@ -49,14 +50,14 @@ function installClaudeStatusLine(opts) {
     return {
       ok: false,
       code: 'NOT_CONFIRMED',
-      message: 'Onayınız olmadan Claude Code ayar dosyanıza yazmıyoruz.',
+      message: t('setup.notConfirmed', { tool: 'Claude Code' }),
     };
   }
   if (typeof bridgePath !== 'string' || bridgePath.length === 0) {
-    return { ok: false, code: 'NO_BRIDGE', message: 'Köprü betiği bulunamadı.' };
+    return { ok: false, code: 'NO_BRIDGE', message: t('setup.noBridge') };
   }
   if (!fs.existsSync(bridgePath)) {
-    return { ok: false, code: 'NO_BRIDGE', message: 'Köprü betiği bulunamadı.' };
+    return { ok: false, code: 'NO_BRIDGE', message: t('setup.noBridge') };
   }
 
   let settings = {};
@@ -73,7 +74,7 @@ function installClaudeStatusLine(opts) {
       return {
         ok: false,
         code: 'SETTINGS_UNREADABLE',
-        message: 'Claude Code ayar dosyası okunamadı. Dosya izinlerini kontrol edin.',
+        message: t('setup.settingsUnreadable', { tool: 'Claude Code' }),
       };
     }
   }
@@ -86,14 +87,14 @@ function installClaudeStatusLine(opts) {
       return {
         ok: false,
         code: 'SETTINGS_INVALID',
-        message: 'Claude Code ayar dosyası geçerli JSON değil. Düzeltip tekrar deneyin.',
+        message: t('setup.settingsInvalidJson', { tool: 'Claude Code' }),
       };
     }
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
       return {
         ok: false,
         code: 'SETTINGS_INVALID',
-        message: 'Claude Code ayar dosyası beklenen biçimde değil.',
+        message: t('setup.settingsUnexpected', { tool: 'Claude Code' }),
       };
     }
     if (settings.statusLine != null) {
@@ -115,7 +116,7 @@ function installClaudeStatusLine(opts) {
   try {
     fs.mkdirSync(dir, { recursive: true });
   } catch (err) {
-    return { ok: false, code: 'MKDIR_FAILED', message: 'Ayar klasörü oluşturulamadı.' };
+    return { ok: false, code: 'MKDIR_FAILED', message: t('setup.mkdirFailed') };
   }
 
   // Backup first. If we cannot back up an existing file, we do not touch it.
@@ -128,7 +129,7 @@ function installClaudeStatusLine(opts) {
       return {
         ok: false,
         code: 'BACKUP_FAILED',
-        message: 'Ayar dosyasının yedeği alınamadı; hiçbir değişiklik yapılmadı.',
+        message: t('setup.backupFailed'),
       };
     }
   }
@@ -157,8 +158,7 @@ function installClaudeStatusLine(opts) {
         return {
           ok: false,
           code: 'SETTINGS_CHANGED',
-          message: 'Ayar dosyası bu sırada başka bir işlem tarafından değiştirildi; '
-            + 'hiçbir değişiklik yapılmadı. Tekrar deneyin.',
+          message: t('setup.changedDuringWrite'),
         };
       }
     }
@@ -178,14 +178,14 @@ function installClaudeStatusLine(opts) {
     return {
       ok: false,
       code: 'WRITE_FAILED',
-      message: 'Ayar dosyası yazılamadı; hiçbir değişiklik yapılmadı.',
+      message: t('setup.writeFailed'),
     };
   }
 
   return {
     ok: true,
     code: 'INSTALLED',
-    message: 'Bağlandı. Claude Code oturumunu yeniden başlatın; yüzde birkaç saniye içinde görünür.',
+    message: t('setup.claude.connected'),
   };
 }
 

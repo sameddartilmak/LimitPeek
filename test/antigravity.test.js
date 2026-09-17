@@ -693,7 +693,7 @@ test.describe('the bridge stdout is a surface, not a debug print', () => {
 
   test('a bidi override in a bucket id cannot reverse the figure beside it', () => {
     // U+202E reverses everything printed after it, so a 64-character id is
-    // more than enough to render `kalan %10` as `%01` in the user's terminal —
+    // more than enough to render `10% left` as `tfel %01` in the user's terminal —
     // a false statement about remaining quota, produced by the one component
     // whose entire purpose is not to make those. Same character class as
     // `CONTROL_CHARS` in src/renderer/src/sanitize.ts.
@@ -706,7 +706,7 @@ test.describe('the bridge stdout is a surface, not a debug print', () => {
     // Stripped, not dropped: the id is otherwise legitimate and losing the
     // bucket over its spelling would cost a real reading.
     assert.deepEqual(Object.keys(r.snapshot.quota), ['gemini-weekly']);
-    assert.match(r.stdout, /gemini-weekly kalan %10/);
+    assert.match(r.stdout, /gemini-weekly 10% left/);
   });
 
   test('control and zero-width characters go the same way', () => {
@@ -725,7 +725,7 @@ test.describe('the bridge stdout is a surface, not a debug print', () => {
 
   test('an out-of-range fraction is never printed as a percentage', () => {
     // `usedFromRemaining` rejects these as proof the producer is wrong. The
-    // status line must apply the identical test, or it prints `kalan %140`
+    // status line must apply the identical test, or it prints `140% left`
     // beside a panel row that shows nothing at all — two surfaces disagreeing
     // about when one number is unusable.
     const r = runBridge({
@@ -735,9 +735,10 @@ test.describe('the bridge stdout is a surface, not a debug print', () => {
         'good-weekly': { remaining_fraction: 0.25 },
       },
     });
-    assert.equal(r.stdout.includes('%140'), false);
-    assert.equal(r.stdout.includes('%-20'), false);
-    assert.equal(r.stdout, 'good-weekly kalan %25');
+    assert.equal(r.stdout.includes('140%'), false);
+    assert.equal(r.stdout.includes('-20%'), false);
+    // Remaining, unconverted, and said so: 25% LEFT, not 75% and not a bare 25%.
+    assert.equal(r.stdout, 'good-weekly 25% left');
     // Still written to the capture verbatim: the file is a faithful copy of
     // what the CLI said, and the reader is where values are judged.
     assert.equal(r.snapshot.quota['bad-high-weekly'].remainingFraction, 1.4);
@@ -745,7 +746,8 @@ test.describe('the bridge stdout is a surface, not a debug print', () => {
 
   test('a payload whose every fraction is unusable falls back to the plain label', () => {
     const r = runBridge({ quota: { 'x-weekly': { remaining_fraction: 9 } } });
-    assert.equal(r.stdout, 'Usage Notch bagli');
+    // The product name only: the bridge cannot know the user's language.
+    assert.equal(r.stdout, 'Usage Notch');
   });
 });
 
@@ -857,6 +859,8 @@ test.describe('an unreadable quota is nameable, not just "Güncellenemedi"', () 
         userDataDir: dir,
         projectsRoot: path.join(dir, 'projects'),
         rateLimitsFile: path.join(dir, 'claude-rate-limits.json'),
+        // An empty Codex home, so the rollout scan never reads the developer's own ~/.codex.
+        codexHome: path.join(dir, 'codex'),
         rateLimitsDir: dir,
         antigravityQuotaFile: quotaFile,
       });
@@ -883,6 +887,8 @@ test.describe('an unreadable quota is nameable, not just "Güncellenemedi"', () 
         userDataDir: dir,
         projectsRoot: path.join(dir, 'projects'),
         rateLimitsFile: path.join(dir, 'claude-rate-limits.json'),
+        // An empty Codex home, so the rollout scan never reads the developer's own ~/.codex.
+        codexHome: path.join(dir, 'codex'),
         rateLimitsDir: dir,
         antigravityQuotaFile: path.join(dir, 'nope.json'),
       });
@@ -973,27 +979,37 @@ test.describe('ANTIGRAVITY_CLI_DIR is kept, but never silent', () => {
     // including under a pathologically long override path.
     const longHome = `C:\\Users\\someone\\${'nested\\'.repeat(20)}antigravity-cli`;
     const longCmd = `node "C:/Users/someone/${'nested/'.repeat(20)}antigravity-statusline.mjs"`;
-    const notices = [
-      messages.cliNotFound(antigravityDefaultHome()),
-      messages.cliNotFound(longHome),
-      messages.installed(antigravityDefaultHome()),
-      messages.installed(longHome),
-      messages.statusLineExists('node "C:/x/antigravity-statusline.mjs"'),
-      messages.statusLineExists(longCmd),
-    ];
-    for (const notice of notices) {
-      // The one exception is a pathological command, which is required and
-      // therefore emitted whole; it is asserted separately below.
-      if (!notice.includes(longCmd)) {
-        assert.ok(notice.length <= NOTICE_MAX, `${notice.length} chars: ${notice}`);
+    const i18n = require('../src/core/i18n');
+    // ADR-004: in both languages. The override warning goes under the same
+    // pathological path in each, and English is not always the shorter one.
+    try {
+      for (const [language, locale] of [['tr', 'tr-TR'], ['en', 'en-US']]) {
+        i18n.setLocale(language, locale);
+        const notices = [
+          messages.cliNotFound(antigravityDefaultHome()),
+          messages.cliNotFound(longHome),
+          messages.installed(antigravityDefaultHome()),
+          messages.installed(longHome),
+          messages.statusLineExists('node "C:/x/antigravity-statusline.mjs"'),
+          messages.statusLineExists(longCmd),
+        ];
+        for (const notice of notices) {
+          // The one exception is a pathological command, which is required and
+          // therefore emitted whole; it is asserted separately below.
+          if (!notice.includes(longCmd)) {
+            assert.ok(notice.length <= NOTICE_MAX, `${language} ${notice.length} chars: ${notice}`);
+          }
+          assert.equal(notice.endsWith('…'), false, 'never truncated, only shortened by whole clauses');
+          assert.ok(notice.length > 0, 'and never emptied');
+        }
+        // The command is the REQUIRED clause: it is what the user has to copy, so
+        // it survives and the explanation gives way. An earlier version had this
+        // backwards and dropped the command on a long install path.
+        assert.ok(messages.statusLineExists(longCmd).includes(longCmd), 'the command is never sliced');
+        assert.equal(messages.statusLineExists(longCmd).includes(i18n.t('setup.noOverwrite')), false);
       }
-      assert.equal(notice.endsWith('…'), false, 'never truncated, only shortened by whole clauses');
-      assert.ok(notice.length > 0, 'and never emptied');
+    } finally {
+      i18n.setLocale('tr', 'tr-TR');
     }
-    // The command is the REQUIRED clause: it is what the user has to copy, so
-    // it survives and the explanation gives way. An earlier version had this
-    // backwards and dropped the command on a long install path.
-    assert.ok(messages.statusLineExists(longCmd).includes(longCmd), 'the command is never sliced');
-    assert.equal(messages.statusLineExists(longCmd).includes('Üzerine yazmıyoruz'), false);
   });
 });

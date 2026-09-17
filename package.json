@@ -18,9 +18,9 @@
     "dist": "npm run build && electron-builder --win nsis --publish never"
   },
   "devDependencies": {
-    "electron": "^44.2.0",
+    "electron": "44.2.0",
     "electron-builder": "26.15.3",
-    "typescript": "^5.9.2"
+    "typescript": "5.9.3"
   },
   "build": {
     "appId": "com.usagenotch.app",
