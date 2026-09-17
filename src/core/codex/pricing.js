@@ -361,6 +361,10 @@ function codexCostDetail(events, startMs, endMs, anchored) {
       assumedTierEvents,
       // A3.18: turns that REQUESTED Fast, priced at Standard.
       fastRequestedEvents,
+      // Gemini-only floor causes (ADR-003 A6). Always present, zero here.
+      unrecordedCalls: false,
+      longPromptFloorEvents: 0,
+      toolTokenEvents: 0,
       // Set by the snapshot from the rollout scan (ADR-002 A3.15); pricing
       // alone cannot know what was not read.
       sourceIncomplete: false,

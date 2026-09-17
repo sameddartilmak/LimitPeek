@@ -40,6 +40,8 @@ interface Formatters {
   percent: Intl.NumberFormat;
   day: Intl.DateTimeFormat;
   date: Intl.DateTimeFormat;
+  /** A price-list date with a short month, for one-line source rows. */
+  dateShort: Intl.DateTimeFormat;
   clock: Intl.DateTimeFormat;
   clockDay: Intl.DateTimeFormat;
 }
@@ -78,6 +80,7 @@ function build(locale: string): Formatters {
     // 360px row (ADR-004 A1.2), so English ranges use short months.
     day: new Intl.DateTimeFormat(locale, { day: 'numeric', month: en ? 'short' : 'long' }),
     date: new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' }),
+    dateShort: new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
     clock: new Intl.DateTimeFormat(locale, { hour, minute: '2-digit' }),
     clockDay: new Intl.DateTimeFormat(locale, { weekday: 'short', hour, minute: '2-digit' }),
   };
@@ -357,6 +360,15 @@ export function priceDate(iso: string): string {
     ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
     : new Date(iso);
   return Number.isFinite(date.getTime()) ? fmt().date.format(date) : iso;
+}
+
+/** A price-list date with a short month, for one-line source rows: "1 Ağu 2026". */
+export function priceDateShort(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  const date = m
+    ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+    : new Date(iso);
+  return Number.isFinite(date.getTime()) ? fmt().dateShort.format(date) : iso;
 }
 
 /** "3 Eylül – 10 Eylül" / "Sep 3 – Sep 10". An en dash, not a hyphen: this is a range. */

@@ -388,16 +388,59 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // from the total (the lower-bound claim itself lives in cost.why.lead, ADR-004 A3)
     { file: 'renderer.json', key: 'cost.caveat.unrecordedWrites', en: [/\bdidn'?t record|\bdid not record/, /\b(aren'?t|are not) in the total\b/], tr: [/kaydetmedi/, /toplamda yok/] },
     // usage history is computed locally, from local files only (A2.2, Codex merge)
-    { file: 'renderer.json', key: 'settings.usage.sources', en: [/\bonly from local\b/i, /\bClaude Code transcripts\b/, /\bCodex session logs\b/], tr: [/^Yalnızca yerel\b/, /Claude Code transkriptlerinden/, /Codex oturum kayıtlarından/] },
-    // per-provider price dates, and "at least" still means a lower bound — for
-    // BOTH causes: unpriced usage, and cache writes Codex did not record on a
-    // model that bills them (ADR-002 A3.8-9)
-    // Each price note names EVERY floor cause of the tools it covers: unpriced
-    // usage (both), a cache write without a TTL split (Claude Code), and cache
-    // writes Codex did not record (Codex).
-    { file: 'renderer.json', key: 'settings.usage.note', en: [/\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bdid not record its TTL\b/, /\{low\}/, /\{high\}/], tr: [/\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /TTL ayrımı olmayan/, /\{low\}/, /\{high\}/] },
-    { file: 'renderer.json', key: 'settings.usage.noteByProvider', en: [/\{claude\}/, /\{codex\}/, /\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bdid not record its TTL\b/, /\{low\}/, /\{high\}/, /\bcache write/i, /\bnot record/i, /\bservice tier could not be verified\b/], tr: [/\{claude\}/, /\{codex\}/, /\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /TTL ayrımı olmayan/, /\{low\}/, /\{high\}/, /önbellek yazma/, /kaydetmediği|kaydedilmemiş/, /hizmet katmanı doğrulanamadı/] },
-    { file: 'renderer.json', key: 'settings.usage.noteCodexOnly', en: [/\{codex\}/, /\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bcache write/i, /\bnot record/i, /\bservice tier could not be verified\b/], tr: [/\{codex\}/, /\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /önbellek yazma/, /kaydetmediği|kaydedilmemiş/, /hizmet katmanı doğrulanamadı/] },
+    // `sources` is the no-tool fallback; the tool list is composed into
+    // `sourcesTools` (guarded below: neither hard-codes a tool name)
+    { file: 'renderer.json', key: 'settings.usage.sources', en: [/\bonly from local\b/i], tr: [/^Yalnızca yerel\b/] },
+    { file: 'renderer.json', key: 'settings.usage.sourcesTools', en: [/\bonly from local\b/i, /\{tools\}/], tr: [/Yalnızca/, /\{tools\}/] },
+    // a tool with no published per-token price: no amount, and NOT "not in the price list"
+    { file: 'renderer.json', key: 'cost.unpricedSummaryNoTable', en: [/\bdoes not publish\b/, /\bno amount\b/], tr: [/yayımlamıyor/, /tutar yok/] },
+    { file: 'renderer.json', key: 'cost.unpricedToggleLabelNoTable', en: [/\bdoes not publish\b/, /\bno amount\b/], tr: [/yayımlamıyor/, /tutar yok/] },
+    { file: 'renderer.json', key: 'cost.unpricedSummaryNoModel', en: [/\bNo model was recorded\b/i], tr: [/Model kaydı olmadığı/i] },
+    { file: 'renderer.json', key: 'cost.unpricedToggleLabelNoModel', en: [/\bNo model was recorded\b/i], tr: [/Model kaydı olmadığı/i] },
+    { file: 'renderer.json', key: 'settings.usage.cause.noTable', en: [/\bdoes not publish\b/], tr: [/yayımlamıyor/] },
+    // Gemini is priced at its API's standard rates, and says so
+    { file: 'renderer.json', key: 'cost.summaryGemini', en: [/\bwould have cost\b/i, /\bGemini API standard\b/], tr: [/tutardı/, /Gemini API standart/] },
+    { file: 'renderer.json', key: 'cost.toggleLabelGemini', en: [/\bwould have cost\b/i, /\bGemini API standard\b/, /\bnot a bill\b/], tr: [/tutardı/, /Gemini API standart/, /fatura değil/] },
+    { file: 'renderer.json', key: 'cost.pricesAsOfGemini', en: [/\bGemini API standard\b/, /\{date\}/], tr: [/Gemini API standart/, /\{date\}/] },
+    // The composed per-tool price note (ADR-003 A6): one lead that carries the
+    // lower-bound claim, one source line per tool, and one "why" line per tool
+    // built from short cause phrases. Every cause phrase names its cause.
+    { file: 'renderer.json', key: 'settings.usage.noteLead', en: [/\bat least\b/i, /\blower bound\b/, /\bmay be higher\b/], tr: [/\ben az\b/i, /alt sınır/, /daha yüksek olabilir/] },
+    { file: 'renderer.json', key: 'settings.usage.source.date', en: [/\{tool\}/, /\{date\}/], tr: [/\{tool\}/, /\{date\}/] },
+    { file: 'renderer.json', key: 'settings.usage.source.dateMissing', en: [/\{tool\}/, /\bnot reported\b/], tr: [/\{tool\}/, /bildirilmedi/] },
+    { file: 'renderer.json', key: 'settings.usage.source.gemini', en: [/Gemini API/, /\bstandard\b/, /\{date\}/], tr: [/Gemini API/, /standart/, /\{date\}/] },
+    { file: 'renderer.json', key: 'settings.usage.source.geminiNoDate', en: [/Gemini API/, /\bstandard\b/], tr: [/Gemini API/, /standart/] },
+    { file: 'renderer.json', key: 'settings.usage.source.none', en: [/\{tool\}/, /\bdoes not publish\b/], tr: [/\{tool\}/, /yayımlamıyor/] },
+    { file: 'renderer.json', key: 'settings.usage.why.tool', en: [/\{tool\}/, /\{causes\}/], tr: [/\{tool\}/, /\{causes\}/] },
+    { file: 'renderer.json', key: 'settings.usage.cause.unpriced', en: [/\bcould not be priced\b/], tr: [/fiyatlanamayan/] },
+    { file: 'renderer.json', key: 'settings.usage.cause.ttl', en: [/\bno recorded duration\b/, /\{low\}/], tr: [/süresi kaydedilmemiş/, /\{low\}/] },
+    { file: 'renderer.json', key: 'settings.usage.cause.unrecordedWrites', en: [/\bunrecorded cache writes\b/], tr: [/kaydedilmemiş önbellek yazmaları/] },
+    { file: 'renderer.json', key: 'settings.usage.cause.assumedTier', en: [/\bno recorded tier\b/, /\bStandard\b/], tr: [/katmanı kaydedilmemiş/, /Standart/] },
+    { file: 'renderer.json', key: 'settings.usage.cause.fastRequested', en: [/\bFast requested\b/, /\bStandard\b/], tr: [/Fast istenen/, /Standart/] },
+    { file: 'renderer.json', key: 'settings.usage.cause.unrecordedCalls', en: [/\bunrecorded calls\b/], tr: [/kaydedilmeyen çağrılar/] },
+    { file: 'renderer.json', key: 'settings.usage.cause.longPrompt', en: [/\blong prompts\b/, /200K/], tr: [/uzun istemler/, /200K/] },
+    { file: 'renderer.json', key: 'settings.usage.cause.toolTokens', en: [/\btool tokens\b/], tr: [/araç tokenları/] },
+    // experimental local-file providers (ADR-003 A6): the log format is unverified
+    { file: 'renderer.json', key: 'provider.experimental', en: [/\bexperimental\b/], tr: [/deneysel/] },
+    { file: 'renderer.json', key: 'provider.experimentalDetail', en: [/\bnot (yet )?(been )?verified\b/, /\breal install\b/], tr: [/doğrulanmadı/, /gerçek bir kurulum/] },
+    // Gemini floor causes
+    { file: 'renderer.json', key: 'cost.cause.unrecordedCalls', en: [/\bUnrecorded calls\b/], tr: [/Kaydedilmeyen çağrılar/] },
+    { file: 'renderer.json', key: 'cost.caveat.unrecordedCalls', en: [/\bdoesn'?t record|\bdoes not record/, /\b(aren'?t|are not) in the total\b/], tr: [/kaydetmez/, /toplamda yok/] },
+    { file: 'renderer.json', key: 'cost.cause.longPrompt', en: [/\bLong prompts?\b/, /200K/, /\{count\}/], tr: [/Uzun istem/, /200K/, /\{count\}/] },
+    { file: 'renderer.json', key: 'cost.caveat.longPrompt', en: [/\bcharged more\b/, /\blower rate\b/], tr: [/daha yüksek/, /düşük fiyattan/] },
+    { file: 'renderer.json', key: 'cost.cause.toolTokens', en: [/\bTool tokens\b/, /\{count\}/], tr: [/Araç tokenları/, /\{count\}/] },
+    { file: 'renderer.json', key: 'cost.caveat.toolTokens', en: [/\b(isn'?t|is not|not) published\b/, /\bnot included in the total\b/], tr: [/yayımlanmıyor/, /toplama katılmadı/] },
+    // unpriced reason labels: each says WHY there is no price
+    { file: 'renderer.json', key: 'cost.speed.noModel', en: [/\bno model\b/], tr: [/model kaydı yok/] },
+    { file: 'renderer.json', key: 'cost.speed.noPublishedPrice', en: [/\bno published price\b/], tr: [/fiyat yayımlanmıyor/] },
+    { file: 'renderer.json', key: 'cost.speed.otherModelAlias', en: [/\bother model\b/, /Kimi Code/], tr: [/başka model/, /Kimi Code/] },
+    { file: 'renderer.json', key: 'cost.caveat.unpricedNoModel', en: [/\bNo model\b/, /\bcould not be priced\b/], tr: [/Model kaydı/i, /fiyatlanamadı/] },
+    { file: 'renderer.json', key: 'cost.caveat.unpricedNoPublishedPrice', en: [/\bdoes not publish\b/], tr: [/yayımlamıyor/] },
+    { file: 'renderer.json', key: 'cost.caveat.unpricedOtherModelAlias', en: [/Kimi Code/, /\bprice is unknown\b/], tr: [/Kimi Code/, /fiyatı bilinmiyor/] },
+    { file: 'renderer.json', key: 'cost.pricesNotPublished', en: [/\{provider\}/, /\bdoes not publish\b/], tr: [/\{provider\}/, /yayımlamıyor/] },
+    // an absent tool is "not found", never "not supported"
+    { file: 'main.json', key: 'provider.gemini.notFound', en: [/Gemini CLI/, /\bnot found\b/], tr: [/Gemini CLI/, /bulunamadı/] },
+    { file: 'main.json', key: 'provider.kimi.notFound', en: [/Kimi Code/, /\bnot found\b/], tr: [/Kimi Code/, /bulunamadı/] },
     // pending state (ADR-002 A3.12): the totals are still being computed —
     // incomplete, which is neither zero nor a floor
     { file: 'renderer.json', key: 'row.tokens.pending', en: [/\bcalculating\b/i], tr: [/hesaplanıyor/] },
@@ -449,11 +492,11 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
         }
       }
     }
-    // Ten cause/why keys per language today (unpriced, unpricedMore, ttl,
-    // unrecordedWrites, sourceIncomplete, assumedTier, fastRequested, the two
-    // toggles and the lead). A renamed key would silently leave the guard; more
-    // keys are fine.
-    assert.ok(seen >= 20, `the ten cause/why keys exist in both languages (saw ${seen})`);
+    // Thirteen cause/why keys per language today (unpriced, unpricedMore, ttl,
+    // unrecordedWrites, sourceIncomplete, assumedTier, fastRequested,
+    // unrecordedCalls, longPrompt, toolTokens, the two toggles and the lead). A
+    // renamed key would silently leave the guard; more keys are fine.
+    assert.ok(seen >= 26, `the thirteen cause/why keys exist in both languages (saw ${seen})`);
   });
 
   test('every short cost caveat line is short and does not hedge or reassure (ADR-004 A3)', () => {
@@ -467,7 +510,11 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     for (const lang of LANGS) {
       const entries = catalogs[lang]['renderer.json'] || {};
       for (const [key, entry] of Object.entries(entries)) {
-        if (!/^cost\.caveat\./.test(key)) continue;
+        // Short lines: the cost caveats, the unpriced reason labels and the
+        // per-tool cause phrases of the composed price note.
+        // Plus the one-line cost summaries for a tool with no price table, no
+        // recorded model, or Gemini's standard rates.
+        if (!/^(cost\.caveat\.|cost\.speed\.|settings\.usage\.cause\.|cost\.unpricedSummaryNo(Table|Model)$|cost\.(summary|pricesAsOf)Gemini$)/.test(key)) continue;
         seen += 1;
         for (const text of variants(entry)) {
           assert.ok(text.length <= MAX_CHARS, `${lang} "${key}" is ${text.length} characters (max ${MAX_CHARS}): ${text}`);
@@ -475,9 +522,12 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
         }
       }
     }
-    // Seven caveat keys per language: ttl, unrecordedWrites, degraded,
-    // degradedNoFigure, unpriced, assumedTier, fastRequested.
-    assert.ok(seen >= 14, `the seven cost.caveat keys exist in both languages (saw ${seen})`);
+    // Per language: 13 cost.caveat keys (ttl, unrecordedWrites, degraded,
+    // degradedNoFigure, unpriced, assumedTier, fastRequested, unrecordedCalls,
+    // longPrompt, toolTokens, unpricedNoModel, unpricedNoPublishedPrice,
+    // unpricedOtherModelAlias), 9 settings.usage.cause keys, 8 cost.speed keys
+    // and 4 one-line summaries — 34 per language, measured 2026-09-17.
+    assert.ok(seen >= 68, `the short-line keys exist in both languages (saw ${seen})`);
   });
 
   test('the unreadable history amount shows no figure: no dash, no zero, no currency (ADR-002 A3.19)', () => {
@@ -518,14 +568,64 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     }
   });
 
-  test('the Codex-only price note never names Claude or a Claude price date', () => {
+  test('the composed price note is tool-neutral: the tool is a placeholder, never hard-coded in a cause (ADR-003 A6)', () => {
+    // A cause phrase is reused under whichever tool it applies to; a tool name
+    // inside it would put one tool's cause under another's heading.
+    const TOOL_NAME = /Claude|Codex|Gemini|Kimi|Antigravity|\{tool\}|\{provider\}/i;
+    const causeKeys = (lang) => Object.keys(catalogs[lang]['renderer.json'] || {})
+      .filter((key) => key.startsWith('settings.usage.cause.')).sort();
+    assert.deepEqual(causeKeys('en'), causeKeys('tr'), 'both languages have the same cause phrases');
+    assert.ok(causeKeys('en').length >= 9, `the nine cause phrases exist (saw ${causeKeys('en').length})`);
     for (const lang of LANGS) {
       const entries = catalogs[lang]['renderer.json'];
-      assert.ok(entries && has(entries, 'settings.usage.noteCodexOnly'), `${lang}: settings.usage.noteCodexOnly exists`);
-      for (const text of variants(entries['settings.usage.noteCodexOnly'])) {
-        assert.doesNotMatch(text, /\{claude\}|Claude/, `${lang}: a Codex-only note must not mention Claude`);
+      assert.deepEqual(placeholders(entries['settings.usage.why.tool']), ['causes', 'tool'], `${lang}: why.tool names the tool by placeholder`);
+      for (const text of variants(entries['settings.usage.why.tool'])) {
+        assert.doesNotMatch(text, /Claude|Codex|Gemini|Kimi|Antigravity/, `${lang}: why.tool hard-codes a tool`);
+      }
+      for (const key of causeKeys(lang)) {
+        for (const text of variants(entries[key])) {
+          assert.doesNotMatch(text, TOOL_NAME, `${lang} "${key}" names a tool: ${text}`);
+        }
       }
     }
+  });
+
+  test('the usage-source sentence never hard-codes a tool list (review HIGH: false provenance)', () => {
+    for (const lang of LANGS) {
+      const entries = catalogs[lang]['renderer.json'] || {};
+      for (const key of ['settings.usage.sources', 'settings.usage.sourcesTools']) {
+        assert.ok(has(entries, key), `${lang}: ${key} exists`);
+        for (const text of variants(entries[key])) {
+          assert.doesNotMatch(text, /Claude|Codex|Gemini|Kimi|Antigravity/, `${lang} "${key}" hard-codes a tool: ${text}`);
+        }
+      }
+    }
+  });
+
+  test('a tool that publishes no price is never said to be missing from a price list (review HIGH: false Kimi reason)', () => {
+    for (const lang of LANGS) {
+      const entries = catalogs[lang]['renderer.json'] || {};
+      for (const key of ['cost.unpricedSummaryNoTable', 'cost.unpricedToggleLabelNoTable', 'settings.usage.cause.noTable']) {
+        assert.ok(has(entries, key), `${lang}: ${key} exists`);
+        for (const text of variants(entries[key])) {
+          assert.doesNotMatch(text, /price list|fiyat listesi/i, `${lang} "${key}" blames a price list that does not exist: ${text}`);
+        }
+      }
+    }
+  });
+
+  test('a tool that is absent is "not found", never "not supported" (ADR-003 A6)', () => {
+    let seen = 0;
+    for (const lang of LANGS) {
+      for (const [key, entry] of Object.entries(catalogs[lang]['main.json'] || {})) {
+        if (!/^provider\.[a-z]+\.notFound$/.test(key)) continue;
+        seen += 1;
+        for (const text of variants(entry)) {
+          assert.doesNotMatch(text, /not supported|unsupported|desteklenmiyor|desteklenmez/i, `${lang} "${key}": ${text}`);
+        }
+      }
+    }
+    assert.ok(seen >= 4, `gemini and kimi notFound exist in both languages (saw ${seen})`);
   });
 
   test('no pending-state copy reads as a floor: never "en az" / "at least" (ADR-002 A3.12)', () => {

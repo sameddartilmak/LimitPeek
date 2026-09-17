@@ -506,7 +506,7 @@ test.describe('A3.19: a known-incomplete source with nothing readable still deli
   const FIELDS = [
     'assumedTierEvents', 'byClass', 'byModel', 'cacheWriteEvents', 'fallbackWriteEvents', 'fastRequestedEvents',
     'pricesAsOf', 'sourceIncomplete', 'totalUsd', 'unpricedModels', 'unrecordedWriteEvents', 'windowAnchored',
-    'windowEnd', 'windowStart',
+    'windowEnd', 'windowStart', 'unrecordedCalls', 'longPromptFloorEvents', 'toolTokenEvents',
   ].sort();
 
   test('Codex: the only rollout is locked, so the scan has no turns — the block says incomplete, not "no token data"', (t) => {

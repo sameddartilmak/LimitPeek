@@ -210,13 +210,34 @@ export interface CostByClass {
   cacheRead: number;
 }
 
+/**
+ * `ModelCost.speed` codes that say WHY a group is unpriced when the reason is
+ * not a price tier (ADR-003 Amendment 6). Stable machine codes: the renderer
+ * maps each to catalog text and never prints the code.
+ *
+ *   'no-model'            Gemini CLI recorded tokens on a message with no model
+ *                         (a synthetic response); `model` is `'unknown'`.
+ *   'no-published-price'  Kimi Code, a Kimi plan model (`kimi-code/<id>`): Kimi
+ *                         publishes no per-token price for its plan models.
+ *   'other-model-alias'   Kimi Code, any other model alias: another provider's
+ *                         model used through Kimi Code ("other models via Kimi
+ *                         Code"). The alias is resolved only by the user's Kimi
+ *                         config, which this app never opens, so it is unpriced.
+ *
+ * Always `usd: null` and `pricedAs: null`.
+ */
+export type UnpricedReasonCode = 'no-model' | 'no-published-price' | 'other-model-alias';
+
 export interface ModelCost {
   /**
    * Raw id as recorded, e.g. "claude-haiku-4-5-20251001". The exact string
    * `'unknown'` is a placeholder: the tool recorded usage but no model could be
    * resolved for it (Codex: no `turn_context` and no model in the session
-   * header). Such usage is always unpriced; the renderer maps the placeholder
-   * to a catalog label instead of printing it as a model name.
+   * header; Gemini: no model on the message, or one that is not id-shaped;
+   * Kimi: an alias that is not id-shaped). Such usage is always unpriced; the
+   * renderer maps the placeholder to a catalog label instead of printing it as
+   * a model name. For Kimi this is the model ALIAS as configured in Kimi Code
+   * (e.g. "kimi-code/kimi-for-coding").
    */
   model: string;
   /**
@@ -224,6 +245,10 @@ export interface ModelCost {
    * because a model can be priced at one speed and unpriced at another, so
    * naming only the model would put a row in `unpricedModels` while an
    * identically-named priced row sits beside it.
+   *
+   * Gemini emits 'standard' (Gemini API Standard rates; an unknown model id is
+   * 'standard' with `usd: null`) or 'no-model'. Kimi emits only
+   * 'no-published-price' or 'other-model-alias'. See `UnpricedReasonCode`.
    */
   speed: string;
   /** The price-table key it matched, or null when unpriced. */
@@ -253,7 +278,13 @@ export interface WeeklyCost {
    * zero is a wrong number presented as a right one.
    */
   unpricedModels: string[];
-  /** ISO date the price table was current. Prices drift; say when. */
+  /**
+   * ISO date the price table was current. Prices drift; say when.
+   *
+   * The empty string `''` when the provider HAS no price table (Kimi Code,
+   * ADR-003 A6): nothing in this cost was priced from a list, so there is no
+   * date to state. Never a made-up date.
+   */
   pricesAsOf: string;
   /**
    * Events priced through the 1.25x top-level fallback because the
@@ -303,6 +334,31 @@ export interface WeeklyCost {
    */
   fastRequestedEvents: number;
   /**
+   * Gemini CLI floor cause (ADR-003 A6): true whenever this is a Gemini cost
+   * with an amount. The CLI never records its utility model calls (routing,
+   * compression, loop detection, next-speaker checks, summaries, edit
+   * correction, web search/fetch) or failed stream attempts, so every Gemini
+   * figure is a FLOOR ("en az") with this as a standing cause. Always present:
+   * `false` for every other provider, and `false` on an empty known-incomplete
+   * Gemini cost (A3.19), which has no amount to qualify.
+   */
+  unrecordedCalls: boolean;
+  /**
+   * Gemini floor cause: priced events whose prompt exceeded 200,000 tokens on a
+   * model that publishes a separate >200k rate. They are priced at the <=200k
+   * rate AS A FLOOR (the page does not say whether the higher rate reprices the
+   * whole request, so only the lower rate cannot overstate). Always present;
+   * 0 for every other provider.
+   */
+  longPromptFloorEvents: number;
+  /**
+   * Gemini floor cause: events that recorded tool-use prompt tokens
+   * (`toolUsePromptTokenCount` > 0), priced or not. Those tokens are not priced
+   * (their billing is not published), so the figure is a FLOOR. Always present;
+   * 0 for every other provider.
+   */
+  toolTokenEvents: number;
+  /**
    * true ONLY when the cost reader KNOWS it could not read usage records that
    * may fall inside this window (ADR-002 A3.15): the last local scan failed or
    * timed out and an older result is being served, a log file or directory in
@@ -339,12 +395,16 @@ export interface WeeklyCost {
  */
 export interface PeriodModelCost {
   /**
-   * The tool this usage was recorded by. A period's list holds BOTH Claude Code
-   * and Codex models, each priced through its own tool's published price table
-   * (`src/core/pricing.js` / `src/core/codex/pricing.js`) under that table's own
-   * rules — so the renderer can mark which tool a model belongs to, and no
+   * The tool this usage was recorded by. A period's list holds the models of
+   * every tool with usage (Claude Code, Codex, Gemini CLI, Kimi Code), each
+   * priced through its own tool's rules (`src/core/pricing.js`,
+   * `src/core/codex/pricing.js`, `src/core/gemini/pricing.js`; Kimi is never
+   * priced) — so the renderer can mark which tool a model belongs to, and no
    * entry's figure mixes two tables. Only dollars are combined into the period
    * total; token counts are never summed across tools.
+   *
+   * Gemini entries with an amount are ALWAYS `isFloor: true` (unrecorded calls).
+   * Kimi entries are always `costUsd: null`, `isFloor: false`.
    */
   provider: ProviderSnapshot['id'];
   /**
@@ -421,9 +481,12 @@ export interface PeriodUsage {
    * was assumed Standard or Fast was requested and priced at Standard
    * (`assumedTierEvents` / `fastRequestedEvents`, A3.17-18), or a range of
    * usage a reader KNOWS it could not read overlaps the period (A3.20; see
-   * `UsageHistory.incompleteProviders`). Every such cause can only push the
-   * true figure up, so the renderer prints "en az". An empty period
-   * (`hasUsage: false`) can be a floor through the last cause alone.
+   * `UsageHistory.incompleteProviders`). Also (ADR-003 A6) whenever Gemini CLI
+   * has usage in the period (unrecorded calls, always) and whenever Kimi Code
+   * has usage (unpriced, always). Every such cause can only push the true
+   * figure up, so the renderer prints "en az". An empty period
+   * (`hasUsage: false`) can be a floor through the unread cause alone.
+   * `UsageHistory.floorCausesByProvider` names the causes per tool.
    */
   isFloor: boolean;
   /** Model ids seen in the period with no price-table entry. Presence only —
@@ -433,6 +496,34 @@ export interface PeriodUsage {
    *  genuinely empty period from one whose usage could not be costed. */
   hasUsage: boolean;
 }
+
+/**
+ * Why a tool's history figures are floors, as stable codes (ADR-003 A6). The
+ * renderer maps each to catalog text, so a price note can be composed for ANY
+ * set of tools instead of a sentence hard-coded per combination.
+ *
+ *   'unpriced'                  some usage has no price (unknown model, a tier with
+ *                               no row, tokens without a model, every Kimi model)
+ *   'cache-write-ttl-fallback'  Claude: TTL split missing, writes priced at 1.25x
+ *   'unrecorded-writes'         Codex: writes recorded as 0 on a write-priced model
+ *   'assumed-tier'              Codex: no tier recorded yet, priced at Standard
+ *   'fast-requested'            Codex: Fast requested, priced at Standard
+ *   'unrecorded-calls'          Gemini: utility calls and failed streams never recorded
+ *   'long-prompt'               Gemini: prompt over 200k priced at the <=200k rate
+ *   'tool-tokens'               Gemini: tool-use prompt tokens not priced
+ *
+ * A known-unread range is deliberately NOT a code here: it has its own field,
+ * `UsageHistory.incompleteProviders`, and its own note (ADR-002 A3.20).
+ */
+export type HistoryFloorCause =
+  | 'unpriced'
+  | 'cache-write-ttl-fallback'
+  | 'unrecorded-writes'
+  | 'assumed-tier'
+  | 'fast-requested'
+  | 'unrecorded-calls'
+  | 'long-prompt'
+  | 'tool-tokens';
 
 /**
  * Week-by-week and month-by-month notional usage, for the settings "Toplam
@@ -461,8 +552,26 @@ export interface UsageHistory {
    * included — because the date of a table that priced nothing is not a fact
    * about these figures. Empty when there is no usage at all. Prices drift
    * independently per vendor, so one date for all would be false for some.
+   * Kimi Code NEVER appears here: it has no price table (read `usageProviders`).
    */
   pricesAsOfByProvider: Partial<Record<ProviderSnapshot['id'], string>>;
+  /**
+   * Every tool whose usage is part of this history, in the fixed order
+   * claude, codex, gemini, kimi — including a tool with no price table (Kimi),
+   * which therefore has no entry in `pricesAsOfByProvider`. Always present;
+   * empty when there is no usage. With `pricesAsOfByProvider` and
+   * `floorCausesByProvider` it is everything a composed price note needs:
+   * for each listed tool, its price date (or none) and its floor causes.
+   */
+  usageProviders: ProviderSnapshot['id'][];
+  /**
+   * For each tool, the floor causes present in its usage across the LISTED
+   * periods (weeks and months), in the fixed order of `HistoryFloorCause`. A
+   * tool is present only when it has at least one cause; Gemini always has
+   * 'unrecorded-calls' and Kimi always has 'unpriced' while they have usage.
+   * Always present; empty object when no figure is a floor for these reasons.
+   */
+  floorCausesByProvider: Partial<Record<ProviderSnapshot['id'], HistoryFloorCause[]>>;
   /**
    * Tools whose reader KNOWS it could not read usage in a range overlapping at
    * least one listed period (ADR-002 A3.20) — the history counterpart of
@@ -559,6 +668,15 @@ export interface ProviderSnapshot {
   /** Brand hex, used ONLY for the 2px spine + monogram tile. Never the meter. */
   accent: string;
   /**
+   * true when this provider's local reader was written from the vendor's
+   * source code and has NOT been confirmed against a real install (ADR-003
+   * Amendment 6, decision 4). The row must carry a visible "experimental"
+   * marker while true. Today: true for 'gemini' and 'kimi', false for every
+   * other provider. A static registry fact, independent of whether the tool is
+   * installed or has usage.
+   */
+  experimental: boolean;
+  /**
    * The user has ADDED this provider to the main panel. Distinct from
    * `connected`: adding is the user's choice to see the row at all, connecting
    * is whether we have data for it. An added-but-unconnected provider shows in
@@ -651,8 +769,11 @@ export interface Snapshot {
    * say so rather than show "no token data", hide the cost block silently, or
    * present a history that leaves the tool out as complete.
    *
-   * Today only 'codex' is ever listed: its rollout scan runs in a worker and
-   * its first result arrives after the first snapshot. Claude is not listed —
+   * Listed: 'codex' until its rollout scan worker's first result, and
+   * 'gemini' / 'kimi' (ADR-003 A6) until their scan workers' first result —
+   * but only while that tool is INSTALLED (its data directory exists); a tool
+   * that is not on this machine is a passive "not installed" row and is never
+   * pending. Claude is not listed —
    * before its first scan the collector sends `loadingSnapshot` (rows in
    * status 'loading', `usageHistory: null`), and on a warm start it shows the
    * persisted store, so it never presents unread data as absent. A worker

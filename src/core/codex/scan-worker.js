@@ -2,6 +2,7 @@
 const { parentPort } = require('node:worker_threads');
 const { createCodexUsageScanner } = require('./usage');
 const log = require('../log');
+const { sameEvents } = require('../same-events');
 
 /**
  * Codex rollout scan worker (ADR-002 Amendment 3.11).
@@ -15,6 +16,8 @@ const log = require('../log');
  * Protocol (one request at a time; the collector never overlaps them):
  *   in   { type: 'scan', id, now, startMs, home, changed? }
  *   out  { type: 'result', id, events, stats, unreadRange }
+ *        { type: 'result', id, unchanged: true, stats, unreadRange }   same events as
+ *                                      this worker's previous result (ADR-003 A6 F3)
  *        { type: 'error', id, code }
  *        { type: 'log', level, msg }   fixed messages only, never content
  */
@@ -23,6 +26,7 @@ log.setSink((level, msg) => {
 });
 
 const scanner = createCodexUsageScanner();
+let lastEvents = null;
 
 if (parentPort) {
   parentPort.on('message', (msg) => {
@@ -34,10 +38,12 @@ if (parentPort) {
         home: msg.home || undefined,
         changed: Array.isArray(msg.changed) ? msg.changed : undefined,
       });
+      const unchanged = lastEvents !== null && sameEvents(lastEvents, events);
+      lastEvents = events;
       parentPort.postMessage({
         type: 'result',
         id: msg.id,
-        events,
+        ...(unchanged ? { unchanged: true } : { events }),
         stats: scanner.stats(),
         // { fromMs, throughMs } of turns known unread, or null (ADR-002 A3.15).
         unreadRange: scanner.unreadRange(),

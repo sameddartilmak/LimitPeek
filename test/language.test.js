@@ -739,7 +739,8 @@ test.describe('every main-process surface speaks the resolved language (ADR-004 
     inEnglish(() => { enRow = build().providers.find((p) => p.id === 'gemini'); });
     assert.equal(trRow.setupAction.label, 'Ekle');
     assert.equal(enRow.setupAction.label, 'Add');
-    assert.equal(enRow.setupAction.detail, 'Gemini is not supported in this version yet.');
+    assert.equal(enRow.setupAction.detail, 'Gemini CLI was not found on this computer.');
+    assert.equal(trRow.setupAction.detail, 'Gemini CLI bu bilgisayarda bulunamadı.');
     assert.equal(enRow.setupAction.kind, trRow.setupAction.kind, 'kind is not text and never changes');
   });
 

@@ -11,6 +11,8 @@
   "provider.codex.notFound": "Codex was not found on this machine.",
   "provider.antigravity.detail": "If Antigravity CLI is missing, downloads and installs it with your consent, then adds a status line bridge; only remaining quota and reset time are read.",
   "provider.notSupportedYet": "{provider} is not supported in this version yet.",
+  "provider.gemini.notFound": "Gemini CLI was not found on this computer.",
+  "provider.kimi.notFound": "Kimi Code was not found on this computer.",
   "ipc.invalidRequest": "Invalid request.",
   "ipc.unknownProvider": "Unknown provider.",
   "ipc.actionUnsupported": "This action is not supported in this version.",

@@ -226,6 +226,29 @@ test('the usage history main produces has exactly the shape contract.ts declares
   }
   assert.deepEqual([...providers].sort(), ['claude', 'codex']);
   assert.deepEqual(Object.keys(out.pricesAsOfByProvider).sort(), ['claude', 'codex']);
+  // ADR-003 A6: always present; the facts a composed price note needs.
+  assert.deepEqual(out.usageProviders, ['claude', 'codex']);
+  assert.deepEqual(out.floorCausesByProvider, {});
+  // With all four tools: every entry keeps the PeriodModelCost shape, and each
+  // cause code is one the contract's HistoryFloorCause union declares.
+  const four = history.usageHistory(
+    [{ f: 'f', key: 'k', ts: at, model: 'claude-opus-5', input: 0, output: 1000, cacheWrite: 0, cacheRead: 0, cw5: 0, cw1h: 0 }],
+    now,
+    {
+      codexEvents: [{ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 0, cacheWrite: 0, output: 10 }],
+      geminiEvents: [{ ts: at, model: 'gemini-2.5-pro', input: 10, cached: 0, output: 1, thoughts: 0, tool: 1, longPrompt: true }],
+      kimiEvents: [{ ts: at, model: 'kimi-code/k2', input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }],
+    },
+  );
+  assert.deepEqual(Object.keys(four).sort(), interfaceFields('UsageHistory'));
+  assert.deepEqual(Object.keys(four.weeks[0]).sort(), interfaceFields('PeriodUsage'));
+  for (const entry of four.weeks[0].byModel) assert.deepEqual(Object.keys(entry).sort(), interfaceFields('PeriodModelCost'));
+  assert.deepEqual(four.usageProviders, ['claude', 'codex', 'gemini', 'kimi']);
+  const declaredCauses = stringUnion('HistoryFloorCause');
+  assert.deepEqual([...history.FLOOR_CAUSE_ORDER].sort(), [...declaredCauses].sort(), 'the producer and the contract list the same codes');
+  for (const causes of Object.values(four.floorCausesByProvider)) {
+    for (const c of causes) assert.ok(declaredCauses.includes(c), `undeclared cause ${c}`);
+  }
   // ADR-002 A3.20: always present, a list of tool ids, empty for complete sources.
   assert.ok(interfaceFields('UsageHistory').includes('incompleteProviders'), 'contract.ts declares incompleteProviders');
   assert.deepEqual(out.incompleteProviders, []);
@@ -235,6 +258,57 @@ test('the usage history main produces has exactly the shape contract.ts declares
   });
   assert.deepEqual(Object.keys(affected).sort(), interfaceFields('UsageHistory'));
   assert.deepEqual(affected.incompleteProviders, ['codex']);
+});
+
+/** The string literals of `export type <name> = 'a' | 'b' ...;` in contract.ts. */
+function stringUnion(name) {
+  const src = contractSource().replace(/\r\n/g, '\n');
+  const start = src.indexOf(`export type ${name} =`);
+  assert.notEqual(start, -1, `contract.ts no longer declares ${name}`);
+  const body = src.slice(start, src.indexOf(';', start));
+  return [...body.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+}
+
+test('Gemini and Kimi weekly costs have exactly the WeeklyCost shape, and their unpriced codes are declared', () => {
+  const { buildSnapshot } = require('../src/core/snapshot');
+  const now = new Date(2026, 8, 9, 12, 0, 0).getTime();
+  const at = now - 60 * 60 * 1000;
+  const snap = buildSnapshot({
+    now,
+    events: [],
+    rateLimits: null,
+    codexEvents: [],
+    gemini: { installed: true, events: [{ ts: at, input: 10, cached: 0, output: 1, thoughts: 0, tool: 2, longPrompt: false, model: 'unknown', noModel: true }, { ts: at, input: 1000, cached: 0, output: 10, thoughts: 0, tool: 0, longPrompt: false, model: 'gemini-2.5-pro' }], resultAtMs: now },
+    kimi: { installed: true, events: [{ ts: at, model: 'kimi-code/k2', input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }, { ts: at, model: 'x/y', input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }], resultAtMs: now },
+    scanOk: true,
+  });
+  const fields = interfaceFields('WeeklyCost');
+  for (const key of ['unrecordedCalls', 'longPromptFloorEvents', 'toolTokenEvents']) assert.ok(fields.includes(key), `contract.ts declares ${key}`);
+  const gemini = snap.providers.find((p) => p.id === 'gemini').weeklyCost;
+  const kimi = snap.providers.find((p) => p.id === 'kimi').weeklyCost;
+  assert.deepEqual(Object.keys(gemini).sort(), fields);
+  assert.deepEqual(Object.keys(kimi).sort(), fields);
+  assert.equal(gemini.unrecordedCalls, true);
+  assert.equal(gemini.toolTokenEvents, 1);
+  assert.equal(kimi.unrecordedCalls, false);
+  const codes = stringUnion('UnpricedReasonCode');
+  assert.deepEqual([...codes].sort(), ['no-model', 'no-published-price', 'other-model-alias']);
+  const emitted = [...gemini.byModel, ...kimi.byModel].map((m) => m.speed).filter((s) => s !== 'standard');
+  assert.deepEqual([...new Set(emitted)].sort(), [...codes].sort(), 'every emitted non-tier code is declared');
+});
+
+test('every provider row declares experimental, true only for Gemini and Kimi, and carries no undeclared key', () => {
+  const { buildSnapshot, loadingSnapshot } = require('../src/core/snapshot');
+  const fields = interfaceFields('ProviderSnapshot');
+  assert.ok(fields.includes('experimental'), 'contract.ts declares ProviderSnapshot.experimental');
+  const now = new Date(2026, 8, 9, 12, 0, 0).getTime();
+  const installed = { installed: true, events: [], resultAtMs: now };
+  for (const s of [buildSnapshot({ now, events: [], rateLimits: null, scanOk: true, gemini: installed, kimi: installed }), loadingSnapshot(now)]) {
+    for (const p of s.providers) {
+      for (const key of Object.keys(p)) assert.ok(fields.includes(key), `${p.id}: undeclared key "${key}"`);
+      assert.equal(p.experimental, p.id === 'gemini' || p.id === 'kimi', p.id);
+    }
+  }
 });
 
 test('both weekly costs main produces have exactly the WeeklyCost shape contract.ts declares', () => {
@@ -299,6 +373,12 @@ test('every snapshot main emits carries pendingUsage, and no key contract.ts doe
   assert.deepEqual(pending.pendingUsage, ['codex'], 'no Codex result yet');
   assert.deepEqual(scanned.pendingUsage, [], 'empty when nothing is pending');
   assert.deepEqual(loading.pendingUsage, ['codex']);
+  // ADR-003 A6: an INSTALLED Gemini / Kimi with no scan result yet is pending too.
+  const localPending = buildSnapshot({
+    now, events: [], rateLimits: null, codexEvents: [], scanOk: true,
+    gemini: { installed: true, events: null }, kimi: { installed: true, events: null },
+  });
+  assert.deepEqual(localPending.pendingUsage, ['gemini', 'kimi']);
 });
 
 test('the push cadence main implements matches the one the contract advertises', () => {
@@ -362,6 +442,13 @@ function scanForNetwork(dir, skip = () => false) {
 }
 
 test('no HTTP client and no listening socket in the collector, main process or bridge', () => {
+  // The Gemini and Kimi readers (ADR-003 A6) are named explicitly: they are
+  // rung 1 only, and a network module there would contradict the ADR outright.
+  for (const dir of ['gemini', 'kimi', 'scan']) {
+    const full = path.join(ROOT, 'src', 'core', dir);
+    assert.ok(fs.existsSync(full) && fs.readdirSync(full).some((n) => n.endsWith('.js')), `src/core/${dir} exists and is scanned`);
+    assert.deepEqual(scanForNetwork(full), [], `src/core/${dir}`);
+  }
   const offenders = [
     ...scanForNetwork(path.join(ROOT, 'src', 'core')),
     ...scanForNetwork(path.join(ROOT, 'src', 'main')),

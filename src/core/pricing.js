@@ -321,6 +321,10 @@ function weeklyCost(events, startMs, endMs, anchored) {
     // Codex-only tier floors (ADR-002 A3.17-18). Claude records its speed.
     assumedTierEvents: 0,
     fastRequestedEvents: 0,
+    // Gemini-only floor causes (ADR-003 A6). Always present, zero here.
+    unrecordedCalls: false,
+    longPromptFloorEvents: 0,
+    toolTokenEvents: 0,
     // A pure price lookup cannot know whether the events were fully read; the
     // snapshot sets this from the scan (ADR-002 A3.15).
     sourceIncomplete: false,

@@ -63,6 +63,7 @@ import {
 } from '../format.js';
 import { t } from '../i18n.js';
 import { createCost, type CostHandle } from './cost.js';
+import { experimentalTag } from './experimental.js';
 import { createQuotas, type QuotaHandle } from './quotas.js';
 import { gripDots, providerMark } from './logo.js';
 import { createMeter, isDrawable, meterStateStep, type MeterHandle } from './meter.js';
@@ -293,6 +294,7 @@ function buildPassive(
   ctx: RowContext,
 ): void {
   const name = el('span', { class: 'row__name' }, p.displayName);
+  const experimental = experimentalTag(p);
   const detailId = `setup-detail-${p.id}`;
   const detailText = p.setupAction?.detail || t('row.notConnected');
   const detail = el(
@@ -302,7 +304,7 @@ function buildPassive(
   );
 
   replaceChildrenWith(body, [
-    el('div', { class: 'row__line' }, name),
+    el('div', { class: 'row__line' }, name, experimental),
     el('div', { class: 'row__meta' }, detail),
   ]);
 
@@ -348,7 +350,12 @@ function buildLive(
 ): void {
   const name = el('span', { class: 'row__name' }, p.displayName);
   const plan = p.planLabel ? el('span', { class: 'row__plan' }, p.planLabel) : null;
-  const line1Children: Array<HTMLElement | null> = [name, plan, el('span', { class: 'row__gap' })];
+  const line1Children: Array<HTMLElement | null> = [
+    name,
+    experimentalTag(p),
+    plan,
+    el('span', { class: 'row__gap' }),
+  ];
 
   const drawable = isDrawable(p.fiveHour) || isDrawable(p.sevenDay);
 

@@ -59,10 +59,24 @@
  * is ever summed across the two tools. Codex events are the per-turn deltas
  * from `codex/usage.js` (cumulative-total deltas; reasoning is a subset of
  * output and is never added twice).
+ *
+ * GEMINI CLI AND KIMI CODE (ADR-003 A6)
+ * -------------------------------------
+ * The same rule extends to four tools. Gemini messages (deduped by message id in
+ * `gemini/usage.js`) are priced by `gemini/pricing.js` and are ALWAYS a floor
+ * (unrecorded utility calls). Kimi usage (`kimi/usage.js`) has no price at all:
+ * its models appear in `byModel` with `costUsd: null`, contribute no dollars,
+ * and make the period a floor exactly as any other unpriced model does.
+ *
+ * `usageProviders` and `floorCausesByProvider` exist so the renderer can compose
+ * its price note for ANY set of tools ("dates + causes") instead of a sentence
+ * hard-coded per combination.
  */
 
 const pricing = require('./pricing');
 const codexPricing = require('./codex/pricing');
+const geminiPricing = require('./gemini/pricing');
+const kimiCostMod = require('./kimi/cost');
 
 /** How many of the most recent periods to surface. Bounds both the compute
  *  (one price pass over the corpus per bucket) and the list length in a narrow
@@ -72,8 +86,26 @@ const DEFAULT_MAX_MONTHS = 12;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Longest per-model list a period or a cost carries (security F4; the renderer's own cap). */
+const MAX_LIST = 24;
+
 /** Tools whose local usage feeds the history, in the order they are listed. */
-const INCOMPLETE_ORDER = ['claude', 'codex'];
+const INCOMPLETE_ORDER = ['claude', 'codex', 'gemini', 'kimi'];
+
+/**
+ * `UsageHistory.floorCausesByProvider` codes, in the order they are listed.
+ * Stable: the renderer maps each to catalog text.
+ */
+const FLOOR_CAUSE_ORDER = [
+  'unpriced', // some usage has no price (unknown model, unpriced tier, no model, Kimi)
+  'cache-write-ttl-fallback', // Claude: TTL split missing, writes priced at 1.25x
+  'unrecorded-writes', // Codex: 0 recorded cache writes on a write-priced model (A3.3/A3.9)
+  'assumed-tier', // Codex: no tier recorded yet, priced at Standard (A3.17)
+  'fast-requested', // Codex: Fast requested, priced at Standard (A3.18)
+  'unrecorded-calls', // Gemini: utility calls and failed streams are never recorded
+  'long-prompt', // Gemini: prompt over 200k priced at the <=200k rate
+  'tool-tokens', // Gemini: tool-use prompt tokens not priced
+];
 
 /** Local midnight of the day containing `ms`. */
 function startOfDayMs(ms) {
@@ -267,6 +299,30 @@ function codexByModelFrom(detail) {
 }
 
 /**
+ * Gemini or Kimi per-model entries of a period's cost, grouped by raw model id.
+ *   costUsd  the model's priced total, or null when none of it could be priced
+ *            (Kimi always; Gemini for an unknown id or tokens with no model).
+ *   isFloor  Gemini: true for every priced entry, since utility calls and failed
+ *            streams are never recorded, whatever the model. Kimi: false (a null
+ *            figure has no bound to be lower than).
+ */
+function localByModelFrom(provider, cost) {
+  if (!cost) return [];
+  const byModel = new Map();
+  for (const row of cost.byModel) {
+    let e = byModel.get(row.model);
+    if (!e) { e = { priced: 0, anyPriced: false }; byModel.set(row.model, e); }
+    if (row.usd !== null) { e.anyPriced = true; e.priced += row.usd; }
+  }
+  return [...byModel].map(([model, e]) => ({
+    provider,
+    model,
+    costUsd: e.anyPriced ? round(e.priced) : null,
+    isFloor: provider === 'gemini' && e.anyPriced,
+  }));
+}
+
+/**
  * One period, priced.
  *
  * `startsAt` is the period start; `endsAt` is the INCLUSIVE last day of the
@@ -285,7 +341,7 @@ function codexByModelFrom(detail) {
  *        means both. The period is then a floor, and so is every model entry of
  *        an affected tool (review F6).
  */
-function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, knownIncomplete = false) {
+function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, knownIncomplete = false, more = {}) {
   const incomplete = knownIncomplete === true
     ? new Set(INCOMPLETE_ORDER)
     : new Set(knownIncomplete instanceof Set ? knownIncomplete : (Array.isArray(knownIncomplete) ? knownIncomplete : []));
@@ -300,7 +356,9 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   const cost = pricing.weeklyCost(events, startMs, endExclusiveMs, false);
   const cxDetail = codexPricing.codexCostDetail(codexEvents || [], startMs, endExclusiveMs, false);
   const cxCost = cxDetail.cost;
-  if (!cost && !cxCost) {
+  const gmCost = geminiPricing.geminiCost(more.geminiEvents || [], startMs, endExclusiveMs, false);
+  const kmCost = kimiCostMod.kimiCost(more.kimiEvents || [], startMs, endExclusiveMs, false);
+  if (!cost && !cxCost && !gmCost && !kmCost) {
     return {
       ...base,
       costUsd: 0,
@@ -327,19 +385,52 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   // a cacheable (>= 1,024-token) uncached prompt.
   // A3.17-18: turns priced at Standard although their tier was only assumed or
   // was Fast REQUESTED. A3.20: a known-unread range overlaps the period.
+  // Gemini (ADR-003 A6): always a floor while it has usage (unrecorded calls),
+  // plus its own counted causes. Kimi: every model is unpriced, so floorOf holds.
   const isFloor = floorOf(cost) || floorOf(cxCost) || cxDetail.writeFloorEvents > 0
     || cxDetail.assumedTierEvents > 0 || cxDetail.fastRequestedEvents > 0
+    || floorOf(gmCost) || Boolean(gmCost && gmCost.unrecordedCalls) || floorOf(kmCost)
     || incomplete.size > 0;
 
-  // Dollars are added across the two tools, class by class; token counts never are.
+  // Per-tool causes for UsageHistory.floorCausesByProvider.
+  if (more.causes) {
+    const add = (provider, cause) => {
+      let set = more.causes.get(provider);
+      if (!set) { set = new Set(); more.causes.set(provider, set); }
+      set.add(cause);
+    };
+    const unpriced = (c) => c.unpricedModels.length > 0 || c.byModel.some((m) => m.usd === null);
+    if (cost) {
+      if (unpriced(cost)) add('claude', 'unpriced');
+      if (cost.fallbackWriteEvents > 0) add('claude', 'cache-write-ttl-fallback');
+    }
+    if (cxCost) {
+      if (unpriced(cxCost)) add('codex', 'unpriced');
+      if (cxDetail.writeFloorEvents > 0) add('codex', 'unrecorded-writes');
+      if (cxDetail.assumedTierEvents > 0) add('codex', 'assumed-tier');
+      if (cxDetail.fastRequestedEvents > 0) add('codex', 'fast-requested');
+    }
+    if (gmCost) {
+      if (unpriced(gmCost)) add('gemini', 'unpriced');
+      if (gmCost.unrecordedCalls) add('gemini', 'unrecorded-calls');
+      if (gmCost.longPromptFloorEvents > 0) add('gemini', 'long-prompt');
+      if (gmCost.toolTokenEvents > 0) add('gemini', 'tool-tokens');
+    }
+    if (kmCost) add('kimi', 'unpriced');
+  }
+
+  // Dollars are added across the tools, class by class; token counts never are.
   const byClass = emptyByClass();
   for (const k of Object.keys(byClass)) {
-    byClass[k] = round((cost ? cost.byClass[k] : 0) + (cxCost ? cxCost.byClass[k] : 0));
+    byClass[k] = round((cost ? cost.byClass[k] : 0) + (cxCost ? cxCost.byClass[k] : 0)
+      + (gmCost ? gmCost.byClass[k] : 0));
   }
 
   const byModel = [
     ...(cost ? byModelUsageFrom(events, startMs, endExclusiveMs) : []),
     ...codexByModelFrom(cxDetail),
+    ...localByModelFrom('gemini', gmCost),
+    ...localByModelFrom('kimi', kmCost),
   ]
     // A tool with usage known unread in this period: each of its figures is a floor.
     .map((entry) => (incomplete.has(entry.provider) && !entry.isFloor ? { ...entry, isFloor: true } : entry))
@@ -348,15 +439,18 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   const unpricedModels = [...new Set([
     ...(cost ? cost.unpricedModels : []),
     ...(cxCost ? cxCost.unpricedModels : []),
+    ...(gmCost ? gmCost.unpricedModels : []),
+    ...(kmCost ? kmCost.unpricedModels : []),
   ])].sort();
 
   return {
     ...base,
-    costUsd: round((cost ? cost.totalUsd : 0) + (cxCost ? cxCost.totalUsd : 0)),
+    costUsd: round((cost ? cost.totalUsd : 0) + (cxCost ? cxCost.totalUsd : 0) + (gmCost ? gmCost.totalUsd : 0)),
     byClass,
-    byModel,
+    // Bounded lists (security F4): the renderer shows at most MAX_LIST entries.
+    byModel: byModel.slice(0, MAX_LIST),
     isFloor,
-    unpricedModels,
+    unpricedModels: unpricedModels.slice(0, MAX_LIST),
     // Something landed in the period even if none of it could be priced, so the
     // renderer can tell a genuinely quiet period from one it could not cost.
     hasUsage: true,
@@ -376,7 +470,7 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
  * @param {(startMs:number, endMs:number) => Set<string>} [incompleteIn] the tools
  *        with a known-unread range overlapping [startMs, endMs)
  */
-function bucketsOf(events, firstMs, now, max, kind, codexEvents, incompleteIn = () => new Set()) {
+function bucketsOf(events, firstMs, now, max, kind, codexEvents, incompleteIn = () => new Set(), more = {}) {
   if (!Number.isFinite(firstMs)) return [];
   const startOf = kind === 'week' ? weekStartMs : monthStartMs;
   const nextOf = kind === 'week' ? nextWeekStartMs : nextMonthStartMs;
@@ -400,7 +494,7 @@ function bucketsOf(events, firstMs, now, max, kind, codexEvents, incompleteIn = 
   const out = [];
   for (let i = kept.length - 1; i >= 0; i -= 1) {
     const end = nextOf(kept[i]);
-    out.push(periodUsageFrom(events, kept[i], end, keyOf(kept[i]), codexEvents, incompleteIn(kept[i], end)));
+    out.push(periodUsageFrom(events, kept[i], end, keyOf(kept[i]), codexEvents, incompleteIn(kept[i], end), more));
   }
   return out;
 }
@@ -467,17 +561,31 @@ function usageHistory(events, now, opts) {
       if (ev.ts < firstMs) firstMs = ev.ts;
     }
   }
-  let codexUsed = false;
-  for (const ev of codexList) {
-    if (ev && Number.isFinite(ev.ts) && ev.ts <= when) {
-      codexUsed = true;
-      if (ev.ts < firstMs) firstMs = ev.ts;
+  const usedIn = (arr) => {
+    let used = false;
+    for (const ev of arr) {
+      if (ev && Number.isFinite(ev.ts) && ev.ts <= when) {
+        used = true;
+        if (ev.ts < firstMs) firstMs = ev.ts;
+      }
     }
-  }
+    return used;
+  };
+  const codexUsed = usedIn(codexList);
+  const geminiList = opts && Array.isArray(opts.geminiEvents) ? opts.geminiEvents : [];
+  const kimiList = opts && Array.isArray(opts.kimiEvents) ? opts.kimiEvents : [];
+  const geminiUsed = usedIn(geminiList);
+  const kimiUsed = usedIn(kimiList);
 
   const pricesAsOfByProvider = {};
   if (claudeUsed) pricesAsOfByProvider.claude = pricing.PRICES_AS_OF;
   if (codexUsed) pricesAsOfByProvider.codex = codexPricing.PRICES_AS_OF;
+  if (geminiUsed) pricesAsOfByProvider.gemini = geminiPricing.PRICES_AS_OF;
+  // Kimi has no price table, so it never has a date here.
+  const usageProviders = INCOMPLETE_ORDER.filter((id) => (
+    (id === 'claude' && claudeUsed) || (id === 'codex' && codexUsed)
+    || (id === 'gemini' && geminiUsed) || (id === 'kimi' && kimiUsed)
+  ));
 
   const unread = [];
   const rawRanges = opts && opts.unreadRanges && typeof opts.unreadRanges === 'object' ? opts.unreadRanges : {};
@@ -499,8 +607,15 @@ function usageHistory(events, now, opts) {
     return hit;
   };
 
-  const weeks = bucketsOf(list, firstMs, when, maxWeeks, 'week', codexList, incompleteIn);
-  const months = bucketsOf(list, firstMs, when, maxMonths, 'month', codexList, incompleteIn);
+  const causes = new Map();
+  const more = { geminiEvents: geminiList, kimiEvents: kimiList, causes };
+  const weeks = bucketsOf(list, firstMs, when, maxWeeks, 'week', codexList, incompleteIn, more);
+  const months = bucketsOf(list, firstMs, when, maxMonths, 'month', codexList, incompleteIn, more);
+  const floorCausesByProvider = {};
+  for (const id of INCOMPLETE_ORDER) {
+    const set = causes.get(id);
+    if (set && set.size > 0) floorCausesByProvider[id] = FLOOR_CAUSE_ORDER.filter((c) => set.has(c));
+  }
   // No period at all (nothing READ yet): still name the tools with unread usage
   // in the span the history would cover, so "no records found" is not claimed
   // over a known gap (review F6).
@@ -512,6 +627,8 @@ function usageHistory(events, now, opts) {
     months,
     pricesAsOf: pricing.PRICES_AS_OF,
     pricesAsOfByProvider,
+    usageProviders,
+    floorCausesByProvider,
     incompleteProviders: INCOMPLETE_ORDER.filter((id) => affected.has(id)),
   };
 }
@@ -520,7 +637,10 @@ module.exports = {
   usageHistory,
   historyStartMs,
   codexByModelFrom,
+  localByModelFrom,
   periodUsageFrom,
+  FLOOR_CAUSE_ORDER,
+  MAX_LIST,
   byModelUsageFrom,
   bucketsOf,
   startOfDayMs,

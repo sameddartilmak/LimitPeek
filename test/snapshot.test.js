@@ -14,7 +14,10 @@ const { PROVIDER_IDS, PROVIDERS } = require('../src/core/providers');
  * registry rather than listed, because the list changes every time a row is
  * wired and a hard-coded copy of it silently stops testing the new one.
  */
-const PASSIVE_IDS = PROVIDERS.filter((p) => p.live !== true).map((p) => p.id);
+// A provider we cannot collect, OR a local-log provider (Gemini, Kimi) whose tool
+// is not installed: buildSnapshot is given no `gemini`/`kimi` input here, which
+// is exactly the not-installed state (ADR-003 A6).
+const PASSIVE_IDS = PROVIDERS.filter((p) => p.live !== true || p.id === 'gemini' || p.id === 'kimi').map((p) => p.id);
 
 const HOUR = 60 * 60 * 1000;
 const NOW = Date.parse('2026-09-08T12:00:00.000Z');
@@ -274,7 +277,8 @@ test.describe('provider registry shape', () => {
     // Was "the five passive providers". Antigravity left this set when its
     // documented `agy` statusline hook was wired, and Codex left it when its
     // session-rollout rate limits were read; the set is now read off the
-    // registry's `live` flag, so the assertions below are unchanged.
+    // registry's `live` flag, so the assertions below are unchanged. Gemini and
+    // Kimi are live since ADR-003 A6 but stay in this set while not installed.
     assert.deepEqual(PASSIVE_IDS, ['gemini', 'copilot', 'kimi']);
     const snap = buildSnapshot({ now: NOW, events: [ev({ output: 100 })], rateLimits: { state: 'missing' }, scanOk: true });
     for (const p of snap.providers.filter((x) => PASSIVE_IDS.includes(x.id))) {

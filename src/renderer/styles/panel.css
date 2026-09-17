@@ -602,6 +602,12 @@
   flex-direction: column;
   gap: 2px;
 }
+.settings__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-1);
+  min-width: 0;
+}
 .settings__name {
   font-size: var(--fs-name);
   color: var(--ink-200);
@@ -1086,4 +1092,30 @@
   font-size: var(--fs-micro);
   line-height: 1.4;
   color: var(--ink-500);
+}
+/* Composed per tool (ADR-003 A6), in the cost block's shape (ADR-004 A3): a
+ * short lead, one muted source line per tool, and the causes behind "why". */
+.usage__note { display: flex; flex-direction: column; gap: 3px; }
+.usage__note-lead { margin: 0; color: var(--ink-400); overflow-wrap: break-word; }
+.usage__note-lead[hidden] { display: none !important; }
+.usage__sources,
+.usage__why-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.usage__source { overflow-wrap: anywhere; }
+.usage__why-block { display: flex; flex-direction: column; gap: 3px; }
+.usage__why-block[hidden] { display: none !important; }
+.usage__why-block[data-why="true"] .cost__chev { transform: rotate(90deg); }
+.usage__why-list[hidden] { display: none !important; }
+.usage__why-line {
+  padding-left: var(--s-2);
+  border-left: 1px solid var(--ink-600);
+  color: var(--ink-400);
+  overflow-wrap: break-word;
 }
