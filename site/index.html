@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Strict CSP: every resource comes from this folder, nothing is fetched,
+     no inline script and no style attribute in the markup. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0E1211">
+<title>Usage Notch — Yapay zekâ limitlerin, bir bakışta tepside</title>
+<meta name="description" content="Usage Notch, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<!-- Synchronous on purpose: picks the language before first paint. -->
+<script src="site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main"><span class="l-tr" lang="tr">İçeriğe geç</span><span class="l-en" lang="en">Skip to content</span></a>
+
+<!-- Icon sprite (decorative; every use is aria-hidden). -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-desktop" viewBox="0 0 16 16"><rect x="1.75" y="2.5" width="12.5" height="8.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.5 13.75h5M8 11v2.75" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-user" viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.9 13.6c.7-2.4 2.7-3.7 5.1-3.7s4.4 1.3 5.1 3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.3 7V5.2a2.7 2.7 0 0 1 5.4 0V7" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+  <symbol id="i-lang" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.8 8h12.4M8 1.8c1.8 1.7 2.7 3.8 2.7 6.2S9.8 12.5 8 14.2C6.2 12.5 5.3 10.4 5.3 8S6.2 3.5 8 1.8Z" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+  <symbol id="i-stack" viewBox="0 0 16 16"><path d="M8 2 14 5 8 8 2 5Z M2 8l6 3 6-3 M2 11l6 3 6-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+  <symbol id="i-win" viewBox="0 0 16 16"><path d="M1.5 2.6 6.9 1.9v5.6H1.5ZM7.9 1.75 14.5 .9v6.6H7.9ZM1.5 8.5h5.4v5.6l-5.4-.7ZM7.9 8.5h6.6v6.6l-6.6-.85Z" fill="currentColor"/></symbol>
+  <symbol id="i-ring" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="3" opacity=".28"/><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="20.3 53.41" stroke-linecap="round" transform="rotate(-90 12 12)"/></symbol>
+  <symbol id="i-cursor" viewBox="0 0 16 16"><path d="M4 2.5 12 8.2l-3.6.6 2 4-1.6.8-2-4L4 12.3Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5 6h6M5 9h3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-coin" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M9.9 5.6c-.4-.6-1.1-.9-1.9-.9-1.1 0-1.9.6-1.9 1.5 0 2 3.9 1.1 3.9 3.3 0 .9-.9 1.6-2 1.6-.9 0-1.7-.4-2.1-1M8 3.6v1.1m0 6.6v1.1" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-check" viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<!-- ============================================================= NAV -->
+<header class="top" id="topbar">
+  <div class="top__inner">
+    <nav class="pill" aria-label="Bölümler" data-i18n-aria="sections">
+      <a class="pill__brand" href="#top"><img src="assets/icon.svg" alt="" width="22" height="22"><span>Usage Notch</span></a>
+      <ul class="pill__links">
+        <li><a class="pill__link" href="#how" data-sec="how"><span class="l-tr" lang="tr">Nasıl çalışır</span><span class="l-en" lang="en">How it works</span></a></li>
+        <li><a class="pill__link" href="#details" data-sec="details"><span class="l-tr" lang="tr">Ayrıntılar</span><span class="l-en" lang="en">Details</span></a></li>
+        <li><a class="pill__link" href="#tools" data-sec="tools"><span class="l-tr" lang="tr">Araçlar</span><span class="l-en" lang="en">Tools</span></a></li>
+        <li><a class="pill__link" href="#faq" data-sec="faq"><span class="l-tr" lang="tr">SSS</span><span class="l-en" lang="en">FAQ</span></a></li>
+      </ul>
+      <!-- Works without JavaScript: CSS reads which radio is checked. -->
+      <fieldset class="lang">
+        <legend class="u-sr"><span class="l-tr" lang="tr">Sayfa dili</span><span class="l-en" lang="en">Page language</span></legend>
+        <input class="lang__input u-sr" type="radio" name="lang" id="lang-tr" value="tr" checked>
+        <label class="lang__opt" for="lang-tr"><span aria-hidden="true">TR</span><span class="u-sr" lang="tr">Türkçe</span></label>
+        <input class="lang__input u-sr" type="radio" name="lang" id="lang-en" value="en">
+        <label class="lang__opt" for="lang-en"><span aria-hidden="true">EN</span><span class="u-sr" lang="en">English</span></label>
+      </fieldset>
+    </nav>
+    <a class="btn btn--glow btn--nav top__cta" id="nav-cta" href="#install" data-sec="install"><span class="l-tr" lang="tr">Kurulum</span><span class="l-en" lang="en">Install</span></a>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+<!-- ============================================================ HERO -->
+<section class="hero" id="top" aria-labelledby="h-hero">
+  <div class="hero__glow" aria-hidden="true"></div>
+  <div class="wrap hero__in">
+    <p class="badge drop d1"><svg class="ico" aria-hidden="true"><use href="#i-desktop"/></svg><span class="l-tr" lang="tr">Windows için</span><span class="l-en" lang="en">Built for Windows</span></p>
+    <h1 class="hero__title drop d2" id="h-hero">
+      <span class="l-tr" lang="tr"><span class="line">Yapay zekâ limitlerin,</span> <span class="line">bir bakışta <em class="accent">tepside</em>.</span></span>
+      <span class="l-en" lang="en"><span class="line">Your AI usage limits,</span> <span class="line">at a glance in the <em class="accent">tray</em>.</span></span>
+    </h1>
+    <p class="hero__sub drop d3">
+      <span class="l-tr" lang="tr">Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitleri tek küçük panelde. Doğrulayamadığı yüzdeyi göstermez.</span>
+      <span class="l-en" lang="en">The 5-hour and weekly limits of Claude Code, Codex and Antigravity in one small panel. It never shows a percentage it cannot verify.</span>
+    </p>
+    <div class="cta drop d4" id="hero-cta">
+      <a class="btn btn--glow" href="#install"><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">Windows’a kur</span><span class="l-en" lang="en">Install on Windows</span></a>
+      <a class="btn btn--ghost" href="#how"><span class="l-tr" lang="tr">Nasıl çalışır</span><span class="l-en" lang="en">How it works</span></a>
+    </div>
+    <ul class="chips drop d5">
+      <li class="chip"><svg class="ico" aria-hidden="true"><use href="#i-user"/></svg><span class="l-tr" lang="tr">Yönetici izni gerekmez</span><span class="l-en" lang="en">No admin rights needed</span></li>
+      <li class="chip"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span class="l-tr" lang="tr">Veri bilgisayarında kalır</span><span class="l-en" lang="en">Data stays on your PC</span></li>
+      <li class="chip"><svg class="ico" aria-hidden="true"><use href="#i-lang"/></svg><span>Türkçe · English</span></li>
+      <li class="chip"><svg class="ico" aria-hidden="true"><use href="#i-stack"/></svg><span>Claude Code · Codex · Antigravity</span></li>
+    </ul>
+  </div>
+
+  <div class="wrap hero__demo drop d6">
+    <p class="hint" id="demo-hint"><span class="hint__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Dene: tepsi simgesine tıkla</span><span class="l-en" lang="en">Try it: click the tray icon</span></p>
+
+    <!-- ========================================================= DEMO
+         Built from src/renderer/styles/{tokens,row,panel}.css and the real
+         catalog copy. site.js drives it; with JavaScript off it is a
+         readable, static open panel. -->
+    <div class="demo ui" id="demo" data-theme="dark" data-open="true" data-pinned="false" data-view="list">
+      <div class="desk">
+        <div class="desk__win" aria-hidden="true">
+          <div class="desk__bar"><i></i><i></i><i></i><span class="desk__caps"><b></b><b></b><b></b></span></div>
+          <div class="desk__code">
+            <i class="c1"></i><i class="c2"></i><i class="c3"></i><i class="c4"></i><i class="c5"></i><i class="c6"></i><i class="c2"></i><i class="c7"></i><i class="c3"></i><i class="c5"></i><i class="c1"></i><i class="c6"></i>
+          </div>
+        </div>
+        <div class="taskbar">
+          <span class="taskbar__apps" aria-hidden="true"><i class="app app--start"></i><i class="app"></i><i class="app app--on"></i><i class="app"></i><i class="app"></i></span>
+          <span class="taskbar__tray">
+            <span class="tb" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <button type="button" class="tb tray" id="demo-tray" aria-expanded="true" aria-controls="demo-anchor" aria-describedby="demo-tip" aria-label="Usage Notch">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle class="donut__track" cx="12" cy="12" r="8.5" fill="none" stroke-width="4.6"/><circle class="donut__sweep" id="demo-sweep" data-state="calm" cx="12" cy="12" r="8.5" fill="none" stroke-width="4.6" stroke-dasharray="20.3 53.41" transform="rotate(-90 12 12)"/><circle class="donut__dot" id="demo-dot" cx="12" cy="12" r="2.4"/></svg>
+            </button>
+            <span class="tb" aria-hidden="true"><i class="tb__glyph"></i></span>
+            <span class="tb tb--clock" aria-hidden="true" id="demo-clock">14:32</span>
+          </span>
+          <div class="tip" id="demo-tip" role="tooltip">
+            <span>Usage Notch — Claude Code</span>
+            <span><span class="l-tr" lang="tr">5 saatlik limit: %38 (2 sa 14 dk kaldı)</span><span class="l-en" lang="en">5-hour limit: 38% (2h 14m left)</span></span>
+            <span><span class="l-tr" lang="tr">Haftalık limit: %62 (3 gün 4 sa kaldı)</span><span class="l-en" lang="en">Weekly limit: 62% (3d 4h left)</span></span>
+          </div>
+        </div>
+        <div class="anchor" id="demo-anchor">
+          <div class="panel" id="demo-panel" role="dialog" aria-labelledby="demo-title">
+            <div class="hdr">
+              <span class="hdr__title" id="demo-title"><span class="l-tr" lang="tr">Kullanım</span><span class="l-en" lang="en">Usage</span></span>
+              <span class="fresh" aria-hidden="true"><i class="fresh__dot"></i></span>
+              <span class="hdr__spacer"></span>
+              <button type="button" class="iconbtn" id="demo-settings-btn" aria-expanded="false" aria-controls="demo-settings" data-i18n-aria="settings">
+                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.6 5.2H4.9 M9.1 5.2H13.4 M2.6 10.8H7.9 M12.1 10.8H13.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="5.2" r="1.8" stroke="currentColor" stroke-width="1.3"/><circle cx="10" cy="10.8" r="1.8" stroke="currentColor" stroke-width="1.3"/></svg>
+              </button>
+              <button type="button" class="iconbtn iconbtn--pin" id="demo-pin" aria-pressed="false" data-i18n-aria="pinOff">
+                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path class="pin__body" d="M6 1.5h4l-.5 4 2 2.5H4.5l2-2.5-.5-4Z M8 8v6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="iconbtn" id="demo-close" data-i18n-aria="close">
+                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+
+            <!-- list view -->
+            <div class="view view--list" id="demo-list">
+              <p class="u-sr" id="demo-reorder-help"><span class="l-tr" lang="tr">Sırayı değiştirmek için sürükleyin ya da Alt tuşuyla yukarı ve aşağı ok tuşlarını kullanın. Alt ve Home en üste taşır. En üstteki aracın beş saatlik penceresi tepsi simgesine çizilir.</span><span class="l-en" lang="en">Drag to change the order, or hold Alt and use the up and down arrow keys. Alt and Home moves to the top. The five-hour window of the top tool is drawn on the tray icon.</span></p>
+              <ul class="rows" id="demo-rows" aria-label="Araçlar, tepsi sırasına göre" data-i18n-aria="rows">
+                <li class="row" data-id="claude" data-name="Claude Code" data-live="true" data-cost="true"
+                    data-p5="38" data-s5="calm" data-p7="62" data-s7="watch"
+                    data-r5-tr="2 sa 14 dk kaldı" data-r5-en="2h 14m left" data-r7-tr="3 gün 4 sa kaldı" data-r7-en="3d 4h left">
+                  <button type="button" class="grip tile--claude" aria-describedby="demo-reorder-help" aria-label="Claude Code: sırayı değiştir" data-i18n-grip>
+                    <img class="mark" src="assets/logos/claude-color.svg" alt="" width="24" height="24">
+                    <svg class="grip__dots" viewBox="0 0 6 16" aria-hidden="true"><circle cx="1.5" cy="3" r="1.1"/><circle cx="4.5" cy="3" r="1.1"/><circle cx="1.5" cy="8" r="1.1"/><circle cx="4.5" cy="8" r="1.1"/><circle cx="1.5" cy="13" r="1.1"/><circle cx="4.5" cy="13" r="1.1"/></svg>
+                  </button>
+                  <div class="row__body">
+                    <span class="row__name">Claude Code</span>
+                    <div class="meter">
+                      <div class="win" data-state="calm">
+                        <div class="win__head"><span class="win__label"><span class="l-tr" lang="tr">5 saatlik pencere</span><span class="l-en" lang="en">5-hour window</span></span><span class="win__gap"></span><span class="win__pct"><span class="l-tr" lang="tr">%38</span><span class="l-en" lang="en">38%</span></span></div>
+                        <div class="rail"><i class="rail__fill f38"></i></div>
+                        <div class="win__foot"><span class="l-tr" lang="tr">2 sa 14 dk kaldı</span><span class="l-en" lang="en">2h 14m left</span></div>
+                      </div>
+                      <div class="win" data-state="watch">
+                        <div class="win__head"><span class="win__label"><span class="l-tr" lang="tr">Haftalık pencere</span><span class="l-en" lang="en">Weekly window</span></span><span class="win__gap"></span><span class="win__pct"><span class="l-tr" lang="tr">%62</span><span class="l-en" lang="en">62%</span></span></div>
+                        <div class="rail"><i class="rail__fill f62"></i></div>
+                        <div class="win__foot"><span class="l-tr" lang="tr">3 gün 4 sa kaldı</span><span class="l-en" lang="en">3d 4h left</span></div>
+                      </div>
+                    </div>
+                    <div class="row__meta"><span class="l-tr" lang="tr">1,8 Mn token</span><span class="l-en" lang="en">1.8M tokens</span><span class="dot" aria-hidden="true">·</span><span class="l-tr" lang="tr">210 B token/sa</span><span class="l-en" lang="en">210K tokens/h</span></div>
+
+                    <!-- cost block: follows src/renderer/src/components/cost.ts -->
+                    <div class="cost" data-expanded="false">
+                      <button type="button" class="cost__toggle" id="demo-cost-toggle" aria-expanded="false" aria-controls="demo-cost-detail">
+                        <span class="cost__chev" aria-hidden="true"></span>
+                        <span class="cost__summary"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla en az $12,40 tutardı</span><span class="l-en" lang="en">Would have cost at least $12.40 at published API prices</span></span>
+                      </button>
+                      <div class="cost__bar" aria-hidden="true"><i class="cost__seg s41" data-rank="0"></i><i class="cost__seg s35" data-rank="1"></i><i class="cost__seg s19" data-rank="2"></i><i class="cost__seg s05" data-rank="3"></i></div>
+                      <p class="cost__caption"><span class="l-tr" lang="tr">Önbellek okuma %41 · Çıktı %35</span><span class="l-en" lang="en">Cache read 41% · Output 35%</span></p>
+                      <!-- ADR-004 A3: "why" heads the list; open, it adds one lead
+                           sentence and one short muted line under each cause. -->
+                      <div class="cost__cause-block" data-why="false">
+                        <button type="button" class="cost__why" id="demo-why" aria-expanded="false" aria-controls="demo-why-body" aria-describedby="demo-causes">
+                          <span class="cost__chev" aria-hidden="true"></span>
+                          <span class="cost__whytext"><span class="l-tr" lang="tr">Neden en az?</span><span class="l-en" lang="en">Why at least?</span></span>
+                        </button>
+                        <div class="cost__why-body" id="demo-why-body">
+                          <p class="cost__why-lead" hidden><span class="l-tr" lang="tr">Bu yüzden tutar bir alt sınır; gerçek maliyet daha yüksek olabilir.</span><span class="l-en" lang="en">So the amount is a lower bound; the real cost may be higher.</span></p>
+                          <ul class="cost__causes" id="demo-causes">
+                            <li class="cost__group" data-cause="ttl"><span class="cost__cause"><span class="l-tr" lang="tr">Süresi kaydedilmemiş önbellek yazması: 14 kayıt</span><span class="l-en" lang="en">Cache writes without a recorded TTL: 14 records</span></span><span class="cost__caveat" data-caveat="ttl" hidden><span class="l-tr" lang="tr">Yazma süresi kaydedilmemiş; düşük olan 1,25× fiyattan sayıldı (1 saatlik yazma 2×).</span><span class="l-en" lang="en">No write duration recorded; counted at the lower 1.25× rate (1-hour writes cost 2×).</span></span></li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="cost__detail" id="demo-cost-detail" hidden>
+                        <p class="cost__lead"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla en az $12,40</span><span class="l-en" lang="en">At least $12.40 at published API prices</span></p>
+                        <p class="cost__denial"><span class="l-tr" lang="tr">Bu bir fatura değil: abonelik kapsamında bu tutar ödenmiyor. Aynı kullanımın API üzerinden karşılığıdır.</span><span class="l-en" lang="en">This is not a bill: you do not pay this amount under your subscription. It is what the same usage would cost through the API.</span></p>
+                        <div class="cost__table">
+                          <div class="cost__row"><span><span class="l-tr" lang="tr">Önbellek okuma</span><span class="l-en" lang="en">Cache read</span></span><span class="cost__v"><span class="l-tr" lang="tr">$5,10</span><span class="l-en" lang="en">$5.10</span></span><span class="cost__p"><span class="l-tr" lang="tr">%41</span><span class="l-en" lang="en">41%</span></span></div>
+                          <div class="cost__row"><span><span class="l-tr" lang="tr">Çıktı</span><span class="l-en" lang="en">Output</span></span><span class="cost__v"><span class="l-tr" lang="tr">$4,30</span><span class="l-en" lang="en">$4.30</span></span><span class="cost__p"><span class="l-tr" lang="tr">%35</span><span class="l-en" lang="en">35%</span></span></div>
+                          <div class="cost__row"><span><span class="l-tr" lang="tr">Önbellek yazma</span><span class="l-en" lang="en">Cache write</span></span><span class="cost__v"><span class="l-tr" lang="tr">$2,40</span><span class="l-en" lang="en">$2.40</span></span><span class="cost__p"><span class="l-tr" lang="tr">%19</span><span class="l-en" lang="en">19%</span></span></div>
+                          <div class="cost__row"><span><span class="l-tr" lang="tr">Girdi</span><span class="l-en" lang="en">Input</span></span><span class="cost__v"><span class="l-tr" lang="tr">$0,60</span><span class="l-en" lang="en">$0.60</span></span><span class="cost__p"><span class="l-tr" lang="tr">%5</span><span class="l-en" lang="en">5%</span></span></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+
+                <li class="row" data-id="codex" data-name="Codex" data-live="true"
+                    data-p5="12" data-s5="calm" data-p7="27" data-s7="calm"
+                    data-r5-tr="4 sa 1 dk kaldı" data-r5-en="4h 1m left" data-r7-tr="5 gün 9 sa kaldı" data-r7-en="5d 9h left">
+                  <button type="button" class="grip tile--codex" aria-describedby="demo-reorder-help" aria-label="Codex: sırayı değiştir" data-i18n-grip>
+                    <img class="mark" src="assets/logos/codex-color.svg" alt="" width="24" height="24">
+                    <svg class="grip__dots" viewBox="0 0 6 16" aria-hidden="true"><circle cx="1.5" cy="3" r="1.1"/><circle cx="4.5" cy="3" r="1.1"/><circle cx="1.5" cy="8" r="1.1"/><circle cx="4.5" cy="8" r="1.1"/><circle cx="1.5" cy="13" r="1.1"/><circle cx="4.5" cy="13" r="1.1"/></svg>
+                  </button>
+                  <div class="row__body">
+                    <span class="row__name">Codex</span>
+                    <div class="meter">
+                      <div class="win" data-state="calm">
+                        <div class="win__head"><span class="win__label"><span class="l-tr" lang="tr">5 saatlik pencere</span><span class="l-en" lang="en">5-hour window</span></span><span class="win__gap"></span><span class="win__pct"><span class="l-tr" lang="tr">%12</span><span class="l-en" lang="en">12%</span></span></div>
+                        <div class="rail"><i class="rail__fill f12"></i></div>
+                        <div class="win__foot"><span class="l-tr" lang="tr">4 sa 1 dk kaldı</span><span class="l-en" lang="en">4h 1m left</span></div>
+                      </div>
+                      <div class="win" data-state="calm">
+                        <div class="win__head"><span class="win__label"><span class="l-tr" lang="tr">Haftalık pencere</span><span class="l-en" lang="en">Weekly window</span></span><span class="win__gap"></span><span class="win__pct"><span class="l-tr" lang="tr">%27</span><span class="l-en" lang="en">27%</span></span></div>
+                        <div class="rail"><i class="rail__fill f27"></i></div>
+                        <div class="win__foot"><span class="l-tr" lang="tr">5 gün 9 sa kaldı</span><span class="l-en" lang="en">5d 9h left</span></div>
+                      </div>
+                    </div>
+                    <div class="row__meta"><span class="l-tr" lang="tr">640 B token</span><span class="l-en" lang="en">640K tokens</span></div>
+                  </div>
+                </li>
+
+                <li class="row" data-id="antigravity" data-name="Antigravity" data-live="true"
+                    data-p5="45" data-s5="calm" data-p7="" data-s7=""
+                    data-r5-tr="1 sa 50 dk kaldı" data-r5-en="1h 50m left">
+                  <button type="button" class="grip tile--antigravity" aria-describedby="demo-reorder-help" aria-label="Antigravity: sırayı değiştir" data-i18n-grip>
+                    <img class="mark" src="assets/logos/antigravity-color.svg" alt="" width="24" height="24">
+                    <svg class="grip__dots" viewBox="0 0 6 16" aria-hidden="true"><circle cx="1.5" cy="3" r="1.1"/><circle cx="4.5" cy="3" r="1.1"/><circle cx="1.5" cy="8" r="1.1"/><circle cx="4.5" cy="8" r="1.1"/><circle cx="1.5" cy="13" r="1.1"/><circle cx="4.5" cy="13" r="1.1"/></svg>
+                  </button>
+                  <div class="row__body">
+                    <span class="row__name">Antigravity</span>
+                    <div class="meter">
+                      <div class="win" data-state="calm">
+                        <div class="win__head"><span class="win__label"><span class="l-tr" lang="tr">5 saatlik pencere</span><span class="l-en" lang="en">5-hour window</span></span><span class="win__gap"></span><span class="win__pct"><span class="l-tr" lang="tr">%45</span><span class="l-en" lang="en">45%</span></span></div>
+                        <div class="rail"><i class="rail__fill f45"></i></div>
+                        <div class="win__foot"><span class="l-tr" lang="tr">1 sa 50 dk kaldı</span><span class="l-en" lang="en">1h 50m left</span></div>
+                      </div>
+                      <div class="win win--none">
+                        <div class="win__head"><span class="win__label"><span class="l-tr" lang="tr">Haftalık pencere</span><span class="l-en" lang="en">Weekly window</span></span><span class="win__gap"></span><span class="win__none"><span class="l-tr" lang="tr">bildirilmiyor</span><span class="l-en" lang="en">not reported</span></span></div>
+                        <div class="win__foot"><span class="l-tr" lang="tr">Bu araç bu limiti yayımlamıyor</span><span class="l-en" lang="en">This tool does not publish this limit</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+
+                <li class="row row--passive" data-id="gemini" data-name="Gemini" hidden>
+                  <span class="grip grip--static"><img class="mark" src="assets/logos/gemini-color.svg" alt="" width="20" height="20"></span>
+                  <div class="row__body"><span class="row__name">Gemini</span><div class="row__meta"><span class="l-tr" lang="tr">Gemini bu sürümde henüz desteklenmiyor.</span><span class="l-en" lang="en">Gemini is not supported in this version yet.</span></div></div>
+                </li>
+                <li class="row row--passive" data-id="copilot" data-name="GitHub Copilot" hidden>
+                  <span class="grip grip--static"><img class="mark mark--mono" src="assets/logos/github-copilot.svg" alt="" width="20" height="20"></span>
+                  <div class="row__body"><span class="row__name">GitHub Copilot</span><div class="row__meta"><span class="l-tr" lang="tr">GitHub Copilot bu sürümde henüz desteklenmiyor.</span><span class="l-en" lang="en">GitHub Copilot is not supported in this version yet.</span></div></div>
+                </li>
+                <li class="row row--passive" data-id="kimi" data-name="Kimi" hidden>
+                  <span class="grip grip--static"><img class="mark" src="assets/logos/kimi-color.svg" alt="" width="20" height="20"></span>
+                  <div class="row__body"><span class="row__name">Kimi</span><div class="row__meta"><span class="l-tr" lang="tr">Kimi bu sürümde henüz desteklenmiyor.</span><span class="l-en" lang="en">Kimi is not supported in this version yet.</span></div></div>
+                </li>
+              </ul>
+              <div class="empty" id="demo-empty" hidden>
+                <strong><span class="l-tr" lang="tr">Ana panelde hiç araç yok.</span><span class="l-en" lang="en">No tools are on the main panel.</span></strong>
+                <button type="button" class="pbtn" id="demo-empty-open"><span class="l-tr" lang="tr">Ayarları aç</span><span class="l-en" lang="en">Open settings</span></button>
+              </div>
+              <div class="foot">
+                <span id="demo-scan"><span class="l-tr" lang="tr">Son tarama 14:32</span><span class="l-en" lang="en">Last scan 14:32</span></span>
+                <span class="foot__spacer"></span>
+                <span class="foot__mode" id="demo-mode"><span class="l-tr" lang="tr">imleç ayrılınca kapanır</span><span class="l-en" lang="en">closes when the pointer leaves</span></span>
+                <button type="button" class="pbtn" id="demo-refresh" data-i18n-aria="refresh"><span class="l-tr" lang="tr">Yenile</span><span class="l-en" lang="en">Refresh</span></button>
+              </div>
+            </div>
+
+            <!-- settings view -->
+            <div class="view view--settings" id="demo-settings" hidden>
+              <div class="settings__bar">
+                <button type="button" class="iconbtn" id="demo-back" data-i18n-aria="back">
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <span class="settings__title"><span class="l-tr" lang="tr">Ayarlar</span><span class="l-en" lang="en">Settings</span></span>
+              </div>
+              <div class="acc">
+                <div class="acc__section">
+                  <span class="acc__heading"><button type="button" class="acc__trigger" aria-expanded="false" aria-controls="demo-acc-models"><span class="acc__title"><span class="l-tr" lang="tr">Model Yönetimi</span><span class="l-en" lang="en">Model management</span></span><span class="acc__chev" aria-hidden="true"></span></button></span>
+                  <div class="acc__panel" id="demo-acc-models" hidden>
+                    <p class="settings__help"><span class="l-tr" lang="tr">Ana panelde hangi araçların görüneceğini seçin. Kaldırılan araç yalnızca listeden çıkar — bağlantısı kesilmez, hiçbir veri silinmez.</span><span class="l-en" lang="en">Choose which tools appear on the main panel. Removing a tool only takes it off the list — it stays connected and no data is deleted.</span></p>
+                    <ul class="settings__list">
+                      <li class="settings__item" data-for="claude" data-connected="true"><span class="settings__mark tile--claude"><img src="assets/logos/claude-color.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-claude">Claude Code</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="demo-sw-claude"><span class="switch__track" aria-hidden="true"></span></button></li>
+                      <li class="settings__item" data-for="codex" data-connected="true"><span class="settings__mark tile--codex"><img src="assets/logos/codex-color.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-codex">Codex</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="demo-sw-codex"><span class="switch__track" aria-hidden="true"></span></button></li>
+                      <li class="settings__item" data-for="antigravity" data-connected="true"><span class="settings__mark tile--antigravity"><img src="assets/logos/antigravity-color.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-antigravity">Antigravity</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="demo-sw-antigravity"><span class="switch__track" aria-hidden="true"></span></button></li>
+                      <li class="settings__item" data-for="gemini" data-connected="false"><span class="settings__mark"><img src="assets/logos/gemini-color.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-gemini">Gemini</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="demo-sw-gemini"><span class="switch__track" aria-hidden="true"></span></button></li>
+                      <li class="settings__item" data-for="copilot" data-connected="false"><span class="settings__mark"><img class="mark--mono" src="assets/logos/github-copilot.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-copilot">GitHub Copilot</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="demo-sw-copilot"><span class="switch__track" aria-hidden="true"></span></button></li>
+                      <li class="settings__item" data-for="kimi" data-connected="false"><span class="settings__mark"><img src="assets/logos/kimi-color.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-kimi">Kimi</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="demo-sw-kimi"><span class="switch__track" aria-hidden="true"></span></button></li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div class="acc__section">
+                  <span class="acc__heading"><button type="button" class="acc__trigger" aria-expanded="false" aria-controls="demo-acc-usage"><span class="acc__title"><span class="l-tr" lang="tr">Toplam Kullanım</span><span class="l-en" lang="en">Total usage</span></span><span class="acc__chev" aria-hidden="true"></span></button></span>
+                  <div class="acc__panel" id="demo-acc-usage" hidden>
+                    <p class="settings__help"><span class="l-tr" lang="tr">Her dönemdeki kullanımın yayımlanan API fiyatlarıyla ne tutacağı. Bu bir fatura değildir — abonelik kapsamında bu tutar (ABD doları) ödenmez.</span><span class="l-en" lang="en">What each period’s usage would have cost at published API prices. This is not a bill — you do not pay this amount (US dollars) under your subscription.</span></p>
+                    <fieldset class="seg">
+                      <legend class="u-sr"><span class="l-tr" lang="tr">Dönem aralığı</span><span class="l-en" lang="en">Period length</span></legend>
+                      <input class="seg__radio" type="radio" name="demo-grain" id="demo-grain-month" value="month" checked><label class="seg__opt" for="demo-grain-month"><span class="l-tr" lang="tr">Aylık</span><span class="l-en" lang="en">Monthly</span></label>
+                      <input class="seg__radio" type="radio" name="demo-grain" id="demo-grain-week" value="week"><label class="seg__opt" for="demo-grain-week"><span class="l-tr" lang="tr">Haftalık</span><span class="l-en" lang="en">Weekly</span></label>
+                    </fieldset>
+                    <ul class="usage" data-grain="month">
+                      <li class="usage__row" data-floor="true"><span class="usage__range"><span class="l-tr" lang="tr">1 Eylül – 30 Eylül</span><span class="l-en" lang="en">Sep 1 – Sep 30</span></span><span class="usage__amount"><span class="l-tr" lang="tr">en az $31,20</span><span class="l-en" lang="en">at least $31.20</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b53"></i></span>
+                        <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-m1"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">2 model</span><span class="l-en" lang="en">2 models</span></button>
+                        <ul class="usage__models" id="demo-m1" hidden><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">en az $22,00</span><span class="l-en" lang="en">at least $22.00</span></span></li><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$9,20</span><span class="l-en" lang="en">$9.20</span></span></li></ul></li>
+                      <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">1 Ağustos – 31 Ağustos</span><span class="l-en" lang="en">Aug 1 – Aug 31</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$58,90</span><span class="l-en" lang="en">$58.90</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b100"></i></span>
+                        <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-m2"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">2 model</span><span class="l-en" lang="en">2 models</span></button>
+                        <ul class="usage__models" id="demo-m2" hidden><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">$40,20</span><span class="l-en" lang="en">$40.20</span></span></li><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$18,70</span><span class="l-en" lang="en">$18.70</span></span></li></ul></li>
+                      <li class="usage__row" data-unpriced="true"><span class="usage__range"><span class="l-tr" lang="tr">1 Temmuz – 31 Temmuz</span><span class="l-en" lang="en">Jul 1 – Jul 31</span></span><span class="usage__amount"><span class="l-tr" lang="tr">fiyatlanamadı</span><span class="l-en" lang="en">could not be priced</span></span>
+                        <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-m3"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">1 model</span><span class="l-en" lang="en">1 model</span></button>
+                        <ul class="usage__models" id="demo-m3" hidden><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">fiyatlanamadı</span><span class="l-en" lang="en">could not be priced</span></span></li></ul></li>
+                    </ul>
+                    <ul class="usage" data-grain="week" hidden>
+                      <li class="usage__row" data-floor="true"><span class="usage__range"><span class="l-tr" lang="tr">14 Eylül – 20 Eylül</span><span class="l-en" lang="en">Sep 14 – Sep 20</span></span><span class="usage__amount"><span class="l-tr" lang="tr">en az $12,40</span><span class="l-en" lang="en">at least $12.40</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b82"></i></span>
+                        <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-w1"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">1 model</span><span class="l-en" lang="en">1 model</span></button>
+                        <ul class="usage__models" id="demo-w1" hidden><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">en az $12,40</span><span class="l-en" lang="en">at least $12.40</span></span></li></ul></li>
+                      <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">7 Eylül – 13 Eylül</span><span class="l-en" lang="en">Sep 7 – Sep 13</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$15,10</span><span class="l-en" lang="en">$15.10</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b100"></i></span>
+                        <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-w2"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">2 model</span><span class="l-en" lang="en">2 models</span></button>
+                        <ul class="usage__models" id="demo-w2" hidden><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">$9,80</span><span class="l-en" lang="en">$9.80</span></span></li><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$5,30</span><span class="l-en" lang="en">$5.30</span></span></li></ul></li>
+                      <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">31 Ağustos – 6 Eylül</span><span class="l-en" lang="en">Aug 31 – Sep 6</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$9,60</span><span class="l-en" lang="en">$9.60</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b64"></i></span>
+                        <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-w3"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">1 model</span><span class="l-en" lang="en">1 model</span></button>
+                        <ul class="usage__models" id="demo-w3" hidden><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$9,60</span><span class="l-en" lang="en">$9.60</span></span></li></ul></li>
+                    </ul>
+                    <p class="usage__note"><span class="l-tr" lang="tr">“En az” alt sınır demektir: fiyatlanamayan kullanım toplama katılmaz; Claude Code’da TTL ayrımı olmayan önbellek yazmaları 1,25× ile fiyatlandırılır; Codex’te kaydedilmeyen önbellek yazmaları ya da doğrulanamayan katman toplamı eksik bırakır.</span><span class="l-en" lang="en">“At least” means a lower bound: usage that could not be priced is not in the total; for Claude Code, cache writes without a recorded TTL are priced at 1.25×; for Codex, unrecorded cache writes or an unverified tier leave part of the cost out.</span></p>
+                  </div>
+                </div>
+
+                <div class="acc__section">
+                  <span class="acc__heading"><button type="button" class="acc__trigger" aria-expanded="true" aria-controls="demo-acc-look"><span class="acc__title"><span class="l-tr" lang="tr">Görünüm ve dil</span><span class="l-en" lang="en">Appearance and language</span></span><span class="acc__chev" aria-hidden="true"></span></button></span>
+                  <div class="acc__panel" id="demo-acc-look">
+                    <fieldset class="seg">
+                      <legend class="u-sr"><span class="l-tr" lang="tr">Görünüm</span><span class="l-en" lang="en">Appearance</span></legend>
+                      <input class="seg__radio" type="radio" name="demo-theme" id="demo-theme-light" value="light"><label class="seg__opt" for="demo-theme-light"><span class="l-tr" lang="tr">Açık</span><span class="l-en" lang="en">Light</span></label>
+                      <input class="seg__radio" type="radio" name="demo-theme" id="demo-theme-dark" value="dark" checked><label class="seg__opt" for="demo-theme-dark"><span class="l-tr" lang="tr">Koyu</span><span class="l-en" lang="en">Dark</span></label>
+                      <input class="seg__radio" type="radio" name="demo-theme" id="demo-theme-system" value="system"><label class="seg__opt" for="demo-theme-system"><span class="l-tr" lang="tr">Sistem</span><span class="l-en" lang="en">System</span></label>
+                    </fieldset>
+                    <p class="settings__help"><span class="l-tr" lang="tr">Panelin rengi. Sistem seçilirse Windows ayarı izlenir.</span><span class="l-en" lang="en">The panel’s colours. With System, the Windows setting is followed.</span></p>
+                    <fieldset class="seg">
+                      <legend class="u-sr"><span class="l-tr" lang="tr">Dil</span><span class="l-en" lang="en">Language</span></legend>
+                      <input class="seg__radio" type="radio" name="demo-lang" id="demo-lang-tr" value="tr"><label class="seg__opt" for="demo-lang-tr">Türkçe</label>
+                      <input class="seg__radio" type="radio" name="demo-lang" id="demo-lang-en" value="en"><label class="seg__opt" for="demo-lang-en">English</label>
+                      <input class="seg__radio" type="radio" name="demo-lang" id="demo-lang-system" value="system" checked><label class="seg__opt" for="demo-lang-system"><span class="l-tr" lang="tr">Sistem</span><span class="l-en" lang="en">System</span></label>
+                    </fieldset>
+                    <p class="settings__help"><span class="l-tr" lang="tr">Panelin, tepsi simgesinin ve bildirimlerin dili. Sistem seçilirse Windows dili izlenir.</span><span class="l-en" lang="en">The language of the panel, the tray icon and notices. With System, the Windows language is followed.</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <svg class="tail" viewBox="0 0 16 8" width="16" height="8" aria-hidden="true"><path class="tail__fill" d="M0 0h16L8 8z"/><path class="tail__line" d="M0 .5L8 8 16 .5"/></svg>
+        </div>
+        <p class="u-sr" role="status" id="demo-live"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================== THREE MOVES -->
+<section class="moves band" id="how" aria-labelledby="h-how">
+  <!-- Scroll markers: the one crossing the middle of the viewport is the
+       active step. They are anchor targets too, so every step is reachable. -->
+  <span class="smark smark--m1" id="how-1" data-step="1"></span>
+  <span class="smark smark--m2" id="how-2" data-step="2"></span>
+  <span class="smark smark--m3" id="how-3" data-step="3"></span>
+  <div class="moves__pin">
+    <div class="wrap moves__grid">
+      <div class="moves__copy">
+        <div class="appicon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" class="appicon__track" stroke-width="4.2"/><circle cx="12" cy="12" r="8.5" fill="none" class="appicon__sweep" stroke-width="4.2" stroke-dasharray="20.3 53.41" transform="rotate(-90 12 12)"/><circle cx="12" cy="12" r="2.3" class="appicon__dot"/></svg>
+        </div>
+        <h2 class="h2" id="h-how"><span class="h2__a"><span class="l-tr" lang="tr">Üç hamle.</span><span class="l-en" lang="en">Three moves.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Hepsi tepsiden başlar.</span><span class="l-en" lang="en">All from the tray.</span></span></h2>
+        <nav class="steps" aria-label="Adımlar" data-i18n-aria="steps">
+          <a class="steps__a" href="#how-1" data-step="1" aria-current="step"><span class="u-sr"><span class="l-tr" lang="tr">Adım </span><span class="l-en" lang="en">Step </span></span>1</a>
+          <a class="steps__a" href="#how-2" data-step="2"><span class="u-sr"><span class="l-tr" lang="tr">Adım </span><span class="l-en" lang="en">Step </span></span>2</a>
+          <a class="steps__a" href="#how-3" data-step="3"><span class="u-sr"><span class="l-tr" lang="tr">Adım </span><span class="l-en" lang="en">Step </span></span>3</a>
+        </nav>
+      </div>
+
+      <div class="moves__scene">
+        <ol class="stack" id="stack" data-step="1">
+          <li class="card" data-card="1">
+            <div class="card__head"><span class="card__icon" aria-hidden="true"><svg class="ico"><use href="#i-cursor"/></svg></span><h3><span class="l-tr" lang="tr">Tepsiye bak.</span><span class="l-en" lang="en">Look at the tray.</span></h3></div>
+            <p class="card__text"><span class="l-tr" lang="tr">Halka, listedeki ilk aracın 5 saatlik penceresini (yoksa haftalığı) çizer. Üzerine gelince yalnızca ipucu çıkar.</span><span class="l-en" lang="en">The ring draws the first tool’s 5-hour window (or its weekly one). Hovering only shows a tooltip.</span></p>
+            <div class="card__art ui" aria-hidden="true">
+              <div class="mini-tip">
+                <span>Usage Notch — Claude Code</span>
+                <span><span class="l-tr" lang="tr">5 saatlik limit: %38 (2 sa 14 dk kaldı)</span><span class="l-en" lang="en">5-hour limit: 38% (2h 14m left)</span></span>
+                <span><span class="l-tr" lang="tr">Haftalık limit: %62 (3 gün 4 sa kaldı)</span><span class="l-en" lang="en">Weekly limit: 62% (3d 4h left)</span></span>
+              </div>
+              <div class="mini-bar">
+                <span class="mini-bar__chev"></span>
+                <span class="mini-bar__tray"><svg viewBox="0 0 24 24" width="22" height="22"><circle class="donut__track" cx="12" cy="12" r="8.5" fill="none" stroke-width="4.6"/><circle class="donut__sweep" data-state="calm" cx="12" cy="12" r="8.5" fill="none" stroke-width="4.6" stroke-dasharray="20.3 53.41" transform="rotate(-90 12 12)"/><circle class="donut__dot donut__dot--claude" cx="12" cy="12" r="2.4"/></svg></span>
+                <i class="tb__glyph"></i><span class="mini-bar__clock">14:32</span>
+              </div>
+            </div>
+          </li>
+          <li class="card" data-card="2">
+            <div class="card__head"><span class="card__icon" aria-hidden="true"><svg class="ico"><use href="#i-panel"/></svg></span><h3><span class="l-tr" lang="tr">Tıkla, panel açılsın.</span><span class="l-en" lang="en">Click to open the panel.</span></h3></div>
+            <p class="card__text"><span class="l-tr" lang="tr">5 saatlik ve haftalık pencere ayrı ölçümlerdir; her biri kendi yüzdesi ve sıfırlanmasıyla.</span><span class="l-en" lang="en">The 5-hour and weekly windows are separate measurements, each with its own percentage and reset.</span></p>
+            <div class="card__art ui" aria-hidden="true">
+              <div class="mini-row">
+                <span class="grip tile--claude"><img class="mark" src="assets/logos/claude-color.svg" alt="" width="22" height="22"></span>
+                <div class="meter meter--pair">
+                  <div class="win" data-state="calm"><div class="win__head"><span class="win__label"><span class="l-tr" lang="tr">5 saatlik pencere</span><span class="l-en" lang="en">5-hour window</span></span><span class="win__gap"></span><span class="win__pct"><span class="l-tr" lang="tr">%38</span><span class="l-en" lang="en">38%</span></span></div><div class="rail"><i class="rail__fill f38"></i></div><div class="win__foot"><span class="l-tr" lang="tr">2 sa 14 dk kaldı</span><span class="l-en" lang="en">2h 14m left</span></div></div>
+                  <div class="win" data-state="watch"><div class="win__head"><span class="win__label"><span class="l-tr" lang="tr">Haftalık pencere</span><span class="l-en" lang="en">Weekly window</span></span><span class="win__gap"></span><span class="win__pct"><span class="l-tr" lang="tr">%62</span><span class="l-en" lang="en">62%</span></span></div><div class="rail"><i class="rail__fill f62"></i></div><div class="win__foot"><span class="l-tr" lang="tr">3 gün 4 sa kaldı</span><span class="l-en" lang="en">3d 4h left</span></div></div>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="card" data-card="3">
+            <div class="card__head"><span class="card__icon" aria-hidden="true"><svg class="ico"><use href="#i-coin"/></svg></span><h3><span class="l-tr" lang="tr">Maliyeti aç.</span><span class="l-en" lang="en">Open the cost.</span></h3></div>
+            <p class="card__text"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla karşılığı, fatura değil. “En az” yazıyorsa nedeni hemen altında.</span><span class="l-en" lang="en">What it would cost at published API prices, not a bill. If it says “at least”, the reason is right below.</span></p>
+            <div class="card__art ui" aria-hidden="true">
+              <div class="mini-cost">
+                <p class="mini-cost__sum"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla <b>en az $12,40</b> tutardı</span><span class="l-en" lang="en">Would have cost <b>at least $12.40</b> at published API prices</span></p>
+                <p class="mini-cost__why"><span class="cost__chev cost__chev--open"></span><span class="l-tr" lang="tr">Neden en az?</span><span class="l-en" lang="en">Why at least?</span></p>
+                <p class="cost__why-lead"><span class="l-tr" lang="tr">Bu yüzden tutar bir alt sınır; gerçek maliyet daha yüksek olabilir.</span><span class="l-en" lang="en">So the amount is a lower bound; the real cost may be higher.</span></p>
+                <p class="cost__group"><span class="cost__cause"><span class="l-tr" lang="tr">Süresi kaydedilmemiş önbellek yazması: 14 kayıt</span><span class="l-en" lang="en">Cache writes without a recorded TTL: 14 records</span></span><span class="cost__caveat"><span class="l-tr" lang="tr">Yazma süresi kaydedilmemiş; düşük olan 1,25× fiyattan sayıldı (1 saatlik yazma 2×).</span><span class="l-en" lang="en">No write duration recorded; counted at the lower 1.25× rate (1-hour writes cost 2×).</span></span></p>
+</div>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================== DETAILS WHEEL -->
+<section class="wheel" id="details" aria-labelledby="h-details">
+  <span class="smark smark--w1" id="d-1" data-item="1"></span>
+  <span class="smark smark--w2" id="d-2" data-item="2"></span>
+  <span class="smark smark--w3" id="d-3" data-item="3"></span>
+  <span class="smark smark--w4" id="d-4" data-item="4"></span>
+  <span class="smark smark--w5" id="d-5" data-item="5"></span>
+  <div class="wheel__pin">
+    <div class="wrap wheel__in">
+      <h2 class="h2" id="h-details"><span class="h2__a"><span class="l-tr" lang="tr">Küçük bir uygulama.</span><span class="l-en" lang="en">A small app.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Ayrıntıları dürüst.</span><span class="l-en" lang="en">Honest in the details.</span></span></h2>
+      <div class="wheel__grid">
+        <div class="wheel__col">
+          <span class="wheel__rail" aria-hidden="true"><i></i></span>
+          <div class="wheel__view">
+            <ol class="wheel__list" id="wheel" data-active="1">
+              <li class="wheel__item" data-i="1" data-d="0">
+                <a class="wheel__link" href="#d-1"><span class="wheel__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Bilmediğini göstermez</span><span class="l-en" lang="en">It never guesses</span></a>
+                <p class="wheel__line"><span class="l-tr" lang="tr">Güvenilir bir limit yoksa ne yüzde ne çubuk çizer; “bildirilmiyor” yazar. Yerel token sayısından yüzde üretmez.</span><span class="l-en" lang="en">Without a trustworthy limit it draws no percentage and no bar; it says “not reported”. It never turns local token counts into a percentage.</span></p>
+              </li>
+              <li class="wheel__item" data-i="2" data-d="1">
+                <a class="wheel__link" href="#d-2"><span class="wheel__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Veri bilgisayarında kalır</span><span class="l-en" lang="en">Data stays on your PC</span></a>
+                <p class="wheel__line"><span class="l-tr" lang="tr">Araçların yerel dosyalarından yalnızca ölçüm alanlarını alır ve çalışırken ağa çıkmaz. Tek istisna: onayınla bir kez indirilen Antigravity CLI.</span><span class="l-en" lang="en">It takes only measurement fields from the tools’ local files and does not go online while it runs. The one exception: the Antigravity CLI, downloaded once with your consent.</span></p>
+              </li>
+              <li class="wheel__item" data-i="3" data-d="2">
+                <a class="wheel__link" href="#d-3"><span class="wheel__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Maliyet, fatura değil</span><span class="l-en" lang="en">Cost, not a bill</span></a>
+                <p class="wheel__line"><span class="l-tr" lang="tr">Claude Code ve Codex kullanımının yayımlanan API fiyatlarıyla karşılığı, model ve katmana göre. Fiyatlanamayan kısım toplama girmez.</span><span class="l-en" lang="en">What Claude Code and Codex usage would cost at published API prices, by model and tier. Anything that cannot be priced stays out of the total.</span></p>
+              </li>
+              <li class="wheel__item" data-i="4" data-d="3">
+                <a class="wheel__link" href="#d-4"><span class="wheel__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Toplam Kullanım</span><span class="l-en" lang="en">Total usage</span></a>
+                <p class="wheel__line"><span class="l-tr" lang="tr">Ayarlar’da haftalık ve aylık geçmiş, modele göre dağılımıyla.</span><span class="l-en" lang="en">Weekly and monthly history in Settings, broken down by model.</span></p>
+              </li>
+              <li class="wheel__item" data-i="5" data-d="4">
+                <a class="wheel__link" href="#d-5"><span class="wheel__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Tema ve dil</span><span class="l-en" lang="en">Theme and language</span></a>
+                <p class="wheel__line"><span class="l-tr" lang="tr">Açık, koyu ya da Windows’a uyar. Türkçe ya da İngilizce.</span><span class="l-en" lang="en">Light, dark or follow Windows. Turkish or English.</span></p>
+              </li>
+            </ol>
+          </div>
+          <div class="wheel__desc" id="wheel-desc" aria-hidden="true"></div>
+        </div>
+
+        <div class="wheel__art" aria-hidden="true">
+          <!-- 1: unknown stays blank -->
+          <div class="art ui" data-i="1">
+            <div class="art__card">
+              <div class="mini-row">
+                <span class="grip tile--antigravity"><img class="mark" src="assets/logos/antigravity-color.svg" alt="" width="22" height="22"></span>
+                <div class="meter meter--pair">
+                  <div class="win" data-state="calm"><div class="win__head"><span class="win__label"><span class="l-tr" lang="tr">5 saatlik pencere</span><span class="l-en" lang="en">5-hour window</span></span><span class="win__gap"></span><span class="win__pct"><span class="l-tr" lang="tr">%45</span><span class="l-en" lang="en">45%</span></span></div><div class="rail"><i class="rail__fill f45"></i></div><div class="win__foot"><span class="l-tr" lang="tr">1 sa 50 dk kaldı</span><span class="l-en" lang="en">1h 50m left</span></div></div>
+                  <div class="win win--none win--focus"><div class="win__head"><span class="win__label"><span class="l-tr" lang="tr">Haftalık pencere</span><span class="l-en" lang="en">Weekly window</span></span><span class="win__gap"></span><span class="win__none"><span class="l-tr" lang="tr">bildirilmiyor</span><span class="l-en" lang="en">not reported</span></span></div><div class="win__foot"><span class="l-tr" lang="tr">Bu araç bu limiti yayımlamıyor</span><span class="l-en" lang="en">This tool does not publish this limit</span></div></div>
+                </div>
+              </div>
+            </div>
+            <p class="art__eq"><span>tokens</span><span class="art__op">÷</span><span class="art__q">?</span><span class="art__op">=</span><span class="art__q">?</span></p>
+          </div>
+          <!-- 2: local only -->
+          <div class="art ui" data-i="2">
+            <div class="flow">
+              <div class="flow__src">
+                <span class="fchip"><img src="assets/logos/claude-color.svg" alt="" width="16" height="16"><span class="l-tr" lang="tr">Claude Code transkriptleri</span><span class="l-en" lang="en">Claude Code transcripts</span></span>
+                <span class="fchip"><img src="assets/logos/codex-color.svg" alt="" width="16" height="16"><span class="l-tr" lang="tr">Codex oturum kayıtları</span><span class="l-en" lang="en">Codex session logs</span></span>
+                <span class="fchip"><img src="assets/logos/antigravity-color.svg" alt="" width="16" height="16"><span class="l-tr" lang="tr">Antigravity yerel deposu</span><span class="l-en" lang="en">Antigravity local store</span></span>
+              </div>
+              <span class="flow__line"></span>
+              <span class="flow__app"><img src="assets/icon.svg" alt="" width="28" height="28"><span>Usage Notch</span></span>
+              <div class="flow__no">
+                <span class="fchip fchip--no">auth.json</span>
+                <span class="fchip fchip--no"><span class="l-tr" lang="tr">sohbet metni</span><span class="l-en" lang="en">chat text</span></span>
+                <span class="fchip fchip--no"><span class="l-tr" lang="tr">internet</span><span class="l-en" lang="en">internet</span></span>
+              </div>
+            </div>
+          </div>
+          <!-- 3: cost, not a bill -->
+          <div class="art ui" data-i="3">
+            <div class="art__card art__card--pad">
+              <p class="cost__lead"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla en az $12,40</span><span class="l-en" lang="en">At least $12.40 at published API prices</span></p>
+              <p class="cost__denial"><span class="l-tr" lang="tr">Bu bir fatura değil: abonelik kapsamında bu tutar ödenmiyor.</span><span class="l-en" lang="en">This is not a bill: you do not pay this amount under your subscription.</span></p>
+              <div class="cost__table">
+                <div class="cost__row"><span><span class="l-tr" lang="tr">Önbellek okuma</span><span class="l-en" lang="en">Cache read</span></span><span class="cost__v"><span class="l-tr" lang="tr">$5,10</span><span class="l-en" lang="en">$5.10</span></span><span class="cost__p"><span class="l-tr" lang="tr">%41</span><span class="l-en" lang="en">41%</span></span></div>
+                <div class="cost__row"><span><span class="l-tr" lang="tr">Çıktı</span><span class="l-en" lang="en">Output</span></span><span class="cost__v"><span class="l-tr" lang="tr">$4,30</span><span class="l-en" lang="en">$4.30</span></span><span class="cost__p"><span class="l-tr" lang="tr">%35</span><span class="l-en" lang="en">35%</span></span></div>
+                <div class="cost__row"><span><span class="l-tr" lang="tr">Önbellek yazma</span><span class="l-en" lang="en">Cache write</span></span><span class="cost__v"><span class="l-tr" lang="tr">$2,40</span><span class="l-en" lang="en">$2.40</span></span><span class="cost__p"><span class="l-tr" lang="tr">%19</span><span class="l-en" lang="en">19%</span></span></div>
+                <div class="cost__row"><span><span class="l-tr" lang="tr">Girdi</span><span class="l-en" lang="en">Input</span></span><span class="cost__v"><span class="l-tr" lang="tr">$0,60</span><span class="l-en" lang="en">$0.60</span></span><span class="cost__p"><span class="l-tr" lang="tr">%5</span><span class="l-en" lang="en">5%</span></span></div>
+              </div>
+            </div>
+          </div>
+          <!-- 4: total usage -->
+          <div class="art ui" data-i="4">
+            <div class="art__card art__card--pad">
+              <p class="art__title"><span class="l-tr" lang="tr">Toplam Kullanım</span><span class="l-en" lang="en">Total usage</span></p>
+              <div class="seg seg--static"><span class="seg__opt is-on"><span class="l-tr" lang="tr">Aylık</span><span class="l-en" lang="en">Monthly</span></span><span class="seg__opt"><span class="l-tr" lang="tr">Haftalık</span><span class="l-en" lang="en">Weekly</span></span></div>
+              <ul class="usage usage--art">
+                <li class="usage__row" data-floor="true"><span class="usage__range"><span class="l-tr" lang="tr">1 Eylül – 30 Eylül</span><span class="l-en" lang="en">Sep 1 – Sep 30</span></span><span class="usage__amount"><span class="l-tr" lang="tr">en az $31,20</span><span class="l-en" lang="en">at least $31.20</span></span><span class="usage__bar"><i class="usage__fill b53"></i></span>
+                  <ul class="usage__models"><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">en az $22,00</span><span class="l-en" lang="en">at least $22.00</span></span></li><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$9,20</span><span class="l-en" lang="en">$9.20</span></span></li></ul></li>
+                <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">1 Ağustos – 31 Ağustos</span><span class="l-en" lang="en">Aug 1 – Aug 31</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$58,90</span><span class="l-en" lang="en">$58.90</span></span><span class="usage__bar"><i class="usage__fill b100"></i></span></li>
+                <li class="usage__row" data-unpriced="true"><span class="usage__range"><span class="l-tr" lang="tr">1 Temmuz – 31 Temmuz</span><span class="l-en" lang="en">Jul 1 – Jul 31</span></span><span class="usage__amount"><span class="l-tr" lang="tr">fiyatlanamadı</span><span class="l-en" lang="en">could not be priced</span></span></li>
+              </ul>
+            </div>
+          </div>
+          <!-- 5: theme and language -->
+          <div class="art" data-i="5">
+            <div class="themes">
+              <div class="ui themes__p themes__p--light" data-theme="light" lang="tr">
+                <div class="themes__hdr">Kullanım<i class="fresh__dot"></i></div>
+                <div class="win" data-state="watch"><div class="win__head"><span class="win__label">Haftalık pencere</span><span class="win__gap"></span><span class="win__pct">%62</span></div><div class="rail"><i class="rail__fill f62"></i></div></div>
+                <div class="seg seg--static"><span class="seg__opt is-on">Açık</span><span class="seg__opt">Koyu</span><span class="seg__opt">Sistem</span></div>
+                <div class="seg seg--static"><span class="seg__opt is-on">Türkçe</span><span class="seg__opt">English</span><span class="seg__opt">Sistem</span></div>
+              </div>
+              <div class="ui themes__p themes__p--dark" data-theme="dark" lang="en">
+                <div class="themes__hdr">Usage<i class="fresh__dot"></i></div>
+                <div class="win" data-state="watch"><div class="win__head"><span class="win__label">Weekly window</span><span class="win__gap"></span><span class="win__pct">62%</span></div><div class="rail"><i class="rail__fill f62"></i></div></div>
+                <div class="seg seg--static"><span class="seg__opt">Light</span><span class="seg__opt is-on">Dark</span><span class="seg__opt">System</span></div>
+                <div class="seg seg--static"><span class="seg__opt">Türkçe</span><span class="seg__opt is-on">English</span><span class="seg__opt">System</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================= TOOLS -->
+<section class="sec band" id="tools" aria-labelledby="h-tools">
+  <div class="wrap">
+    <h2 class="h2 rise" id="h-tools"><span class="h2__a"><span class="l-tr" lang="tr">Bugün üç araç.</span><span class="l-en" lang="en">Three tools today.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Gerisi bu sürümde yok.</span><span class="l-en" lang="en">The rest are not in this version.</span></span></h2>
+    <ul class="tools">
+      <li class="tool rise">
+        <span class="tool__tile tile--claude"><img src="assets/logos/claude-color.svg" alt="" width="22" height="22"></span>
+        <h3 class="tool__name">Claude Code</h3>
+        <span class="status status--on"><span class="status__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Destekleniyor</span><span class="l-en" lang="en">Supported</span></span>
+        <p class="tool__need"><span class="l-tr" lang="tr">Onayınla kurulan durum satırı köprüsü; token ve maliyet transkriptlerden.</span><span class="l-en" lang="en">A status line bridge you approve; tokens and cost from transcripts.</span></p>
+      </li>
+      <li class="tool rise">
+        <span class="tool__tile tile--codex"><img src="assets/logos/codex-color.svg" alt="" width="22" height="22"></span>
+        <h3 class="tool__name">Codex</h3>
+        <span class="status status--on"><span class="status__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Destekleniyor</span><span class="l-en" lang="en">Supported</span></span>
+        <p class="tool__need"><span class="l-tr" lang="tr">Kendi oturum kayıtlarından; kurulacak bir şey yok.</span><span class="l-en" lang="en">From its own session logs; nothing to install.</span></p>
+      </li>
+      <li class="tool rise">
+        <span class="tool__tile tile--antigravity"><img src="assets/logos/antigravity-color.svg" alt="" width="22" height="22"></span>
+        <h3 class="tool__name">Antigravity</h3>
+        <span class="status status--on"><span class="status__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Destekleniyor</span><span class="l-en" lang="en">Supported</span></span>
+        <p class="tool__need"><span class="l-tr" lang="tr">5 saatlik IDE deposundan (belgelenmemiş); haftalık isteğe bağlı CLI köprüsünden.</span><span class="l-en" lang="en">5-hour from the IDE store (undocumented); weekly from an optional CLI bridge.</span></p>
+      </li>
+      <li class="tool tool--off rise">
+        <span class="tool__tile"><img src="assets/logos/gemini-color.svg" alt="" width="22" height="22"></span>
+        <h3 class="tool__name">Gemini</h3>
+        <span class="status"><span class="l-tr" lang="tr">Bu sürümde yok</span><span class="l-en" lang="en">Not in this version</span></span>
+      </li>
+      <li class="tool tool--off rise">
+        <span class="tool__tile"><img class="mark--mono" src="assets/logos/github-copilot.svg" alt="" width="22" height="22"></span>
+        <h3 class="tool__name">GitHub Copilot</h3>
+        <span class="status"><span class="l-tr" lang="tr">Bu sürümde yok</span><span class="l-en" lang="en">Not in this version</span></span>
+      </li>
+      <li class="tool tool--off rise">
+        <span class="tool__tile"><img src="assets/logos/kimi-color.svg" alt="" width="22" height="22"></span>
+        <h3 class="tool__name">Kimi</h3>
+        <span class="status"><span class="l-tr" lang="tr">Bu sürümde yok</span><span class="l-en" lang="en">Not in this version</span></span>
+      </li>
+    </ul>
+    <p class="fine rise"><span class="l-tr" lang="tr">Ürün ve şirket adları yalnızca uyumluluğu belirtmek için kullanılır; Usage Notch’un bu ürünlerin sahipleriyle resmî bir bağı yoktur ve onlar tarafından onaylanmamıştır.</span><span class="l-en" lang="en">Product and company names are used only to state compatibility; Usage Notch has no official affiliation with, or endorsement from, the owners of these products.</span></p>
+  </div>
+</section>
+
+<!-- =========================================================== INSTALL -->
+<section class="sec" id="install" aria-labelledby="h-install">
+  <div class="wrap">
+    <div class="sec__head rise">
+      <h2 class="h2" id="h-install"><span class="h2__a"><span class="l-tr" lang="tr">Kurmadan önce.</span><span class="l-en" lang="en">Before you install.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Ne göreceğini bil.</span><span class="l-en" lang="en">Know what you will see.</span></span></h2>
+      <p class="lede"><span class="l-tr" lang="tr">Kullanıcı başına kurulur, yönetici izni istemez. Yükleyici kod imzalı değil.</span><span class="l-en" lang="en">It installs per user and asks for no administrator rights. The installer is not code-signed.</span></p>
+    </div>
+
+    <div class="install rise">
+      <ol class="isteps">
+        <li class="istep">
+          <span class="istep__n" aria-hidden="true">1</span>
+          <div><h3><span class="l-tr" lang="tr">SmartScreen uyarabilir</span><span class="l-en" lang="en">SmartScreen may warn</span></h3>
+          <p><span class="l-tr" lang="tr">Yayımcı “bilinmeyen” görünür ve dosya adı bir şey kanıtlamaz. Asıl kontrol SHA-256 özetidir; bir sürüm yayımlandığında burada görünür.</span><span class="l-en" lang="en">The publisher shows as unknown, and a file name proves nothing. The real check is the SHA-256 hash; it appears here once a release is published.</span></p></div>
+        </li>
+        <li class="istep">
+          <span class="istep__n" aria-hidden="true">2</span>
+          <div><h3><span class="l-tr" lang="tr">Çalıştırmak senin kararın</span><span class="l-en" lang="en">Running it is your decision</span></h3>
+          <p><span class="l-tr" lang="tr">“Daha fazla bilgi”, ardından “Yine de çalıştır”. Bu bir güvence değil; emin değilsen çalıştırma.</span><span class="l-en" lang="en">“More info”, then “Run anyway”. This is not a reassurance; if you are not sure, do not run it.</span></p></div>
+        </li>
+        <li class="istep">
+          <span class="istep__n" aria-hidden="true">3</span>
+          <div><h3><span class="l-tr" lang="tr">Simgeyi dışarı al</span><span class="l-en" lang="en">Bring the icon out</span></h3>
+          <p><span class="l-tr" lang="tr">Gizli simgelerden görev çubuğuna sürükle. Windows açılışında başlatmak için simgeye sağ tıkla.</span><span class="l-en" lang="en">Drag it from the hidden icons onto the taskbar. To start it with Windows, right-click the icon.</span></p></div>
+        </li>
+      </ol>
+
+      <div class="get">
+        <div class="get__app">
+          <span class="get__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" class="appicon__track" stroke-width="4.2"/><circle cx="12" cy="12" r="8.5" fill="none" class="appicon__sweep" stroke-width="4.2" stroke-dasharray="20.3 53.41" transform="rotate(-90 12 12)"/><circle cx="12" cy="12" r="2.3" class="appicon__dot"/></svg></span>
+          <span class="get__name">Usage Notch</span>
+          <ul class="get__facts">
+            <li class="chip"><span class="l-tr" lang="tr">Kullanıcı başına</span><span class="l-en" lang="en">Per user</span></li>
+            <li class="chip"><span class="l-tr" lang="tr">Yönetici izni yok</span><span class="l-en" lang="en">No admin rights</span></li>
+            <li class="chip"><span class="l-tr" lang="tr">İmzasız yükleyici</span><span class="l-en" lang="en">Unsigned installer</span></li>
+          </ul>
+        </div>
+        <a class="btn btn--glow btn--wide" href="https://github.com/sameddartilmak/ai-usage-monitor/releases" rel="noreferrer"><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">GitHub Releases</span><span class="l-en" lang="en">GitHub Releases</span></a>
+        <p class="get__note"><span class="l-tr" lang="tr">İndirme başlatmaz; yayımlanan sürümlerin sayfasını açar. Uygulama kendini güncellemez.</span><span class="l-en" lang="en">Does not start a download; it opens the page of published releases. The app does not update itself.</span></p>
+
+        <!-- ================================================================
+             RELEASE CONFIG — fill these in when a real release exists.
+             Every value is optional. site.js renders a row only for a
+             non-empty value, and renders nothing at all while every value is
+             empty. Never put a guessed or placeholder value here.
+               version   e.g. the tag shown on the Releases page
+               fileName  the installer's exact file name
+               size      human-readable size, as shown on the Releases page
+               sha256    64 hex characters
+             This block is data, not script: CSP does not execute it.
+             ================================================================ -->
+        <script type="application/json" id="release-config">
+        {
+          "version": "",
+          "fileName": "",
+          "size": "",
+          "sha256": ""
+        }
+        </script>
+        <dl class="meta" id="release-meta" hidden></dl>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============================================================== FAQ -->
+<section class="sec band" id="faq" aria-labelledby="h-faq">
+  <div class="wrap faq">
+    <h2 class="h2 rise" id="h-faq"><span class="h2__a"><span class="l-tr" lang="tr">Sorular.</span><span class="l-en" lang="en">Questions.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Kısa cevaplar.</span><span class="l-en" lang="en">Short answers.</span></span></h2>
+    <div class="qa rise">
+      <details class="q">
+        <summary><span class="l-tr" lang="tr">Yüzdeyi nereden alıyor?</span><span class="l-en" lang="en">Where does the percentage come from?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p><span class="l-tr" lang="tr">Aracın kendisinden. Claude Code’un durum satırı ve Codex’in oturum kayıtları sunucunun hesapladığı oranı taşır. Antigravity’nin 5 saatlik oranı IDE’nin yerel deposundan, belgelenmemiş bir biçimden okunur. Yerel token sayısından yüzde üretilmez.</span><span class="l-en" lang="en">From the tool itself. Claude Code’s status line and Codex’s session logs carry the server-computed figure. Antigravity’s 5-hour figure is read from the IDE’s local store, an undocumented format. No percentage is made from local token counts.</span></p>
+      </details>
+      <details class="q">
+        <summary><span class="l-tr" lang="tr">Maliyet bir fatura mı?</span><span class="l-en" lang="en">Is the cost a bill?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p><span class="l-tr" lang="tr">Hayır. Aboneliğindeki kullanımın yayımlanan API fiyatlarıyla ne tutacağıdır. Bir kısmı fiyatlanamazsa tutar “en az” olarak yazılır ve nedeni hemen altında durur.</span><span class="l-en" lang="en">No. It is what your subscription usage would cost at published API prices. If part of it cannot be priced, the amount reads “at least”, with the reason right below.</span></p>
+      </details>
+      <details class="q">
+        <summary><span class="l-tr" lang="tr">İnternete bağlanıyor mu?</span><span class="l-en" lang="en">Does it go online?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p><span class="l-tr" lang="tr">Çalışırken hayır: telemetri, çökme raporu ya da güncelleme denetimi yok. Tek istisna: Antigravity satırında Bağla’ya bastığında Antigravity CLI kurulu değilse, onayınla antigravity.google’dan bir kez indirilir.</span><span class="l-en" lang="en">Not while it runs: no telemetry, crash reports or update checks. The one exception: if you press Connect on the Antigravity row and the Antigravity CLI is missing, it is downloaded once from antigravity.google, with your consent.</span></p>
+      </details>
+      <details class="q">
+        <summary><span class="l-tr" lang="tr">Neyi okuyor?</span><span class="l-en" lang="en">What does it read?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p><span class="l-tr" lang="tr">Araçların yerel kayıtlarından yalnızca ölçüm alanlarını alır: yüzdeler, sıfırlanma zamanları, token sayıları, model adları. Sohbet metni saklanmaz ve günlüğe yazılmaz; Claude’un kimlik dosyası ve Codex’in auth.json’ı hiç açılmaz.</span><span class="l-en" lang="en">From the tools’ local records it takes only measurement fields: percentages, reset times, token counts, model names. Chat text is never stored or logged; Claude’s credentials file and Codex’s auth.json are never opened.</span></p>
+      </details>
+      <details class="q">
+        <summary><span class="l-tr" lang="tr">Kendini güncelliyor mu?</span><span class="l-en" lang="en">Does it update itself?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p><span class="l-tr" lang="tr">Hayır, otomatik güncelleme yok. Yeni bir sürümü GitHub Releases sayfasından kendin kurarsın.</span><span class="l-en" lang="en">No, there is no automatic update. You install a new version yourself from the GitHub Releases page.</span></p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- =========================================================== CLOSING -->
+<section class="closing" aria-labelledby="h-close">
+  <div class="closing__glow" aria-hidden="true"></div>
+  <div class="wrap closing__in rise">
+    <h2 class="closing__title" id="h-close"><span class="h2__a"><span class="l-tr" lang="tr">Tepsiye bir bakış.</span><span class="l-en" lang="en">One glance at the tray.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Gerisi panelde.</span><span class="l-en" lang="en">The rest is in the panel.</span></span></h2>
+    <div class="cta">
+      <a class="btn btn--glow" href="https://github.com/sameddartilmak/ai-usage-monitor/releases" rel="noreferrer"><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">GitHub Releases</span><span class="l-en" lang="en">GitHub Releases</span></a>
+      <a class="btn btn--ghost" href="#install"><span class="l-tr" lang="tr">Kurulum notları</span><span class="l-en" lang="en">Install notes</span></a>
+    </div>
+    <ul class="chips">
+      <li class="chip"><svg class="ico" aria-hidden="true"><use href="#i-user"/></svg><span class="l-tr" lang="tr">Yönetici izni gerekmez</span><span class="l-en" lang="en">No admin rights needed</span></li>
+      <li class="chip"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span class="l-tr" lang="tr">Veri bilgisayarında kalır</span><span class="l-en" lang="en">Data stays on your PC</span></li>
+      <li class="chip"><svg class="ico" aria-hidden="true"><use href="#i-lang"/></svg><span>Türkçe · English</span></li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot-site">
+  <div class="wrap foot-site__in">
+    <span class="foot-site__brand"><img src="assets/icon.svg" alt="" width="20" height="20"><span>Usage Notch</span></span>
+    <p><span class="l-tr" lang="tr">Bu sayfa çerez kullanmaz ve dışarıya hiçbir istek göndermez.</span><span class="l-en" lang="en">This page sets no cookies and sends no outside requests.</span></p>
+    <ul class="foot-site__links">
+      <li><a href="https://github.com/sameddartilmak/ai-usage-monitor" rel="noreferrer"><span class="l-tr" lang="tr">GitHub deposu</span><span class="l-en" lang="en">GitHub repository</span></a></li>
+      <li><a href="assets/fonts/Inter-OFL.txt"><span class="l-tr" lang="tr">Inter lisansı</span><span class="l-en" lang="en">Inter licence</span></a></li>
+      <li><a href="assets/fonts/JetBrainsMono-OFL.txt"><span class="l-tr" lang="tr">JetBrains Mono lisansı</span><span class="l-en" lang="en">JetBrains Mono licence</span></a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

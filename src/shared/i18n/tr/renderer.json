@@ -146,26 +146,13 @@
   "cost.window.quotaWeek": "Bu kota haftası",
   "cost.window.quotaWeekRange": "{range} kota haftası",
   "cost.window.ongoing": "{base} · sürüyor",
-  "cost.caveat.allUnpriced": "Bu haftaki kullanımın tamamı fiyat listesinde bulunamadı, bu yüzden bir tutar gösterilmiyor. Kullanılan modeller:",
-  "cost.caveat.someUnpriced": "Bu kullanımın bir bölümü fiyat listesinde bulunamadı ve toplama katılmadı:",
-  "cost.caveat.ttlScope": "{written} / {count} önbellek yazma kaydında ({share})",
-  "cost.caveat.ttlScopeCount": { "other": "{count} önbellek yazma kaydında" },
-  "cost.caveat.ttl": "{scope} TTL ayrımı yoktu. Hepsi {low} ile fiyatlandırıldı; 1 saatlik yazmalar gerçekte {high} olduğu için toplam bir alt sınır.",
-  "cost.caveat.unrecordedWrites": {
-    "one": "{count} kayıtta, önbellek yazmasını ücretlendiren bir modelde önbellek yazması 0 kaydedilmiş; oysa bu kayıt önbellekten okumuş ya da önbelleğe alınabilecek uzunlukta (1.024+ token) istem göndermiş. Bu yüzden toplam bir alt sınır.",
-    "other": "{count} kayıtta, önbellek yazmasını ücretlendiren bir modelde önbellek yazması 0 kaydedilmiş; oysa bu kayıtlar önbellekten okumuş ya da önbelleğe alınabilecek uzunlukta (1.024+ token) istem göndermiş. Bu yüzden toplam bir alt sınır."
-  },
-  "cost.caveat.degraded": "Bu araca ait bazı yerel kayıtlar okunamadı. Tutar yalnızca okunabilen kayıtları kapsıyor, bu yüzden bir alt sınır.",
+  "cost.caveat.ttl": "Yazma süresi kaydedilmemiş; düşük olan {low} fiyattan sayıldı (1 saatlik yazma {high}).",
+  "cost.caveat.unrecordedWrites": "Codex bu yazmaları kaydetmedi; bu modelde ücretli oldukları hâlde toplamda yoklar.",
+  "cost.caveat.degraded": "Bazı yerel kayıtlar okunamadı; tutar yalnızca okunanları kapsıyor.",
   "cost.caveat.degradedNoFigure": "Bu araca ait bazı yerel kayıtlar okunamadı, bu yüzden bir tutar verilemiyor.",
-  "cost.caveat.assumedTier": {
-    "one": "{count} kayıtta Codex hizmet katmanını henüz kaydetmemişti. Codex’in gönderebileceği en ucuz katman Standart olduğu için bu kayıt Standart fiyattan hesaplandı; tutar bir alt sınır.",
-    "other": "{count} kayıtta Codex hizmet katmanını henüz kaydetmemişti. Codex’in gönderebileceği en ucuz katman Standart olduğu için bu kayıtlar Standart fiyattan hesaplandı; tutar bir alt sınır."
-  },
-  "cost.caveat.fastRequested": {
-    "one": "{count} kayıtta Fast istendi, ancak kayıt Fast’in gerçekten uygulandığını göstermiyor. Bu kayıt Standart fiyattan hesaplandı; Fast uygulandıysa gerçek tutar daha yüksek.",
-    "other": "{count} kayıtta Fast istendi, ancak kayıtlar Fast’in gerçekten uygulandığını göstermiyor. Bu kayıtlar Standart fiyattan hesaplandı; Fast uygulandıysa gerçek tutar daha yüksek."
-  },
-  "cost.caveat.unpricedMore": { "other": "… {count} kalem daha" },
+  "cost.caveat.unpriced": "Fiyat listesinde olmadığı için toplama katılmadı.",
+  "cost.caveat.assumedTier": "Katman kaydı yoktu; en ucuz katman olan Standart’tan sayıldı.",
+  "cost.caveat.fastRequested": "Fast’in uygulandığı kayıtlı değil; Standart’tan sayıldı. Uygulandıysa gerçek tutar daha yüksek.",
   "cost.cause.assumedTier": { "other": "Katmanı kaydedilmemiş istek (Standart fiyattan): {count} kayıt" },
   "cost.cause.fastRequested": { "other": "Fast istendi (Standart fiyattan): {count} kayıt" },
   "cost.cause.unpriced": "Fiyatlanamadı: {item}",
@@ -175,6 +162,7 @@
   "cost.cause.sourceIncomplete": "Okunamayan kayıtlar var",
   "cost.why.toggle": "Neden en az?",
   "cost.why.toggleUnpriced": "Neden tutar yok?",
+  "cost.why.lead": "Bu yüzden tutar bir alt sınır; gerçek maliyet daha yüksek olabilir.",
   "cost.summary": "Yayımlanan API fiyatlarıyla {amount} tutardı",
   "cost.toggleLabel": "{provider}: bu haftaki kullanım, yayımlanan API fiyatlarıyla {amount} tutardı. Bu bir fatura değildir; abonelik kapsamında bu tutar ödenmez. Dökümü açmak için etkinleştirin.",
   "cost.unpricedSummary": "Bu haftaki kullanım fiyat listesinde bulunamadı",

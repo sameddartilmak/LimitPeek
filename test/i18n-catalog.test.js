@@ -351,7 +351,13 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // the cost block's degraded caveat is driven by WeeklyCost.sourceIncomplete,
     // not by limit freshness: records could not be read, so the amount is a
     // lower bound (ADR-002 A3.15-16)
-    { file: 'renderer.json', key: 'cost.caveat.degraded', en: [/\bcould not be read\b/, /\blower bound\b/i], tr: [/okunamadı/, /alt sınır/] },
+    // ADR-004 A3: the "Neden en az?" disclosure is ONE shared lead sentence that
+    // carries the lower-bound claim, plus one short line per cause. Each short
+    // line must still name its cause unambiguously.
+    { file: 'renderer.json', key: 'cost.why.lead', en: [/\blower bound\b/i, /\bmay be higher\b/], tr: [/alt sınır/, /daha yüksek olabilir/] },
+    { file: 'renderer.json', key: 'cost.caveat.degraded', en: [/\bcould(n'?t| not) be read\b/], tr: [/okunamadı/] },
+    { file: 'renderer.json', key: 'cost.caveat.unpriced', en: [/\bnot included in the total\b/], tr: [/toplama katılmadı/] },
+    { file: 'renderer.json', key: 'cost.caveat.ttl', en: [/No write duration recorded|\bduration\b/, /\{low\}/, /\{high\}/], tr: [/kaydedilmemiş/, /\{low\}/, /\{high\}/] },
     // the short cause lines each name their cause, and the "why" toggles ask
     // about the claim without softening it (ADR-002 A3.15-16)
     { file: 'renderer.json', key: 'cost.cause.unpriced', en: [/^Could not be priced\b/, /\{item\}/], tr: [/^Fiyatlanamadı:/, /\{item\}/] },
@@ -368,20 +374,19 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     { file: 'renderer.json', key: 'settings.amount.incomplete', en: [/\bcould not be read\b/], tr: [/okunamadı/] },
     // a tier Codex did not record is priced at Standard, the cheapest it can send: a floor
     { file: 'renderer.json', key: 'cost.cause.assumedTier', en: [/\bStandard\b/, /\{count\}/], tr: [/Standart/, /\{count\}/] },
-    { file: 'renderer.json', key: 'cost.caveat.assumedTier', en: [/\bStandard\b/, /\blower bound\b/i, /\{count\}/], tr: [/Standart/, /alt sınır/, /\{count\}/] },
+    { file: 'renderer.json', key: 'cost.caveat.assumedTier', en: [/\bStandard\b/, /\bNo tier was recorded\b/], tr: [/Standart/, /kaydı yoktu/] },
     // Fast requested but not shown applied: priced at Standard, the real cost may be higher
     { file: 'renderer.json', key: 'cost.cause.fastRequested', en: [/\bFast\b/, /\brequested\b/, /\bStandard\b/, /\{count\}/], tr: [/Fast/, /istendi/, /Standart/, /\{count\}/] },
-    { file: 'renderer.json', key: 'cost.caveat.fastRequested', en: [/\bFast\b/, /\brequested\b/, /\bStandard\b/, /\bhigher\b/, /\{count\}/], tr: [/Fast/, /istendi/, /Standart/, /daha yüksek/, /\{count\}/] },
-    { file: 'renderer.json', key: 'cost.caveat.unpricedMore', en: [/\{count\}/], tr: [/\{count\}/] },
+    { file: 'renderer.json', key: 'cost.caveat.fastRequested', en: [/\bFast\b/, /\bStandard\b/, /\bhigher\b/], tr: [/Fast/, /Standart/, /daha yüksek/] },
     // unreadable records in the history: affected periods are a floor
     { file: 'renderer.json', key: 'settings.usage.incomplete', en: [/\{tools\}/, /\bcould not be read\b/, /\blower bound\b/i], tr: [/\{tools\}/, /okunamadı/, /alt sınır/] },
     // cache reads are outside the billable total
     { file: 'renderer.json', key: 'row.tokens.cacheRead', en: [/\bnot included in the billable total\b/i], tr: [/dahil değil/] },
     // decoded, undocumented source
     { file: 'renderer.json', key: 'quota.derived', en: [/\bnot a documented interface\b/i], tr: [/belgelenmiş bir arayüz değil/i] },
-    // cache reads with zero recorded writes on a model that bills writes: the
-    // total is a floor (A2.2). Every plural form is checked (variants()).
-    { file: 'renderer.json', key: 'cost.caveat.unrecordedWrites', en: [/\brecorded 0 cache writes\b/i, /\blower bound\b/i, /read from the cache/, /1,024\+ tokens/], tr: [/önbellek yazması 0 kaydedilmiş/, /alt sınır/, /önbellekten okumuş/, /1\.024\+ token/] },
+    // cache writes Codex did not record on a model that bills them are missing
+    // from the total (the lower-bound claim itself lives in cost.why.lead, ADR-004 A3)
+    { file: 'renderer.json', key: 'cost.caveat.unrecordedWrites', en: [/\bdidn'?t record|\bdid not record/, /\b(aren'?t|are not) in the total\b/], tr: [/kaydetmedi/, /toplamda yok/] },
     // usage history is computed locally, from local files only (A2.2, Codex merge)
     { file: 'renderer.json', key: 'settings.usage.sources', en: [/\bonly from local\b/i, /\bClaude Code transcripts\b/, /\bCodex session logs\b/], tr: [/^Yalnızca yerel\b/, /Claude Code transkriptlerinden/, /Codex oturum kayıtlarından/] },
     // per-provider price dates, and "at least" still means a lower bound — for
@@ -444,10 +449,35 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
         }
       }
     }
-    // Nine cause/why keys per language today (unpriced, unpricedMore, ttl,
-    // unrecordedWrites, sourceIncomplete, assumedTier, fastRequested, and the two
-    // toggles). A renamed key would silently leave the guard; more keys are fine.
-    assert.ok(seen >= 18, `the nine cause/why keys exist in both languages (saw ${seen})`);
+    // Ten cause/why keys per language today (unpriced, unpricedMore, ttl,
+    // unrecordedWrites, sourceIncomplete, assumedTier, fastRequested, the two
+    // toggles and the lead). A renamed key would silently leave the guard; more
+    // keys are fine.
+    assert.ok(seen >= 20, `the ten cause/why keys exist in both languages (saw ${seen})`);
+  });
+
+  test('every short cost caveat line is short and does not hedge or reassure (ADR-004 A3)', () => {
+    // Nobody reads long "why at least?" paragraphs: one short line per cause.
+    // Measured 2026-09-17: longest is 95 characters (tr cost.caveat.fastRequested).
+    const MAX_CHARS = 100;
+    // The cause-line list minus "only"/"yalnızca"/"sadece": in a caveat such as
+    // "covers only what was read" it sharpens the incompleteness, not softens it.
+    const SOFTENING = /yaklaşık|approximate|\broughly\b|\babout\b|\bjust\b|\bmerely\b|\bminor\b|\bsmall\b|\bnegligible\b|\bslight(ly)?\b|worry|\bno problem\b|küçük|önemsiz|ihmal edilebilir|endişe|merak etme|sorun değil|\bbiraz\b/i;
+    let seen = 0;
+    for (const lang of LANGS) {
+      const entries = catalogs[lang]['renderer.json'] || {};
+      for (const [key, entry] of Object.entries(entries)) {
+        if (!/^cost\.caveat\./.test(key)) continue;
+        seen += 1;
+        for (const text of variants(entry)) {
+          assert.ok(text.length <= MAX_CHARS, `${lang} "${key}" is ${text.length} characters (max ${MAX_CHARS}): ${text}`);
+          assert.doesNotMatch(text, SOFTENING, `${lang} "${key}" softens its claim: ${text}`);
+        }
+      }
+    }
+    // Seven caveat keys per language: ttl, unrecordedWrites, degraded,
+    // degradedNoFigure, unpriced, assumedTier, fastRequested.
+    assert.ok(seen >= 14, `the seven cost.caveat keys exist in both languages (saw ${seen})`);
   });
 
   test('the unreadable history amount shows no figure: no dash, no zero, no currency (ADR-002 A3.19)', () => {
@@ -973,7 +1003,7 @@ test.describe('every literal t() call passes exactly the placeholders its entry 
     const files = sourceFiles(path.join(ROOT, 'src', 'renderer', 'src'), '.ts');
     const { problems } = check(files, ['common.json', 'renderer.json'], {
       minimum: 220,
-      mustInclude: ['components/cost.ts cost.caveat.ttlScope', 'format.ts amount.atLeast'],
+      mustInclude: ['components/cost.ts cost.caveat.ttl', 'format.ts amount.atLeast'],
     });
     assert.deepEqual(problems, []);
   });

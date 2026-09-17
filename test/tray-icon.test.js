@@ -795,7 +795,9 @@ test.describe('main-process wiring', () => {
     const tray = fs.readFileSync(path.join(ROOT, 'src', 'main', 'tray.js'), 'utf8');
     assert.ok(tray.includes("'tray-icon.png'"), 'tray.js no longer falls back to the PNG');
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'main', 'panel-window.js'), 'utf8');
-    assert.ok(panel.includes('tray-icon@4x.png'), 'the window icon still comes from the PNG');
+    // The window icon is the app icon (scripts/make-app-icon.js), not the tray glyph.
+    assert.ok(fs.existsSync(path.join(ROOT, 'assets', 'app-icon.png')), 'assets/app-icon.png is missing');
+    assert.ok(panel.includes("'app-icon.png'"), 'the window icon no longer comes from the app icon PNG');
   });
 
   test('the tray icon is redrawn behind a key guard, not on every snapshot', () => {

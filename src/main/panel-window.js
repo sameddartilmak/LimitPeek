@@ -226,7 +226,7 @@ class PanelWindow {
       acceptFirstMouse: true,
       backgroundColor: '#00000000',
       title: 'Usage Notch',
-      icon: path.join(__dirname, '..', '..', 'assets', 'tray-icon@4x.png'),
+      icon: path.join(__dirname, '..', '..', 'assets', 'app-icon.png'),
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,

@@ -786,27 +786,16 @@
 }
 
 /* ------------------------------------------------------------- causes */
-/* ADR-002 A3.16: why the figure is "en az", as one short line per cause,
- * visible without opening anything. Measurement copy, not an alert: ink, not
- * the state ramp, and no warning accent. Lines WRAP (honesty copy is never
- * cut, ADR-004 A2.3); a model id has no spaces, so it may break anywhere. */
+/* ADR-002 A3.16 / ADR-004 A3: why the figure is "en az". The "why" toggle heads
+ * the list; each cause is one short line with its count, always visible. Open,
+ * one shared lead states the lower bound once, and each cause gains ONE short
+ * muted explanation directly beneath it, indented so it reads as belonging to
+ * that line. Measurement copy, not an alert: ink, not the state ramp, no warning
+ * accent. Lines WRAP (honesty copy is never cut, ADR-004 A2.3); a model id has
+ * no spaces, so it may break anywhere. */
 
 .cost__cause-block { display: flex; flex-direction: column; gap: 2px; }
 .cost__cause-block[hidden] { display: none !important; }
-
-.cost__causes {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  font-size: var(--fs-micro);
-  line-height: 1.4;
-  color: var(--ink-300);
-  font-variant-numeric: tabular-nums lining-nums;
-}
-.cost__cause { overflow-wrap: anywhere; }
 
 .cost__why {
   display: inline-flex;
@@ -826,44 +815,45 @@
 .cost__why .cost__chev { border-left-width: 3.5px; border-top-width: 3px; border-bottom-width: 3px; }
 .cost__cause-block[data-why="true"] .cost__why .cost__chev { transform: rotate(90deg); }
 
-/* The full, signed-off sentences. Separate statements: usage MISSING from the
- * total, usage IN it at too low a rate, writes never recorded, events never
- * read. Merging them would lose which. */
-.cost__caveats {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-1);
-  margin-top: 2px;
-  padding-left: var(--s-2);
-  border-left: 1px solid var(--ink-600);
-}
-.cost__caveats[hidden] { display: none !important; }
+.cost__why-body { display: flex; flex-direction: column; gap: 3px; }
 
-.cost__caveat {
+.cost__why-lead {
   margin: 0;
   font-size: var(--fs-micro);
-  line-height: 1.45;
-  color: var(--ink-300);
+  line-height: 1.4;
+  color: var(--ink-200);
   overflow-wrap: break-word;
 }
-.cost__unpriced {
+.cost__why-lead[hidden] { display: none !important; }
+
+.cost__causes {
   margin: 0;
-  padding-left: var(--s-3);
+  padding: 0;
   list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   font-size: var(--fs-micro);
-  color: var(--ink-200);
+  line-height: 1.4;
+  color: var(--ink-300);
+  font-variant-numeric: tabular-nums lining-nums;
 }
-/* Wraps, never ellipsizes (ADR-004 Amendment 2.3 ruling). The line names WHAT
- * could not be priced and why — "gpt-5.6-sol · katman belirlenemedi, uzun
- * bağlam (272K üstü) · 117 B token" — and cutting it would drop the reason. A
- * model id has no spaces, so it may break anywhere rather than overflow. */
-.cost__unpriced > li {
-  overflow-wrap: anywhere;
+.cost__cause-block[data-why="true"] .cost__causes { gap: 4px; }
+.cost__group { display: flex; flex-direction: column; min-width: 0; }
+.cost__cause { display: block; overflow-wrap: anywhere; }
+
+/* The explanation: muted, indented under its own cause, never a paragraph. */
+.cost__caveat {
+  display: block;
+  margin: 1px 0 0;
+  padding-left: var(--s-2);
+  border-left: 1px solid var(--ink-600);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  color: var(--ink-400);
+  overflow-wrap: break-word;
 }
-.cost__unpriced > li::before {
-  content: "\2014\00A0";
-  color: var(--ink-500);
-}
+.cost__caveat[hidden] { display: none !important; }
 
 /* A provenance line that reports its own absence is not decoration; it is the
  * gap made visible, so it does not fade into the ink-500 footnote scale. */
