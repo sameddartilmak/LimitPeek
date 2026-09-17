@@ -1568,12 +1568,11 @@ app.whenReady().then(async () => {
     check(`[${lang}] the two-date price note is whole: it wraps, it is never cut`,
       u.note !== null && u.note.scrollW <= u.note.clientW && u.note.tov !== 'ellipsis'
         && u.note.ws !== 'nowrap' && /Codex/.test(u.note.text) && /Claude Code/.test(u.note.text)
-        && (tr ? /önbellek yazma/.test(u.note.text) && /kaydetmediği/.test(u.note.text)
-                 && /Claude Code’da TTL ayrımı olmayan önbellek yazmaları 1,25× ile/.test(u.note.text)
-                 && /Codex’te ise Codex’in kaydetmediği/.test(u.note.text)
-               : /cache write/.test(u.note.text) && /not record/.test(u.note.text)
-                 && /for Claude Code, a cache write that did not record its TTL was priced at 1\.25×/.test(u.note.text)
-                 && /for Codex, Codex did not record cache writes/.test(u.note.text)),
+        // ADR-003 A6 / ADR-004 A3: one source line per tool; causes behind "why".
+        && (tr ? /Claude Code · .* fiyatları/.test(u.note.text) && /Codex · .* fiyatları/.test(u.note.text)
+                 && /Codex: fiyatlanamayan kullanım ve kaydedilmemiş önbellek yazmaları/.test(u.note.text)
+               : /Claude Code · .* prices/.test(u.note.text) && /Codex · .* prices/.test(u.note.text)
+                 && /Codex: usage that could not be priced and unrecorded cache writes/.test(u.note.text)),
       u.note);
   };
   usageChecks(await js(usageRead), 'en');

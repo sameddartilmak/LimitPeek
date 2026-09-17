@@ -562,6 +562,10 @@ function bootstrap() {
     // The long-lived Codex usage scan worker (ADR-002 A3.11): rollouts are
     // never read for usage on this thread.
     codexWorkerPath: path.join(__dirname, '..', 'core', 'codex', 'scan-worker.js'),
+    // The same arrangement for Gemini CLI and Kimi Code (ADR-003 A6); a worker
+    // is only started when that tool is on this machine.
+    geminiWorkerPath: path.join(__dirname, '..', 'core', 'gemini', 'scan-worker.js'),
+    kimiWorkerPath: path.join(__dirname, '..', 'core', 'kimi', 'scan-worker.js'),
   });
 
   collector.on('snapshot', (snapshot) => {

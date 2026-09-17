@@ -52,6 +52,7 @@
  */
 
 import type {
+  HistoryFloorCause,
   LanguageChoice,
   PeriodModelCost,
   PeriodUsage,
@@ -63,8 +64,9 @@ import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { enabledOf, type PanelState } from '../store.js';
 import { themeLabel } from '../theme.js';
 import { pendingUsageOf } from '../sanitize.js';
-import { atLeast, dayRange, lowerFirst, modelName, multiplier, priceDate, usd } from '../format.js';
-import { language as currentLanguage, t } from '../i18n.js';
+import { atLeast, dayRange, lowerFirst, modelName, multiplier, priceDateShort, usd } from '../format.js';
+import { language as currentLanguage, t, type MessageKey } from '../i18n.js';
+import { experimentalTag } from './experimental.js';
 import { providerMark } from './logo.js';
 
 /** The id the header's settings button points `aria-controls` at. */
@@ -191,6 +193,11 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
 
   const name = el('span', { class: 'settings__name', id: nameId }, provider.displayName);
   const meta = el('span', { class: 'settings__meta', id: metaId }, '');
+  // ADR-003 A6.4: the same calm pill as the panel row. The name stays the
+  // switch's label on its own; the pill (with its hidden explanation) is read
+  // as part of the item's text.
+  const experimental = experimentalTag(provider);
+  const title = el('span', { class: 'settings__title' }, name, experimental);
 
   // A real switch, not a styled div: role="switch" + aria-checked is what a
   // screen reader announces and what Space/Enter already operate on a
@@ -210,7 +217,7 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     'li',
     { class: 'settings__item', role: 'listitem', 'data-provider': provider.id },
     mark,
-    el('span', { class: 'settings__text' }, name, meta),
+    el('span', { class: 'settings__text' }, title, meta),
     control,
   ) as HTMLLIElement;
 
@@ -459,6 +466,117 @@ interface UsageHandleLocal {
   ): void;
 }
 
+/**
+ * The price note under Toplam Kullanım, composed per tool (ADR-003 A6), in the
+ * cost block's shape (ADR-004 A3: nobody reads a wall of text).
+ *
+ * Always visible: one short lead (only when some tool has a floor cause) and
+ * one compact line per tool in `usageProviders` with its price source and date:
+ * "Claude Code · 1 Ağu 2026 fiyatları", "Gemini · Gemini API standart, 10 Eyl
+ * 2026", "Kimi · fiyat yayımlamıyor". Behind "Neden en az?": one short line per
+ * tool naming its causes, worded like the cost block's cause lines.
+ *
+ * A date is stated only for a table that priced something in these figures
+ * (`pricesAsOfByProvider`); the legacy `pricesAsOf` (always Claude's) is used
+ * only when main sends no per-tool data at all — an older main.
+ */
+interface NoteModel {
+  lead: boolean;
+  sources: { id: ProviderSnapshot['id']; text: string }[];
+  why: { id: ProviderSnapshot['id']; text: string }[];
+  /** No tool at all: the single "date not reported" line. */
+  empty: boolean;
+}
+
+function noteModel(history: UsageHistory | null, known: readonly ProviderSnapshot[]): NoteModel {
+  const byDate = history?.pricesAsOfByProvider ?? {};
+  const causesBy = history?.floorCausesByProvider ?? {};
+  let tools: ProviderSnapshot['id'][] = history?.usageProviders ?? [];
+  let legacy = false;
+  if (tools.length === 0) {
+    tools = Object.keys(byDate) as ProviderSnapshot['id'][];
+    if (tools.length === 0 && history?.pricesAsOf) {
+      tools = ['claude'];
+      legacy = true;
+    }
+  }
+  if (tools.length === 0) return { lead: false, sources: [], why: [], empty: true };
+
+  const nameOf = (id: ProviderSnapshot['id']): string =>
+    known.find((p) => p.id === id)?.displayName || NOTE_TOOL_NAMES[id];
+  const ttl = { low: multiplier(1.25) };
+
+  const sources: NoteModel['sources'] = [];
+  const why: NoteModel['why'] = [];
+  for (const id of tools) {
+    const tool = nameOf(id);
+    const date = legacy ? history?.pricesAsOf : byDate[id];
+    // Only Kimi has no price table (contract: never in pricesAsOfByProvider).
+    const hasTable = !!date || id !== 'kimi';
+    const codes: HistoryFloorCause[] = legacy
+      ? ['unpriced', 'cache-write-ttl-fallback']
+      : (causesBy[id] ?? []).slice();
+
+    sources.push({
+      id,
+      text: !hasTable
+        ? t('settings.usage.source.none', { tool })
+        : id === 'gemini'
+          ? date
+            ? t('settings.usage.source.gemini', { date: priceDateShort(date) })
+            : t('settings.usage.source.geminiNoDate')
+          : date
+            ? t('settings.usage.source.date', { tool, date: priceDateShort(date) })
+            : t('settings.usage.source.dateMissing', { tool }),
+    });
+
+    // Review F3: the lead and the "why" follow the UNFILTERED codes, so a
+    // period made "en az" by Kimi alone still says why. For a tool with no
+    // price table, "does not publish prices" replaces "unpriced usage".
+    if (codes.length > 0) {
+      const clauses = codes.map((code) =>
+        code === 'unpriced' && !hasTable
+          ? t('settings.usage.cause.noTable')
+          : code === 'cache-write-ttl-fallback'
+            ? t(CAUSE_CLAUSE[code], ttl)
+            : t(CAUSE_CLAUSE[code]),
+      );
+      why.push({ id, text: t('settings.usage.why.tool', { tool, causes: joinList(clauses) }) });
+    }
+  }
+  return { lead: why.length > 0, sources, why, empty: false };
+}
+
+/** Names for a tool the snapshot did not list (never expected; never a raw id). */
+const NOTE_TOOL_NAMES: Record<ProviderSnapshot['id'], string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  gemini: 'Gemini',
+  copilot: 'GitHub Copilot',
+  antigravity: 'Antigravity',
+  kimi: 'Kimi',
+};
+
+/** One short clause per history floor cause, worded like the cost cause lines. */
+const CAUSE_CLAUSE: Record<HistoryFloorCause, MessageKey> = {
+  unpriced: 'settings.usage.cause.unpriced',
+  'cache-write-ttl-fallback': 'settings.usage.cause.ttl',
+  'unrecorded-writes': 'settings.usage.cause.unrecordedWrites',
+  'assumed-tier': 'settings.usage.cause.assumedTier',
+  'fast-requested': 'settings.usage.cause.fastRequested',
+  'unrecorded-calls': 'settings.usage.cause.unrecordedCalls',
+  'long-prompt': 'settings.usage.cause.longPrompt',
+  'tool-tokens': 'settings.usage.cause.toolTokens',
+};
+
+function joinList(items: readonly string[]): string {
+  try {
+    return new Intl.ListFormat(currentLanguage(), { style: 'long', type: 'conjunction' }).format(items);
+  } catch {
+    return items.join('; ');
+  }
+}
+
 /** The amount cell's text, framed and honest. Never a bare "$0,00". */
 function amountText(period: PeriodUsage, pending: boolean): string {
   // While a tool is still being counted, an empty or zero period is not known
@@ -511,11 +629,10 @@ function createUsageSection(): UsageHandleLocal {
   // what this usage WOULD HAVE COST at published API prices. The data source
   // is a separate, per-provider sentence, so a second provider's history does
   // not require rewriting the claim.
-  const intro = el(
-    'p',
-    { class: 'usage__intro' },
-    `${t('settings.usage.intro')} ${t('settings.usage.sources')}`,
-  );
+  // ADR-003 A6 (review F1): the source sentence names the tools actually in
+  // the history, so it stays true as tools are added. Updated on every render.
+  const introSources = el('span', { class: 'usage__intro-sources' }, t('settings.usage.sources'));
+  const intro = el('p', { class: 'usage__intro' }, `${t('settings.usage.intro')} `, introSources);
 
   const GRAINS: ReadonlyArray<{ v: UsageGrain; label: string }> = [
     { v: 'month', label: t('settings.grain.month') },
@@ -546,7 +663,54 @@ function createUsageSection(): UsageHandleLocal {
 
   const list = el('ul', { class: 'usage__list', role: 'list' });
   const empty = el('p', { class: 'usage__empty' }, '');
-  const note = el('p', { class: 'usage__note' }, '');
+  // --- the price note (ADR-003 A6, ADR-004 A3) -----------------------------
+  // Persistent nodes, so the "why" disclosure keeps its state across pushes.
+  const noteLead = el('p', { class: 'usage__note-lead' }, '');
+  const noteSources = el('ul', { class: 'usage__sources' });
+  const noteWhyId = 'usage-why';
+  const noteWhyList = el('ul', { class: 'usage__why-list', id: noteWhyId });
+  noteWhyList.hidden = true;
+  const noteWhyChev = el('span', { class: 'cost__chev', 'aria-hidden': 'true' });
+  const noteWhyText = el('span', { class: 'cost__whytext' }, '');
+  // The cost block's toggle, reused: same class, same caret, same aria wiring.
+  const noteWhy = el(
+    'button',
+    { type: 'button', class: 'cost__why usage__why', 'aria-expanded': 'false', 'aria-controls': noteWhyId },
+    noteWhyChev,
+    noteWhyText,
+  ) as HTMLButtonElement;
+  const noteWhyBlock = el('div', { class: 'usage__why-block' }, noteWhy, noteWhyList);
+  const note = el('div', { class: 'usage__note' }, noteLead, noteSources, noteWhyBlock);
+  let noteWhyOpen = false;
+  function applyNoteWhy(): void {
+    noteWhyList.hidden = !noteWhyOpen;
+    setAttr(noteWhy, 'aria-expanded', noteWhyOpen ? 'true' : 'false');
+    setAttr(noteWhyBlock, 'data-why', noteWhyOpen ? 'true' : 'false');
+  }
+  on(noteWhy, 'click', () => {
+    noteWhyOpen = !noteWhyOpen;
+    applyNoteWhy();
+  });
+
+  function renderNote(): void {
+    const model = noteModel(current, known);
+    setText(noteLead, t('settings.usage.noteLead'));
+    noteLead.hidden = !model.lead;
+    replaceChildrenWith(
+      noteSources,
+      model.empty
+        ? [el('li', { class: 'usage__source' }, t('settings.usage.noteNoDate'))]
+        : model.sources.map((s) => el('li', { class: 'usage__source', 'data-provider': s.id }, s.text)),
+    );
+    replaceChildrenWith(
+      noteWhyList,
+      model.why.map((w) => el('li', { class: 'usage__why-line', 'data-provider': w.id }, w.text)),
+    );
+    setText(noteWhyText, t('cost.why.toggle'));
+    noteWhyBlock.hidden = model.why.length === 0;
+    if (model.why.length === 0) noteWhyOpen = false;
+    applyNoteWhy();
+  }
   // ADR-002 A3.12. Above the list, not in the footnote: it changes what every
   // total below it means, and it must be read before them.
   const pendingNote = el('p', { class: 'usage__pending', role: 'status' }, '');
@@ -699,6 +863,17 @@ function createUsageSection(): UsageHandleLocal {
   }
 
   function renderList(): void {
+    const sourceTools = current?.usageProviders ?? [];
+    setText(
+      introSources,
+      sourceTools.length > 0
+        ? t('settings.usage.sourcesTools', {
+            tools: joinList(
+              sourceTools.map((id) => known.find((p) => p.id === id)?.displayName || NOTE_TOOL_NAMES[id]),
+            ),
+          })
+        : t('settings.usage.sources'),
+    );
     for (const [v, input] of radios) {
       const on_ = grain === v;
       if (input.checked !== on_) input.checked = on_;
@@ -742,37 +917,7 @@ function createUsageSection(): UsageHandleLocal {
     replaceChildrenWith(list, periods.map((p, i) => renderRow(p, maxCost, i)));
 
     note.hidden = false;
-    // Each vendor's table has its own date. When Codex prices are in the
-    // figures, both dates are stated; a single date would be false for one.
-    //
-    // `pricesAsOfByProvider` lists a table only when it priced something in
-    // these figures, so a Codex-only history deliberately has no Claude date.
-    // The legacy `pricesAsOf` (always Claude's) is used ONLY when the map is
-    // absent or empty — an older main — never to fill a gap the map left on
-    // purpose, or a Codex-only user would read a date for a table that priced
-    // nothing.
-    const byProvider = current ? current.pricesAsOfByProvider : undefined;
-    const hasMap = !!byProvider && Object.keys(byProvider).length > 0;
-    const claudeDate = hasMap ? byProvider?.claude : current?.pricesAsOf;
-    const codexDate = hasMap ? byProvider?.codex : undefined;
-    // Every note names every floor cause of the tools it covers: unpriced usage
-    // (both), Claude's missing TTL split priced at the 1.25x floor (same facts
-    // as cost.caveat.ttl), and Codex's unrecorded cache writes.
-    const ttl = { low: multiplier(1.25), high: multiplier(2) };
-    setText(
-      note,
-      claudeDate && codexDate
-        ? t('settings.usage.noteByProvider', {
-            claude: priceDate(claudeDate),
-            codex: priceDate(codexDate),
-            ...ttl,
-          })
-        : codexDate
-          ? t('settings.usage.noteCodexOnly', { codex: priceDate(codexDate) })
-          : claudeDate
-            ? t('settings.usage.note', { date: priceDate(claudeDate), ...ttl })
-            : t('settings.usage.noteNoDate'),
-    );
+    renderNote();
   }
 
   function update(

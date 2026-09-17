@@ -11,6 +11,8 @@
   "provider.codex.notFound": "Codex bu makinede bulunamadı.",
   "provider.antigravity.detail": "Antigravity CLI kurulu değilse indirilip kurulur (onayınızla), sonra durum satırına köprü eklenir; yalnızca kalan kota oranı ve sıfırlanma zamanı okunur.",
   "provider.notSupportedYet": "{provider} bu sürümde henüz desteklenmiyor.",
+  "provider.gemini.notFound": "Gemini CLI bu bilgisayarda bulunamadı.",
+  "provider.kimi.notFound": "Kimi Code bu bilgisayarda bulunamadı.",
   "ipc.invalidRequest": "Geçersiz istek.",
   "ipc.unknownProvider": "Bilinmeyen sağlayıcı.",
   "ipc.actionUnsupported": "Bu işlem bu sürümde desteklenmiyor.",

@@ -251,6 +251,21 @@
 
 .row__gap { flex: 1 1 auto; }
 
+/* ADR-003 A6.4: a reader not yet confirmed on a real install. A statement
+ * about the reader, not an alert: ink outline, no warning colour, no icon.
+ * Shared by the panel row and Settings → Model Yönetimi. */
+.tag-experimental {
+  flex: 0 0 auto;
+  font-size: var(--fs-micro);
+  line-height: 1.3;
+  color: var(--ink-400);
+  padding: 0 var(--s-1);
+  border: 1px dashed var(--ink-600);
+  border-radius: 4px;
+  white-space: nowrap;
+  cursor: help;
+}
+
 /* The row-level percentage is gone. With two windows to report there is no
  * honest single figure to put beside the provider's name, and the one that was
  * there described the five-hour window without ever saying so. See .win__pct. */

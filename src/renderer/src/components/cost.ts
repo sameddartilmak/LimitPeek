@@ -107,6 +107,10 @@ function tierLabel(tier: string): string {
   if (tier === 'standard') return t('cost.speed.standard');
   if (tier === 'fast') return t('cost.speed.fast');
   if (tier === 'unknown-tier') return t('cost.speed.unknownTier');
+  // ADR-003 A6 unpriced reason codes (contract `UnpricedReasonCode`).
+  if (tier === 'no-model') return t('cost.speed.noModel');
+  if (tier === 'no-published-price') return t('cost.speed.noPublishedPrice');
+  if (tier === 'other-model-alias') return t('cost.speed.otherModelAlias');
   return t('cost.speed.other');
 }
 
@@ -144,6 +148,26 @@ function slicesOf(byClass: CostByClass): { slices: Slice[]; sum: number } {
   return { slices, sum };
 }
 
+/**
+ * True when the tool has no price table at all (Kimi, ADR-003 A6): every row is
+ * unpriced for a reason that says so. "The price list's date was not reported"
+ * would then imply a list exists.
+ */
+function noPriceTable(cost: WeeklyCost): boolean {
+  return (
+    cost.byModel.length > 0 &&
+    cost.byModel.every(
+      (row) => row.usd === null && (row.speed === 'no-published-price' || row.speed === 'other-model-alias'),
+    )
+  );
+}
+
+/** True when every unpriced row recorded no model (Gemini 'no-model'). */
+function noModelOnly(cost: WeeklyCost): boolean {
+  const rows = unpricedRows(cost);
+  return rows.length > 0 && rows.every((row) => row.speed === 'no-model');
+}
+
 /** Model+speed rows the price table had no entry for. */
 function unpricedRows(cost: WeeklyCost): ModelCost[] {
   return cost.byModel.filter((entry) => entry.usd === null);
@@ -164,6 +188,9 @@ type CauseKind =
   | 'unrecorded-writes'
   | 'assumed-tier'
   | 'fast-requested'
+  | 'unrecorded-calls'
+  | 'long-prompt'
+  | 'tool-tokens'
   | 'source-incomplete';
 
 /**
@@ -173,6 +200,8 @@ type CauseKind =
  */
 interface CauseGroup {
   kind: CauseKind;
+  /** Only for 'unpriced': why this group could not be priced. */
+  reason?: UnpricedReason;
   lines: { text: string; more?: boolean }[];
   explanation: string;
 }
@@ -200,10 +229,12 @@ interface CauseGroup {
 function causeGroups(cost: WeeklyCost, noFigure: boolean, open: boolean): CauseGroup[] {
   const groups: CauseGroup[] = [];
 
-  // Named from byModel, not from `unpricedModels`: see unpricedItems().
-  const items = unpricedItems(cost);
-  if (items.length > 0) {
-    const cap = open ? MAX_UNPRICED_LISTED : MAX_UNPRICED_CAUSES;
+  // Named from byModel, not from `unpricedModels`: see unpricedItems(). One
+  // group per REASON, so each gets the explanation that is true for it: a
+  // model missing from the price list, tokens with no model, a tool that
+  // publishes no price, another model behind Kimi Code (ADR-003 A6).
+  const cap = open ? MAX_UNPRICED_LISTED : MAX_UNPRICED_CAUSES;
+  for (const { reason, items } of unpricedByReason(cost)) {
     const shown = items.length > cap ? (open ? cap : cap - 1) : items.length;
     const lines: CauseGroup['lines'] = items
       .slice(0, shown)
@@ -211,7 +242,7 @@ function causeGroups(cost: WeeklyCost, noFigure: boolean, open: boolean): CauseG
     if (items.length > shown) {
       lines.push({ text: t('cost.cause.unpricedMore', { count: items.length - shown }), more: true });
     }
-    groups.push({ kind: 'unpriced', lines, explanation: t('cost.caveat.unpriced') });
+    groups.push({ kind: 'unpriced', reason, lines, explanation: t(UNPRICED_EXPLANATION[reason]) });
   }
 
   // NOT the unrecorded-writes cause below: this one is Claude's missing 5m/1h
@@ -246,6 +277,31 @@ function causeGroups(cost: WeeklyCost, noFigure: boolean, open: boolean): CauseG
       explanation: t('cost.caveat.fastRequested'),
     });
   }
+  // ADR-003 A6, Gemini: calls the CLI never records. A standing cause with no
+  // count, because what is missing is exactly what was never counted.
+  if (cost.unrecordedCalls) {
+    groups.push({
+      kind: 'unrecorded-calls',
+      lines: [{ text: t('cost.cause.unrecordedCalls') }],
+      explanation: t('cost.caveat.unrecordedCalls'),
+    });
+  }
+  // Gemini: prompts over 200K priced at the lower rate, as a floor.
+  if (cost.longPromptFloorEvents > 0) {
+    groups.push({
+      kind: 'long-prompt',
+      lines: [{ text: t('cost.cause.longPrompt', { count: cost.longPromptFloorEvents }) }],
+      explanation: t('cost.caveat.longPrompt'),
+    });
+  }
+  // Gemini: tool-use prompt tokens, whose price is not published.
+  if (cost.toolTokenEvents > 0) {
+    groups.push({
+      kind: 'tool-tokens',
+      lines: [{ text: t('cost.cause.toolTokens', { count: cost.toolTokenEvents }) }],
+      explanation: t('cost.caveat.toolTokens'),
+    });
+  }
   // With no amount on screen, "the amount covers only…" describes a figure
   // that is not there (A3.19): the no-figure line says no amount can be given.
   if (cost.sourceIncomplete) {
@@ -266,6 +322,44 @@ function causeGroups(cost: WeeklyCost, noFigure: boolean, open: boolean): CauseG
  * amendment 2 added ModelCost.speed for exactly this contradiction. The bare
  * list is only a fallback for a payload whose rows were rejected.
  */
+type UnpricedReason = 'price-list' | 'no-model' | 'no-published-price' | 'other-model-alias';
+
+/** The short explanation for each unpriced reason. */
+const UNPRICED_EXPLANATION: Record<UnpricedReason, MessageKey> = {
+  'price-list': 'cost.caveat.unpriced',
+  'no-model': 'cost.caveat.unpricedNoModel',
+  'no-published-price': 'cost.caveat.unpricedNoPublishedPrice',
+  'other-model-alias': 'cost.caveat.unpricedOtherModelAlias',
+};
+
+function reasonOf(speed: string): UnpricedReason {
+  return speed === 'no-model' || speed === 'no-published-price' || speed === 'other-model-alias'
+    ? speed
+    : 'price-list';
+}
+
+/** Unpriced entries grouped by reason, in order of first appearance. */
+function unpricedByReason(cost: WeeklyCost): { reason: UnpricedReason; items: string[] }[] {
+  const rows = unpricedRows(cost);
+  if (rows.length === 0) {
+    const names = cost.unpricedModels.slice();
+    return names.length > 0 ? [{ reason: 'price-list', items: names }] : [];
+  }
+  const groups: { reason: UnpricedReason; items: string[] }[] = [];
+  for (const row of rows) {
+    const reason = reasonOf(row.speed);
+    const tokens = row.tokens ? ` · ${tokenCount(row.tokens.billable)}` : '';
+    const item = `${modelName(row.model)} · ${speedLabel(row.speed)}${tokens}`;
+    let group = groups.find((g) => g.reason === reason);
+    if (!group) {
+      group = { reason, items: [] };
+      groups.push(group);
+    }
+    group.items.push(item);
+  }
+  return groups;
+}
+
 function unpricedItems(cost: WeeklyCost): string[] {
   const rows = unpricedRows(cost);
   return rows.length > 0
@@ -294,6 +388,8 @@ function windowLabel(cost: WeeklyCost, now: number): string {
 }
 
 export function createCost(providerId: string): CostHandle {
+  // ADR-003 A6: Gemini's figures are at Gemini API standard rates.
+  const gemini = providerId === 'gemini';
   const detailId = `cost-detail-${providerId}`;
 
   // --- collapsed ---------------------------------------------------------
@@ -444,6 +540,7 @@ export function createCost(providerId: string): CostHandle {
       causes,
       groups.map((group) => {
         const item = el('li', { class: 'cost__group', 'data-cause': group.kind });
+        if (group.reason) setAttr(item, 'data-reason', group.reason);
         for (const line of group.lines) {
           item.appendChild(
             el('span', { class: line.more ? 'cost__cause cost__cause--more' : 'cost__cause' }, line.text),
@@ -547,7 +644,9 @@ export function createCost(providerId: string): CostHandle {
       // The floor word is bound to the figure by atLeast(), so the English
       // word order ("{amount} at published API prices") cannot separate them.
       const amount = floor ? atLeast(usd(cost.totalUsd)) : usd(cost.totalUsd);
-      setText(summary, t('cost.summary', { amount }));
+      // Review F11: Gemini is priced at Gemini API STANDARD rates (ADR-003 A6
+      // ruling), and the figure names that source where it is shown.
+      setText(summary, t(gemini ? 'cost.summaryGemini' : 'cost.summary', { amount }));
       // The spoken name carries the whole frame plus the denial, because a
       // screen reader user gets the button label with no surrounding layout to
       // qualify it.
@@ -555,7 +654,7 @@ export function createCost(providerId: string): CostHandle {
       setAttr(
         toggle,
         'aria-label',
-        t('cost.toggleLabel', {
+        t(gemini ? 'cost.toggleLabelGemini' : 'cost.toggleLabel', {
           provider: providerName,
           amount: floor ? atLeast(named) : named,
         }),
@@ -564,8 +663,27 @@ export function createCost(providerId: string): CostHandle {
       // No number anywhere in this branch — not zero, not a bound. The user is
       // told that usage happened and that we could not price it, and the model
       // list below carries the token counts that prove the first half.
-      setText(summary, t('cost.unpricedSummary'));
-      setAttr(toggle, 'aria-label', t('cost.unpricedToggleLabel', { provider: providerName }));
+      // Review F2: the reason is chosen by what is true. A tool with no price
+      // table has no list to be missing from; tokens with no model were never
+      // priceable; only a model absent from a real list is "not in the list".
+      const reason = noPriceTable(cost) ? 'noTable' : noModelOnly(cost) ? 'noModel' : 'list';
+      setText(
+        summary,
+        reason === 'noTable'
+          ? t('cost.unpricedSummaryNoTable', { provider: providerName })
+          : reason === 'noModel'
+            ? t('cost.unpricedSummaryNoModel')
+            : t('cost.unpricedSummary'),
+      );
+      setAttr(
+        toggle,
+        'aria-label',
+        reason === 'noTable'
+          ? t('cost.unpricedToggleLabelNoTable', { provider: providerName })
+          : reason === 'noModel'
+            ? t('cost.unpricedToggleLabelNoModel', { provider: providerName })
+            : t('cost.unpricedToggleLabel', { provider: providerName }),
+      );
     }
 
     renderBar(slices);
@@ -619,8 +737,12 @@ export function createCost(providerId: string): CostHandle {
         'span',
         cost.pricesAsOf ? {} : { class: 'cost__gap' },
         cost.pricesAsOf
-          ? t('cost.pricesAsOf', { date: priceDate(cost.pricesAsOf) })
-          : t('cost.pricesDateMissing'),
+          ? gemini
+            ? t('cost.pricesAsOfGemini', { date: priceDate(cost.pricesAsOf) })
+            : t('cost.pricesAsOf', { date: priceDate(cost.pricesAsOf) })
+          : noPriceTable(cost)
+            ? t('cost.pricesNotPublished', { provider: providerName })
+            : t('cost.pricesDateMissing'),
       ),
     ]);
 

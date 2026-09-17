@@ -109,17 +109,41 @@ function codexSessionsDir(home) {
 }
 
 /**
- * Is a RESOLVED path on the network? UNC (`\\server\share`), the long UNC
- * form (`\\?\UNC\server`) and `//host`. A local long path (`\\?\C:\`) or a
- * volume GUID path (`\\?\Volume{…}`) is local and allowed.
+ * The absolute LOCAL path forms the guard accepts (ADR-003 A6 review rulings,
+ * security F3: an allowlist, not a denylist). On Windows: a drive letter
+ * (`C:\`), the long form of one (`\\?\C:\`) and a volume GUID path
+ * (`\\?\Volume{…}\`). Everything else is refused before any lstat: UNC
+ * (`\\server\share`, `\\?\UNC\…`, `//host`), device paths (`\\.\pipe\…`),
+ * `\\?\GLOBALROOT\…`, and relative paths. Elsewhere (tests on POSIX): an
+ * absolute path that does not start with `//`.
  */
-function isNetworkResolved(p) {
-  if (typeof p !== 'string') return true;
-  if (/^[\\/]{2}[?.][\\/]/.test(p)) return /^[\\/]{2}[?.][\\/]UNC[\\/]/i.test(p);
-  return /^[\\/]{2}/.test(p);
+const LOCAL_FORMS = [
+  /^[A-Za-z]:[\\/]/,
+  /^[\\/]{2}\?[\\/][A-Za-z]:[\\/]/,
+  /^[\\/]{2}\?[\\/]Volume\{[0-9A-Fa-f-]+\}[\\/]/,
+];
+
+function isLocalAbsolute(p) {
+  if (typeof p !== 'string') return false;
+  if (process.platform === 'win32') return LOCAL_FORMS.some((re) => re.test(p));
+  return p.startsWith('/') && !p.startsWith('//');
 }
 
-let refusedDirWarned = false;
+/**
+ * Is a RESOLVED path outside the local allowlist? The name is historical: true
+ * for a network path, and equally for a device, GLOBALROOT or relative path.
+ */
+function isNetworkResolved(p) {
+  return !isLocalAbsolute(p);
+}
+
+/** The fixed refusal code for a path outside the allowlist. */
+function refusalCode(p) {
+  return typeof p === 'string' && /^[\\/]{2}/.test(p) ? 'NETWORK_TARGET' : 'NOT_LOCAL_PATH';
+}
+
+/** Labels whose network refusal has been logged (once per process each). */
+const refusedDirWarned = new Set();
 
 /**
  * Paths refused (network) or whose resolution FAILED for a reason other than
@@ -131,16 +155,23 @@ let refusedDirWarned = false;
  */
 const refusedPaths = new Map();
 
-function refuse(key, code) {
+/**
+ * `label` names the tree in the fixed log line ('codex sessions', 'gemini chats',
+ * 'kimi sessions'). It is a code-chosen constant, never a path.
+ */
+function refuse(key, code, label = 'codex sessions') {
   refusedPaths.set(key, code);
-  if (code === 'NETWORK_TARGET' && !refusedDirWarned) {
-    refusedDirWarned = true;
-    log.warn('codex sessions directory refused: code=NETWORK_TARGET');
+  if (code === 'NETWORK_TARGET' && !refusedDirWarned.has(label)) {
+    refusedDirWarned.add(label);
+    log.warn(`${label} directory refused: code=NETWORK_TARGET`);
   }
   return null;
 }
 
 const MAX_LINK_DEPTH = 16;
+/** Links followed in total by one `resolveLocalDir` (security F5): a tree of
+ *  links that fans out cannot make one resolution do unbounded lstat work. */
+const MAX_LINK_HOPS = 64;
 
 /**
  * Walk every component of an absolute path with lstat — which never follows
@@ -158,8 +189,8 @@ const MAX_LINK_DEPTH = 16;
  * share. That is the user's own configuration of their own tool, not a
  * connection this app initiates, and it is deliberately not detected.
  */
-function precheck(abs, depth = 0) {
-  if (isNetworkResolved(abs)) return 'NETWORK_TARGET';
+function precheck(abs, depth = 0, budget = { hops: MAX_LINK_HOPS }) {
+  if (!isLocalAbsolute(abs)) return refusalCode(abs);
   if (depth > MAX_LINK_DEPTH) return 'LINK_DEPTH';
   const parsed = path.parse(abs);
   const parts = abs.slice(parsed.root.length).split(/[\\/]+/).filter(Boolean);
@@ -173,15 +204,19 @@ function precheck(abs, depth = 0) {
       return (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) ? 'ENOENT' : 'LSTAT_FAILED';
     }
     if (!st.isSymbolicLink()) continue;
+    budget.hops -= 1;
+    if (budget.hops < 0) return 'LINK_DEPTH';
     let target;
     try {
       target = fs.readlinkSync(cur);
     } catch {
       return 'READLINK_FAILED';
     }
-    if (isNetworkResolved(target)) return 'NETWORK_TARGET';
+    // A `\\` target is judged as written (never resolved); a relative one is
+    // made absolute and judged by the allowlist in the recursive call.
+    if (/^[\\/]{2}/.test(target) && !isLocalAbsolute(target)) return refusalCode(target);
     const targetAbs = path.isAbsolute(target) ? target : path.resolve(path.dirname(cur), target);
-    const inner = precheck(targetAbs, depth + 1);
+    const inner = precheck(targetAbs, depth + 1, budget);
     if (inner) return inner;
   }
   return null;
@@ -200,23 +235,28 @@ function precheck(abs, depth = 0) {
  * Users junction `~/.codex/sessions` to another local drive, so local links
  * are followed. Refusals log one fixed code, never the path. Rollout FILES are
  * separately required to be regular files by lstat.
+ *
+ * The same guard serves every local reader (Gemini chats, Kimi sessions);
+ * `label` only changes which tree the fixed refusal line names.
  */
-function resolveLocalDir(p) {
+function resolveLocalDir(p, label = 'codex sessions') {
   if (typeof p !== 'string' || p.length === 0) return null;
-  if (isNetworkResolved(p)) return refuse(p, 'NETWORK_TARGET');
+  if (/^[\\/]{2}/.test(p) && !isLocalAbsolute(p)) return refuse(p, refusalCode(p), label);
   const abs = path.resolve(p);
   if (refusedPaths.has(abs)) return null;
+  // Allowlist before any lstat (security F3).
+  if (!isLocalAbsolute(abs)) return refuse(abs, refusalCode(abs), label);
   const pre = precheck(abs);
   if (pre === 'ENOENT') return null;
-  if (pre) return refuse(abs, pre);
+  if (pre) return refuse(abs, pre, label);
   let real;
   try {
     real = fs.realpathSync.native(abs);
   } catch (err) {
     if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) return null;
-    return refuse(abs, 'REALPATH_FAILED');
+    return refuse(abs, 'REALPATH_FAILED', label);
   }
-  if (isNetworkResolved(real)) return refuse(abs, 'NETWORK_TARGET');
+  if (!isLocalAbsolute(real)) return refuse(abs, refusalCode(real), label);
   try {
     return fs.statSync(real).isDirectory() ? real : null;
   } catch {
@@ -238,7 +278,7 @@ function isRefusedDir(p) {
 /** Test seam: forget remembered refusals and the once-per-process log flag. */
 function _resetPathGuardForTests() {
   refusedPaths.clear();
-  refusedDirWarned = false;
+  refusedDirWarned.clear();
 }
 
 /** Names in `dir` that are all digits of length `len`, or [] (readdir only). */
@@ -499,6 +539,8 @@ module.exports = {
   codexSessionsDir,
   isNetworkPath,
   isNetworkResolved,
+  isLocalAbsolute,
+  MAX_LINK_HOPS,
   resolveLocalDir,
   isRefusedDir,
   _resetPathGuardForTests,

@@ -31,6 +31,8 @@ function p(id, name, accent, connected, status, extra) {
       id,
       displayName: name,
       accent,
+      // ADR-003 A6.4: the registry fact main sends for every provider.
+      experimental: id === 'gemini' || id === 'kimi',
       // Every fixture row starts ADDED; the settings checks flip these at
       // runtime through __probe so the earlier structural checks still see
       // all six rows.
@@ -227,7 +229,63 @@ const MANY_UNPRICED_COST = {
   unpricedModels: [],
   unrecordedWriteEvents: 0,
 };
+/**
+ * ADR-003 A6: a Gemini CLI week. Priced at Gemini API standard rates, always a
+ * floor (unrecorded calls), with long-prompt and tool-token counts and one
+ * usage group that recorded no model ('no-model', never printed raw).
+ */
+const GEMINI_COST = {
+  totalUsd: 12.34,
+  byClass: { input: 5.1, output: 6.2, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 1.04 },
+  byModel: [
+    { model: 'gemini-2.5-pro', speed: 'standard', pricedAs: 'gemini-2.5-pro|standard', usd: 12.34,
+      tokens: { input: 900000, output: 120000, cacheWrite: 0, cacheRead: 400000, billable: 1020000 } },
+    { model: 'unknown', speed: 'no-model', pricedAs: null, usd: null,
+      tokens: { input: 4000, output: 800, cacheWrite: 0, cacheRead: 0, billable: 4800 } },
+  ],
+  unpricedModels: [],
+  fallbackWriteEvents: 0,
+  cacheWriteEvents: 0,
+  unrecordedWriteEvents: 0,
+  sourceIncomplete: false,
+  assumedTierEvents: 0,
+  fastRequestedEvents: 0,
+  unrecordedCalls: true,
+  longPromptFloorEvents: 3,
+  toolTokenEvents: 7,
+  pricesAsOf: '2026-09-10',
+  windowStart: iso(-6 * 864e5),
+  windowEnd: iso(-1000),
+  windowAnchored: false,
+};
+/** ADR-003 A6: a Kimi Code week. No price table: every row unpriced, pricesAsOf ''. */
+const KIMI_COST = {
+  totalUsd: 0,
+  byClass: { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
+  byModel: [
+    { model: 'kimi-code/kimi-for-coding', speed: 'no-published-price', pricedAs: null, usd: null,
+      tokens: { input: 300000, output: 40000, cacheWrite: 0, cacheRead: 120000, billable: 340000 } },
+    { model: 'openrouter/claude-sonnet', speed: 'other-model-alias', pricedAs: null, usd: null,
+      tokens: { input: 20000, output: 5000, cacheWrite: 0, cacheRead: 0, billable: 25000 } },
+  ],
+  unpricedModels: ['kimi-code/kimi-for-coding', 'openrouter/claude-sonnet'],
+  fallbackWriteEvents: 0,
+  cacheWriteEvents: 0,
+  unrecordedWriteEvents: 0,
+  sourceIncomplete: false,
+  assumedTierEvents: 0,
+  fastRequestedEvents: 0,
+  unrecordedCalls: false,
+  longPromptFloorEvents: 0,
+  toolTokenEvents: 0,
+  pricesAsOf: '',
+  windowStart: iso(-6 * 864e5),
+  windowEnd: iso(-1000),
+  windowAnchored: false,
+};
 const NAMED_COSTS = {
+  gemini: GEMINI_COST,
+  kimi: KIMI_COST,
   ownerTiers: OWNER_TIERS_COST,
   tierFloor: TIER_FLOOR_COST,
   manyUnpriced: MANY_UNPRICED_COST,
@@ -340,7 +398,7 @@ const FIXTURES = {
       tokens: tok(410_000),
       burnRatePerHour: 90_000,
     }),
-    p('gemini', 'Gemini CLI', '#4386F5', false, 'passive', { setupAction: ADD }),
+    p('gemini', 'Gemini', '#4386F5', false, 'passive', { setupAction: ADD }),
     p('copilot', 'Copilot', '#8B5CF6', false, 'passive', { setupAction: ADD }),
     p('antigravity', 'Antigravity', '#E8B84B', false, 'passive', { setupAction: ADD }),
     p('kimi', 'Kimi', '#2B6BE8', false, 'passive', { setupAction: ADD }),
@@ -364,7 +422,7 @@ const FIXTURES = {
       burnRatePerHour: 90_000,
     }),
     // A stale row: the meter dims, and the cost figure must become a bound.
-    p('gemini', 'Gemini CLI', '#4386F5', true, 'stale', {
+    p('gemini', 'Gemini', '#4386F5', true, 'stale', {
       weeklyCost: TINY_COST,
       fiveHour: win(31, 'known'),
       tokens: tok(120_000),
@@ -434,8 +492,11 @@ function usageHistoryFixture() {
   return {
     weeks: [],
     months,
-    pricesAsOf: '2026-08-01T00:00:00.000Z',
-    pricesAsOfByProvider: { claude: '2026-08-01T00:00:00.000Z', codex: '2026-08-15T00:00:00.000Z' },
+    pricesAsOf: '2026-08-01',
+    pricesAsOfByProvider: { claude: '2026-08-01', codex: '2026-08-15' },
+    // ADR-003 A6: the tools in these figures and each one's floor causes.
+    usageProviders: ['claude', 'codex'],
+    floorCausesByProvider: { claude: ['unpriced'], codex: ['unpriced', 'unrecorded-writes'] },
   };
 }
 
@@ -719,12 +780,14 @@ contextBridge.exposeInMainWorld('__probe', {
    * `pricesAsOfByProvider` map main sends; {} with a `pricesAsOf` mimics an
    * older main. Pass nothing to put the fixture's own dates back.
    */
-  setHistoryPricesDirect: (byProvider, pricesAsOf) => {
+  setHistoryPricesDirect: (byProvider, pricesAsOf, usageProviders, floorCauses) => {
     const fresh = usageHistoryFixture();
     snapshot.usageHistory = {
       ...snapshot.usageHistory,
       pricesAsOfByProvider: byProvider === undefined ? fresh.pricesAsOfByProvider : byProvider,
       pricesAsOf: pricesAsOf === undefined ? fresh.pricesAsOf : pricesAsOf,
+      usageProviders: usageProviders === undefined ? fresh.usageProviders : usageProviders,
+      floorCausesByProvider: floorCauses === undefined ? fresh.floorCausesByProvider : floorCauses,
     };
     snapshot.generatedAt = new Date().toISOString();
     if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));

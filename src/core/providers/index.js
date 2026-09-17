@@ -34,6 +34,11 @@ function setup(kind, labelKey, detailKey, detailParams) {
  * enablement is the user's choice about what they want to look at. They happen
  * to coincide today, and writing them as one field would silently give a
  * future wired provider a row nobody asked for.
+ *
+ * `experimental` (contract.ts `ProviderSnapshot.experimental`): the provider's
+ * local reader was written from the vendor's SOURCE and has not yet been
+ * confirmed against a real install (ADR-003 Amendment 6, decision 4). True for
+ * Gemini and Kimi until someone with the tool installed confirms the format.
  */
 const PROVIDERS = [
   {
@@ -42,6 +47,7 @@ const PROVIDERS = [
     accent: '#C96442',
     live: true,
     enabledByDefault: true,
+    experimental: false,
     get setupAction() {
       return setup('install-bridge', 'provider.setup.connect', 'provider.claude.detail');
     },
@@ -52,6 +58,7 @@ const PROVIDERS = [
     accent: '#10A37F',
     live: true,
     enabledByDefault: false,
+    experimental: false,
     // Codex writes its rate limits into its own session rollout, so there is
     // nothing for us to install — this chip only appears when Codex itself is
     // not on the machine, as an informational "not found", never an action.
@@ -63,10 +70,14 @@ const PROVIDERS = [
     id: 'gemini',
     displayName: 'Gemini',
     accent: '#4386F5',
-    live: false,
+    // Rung 1 (ADR-003 A6): tokens and a notional cost from the CLI's own chat
+    // recordings under ~/.gemini/tmp/*/chats. Passive "not installed" when that
+    // directory is absent. No gauge: every quota path needs Google's stored login.
+    live: true,
     enabledByDefault: false,
+    experimental: true,
     get setupAction() {
-      return setup('not-installed', 'provider.setup.add', 'provider.notSupportedYet', { provider: 'Gemini' });
+      return setup('not-installed', 'provider.setup.add', 'provider.gemini.notFound');
     },
   },
   {
@@ -75,6 +86,7 @@ const PROVIDERS = [
     accent: '#8B5CF6',
     live: false,
     enabledByDefault: false,
+    experimental: false,
     get setupAction() {
       return setup('not-installed', 'provider.setup.add', 'provider.notSupportedYet', { provider: 'GitHub Copilot' });
     },
@@ -88,6 +100,7 @@ const PROVIDERS = [
     accent: '#E8B84B',
     live: true,
     enabledByDefault: false,
+    experimental: false,
     get setupAction() {
       return setup('install-bridge', 'provider.setup.connect', 'provider.antigravity.detail');
     },
@@ -96,10 +109,13 @@ const PROVIDERS = [
     id: 'kimi',
     displayName: 'Kimi',
     accent: '#2B6BE8',
-    live: false,
+    // Rung 1 (ADR-003 A6): tokens only, unpriced, from ~/.kimi-code/sessions
+    // wire journals. Passive "not installed" when the Kimi Code home is absent.
+    live: true,
     enabledByDefault: false,
+    experimental: true,
     get setupAction() {
-      return setup('not-installed', 'provider.setup.add', 'provider.notSupportedYet', { provider: 'Kimi' });
+      return setup('not-installed', 'provider.setup.add', 'provider.kimi.notFound');
     },
   },
 ];

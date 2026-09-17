@@ -555,6 +555,7 @@ test.describe('the snapshot carries it', () => {
     assert.deepEqual(Object.keys(cost).sort(), [
       'byClass', 'byModel', 'cacheWriteEvents', 'fallbackWriteEvents',
       'assumedTierEvents', 'fastRequestedEvents', 'pricesAsOf', 'sourceIncomplete', 'totalUsd', 'unpricedModels', 'unrecordedWriteEvents', 'windowAnchored',
+      'unrecordedCalls', 'longPromptFloorEvents', 'toolTokenEvents',
       'windowEnd', 'windowStart',
     ].sort());
     assert.deepEqual(Object.keys(cost.byModel[0]).sort(),

@@ -812,6 +812,165 @@ app.whenReady().then(async () => {
   await js(`window.__probe.setCostDirect('codex', 'caveat')`);
   await sleep(250);
 
+  // ---- ADR-003 A6: Gemini CLI and Kimi Code rows --------------------------
+  const RAW_CODES_A6 = /no-model|no-published-price|other-model-alias|unknown-tier|unrecordedCalls|longPrompt|toolToken/;
+  const readLocalRow = (id) => `(async () => {
+    const row = ${q(id)};
+    const c = row.querySelector('.cost');
+    const pill = row.querySelector('.row__line .tag-experimental');
+    const t = c.querySelector('.cost__toggle');
+    if (!t.hidden && t.getAttribute('aria-expanded') !== 'true') t.click();
+    const w = c.querySelector('.cost__why');
+    if (w.getAttribute('aria-expanded') !== 'true') w.click();
+    await new Promise((r) => setTimeout(r, 80));
+    const list = c.querySelector('.cost__causes');
+    const keep = list.style.width;
+    list.style.width = '264px';
+    const caveatNodes = [...c.querySelectorAll('.cost__caveat')];
+    const lines = caveatNodes.map((n) => Math.round(n.getBoundingClientRect().height / parseFloat(getComputedStyle(n).lineHeight)));
+    list.style.width = keep;
+    const out = {
+      lang: document.documentElement.getAttribute('lang'),
+      pill: pill ? { text: pill.firstChild.textContent, title: pill.getAttribute('title'),
+                     spoken: (pill.querySelector('.u-sr') || {}).textContent || null,
+                     color: getComputedStyle(pill).color, border: getComputedStyle(pill).borderTopColor } : null,
+      meta: (row.querySelector('.row__meta') || {}).textContent || '',
+      summary: c.querySelector('.cost__summary').textContent,
+      summaryLines: (() => { const s = c.querySelector('.cost__summary'); return Math.round(s.getBoundingClientRect().height / parseFloat(getComputedStyle(s).lineHeight)); })(),
+      summaryClipped: (() => { const s = c.querySelector('.cost__summary'); return s.scrollWidth > s.clientWidth + 0.5; })(),
+      aria: t.getAttribute('aria-label'),
+      toggleHidden: t.hidden,
+      causes: [...c.querySelectorAll('.cost__cause')].map((n) => n.textContent),
+      caveats: caveatNodes.map((n) => [n.getAttribute('data-caveat'), n.textContent]),
+      caveatLines: lines,
+      caveatsClipped: caveatNodes.map((n) => n.scrollWidth > n.clientWidth + 0.5),
+      prov: [...c.querySelectorAll('.cost__prov span')].map((s) => s.textContent),
+      text: c.textContent + ' ' + row.querySelector('.row__line').textContent,
+      watch: (() => { const s = document.createElement('span'); s.style.color = 'var(--watch)'; c.appendChild(s); const v = getComputedStyle(s).color; s.remove(); return v; })(),
+    };
+    w.click();
+    return out;
+  })()`;
+  await js(`window.__probe.setPendingDirect([], {
+    gemini: { status: 'ok', connected: true, lastGoodAt: null,
+      tokens: { input: 904000, output: 120800, cacheWrite: 0, cacheRead: 400000, billable: 1024800 } },
+    kimi: { status: 'ok', connected: true, setupAction: null,
+      tokens: { input: 320000, output: 45000, cacheWrite: 0, cacheRead: 120000, billable: 365000 } },
+  })`);
+  await js(`window.__probe.setCostDirect('gemini', 'gemini')`);
+  await js(`window.__probe.setCostDirect('kimi', 'kimi')`);
+  await sleep(300);
+  const gemTr = await js(readLocalRow('gemini'));
+  say('gemini row (tr): ' + JSON.stringify(gemTr));
+  check('[tr] Gemini carries the calm "deneysel" pill with its explanation on hover and for a screen reader',
+    !!gemTr.pill && gemTr.pill.text === 'deneysel'
+      && gemTr.pill.title === 'Bu aracın kayıt biçimi gerçek bir kurulumda henüz doğrulanmadı.'
+      && /Bu aracın kayıt biçimi gerçek bir kurulumda henüz doğrulanmadı\./.test(gemTr.pill.spoken || '')
+      && gemTr.pill.color !== gemTr.watch && gemTr.pill.border !== gemTr.watch, gemTr.pill);
+  check('[tr] Gemini shows its tokens like Codex does',
+    /token/.test(gemTr.meta) && !/Token bilgisi yok/.test(gemTr.meta), gemTr.meta);
+  check('[tr] the Gemini figure is always "en az", with unrecorded calls, long prompts and tool tokens as causes',
+    gemTr.summary === 'Gemini API standart fiyatlarıyla en az $12,34 tutardı'
+      && gemTr.causes.includes('Kaydedilmeyen çağrılar')
+      && gemTr.causes.includes('Uzun istem (200K üstü): 3 kayıt')
+      && gemTr.causes.includes('Araç tokenları: 7 kayıt'), [gemTr.summary, gemTr.causes]);
+  check('[tr] Gemini names its price source in the summary, the spoken name and the provenance line',
+    /Gemini API standart fiyatlarıyla en az \$?12,34 ABD doları tutardı/.test(gemTr.aria || '')
+      && gemTr.prov.includes('Gemini API standart fiyatları, 10 Eylül 2026 tarihli listeye göre')
+      && gemTr.summaryLines <= 2 && gemTr.summaryClipped === false, [gemTr.aria, gemTr.prov, gemTr.summaryLines]);
+  check('[tr] each Gemini cause has its short "why" line',
+    gemTr.caveats.some(([k, v]) => k === 'unrecorded-calls' && v === 'Gemini CLI bazı yardımcı çağrıları ve başarısız denemeleri kaydetmez; toplamda yoklar.')
+      && gemTr.caveats.some(([k, v]) => k === 'long-prompt' && v === 'Uzun istemler daha yüksek ücretlendirilir; burada düşük fiyattan sayıldı.')
+      && gemTr.caveats.some(([k, v]) => k === 'tool-tokens' && v === 'Araç kullanım tokenlarının fiyatı yayımlanmıyor; toplama katılmadı.'),
+    gemTr.caveats);
+  check('[tr] tokens with no model get their own explanation, not "not in the price list"',
+    gemTr.caveats.some(([k, v]) => k === 'unpriced' && v === 'Model kaydı olmadığı için fiyatlanamadı.')
+      && !gemTr.caveats.some(([, v]) => v === 'Fiyat listesinde olmadığı için toplama katılmadı.'), gemTr.caveats);
+  check('[tr] tokens with no model are labelled, never "no-model"',
+    gemTr.causes.some((c) => /^Fiyatlanamadı: model belirlenemedi · model kaydı yok · /.test(c))
+      && !RAW_CODES_A6.test(gemTr.text), gemTr.causes);
+
+  const kimiTr = await js(readLocalRow('kimi'));
+  say('kimi row (tr): ' + JSON.stringify(kimiTr));
+  check('[tr] Kimi carries the pill and shows its tokens',
+    !!kimiTr.pill && kimiTr.pill.text === 'deneysel' && /token/.test(kimiTr.meta), [kimiTr.pill, kimiTr.meta]);
+  check('[tr] Kimi\'s usage is all unpriced: no amount anywhere, never $0',
+    !/\$/.test(kimiTr.text) && !/0,00/.test(kimiTr.text) && !/en az/.test(kimiTr.summary)
+      && kimiTr.summary === 'Kimi token başına fiyat yayımlamıyor; tutar yok.'
+      && !/fiyat listesinde/.test(kimiTr.summary + ' ' + (kimiTr.aria || ''))
+      && kimiTr.aria === 'Kimi: token başına fiyat yayımlamıyor, bu yüzden tutar yok. Kullanılan modelleri görmek için etkinleştirin.',
+    [kimiTr.summary, kimiTr.aria]);
+  check('[tr] each Kimi model says why it is unpriced, by label',
+    kimiTr.causes.some((c) => /^Fiyatlanamadı: kimi-code\/kimi-for-coding · fiyat yayımlanmıyor · /.test(c))
+      && kimiTr.causes.some((c) => /^Fiyatlanamadı: openrouter\/claude-sonnet · Kimi Code üzerinden başka model · /.test(c))
+      && !RAW_CODES_A6.test(kimiTr.text), kimiTr.causes);
+  check('[tr] each Kimi reason has its own explanation, directly under its line',
+    JSON.stringify(kimiTr.caveats) === JSON.stringify([
+      ['unpriced', 'Bu araç token başına fiyat yayımlamıyor.'],
+      ['unpriced', 'Kimi Code üzerinden kullanılan başka bir model; fiyatı bilinmiyor.'],
+    ]) && kimiTr.caveatLines.every((n) => n >= 1 && n <= 2), [kimiTr.caveats, kimiTr.caveatLines]);
+  check('[tr] the provenance says Kimi publishes no prices, not that a list date is missing',
+    kimiTr.prov.includes('Kimi fiyat yayımlamıyor') && !kimiTr.prov.some((p) => /tarihi bildirilmedi/.test(p)), kimiTr.prov);
+
+  for (const [lang, locale] of [['tr', 'tr-TR'], ['en', 'en-US'], ['en', 'en-GB']]) {
+    await js(`window.__probe.setLocaleDirect('${lang}', '${locale}')`);
+    await sleep(300);
+    const g = await js(readLocalRow('gemini'));
+    const k = await js(readLocalRow('kimi'));
+    say(`gemini/kimi why lines (${locale}): ` + JSON.stringify([g.caveatLines, k.caveatLines, g.caveats]));
+    check(`[${locale}] Gemini and Kimi "why" lines are at most 2 lines at 264px and never clipped`,
+      g.caveatLines.length >= 4 && [...g.caveatLines, ...k.caveatLines].every((n) => n >= 1 && n <= 2)
+        && [...g.caveatsClipped, ...k.caveatsClipped].every((v) => v === false),
+      [g.caveatLines, k.caveatLines]);
+    check(`[${locale}] no raw code on either row`,
+      !RAW_CODES_A6.test(g.text) && !RAW_CODES_A6.test(k.text), [g.causes, k.causes]);
+    if (lang === 'en') {
+      check(`[${locale}] the English pill, causes and Kimi provenance`,
+        g.pill && g.pill.text === 'experimental'
+          && g.pill.title === "This tool's log format has not yet been verified on a real install."
+          && g.causes.includes('Unrecorded calls') && g.causes.includes('Long prompts (over 200K): 3 records')
+          && g.causes.includes('Tool tokens: 7 records')
+          && k.causes.some((c) => /· no published price ·/.test(c)) && k.causes.some((c) => /· other model via Kimi Code ·/.test(c))
+          && k.prov.includes('Kimi does not publish prices')
+          && k.summary === 'Kimi does not publish per-token prices, so there is no amount.'
+          && /^Would have cost at least (US)?\$12\.34 at Gemini API standard rates$/.test(g.summary)
+          && g.prov.some((p) => /^Gemini API standard rates, from the list dated /.test(p))
+          && g.summaryLines <= 2 && g.summaryClipped === false
+          && g.caveats.some(([, v]) => v === 'No model was recorded, so it could not be priced.')
+          && k.caveats.some(([, v]) => v === 'This tool does not publish a per-token price.')
+          && k.caveats.some(([, v]) => v === 'Another model used through Kimi Code; its price is unknown.'),
+        [g.pill, g.causes, k.causes, k.prov, g.caveats, k.caveats]);
+    }
+  }
+  await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
+  await sleep(300);
+
+  // Settings → Model Yönetimi carries the same pill for Gemini and Kimi only.
+  const settingsPills = await js(`(async () => {
+    const view = document.getElementById('settings-view');
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 150));
+    const out = [...view.querySelectorAll('.settings__item')].map((li) => ({
+      id: li.getAttribute('data-provider'),
+      pill: (li.querySelector('.tag-experimental') || { firstChild: null }).firstChild ? li.querySelector('.tag-experimental').firstChild.textContent : null,
+      title: li.querySelector('.tag-experimental') ? li.querySelector('.tag-experimental').getAttribute('title') : null,
+      clipped: li.querySelector('.tag-experimental') ? li.querySelector('.tag-experimental').scrollWidth > li.querySelector('.tag-experimental').clientWidth + 0.5 : null,
+    }));
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    return out;
+  })()`);
+  say('settings pills: ' + JSON.stringify(settingsPills));
+  check('Settings → Model Yönetimi shows "deneysel" on Gemini and Kimi, and on no other tool',
+    settingsPills.length >= 6
+      && settingsPills.every((s) => (s.id === 'gemini' || s.id === 'kimi')
+        ? s.pill === 'deneysel' && /doğrulanmadı/.test(s.title || '') && s.clipped === false
+        : s.pill === null), settingsPills);
+  check('the Claude row has no pill',
+    (await js(`${q('claude')}.querySelector('.tag-experimental') === null`)) === true);
+  await js(`window.__probe.restore()`);
+  await sleep(300);
+
   // ---- pending: a tool whose first usage scan has not answered -----------
   //
   // ADR-002 A3.12. Codex's scan runs in a worker, so its first snapshot carries
@@ -907,7 +1066,12 @@ app.whenReady().then(async () => {
   await js(`window.__probe.restore()`);
   await sleep(250);
 
-  // ---- the price-date note states only dates of tables that priced something
+  // ---- ADR-003 A6 / ADR-004 A3: the price note, compact per tool -----------
+  //
+  // Always visible: an optional lead and one short source line per tool.
+  // Behind "Neden en az?": one short cause line per tool. The reader opens the
+  // disclosure itself, measures every line at the drawn settings width, then
+  // closes it again, so each check sees both states.
   const readNote = `(async () => {
     const view = document.getElementById('settings-view');
     document.querySelector('.iconbtn--settings').click();
@@ -915,37 +1079,163 @@ app.whenReady().then(async () => {
     view.querySelector('.acc__trigger[data-acc="usage"]').click();
     await new Promise((r) => setTimeout(r, 80));
     const n = view.querySelector('.usage__note');
-    const out = { text: n && !n.hidden ? n.textContent : null,
-                  clipped: n ? n.scrollWidth > n.clientWidth : null };
+    const lead = n.querySelector('.usage__note-lead');
+    const why = n.querySelector('.usage__why');
+    const block = n.querySelector('.usage__why-block');
+    const listId = why ? why.getAttribute('aria-controls') : null;
+    const list = listId ? document.getElementById(listId) : null;
+    const clip = (e) => e.scrollWidth > e.clientWidth + 0.5;
+    const linesOf = (e) => Math.round(e.getBoundingClientRect().height / parseFloat(getComputedStyle(e).lineHeight));
+    const sources = [...n.querySelectorAll('.usage__source')];
+    const introSources = (view.querySelector('.usage__intro-sources') || {}).textContent || null;
+    const closed = {
+      expanded: why ? why.getAttribute('aria-expanded') : null,
+      listHidden: list ? list.hidden : null,
+      whyDrawn: list ? list.getClientRects().length > 0 : null,
+    };
+    if (why && !block.hidden) why.click();
+    await new Promise((r) => setTimeout(r, 60));
+    const whyLines = [...n.querySelectorAll('.usage__why-line')];
+    const out = {
+      text: n.textContent,
+      introSources,
+      lead: lead && !lead.hidden ? lead.textContent : null,
+      leadCount: [...n.querySelectorAll('.usage__note-lead')].filter((e) => !e.hidden).length,
+      sources: sources.map((e) => e.textContent),
+      sourceLines: sources.map(linesOf),
+      sourcesClipped: sources.map(clip),
+      whyHidden: block ? block.hidden : null,
+      whyText: why ? why.textContent : null,
+      whyTag: why ? why.tagName : null,
+      closed,
+      open: {
+        expanded: why ? why.getAttribute('aria-expanded') : null,
+        listHidden: list ? list.hidden : null,
+        controlsList: !!list && list.classList.contains('usage__why-list'),
+      },
+      why: whyLines.map((e) => e.textContent),
+      whyLines: whyLines.map(linesOf),
+      whyClipped: whyLines.map(clip),
+      width: Math.round(n.getBoundingClientRect().width),
+      watch: (() => { const s = document.createElement('span'); s.style.color = 'var(--watch)'; n.appendChild(s); const v = getComputedStyle(s).color; s.remove(); return v; })(),
+      whyBorder: whyLines[0] ? getComputedStyle(whyLines[0]).borderLeftColor : null,
+    };
+    if (why && why.getAttribute('aria-expanded') === 'true') why.click();
     view.querySelector('.acc__trigger[data-acc="models"]').click();
     await new Promise((r) => setTimeout(r, 60));
     document.querySelector('.iconbtn--settings').click();
     await new Promise((r) => setTimeout(r, 120));
     return out;
   })()`;
-  // Codex-only: main leaves Claude out of the map on purpose.
-  await js(`window.__probe.setHistoryPricesDirect({ codex: '2026-08-15T00:00:00.000Z' }, '2026-08-01T00:00:00.000Z')`);
+  const RAW_CAUSE_CODES = /unrecorded-calls|long-prompt|tool-tokens|cache-write-ttl-fallback|unrecorded-writes|assumed-tier|fast-requested|no-model|no-published-price|other-model-alias/;
+  const ALL_TOOLS = [
+    `{ claude: '2026-08-01', codex: '2026-08-15', gemini: '2026-09-10' }`,
+    `'2026-08-01'`,
+    `['claude', 'codex', 'gemini', 'kimi']`,
+    `{ claude: ['unpriced', 'cache-write-ttl-fallback'], codex: ['unrecorded-writes', 'assumed-tier', 'fast-requested'], gemini: ['unrecorded-calls', 'long-prompt', 'tool-tokens'], kimi: ['unpriced'], bogus: ['unpriced'] }`,
+  ].join(', ');
+  await js(`window.__probe.setHistoryPricesDirect(${ALL_TOOLS})`);
   await sleep(200);
-  const codexOnlyNote = await js(readNote);
-  say('codex-only note (tr): ' + JSON.stringify(codexOnlyNote));
-  check('a Codex-only history states the Codex price date and no Claude date',
-    /^Codex fiyatları 15 Ağustos 2026 tarihli listeye göre\./.test(codexOnlyNote.text || '')
-      && !/Claude/.test(codexOnlyNote.text || '') && !/1 Ağustos/.test(codexOnlyNote.text || ''), codexOnlyNote);
-  check('and it names both floor causes, whole',
-    /fiyatlanamayan kullanım toplama katılmadığı/.test(codexOnlyNote.text || '')
-      && /kaydetmediği önbellek yazmaları/.test(codexOnlyNote.text || '') && codexOnlyNote.clipped === false,
-    codexOnlyNote);
-  // An older main: no map at all, so the legacy (Claude) date is the only one.
-  await js(`window.__probe.setHistoryPricesDirect({}, '2026-08-01T00:00:00.000Z')`);
+  const noteAll = await js(readNote);
+  say('compact note, four tools (tr): ' + JSON.stringify(noteAll));
+  check('[tr] always visible: one lead and one short source line per tool, in order',
+    noteAll.leadCount === 1
+      && noteAll.lead === '“En az” alt sınır demektir; gerçek maliyet daha yüksek olabilir.'
+      && JSON.stringify(noteAll.sources) === JSON.stringify([
+        'Claude Code · 1 Ağu 2026 fiyatları',
+        'Codex · 15 Ağu 2026 fiyatları',
+        'Gemini · Gemini API standart, 10 Eyl 2026',
+        'Kimi · fiyat yayımlamıyor',
+      ]), [noteAll.lead, noteAll.sources]);
+  check('[tr] each source is one line, never clipped',
+    noteAll.sourceLines.every((n) => n === 1) && noteAll.sourcesClipped.every((v) => v === false),
+    [noteAll.width, noteAll.sourceLines]);
+  check('[tr] the causes sit behind "Neden en az?", a real button with working aria wiring',
+    noteAll.whyTag === 'BUTTON' && noteAll.whyText === 'Neden en az?'
+      && noteAll.closed.expanded === 'false' && noteAll.closed.listHidden === true && noteAll.closed.whyDrawn === false
+      && noteAll.open.expanded === 'true' && noteAll.open.listHidden === false && noteAll.open.controlsList === true,
+    [noteAll.closed, noteAll.open]);
+  check('[tr] one short cause line per tool with causes, Kimi included',
+    JSON.stringify(noteAll.why) === JSON.stringify([
+      'Claude Code: fiyatlanamayan kullanım ve süresi kaydedilmemiş önbellek yazmaları (1,25× ile)',
+      'Codex: kaydedilmemiş önbellek yazmaları, katmanı kaydedilmemiş istekler (Standart’tan) ve Fast istenen kayıtlar (Standart’tan)',
+      'Gemini: kaydedilmeyen çağrılar, uzun istemler (200K üstü) ve araç tokenları',
+      'Kimi: fiyat yayımlamıyor',
+    ]), noteAll.why);
+  check('[tr] F1: the source sentence names the tools in the history, and keeps "only local"',
+    noteAll.introSources === 'Yalnızca bu bilgisayardaki Claude Code, Codex, Gemini ve Kimi kayıtlarından hesaplanır.',
+    noteAll.introSources);
+  check(`[tr] every cause line is at most 2 lines at the settings width (${noteAll.width}px), never clipped, no warning colour`,
+    noteAll.whyLines.length === 4 && noteAll.whyLines.every((n) => n >= 1 && n <= 2)
+      && noteAll.whyClipped.every((v) => v === false) && noteAll.whyBorder !== noteAll.watch,
+    [noteAll.width, noteAll.whyLines]);
+  check('[tr] no raw cause code and no unknown tool anywhere in the note',
+    !RAW_CAUSE_CODES.test(noteAll.text) && !/bogus/.test(noteAll.text), noteAll.text);
+  for (const locale of ['en-US', 'en-GB']) {
+    await js(`window.__probe.setLocaleDirect('en', '${locale}')`);
+    await sleep(300);
+    const n = await js(readNote);
+    say(`compact note, four tools (${locale}): ` + JSON.stringify(n));
+    const gb = locale === 'en-GB';
+    check(`[${locale}] the compact note reads in English, one line per source, why lines at most 2 lines, nothing clipped`,
+      n.lead === '“At least” means a lower bound; the real cost may be higher.'
+        && n.sources[0] === (gb ? 'Claude Code · 1 Aug 2026 prices' : 'Claude Code · Aug 1, 2026 prices')
+        && n.sources[2] === (gb ? 'Gemini · Gemini API standard, 10 Sept 2026' : 'Gemini · Gemini API standard, Sep 10, 2026')
+        && n.sources[3] === 'Kimi · does not publish prices'
+        && n.why[2] === 'Gemini: unrecorded calls, long prompts (over 200K), and tool tokens'
+        && n.whyText === 'Why at least?'
+        && n.why[3] === 'Kimi: does not publish prices'
+        && n.introSources === 'Calculated only from local Claude Code, Codex, Gemini, and Kimi logs.'
+        && n.sourceLines.every((x) => x === 1) && n.sourcesClipped.every((v) => v === false)
+        && n.whyLines.every((x) => x >= 1 && x <= 2) && n.whyClipped.every((v) => v === false)
+        && !RAW_CAUSE_CODES.test(n.text),
+      [n.sources, n.why, n.whyLines]);
+  }
+  await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
+  await sleep(300);
+
+  // Gemini only: its source and its one cause, nothing about Claude or Codex.
+  await js(`window.__probe.setHistoryPricesDirect({ gemini: '2026-09-10' }, '2026-08-01', ['gemini'], { gemini: ['unrecorded-calls'] })`);
+  await sleep(200);
+  const noteGem = await js(readNote);
+  say('compact note, gemini only (tr): ' + JSON.stringify(noteGem));
+  check('[tr] a Gemini-only history: its source line, its one cause, nothing about Claude or Codex',
+    noteGem.leadCount === 1 && JSON.stringify(noteGem.sources) === JSON.stringify(['Gemini · Gemini API standart, 10 Eyl 2026'])
+      && JSON.stringify(noteGem.why) === JSON.stringify(['Gemini: kaydedilmeyen çağrılar'])
+      && !/Claude|Codex/.test(noteGem.text), noteGem);
+
+  // Kimi only: no cause, so no lead and no "why" at all.
+  await js(`window.__probe.setHistoryPricesDirect({}, '2026-08-01', ['kimi'], { kimi: ['unpriced'] })`);
+  await sleep(200);
+  const noteKimi = await js(readNote);
+  say('compact note, kimi only (tr): ' + JSON.stringify(noteKimi));
+  check('[tr] a Kimi-only history: its source line, the lead, and "Kimi: fiyat yayımlamıyor" behind why',
+    noteKimi.leadCount === 1 && noteKimi.whyHidden === false
+      && JSON.stringify(noteKimi.sources) === JSON.stringify(['Kimi · fiyat yayımlamıyor'])
+      && JSON.stringify(noteKimi.why) === JSON.stringify(['Kimi: fiyat yayımlamıyor']), noteKimi);
+
+  // F3: Claude with no cause plus Kimi. The period reads "en az" because of
+  // Kimi alone, so the lead and the explanation must still be there.
+  await js(`window.__probe.setHistoryPricesDirect({ claude: '2026-08-01' }, '2026-08-01', ['claude', 'kimi'], { kimi: ['unpriced'] })`);
+  await sleep(200);
+  const noteCK = await js(readNote);
+  say('compact note, claude (no causes) + kimi (tr): ' + JSON.stringify(noteCK));
+  check('[tr] F3: Claude with no cause plus Kimi still shows the lead and says why',
+    noteCK.leadCount === 1 && noteCK.whyHidden === false
+      && JSON.stringify(noteCK.sources) === JSON.stringify(['Claude Code · 1 Ağu 2026 fiyatları', 'Kimi · fiyat yayımlamıyor'])
+      && JSON.stringify(noteCK.why) === JSON.stringify(['Kimi: fiyat yayımlamıyor'])
+      && noteCK.introSources === 'Yalnızca bu bilgisayardaki Claude Code ve Kimi kayıtlarından hesaplanır.', noteCK);
+
+  // An older main: no per-tool data at all, so the legacy (Claude) date is used.
+  await js(`window.__probe.setHistoryPricesDirect({}, '2026-08-01', [], {})`);
   await sleep(200);
   const legacyNote = await js(readNote);
   say('legacy note (tr): ' + JSON.stringify(legacyNote));
-  check('with no per-tool map (older main) the single-date note still uses pricesAsOf',
-    /^Fiyatlar 1 Ağustos 2026 tarihli listeye göre\./.test(legacyNote.text || ''), legacyNote);
-  check('the Claude-only note names both Claude floor causes: unpriced usage and the missing TTL split',
-    /fiyatlanamayan kullanım toplama katılmadığı/.test(legacyNote.text || '')
-      && /TTL ayrımı olmayan önbellek yazmaları 1,25× ile fiyatlandırıldığı, 1 saatlik yazmalar ise gerçekte 2× olduğu/.test(legacyNote.text || '')
-      && !/Codex/.test(legacyNote.text || '') && legacyNote.clipped === false, legacyNote);
+  check('with no per-tool data (older main) the legacy Claude date and both Claude causes still show',
+    JSON.stringify(legacyNote.sources) === JSON.stringify(['Claude Code · 1 Ağu 2026 fiyatları'])
+      && legacyNote.why[0] === 'Claude Code: fiyatlanamayan kullanım ve süresi kaydedilmemiş önbellek yazmaları (1,25× ile)'
+      && !/Codex/.test(legacyNote.text)
+      && legacyNote.introSources === 'Yalnızca yerel kayıtlardan hesaplanır.', legacyNote);
   await js(`window.__probe.setHistoryPricesDirect()`);
   await sleep(200);
 
@@ -978,8 +1268,9 @@ app.whenReady().then(async () => {
   })()`;
   const notesTr = await js(readUsageNotes);
   say('usage notes (tr): ' + JSON.stringify(notesTr));
-  check('[tr] the two-date note keeps its Codex clause and adds tier uncertainty to it, whole',
-    /Codex’te ise Codex’in kaydetmediği önbellek yazmaları bunları ücretlendiren modellerde toplamda yer almadığı ya da hizmet katmanı doğrulanamadığı \(katman kaydedilmemişse veya Fast istendiyse Standart fiyat kullanılır\) için\.$/.test(notesTr.note || '')
+  check('[tr] the fixture\'s note has Codex\'s source line and its causes, whole',
+    /Codex · 15 Ağu 2026 fiyatları/.test(notesTr.note || '')
+      && /Codex: fiyatlanamayan kullanım ve kaydedilmemiş önbellek yazmaları/.test(notesTr.note || '')
       && notesTr.noteClipped === false && notesTr.noteTov !== 'ellipsis', notesTr);
   check('no incomplete note while no tool is incomplete', notesTr.incomplete === null, notesTr.incomplete);
 
@@ -998,7 +1289,8 @@ app.whenReady().then(async () => {
   check('[en-US] the incomplete note and the tier clause read in English, whole',
     incEn.incomplete === 'Some local records for Codex could not be read; affected periods are a lower bound.'
       && incEn.incompleteClipped === false
-      && /or the service tier could not be verified \(with no recorded tier, or with Fast requested, the Standard price is used\)/.test(incEn.note || '')
+      && /Codex · Aug 15, 2026 prices/.test(incEn.note || '')
+      && /Codex: usage that could not be priced and unrecorded cache writes/.test(incEn.note || '')
       && incEn.noteClipped === false, incEn);
   await js(`window.__probe.setLocaleDirect('en', 'en-GB')`);
   await sleep(300);

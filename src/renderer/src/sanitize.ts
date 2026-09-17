@@ -19,6 +19,7 @@ import type {
   Preferences,
   CostByClass,
   FigureSource,
+  HistoryFloorCause,
   ModelCost,
   ModelQuotaDetail,
   ModelQuotaGroup,
@@ -47,6 +48,18 @@ const CONTROL_CHARS = new RegExp(
 );
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const NEUTRAL_ACCENT = '#6B7A77';
+
+/** ADR-003 A6: the history floor-cause codes the renderer has copy for. */
+const HISTORY_FLOOR_CAUSES = new Set<HistoryFloorCause>([
+  'unpriced',
+  'cache-write-ttl-fallback',
+  'unrecorded-writes',
+  'assumed-tier',
+  'fast-requested',
+  'unrecorded-calls',
+  'long-prompt',
+  'tool-tokens',
+]);
 
 const PROVIDER_IDS = new Set<ProviderSnapshot['id']>([
   'claude',
@@ -506,6 +519,11 @@ function weeklyCost(raw: unknown): WeeklyCost | null {
     // only a non-negative integer is one; anything else reads as 0.
     assumedTierEvents: eventCount(source.assumedTierEvents),
     fastRequestedEvents: eventCount(source.fastRequestedEvents),
+    // ADR-003 A6, Gemini floor causes. Only a literal true is the claim that
+    // calls went unrecorded; the counts are non-negative integers, else 0.
+    unrecordedCalls: source.unrecordedCalls === true,
+    longPromptFloorEvents: eventCount(source.longPromptFloorEvents),
+    toolTokenEvents: eventCount(source.toolTokenEvents),
     // ADR-002 A3.15: the reader KNOWS it missed events in the window. Only a
     // literal true is that claim; anything else (absent on an older main,
     // "true", 1) is not, and reads as false rather than inventing a floor
@@ -650,7 +668,38 @@ function usageHistory(raw: unknown): UsageHistory | null {
     if (incompleteProviders.includes(id as ProviderSnapshot['id'])) continue;
     incompleteProviders.push(id as ProviderSnapshot['id']);
   }
-  return { weeks, months, pricesAsOf, pricesAsOfByProvider, incompleteProviders };
+  // ADR-003 A6: the tools in the history (fixed order from main) and each
+  // tool's floor causes. Known ids and known codes only, each once, in the
+  // producer's order; anything else is dropped rather than printed.
+  const usageProviders: UsageHistory['usageProviders'] = [];
+  for (const id of Array.isArray(source.usageProviders) ? source.usageProviders : []) {
+    if (!PROVIDER_IDS.has(id as ProviderSnapshot['id'])) continue;
+    if (usageProviders.includes(id as ProviderSnapshot['id'])) continue;
+    usageProviders.push(id as ProviderSnapshot['id']);
+  }
+  const floorCausesByProvider: UsageHistory['floorCausesByProvider'] = {};
+  const causesRaw = source.floorCausesByProvider;
+  if (causesRaw && typeof causesRaw === 'object' && !Array.isArray(causesRaw)) {
+    for (const [id, list] of Object.entries(causesRaw as Record<string, unknown>)) {
+      if (!PROVIDER_IDS.has(id as ProviderSnapshot['id']) || !Array.isArray(list)) continue;
+      const codes: HistoryFloorCause[] = [];
+      for (const code of list) {
+        if (!HISTORY_FLOOR_CAUSES.has(code as HistoryFloorCause)) continue;
+        if (codes.includes(code as HistoryFloorCause)) continue;
+        codes.push(code as HistoryFloorCause);
+      }
+      if (codes.length > 0) floorCausesByProvider[id as ProviderSnapshot['id']] = codes;
+    }
+  }
+  return {
+    weeks,
+    months,
+    pricesAsOf,
+    pricesAsOfByProvider,
+    incompleteProviders,
+    usageProviders,
+    floorCausesByProvider,
+  };
 }
 
 function setupAction(raw: unknown): SetupAction | null {
@@ -690,6 +739,9 @@ function provider(raw: unknown): ProviderSnapshot | null {
     id: source.id as ProviderSnapshot['id'],
     displayName,
     accent: accent(source.accent),
+    // ADR-003 A6.4: only a literal true carries the marker. Absent (an older
+    // main) is false: the flag is a static registry fact main always sends.
+    experimental: source.experimental === true,
     // Absent means a main process that predates the field. Default TRUE, not
     // false: an unteachable producer must degrade to the previous behaviour
     // (every provider visible) rather than to a silently empty panel, which

@@ -7,7 +7,75 @@ const agg = require('./aggregate');
 const history = require('./history');
 const codexUsage = require('./codex/usage');
 const codexPricing = require('./codex/pricing');
+const geminiUsage = require('./gemini/usage');
+const geminiPricing = require('./gemini/pricing');
+const kimiUsage = require('./kimi/usage');
+const kimiCostMod = require('./kimi/cost');
 const { RETENTION_DAYS, DAY_MS } = require('./scan/scanner');
+
+/** One shared empty list, so "no events" keeps the same identity across builds. */
+const EMPTY_EVENTS = Object.freeze([]);
+
+/**
+ * The last usage history built, and what it was built from (ADR-003 A6 Phase A
+ * ruling on F3). Pricing every week and month over a year of four tools' events
+ * took ~19 ms per rebuild on the main thread; the inputs rarely change between
+ * two sweeps, so an identical rebuild reuses the previous result.
+ *
+ * The key is exact, never a content guess:
+ *  - each tool's event array by IDENTITY (the collector keeps the previous array
+ *    when a scan returns identical events, see `sameEvents` in usage-channel.js),
+ *  - the known-unread ranges by value,
+ *  - the local week and month the clock is in (a new period appears at the boundary).
+ * Every event is older than the scan that produced it, so nothing else about
+ * `now` changes the result. A failed scan's unread range ends at `now` and
+ * therefore misses the memo on every rebuild: correct, merely not cached.
+ */
+let historyMemo = null;
+
+function memoUsageHistory(rawClaude, dedupedAll, now, opts) {
+  // A Claude record stamped in the future (clock skew) would join the history
+  // later without any key changing (review F10): such records are left out of
+  // the history until their time comes, and how many were left out is part of
+  // the key.
+  let future = 0;
+  for (const ev of dedupedAll) if (ev && ev.ts > now) future += 1;
+  const deduped = future > 0 ? dedupedAll.filter((ev) => !(ev && ev.ts > now)) : dedupedAll;
+  const key = {
+    future,
+    claude: rawClaude,
+    codex: opts.codexEvents,
+    gemini: opts.geminiEvents,
+    kimi: opts.kimiEvents,
+    unread: JSON.stringify(opts.unreadRanges),
+    week: history.weekStartMs(now),
+    month: history.monthStartMs(now),
+  };
+  const prev = historyMemo && historyMemo.key;
+  if (prev && prev.future === key.future && prev.claude === key.claude && prev.codex === key.codex && prev.gemini === key.gemini
+    && prev.kimi === key.kimi && prev.unread === key.unread && prev.week === key.week && prev.month === key.month) {
+    return historyMemo.value;
+  }
+  const value = history.usageHistory(deduped, now, opts);
+  historyMemo = { key, value };
+  return value;
+}
+
+/**
+ * Per-model lists in a WeeklyCost are bounded (ADR-003 A6 review, security F4).
+ * `byModel` is ordered priced-first, so the kept rows carry the money.
+ */
+function boundCost(cost) {
+  if (!cost) return cost;
+  if (cost.byModel.length > history.MAX_LIST) cost.byModel = cost.byModel.slice(0, history.MAX_LIST);
+  if (cost.unpricedModels.length > history.MAX_LIST) cost.unpricedModels = cost.unpricedModels.slice(0, history.MAX_LIST);
+  return cost;
+}
+
+/** Test seam: forget the memoised history. */
+function _resetHistoryMemoForTests() {
+  historyMemo = null;
+}
 
 /**
  * Builds the Snapshot described by `src/shared/contract.ts`.
@@ -249,6 +317,10 @@ function emptyWeeklyCost(startMs, endMs, anchored, pricesAsOf) {
     unrecordedWriteEvents: 0,
     assumedTierEvents: 0,
     fastRequestedEvents: 0,
+    // Nothing was read, so there is no amount for a Gemini cause to qualify.
+    unrecordedCalls: false,
+    longPromptFloorEvents: 0,
+    toolTokenEvents: 0,
     sourceIncomplete: true,
     pricesAsOf,
     windowStart: new Date(startMs).toISOString(),
@@ -317,6 +389,89 @@ function codexRowState(cx, anyFigure, fresh, rolledOver) {
     default:
       return { connected: false, status: 'passive', setup: true, errorCode: undefined };
   }
+}
+
+/**
+ * A row for a tool whose ONLY source is its own local usage log: Gemini CLI and
+ * Kimi Code (ADR-003 Amendment 6). Neither writes a 5-hour or weekly limit
+ * figure anywhere this app may read, so both windows are `not-supplied`
+ * ("bildirilmiyor"): the tool does not publish them to us, which is not the
+ * same claim as "unknown", and no window is invented.
+ *
+ *  - Not installed (its data directory is absent): the passive "not installed"
+ *    row every unsupported provider already had.
+ *  - Installed: connected, status 'ok'. Tokens are a trailing five hours (no
+ *    reset anchor exists, exactly as Codex falls back without one); the cost
+ *    block is a trailing 7 days (`windowAnchored: false`). While the first scan
+ *    is pending, `tokens`/`weeklyCost` are null because they are NOT READ YET
+ *    and `Snapshot.pendingUsage` says so. A known-incomplete scan marks the cost
+ *    `sourceIncomplete` (A3.15) and never touches the row status.
+ *
+ * @param {object} p        registry entry
+ * @param {boolean} enabled
+ * @param {{installed?:boolean, events?:Array|null, readFailed?:boolean,
+ *          resultAtMs?:number|null, unreadRange?:object|null}|undefined} src
+ * @param {number} now
+ * @param {{sum: Function, cost: Function, pricesAsOf: string}} reader
+ * @returns {{row: object, unread: Array}}
+ */
+function localUsageRow(p, enabled, src, now, reader) {
+  const installed = Boolean(src && src.installed === true);
+  const base = {
+    id: p.id,
+    displayName: p.displayName,
+    accent: p.accent,
+    enabled,
+    experimental: p.experimental === true,
+    planLabel: null,
+    burnRatePerHour: null,
+  };
+  if (!installed) {
+    return {
+      row: {
+        ...base,
+        connected: false,
+        status: 'passive',
+        fiveHour: null,
+        sevenDay: null,
+        tokens: null,
+        weeklyCost: null,
+        setupAction: { ...p.setupAction },
+        lastGoodAt: null,
+      },
+      unread: [],
+      events: EMPTY_EVENTS,
+    };
+  }
+  const events = Array.isArray(src.events) ? src.events : null;
+  const list = events || EMPTY_EVENTS;
+  const fiveWin = agg.fiveHourWindow(now, null);
+  const five = reader.sum(list, fiveWin.start, Math.min(fiveWin.end, now));
+  const weekWin = agg.sevenDayWindow(now, null);
+  const unread = events
+    ? unreadRangesOf(src.unreadRange, src.readFailed === true, src.resultAtMs, now)
+    : [];
+  const incomplete = overlapsAny(unread, weekWin.start, weekWin.end);
+  let weeklyCost = events ? reader.cost(list, weekWin.start, weekWin.end, false) : null;
+  if (weeklyCost) boundCost(weeklyCost).sourceIncomplete = incomplete;
+  else if (incomplete) weeklyCost = emptyWeeklyCost(weekWin.start, weekWin.end, false, reader.pricesAsOf);
+  return {
+    row: {
+      ...base,
+      connected: true,
+      status: 'ok',
+      fiveHour: unknownWindow('not-supplied'),
+      sevenDay: unknownWindow('not-supplied'),
+      tokens: five.tokens.billable > 0 ? five.tokens : null,
+      byModel: five.byModel.slice(0, 6),
+      weeklyCost,
+      setupAction: null,
+      // When the held usage result was read; null while pending.
+      lastGoodAt: events && Number.isFinite(src.resultAtMs) ? new Date(src.resultAtMs).toISOString() : null,
+    },
+    unread,
+    events: list,
+  };
 }
 
 /**
@@ -429,7 +584,7 @@ function buildSnapshot(input) {
   );
   const claudeIncomplete = overlapsAny(claudeUnread, weekWin.start, weekWin.end);
   let weeklyCost = pricing.weeklyCost(deduped, weekWin.start, weekWin.end, weekWin.anchored);
-  if (weeklyCost) weeklyCost.sourceIncomplete = claudeIncomplete;
+  if (weeklyCost) boundCost(weeklyCost).sourceIncomplete = claudeIncomplete;
   else if (claudeIncomplete) {
     // A3.19: nothing readable in the window, and KNOWN not to be the whole story.
     weeklyCost = emptyWeeklyCost(weekWin.start, weekWin.end, weekWin.anchored, pricing.PRICES_AS_OF);
@@ -626,7 +781,7 @@ function buildSnapshot(input) {
   // deltas the collector scanned. Row tokens track the five-hour window (as
   // Claude's do); the cost block is the week at OpenAI's published prices —
   // never a bill, the same framing as Claude's.
-  const cxEvents = Array.isArray(input.codexEvents) ? input.codexEvents : [];
+  const cxEvents = Array.isArray(input.codexEvents) ? input.codexEvents : EMPTY_EVENTS;
   // Five-hour tokens: anchored to Codex's own five-hour reset while it is
   // still ahead, exactly as Claude's are; a trailing 5h otherwise. The window
   // end is capped at now — the rest of it has not happened.
@@ -649,18 +804,35 @@ function buildSnapshot(input) {
     : [];
   const cxIncomplete = overlapsAny(codexUnread, cxWeekWin.start, cxWeekWin.end);
   let cxWeeklyCost = codexPricing.codexCost(cxEvents, cxWeekWin.start, cxWeekWin.end, cxWeekWin.anchored);
-  if (cxWeeklyCost) cxWeeklyCost.sourceIncomplete = cxIncomplete;
+  if (cxWeeklyCost) boundCost(cxWeeklyCost).sourceIncomplete = cxIncomplete;
   else if (cxIncomplete) {
     cxWeeklyCost = emptyWeeklyCost(cxWeekWin.start, cxWeekWin.end, cxWeekWin.anchored, codexPricing.PRICES_AS_OF);
   }
 
+  // --- Gemini CLI / Kimi Code (ADR-003 A6) ----------------------------------
+  const gm = localUsageRow(PROVIDERS.find((p) => p.id === 'gemini'), enabled.gemini === true, input.gemini, now, {
+    sum: geminiUsage.sumGeminiTokens,
+    cost: geminiPricing.geminiCost,
+    pricesAsOf: geminiPricing.PRICES_AS_OF,
+  });
+  const km = localUsageRow(PROVIDERS.find((p) => p.id === 'kimi'), enabled.kimi === true, input.kimi, now, {
+    sum: kimiUsage.sumKimiTokens,
+    cost: kimiCostMod.kimiCost,
+    // Kimi has no price table: an incomplete empty cost states no date either.
+    pricesAsOf: '',
+  });
+  const localPending = (src) => Boolean(src && src.installed === true && !Array.isArray(src.events));
+
   const providers = PROVIDERS.map((p) => {
+    if (p.id === 'gemini') return gm.row;
+    if (p.id === 'kimi') return km.row;
     if (p.id === 'antigravity') {
       const snap = {
         id: p.id,
         displayName: p.displayName,
         accent: p.accent,
         enabled: enabled[p.id] === true,
+        experimental: p.experimental === true,
         connected: agRow.connected,
         status: agRow.status,
         // Antigravity states a plan tier in its payload. The bridge does not
@@ -686,6 +858,7 @@ function buildSnapshot(input) {
         displayName: p.displayName,
         accent: p.accent,
         enabled: enabled[p.id] === true,
+        experimental: p.experimental === true,
         connected: cxRow.connected,
         status: cxRow.status,
         // plan_type ("plus") is an account fact, not a usage number; ADR-001
@@ -710,6 +883,7 @@ function buildSnapshot(input) {
         accent: p.accent,
         // The user's choice to SEE this row, not our ability to fill it.
         enabled: enabled[p.id] === true,
+        experimental: p.experimental === true,
         connected: false,
         status: 'passive',
         planLabel: null,
@@ -731,6 +905,7 @@ function buildSnapshot(input) {
       displayName: p.displayName,
       accent: p.accent,
       enabled: enabled[p.id] === true,
+      experimental: p.experimental === true,
       connected: row.connected,
       status: row.status,
       planLabel: typeof input.planLabel === 'string' && input.planLabel ? input.planLabel : null,
@@ -756,15 +931,24 @@ function buildSnapshot(input) {
     // SAME scanned turn deltas its row's tokens and weekly cost are built from,
     // priced by its own table; the settings section names both sources.
     // Periods overlapping a known-unread range are floors (A3.20).
-    usageHistory: history.usageHistory(deduped, now, {
+    // Gemini and Kimi join it from their own scans (ADR-003 A6), each priced by
+    // its own rules (Kimi: unpriced).
+    usageHistory: memoUsageHistory(Array.isArray(input.events) ? input.events : EMPTY_EVENTS, deduped, now, {
       codexEvents: cxEvents,
-      unreadRanges: { claude: claudeUnread, codex: codexUnread },
+      geminiEvents: gm.events,
+      kimiEvents: km.events,
+      unreadRanges: { claude: claudeUnread, codex: codexUnread, gemini: gm.unread, kimi: km.unread },
     }),
     // ADR-002 A3.12. The collector passes `codexEvents: null` until the Codex
     // worker's first result, so its empty figures above read as NOT READ YET.
     // Claude never needs an entry: before its first scan the collector sends
     // `loadingSnapshot` instead of this, and afterwards its store is real.
-    pendingUsage: Array.isArray(input.codexEvents) ? [] : ['codex'],
+    // Gemini / Kimi are pending only when installed and not yet scanned.
+    pendingUsage: [
+      ...(Array.isArray(input.codexEvents) ? [] : ['codex']),
+      ...(localPending(input.gemini) ? ['gemini'] : []),
+      ...(localPending(input.kimi) ? ['kimi'] : []),
+    ],
   };
 }
 
@@ -782,6 +966,7 @@ function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage) {
       displayName: p.displayName,
       accent: p.accent,
       enabled: enabled[p.id] === true,
+      experimental: p.experimental === true,
       connected: false,
       // Keyed off `live`, not off the id: a provider we can collect must paint
       // the same skeleton the first real snapshot will replace, or its row
@@ -814,4 +999,5 @@ module.exports = {
   lastGoodAtFor,
   anyWindowRolledOver,
   absenceOf,
+  _resetHistoryMemoForTests,
 };

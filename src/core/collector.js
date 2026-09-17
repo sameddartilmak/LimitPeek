@@ -16,6 +16,10 @@ const { historyStartMs } = require('./history');
 const { buildSnapshot, loadingSnapshot } = require('./snapshot');
 const { sanitizeOrder } = require('./order');
 const { sanitizeEnabled } = require('./enabled');
+const { LocalUsageChannel } = require('./usage-channel');
+const { sameEvents } = require('./same-events');
+const { geminiTmpDir } = require('./gemini/usage');
+const { kimiHome } = require('./kimi/usage');
 
 /**
  * Owns the scan lifecycle. Imports nothing from `electron` on purpose
@@ -48,6 +52,15 @@ const CODEX_FULL_TTL_MS = 60 * 1000;
  *  measured ~11 ms/MB off-thread, and a timeout shorter than that would kill
  *  and restart the worker — losing its cache — for ever. */
 const CODEX_SCAN_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
+ * Gemini CLI / Kimi Code usage scan TTL (ADR-003 A6). No watcher feeds these
+ * scans, so a full walk (cheap over an unchanged tree: one lstat per file, in
+ * the worker) is asked for on this TTL from `rebuild()` — which the sweep
+ * drives every SWEEP_OPEN_MS / SWEEP_IDLE_MS.
+ */
+const LOCAL_FULL_TTL_OPEN_MS = 15 * 1000;
+const LOCAL_FULL_TTL_IDLE_MS = 60 * 1000;
 
 /** Shallow compare of the cursor maps: same files, same size, same mtime. */
 function cursorsDiffer(a, b) {
@@ -145,6 +158,31 @@ class Collector extends EventEmitter {
      * the caller owns the store); `start()` decides it from the store.
      */
     this._claudeSettled = true;
+    /**
+     * Gemini CLI and Kimi Code usage (ADR-003 A6): one off-thread channel each,
+     * spawning its worker only when the tool is on this machine. Overrides for
+     * the `.gemini` directory and the Kimi Code home are for tests; null lets
+     * the readers resolve GEMINI_CLI_HOME / KIMI_CODE_HOME / the OS home.
+     */
+    const channel = (id, label, home, workerPath, installDir) => new LocalUsageChannel({
+      id,
+      label,
+      home,
+      workerPath,
+      installDir,
+      isStopped: () => this._stopped,
+      canRebuild: () => this._claudeSettled,
+      rebuild: () => this.rebuild(),
+      emit: (name, payload) => this.emit(name, payload),
+    });
+    this.geminiHome = options.geminiHome || null;
+    this.kimiHome = options.kimiHome || null;
+    this._gemini = channel('gemini', 'gemini chats', this.geminiHome,
+      options.geminiWorkerPath || path.join(__dirname, 'gemini', 'scan-worker.js'),
+      () => geminiTmpDir(this.geminiHome || undefined));
+    this._kimi = channel('kimi', 'kimi sessions', this.kimiHome,
+      options.kimiWorkerPath || path.join(__dirname, 'kimi', 'scan-worker.js'),
+      () => kimiHome(this.kimiHome || undefined));
     /** Last IDE reading, for callers that must not re-open the database. */
     this.antigravityIde = null;
     this.workerPath = options.workerPath || path.join(__dirname, 'scan', 'worker.js');
@@ -196,6 +234,10 @@ class Collector extends EventEmitter {
     // Codex's first scan starts NOW, off-thread, instead of waiting for the
     // first rebuild — which on a cold start waits for Claude's scan (review F12).
     this._codexTick(Date.now());
+    // Same for the Gemini / Kimi scans, for a tool that is installed.
+    this._gemini.auto = true;
+    this._kimi.auto = true;
+    this._localTick(Date.now());
     this.store = store.load(this.userDataDir);
     this._claudeSettled = this.store.events.length > 0 || Boolean(this.store.builtAt);
     // On a cold start the persisted events were last good when they were
@@ -222,6 +264,8 @@ class Collector extends EventEmitter {
     if (this._codexFollowUp) clearTimeout(this._codexFollowUp);
     this._codexFollowUp = null;
     this._stopCodexWorker();
+    this._gemini.stop();
+    this._kimi.stop();
     if (this._ideDebounce) clearTimeout(this._ideDebounce);
     if (this._throttle) clearTimeout(this._throttle);
     if (this._sweep) clearTimeout(this._sweep);
@@ -336,6 +380,7 @@ class Collector extends EventEmitter {
     // free; keeping it fresh is the worker's job, nudged here on a TTL.
     this._codexTick(Date.now());
     const codexEvents = this._codexEvents;
+    this._localTick(Date.now());
     this.snapshot = buildSnapshot({
       now: Date.now(),
       events: this.store.events,
@@ -347,6 +392,8 @@ class Collector extends EventEmitter {
       codexReadFailed: this._codexReadFailed,
       codexReadGoodAtMs: this._codexResultAtMs,
       codexUnreadRange: this._codexUnreadRange,
+      gemini: this._gemini.snapshotInput(),
+      kimi: this._kimi.snapshotInput(),
       scanOk: this.scanOk,
       scanGoodAtMs: this.scanGoodAtMs,
       scanUnreadRange: this.scanUnreadRange,
@@ -537,7 +584,9 @@ class Collector extends EventEmitter {
       this.store = {
         schemaVersion: store.SCHEMA_VERSION,
         cursors: result.cursors,
-        events: result.events,
+        // Identical events keep the previous array (the snapshot's history memo
+        // keys on identity; ADR-003 A6 F3).
+        events: sameEvents(this.store.events, result.events) ? this.store.events : result.events,
         builtAt: changed ? new Date().toISOString() : (this.store.builtAt || new Date().toISOString()),
       };
       if (changed) store.save(this.userDataDir, this.store);
@@ -788,7 +837,8 @@ class Collector extends EventEmitter {
 
   _ensureCodexWorker() {
     if (this._codexWorker) return this._codexWorker;
-    const worker = new Worker(this.codexWorkerPath);
+    // Same bound as the Gemini / Kimi workers (security F4).
+    const worker = new Worker(this.codexWorkerPath, { resourceLimits: { maxOldGenerationSizeMb: 512 } });
     // Never keeps the process alive on its own; `stop()` terminates it.
     if (typeof worker.unref === 'function') worker.unref();
     worker.on('message', (msg) => this._onCodexMessage(worker, msg));
@@ -808,8 +858,11 @@ class Collector extends EventEmitter {
     if (!flight || msg.id !== flight.id) return;
     clearTimeout(flight.timer);
     this._codexInFlight = null;
-    if (msg.type === 'result' && Array.isArray(msg.events)) {
-      this._codexEvents = msg.events;
+    // `unchanged`: the worker posted no events because they equal its previous
+    // result; the held array keeps its identity (history memo, ADR-003 A6 F3).
+    const unchanged = msg.type === 'result' && msg.unchanged === true && this._codexEvents !== null;
+    if (msg.type === 'result' && (Array.isArray(msg.events) || unchanged)) {
+      if (!unchanged && !sameEvents(this._codexEvents, msg.events)) this._codexEvents = msg.events;
       this._codexStats = msg.stats || null;
       this._codexReadFailed = false;
       this._codexResultAtMs = Number.isFinite(flight.now) ? flight.now : Date.now();
@@ -853,9 +906,19 @@ class Collector extends EventEmitter {
     if (!this._stopped && this._claudeSettled && this._codexEvents !== null) this.rebuild();
   }
 
+  /** Keeps the Gemini / Kimi scans fresh (no-op for a tool not installed). */
+  _localTick(now) {
+    const ttl = this.panelOpen ? LOCAL_FULL_TTL_OPEN_MS : LOCAL_FULL_TTL_IDLE_MS;
+    this._gemini.tick(now, ttl);
+    this._kimi.tick(now, ttl);
+  }
+
   /** Tools whose local usage is not read yet (Snapshot.pendingUsage). */
   _pendingUsage() {
-    return this._codexEvents === null ? ['codex'] : [];
+    const out = this._codexEvents === null ? ['codex'] : [];
+    if (this._gemini.pending()) out.push('gemini');
+    if (this._kimi.pending()) out.push('kimi');
+    return out;
   }
 
   _stopCodexWorker() {
@@ -895,4 +958,6 @@ module.exports = {
   MIN_SCAN_GAP_MS,
   CODEX_MIN_GAP_MS,
   CODEX_FULL_TTL_MS,
+  LOCAL_FULL_TTL_OPEN_MS,
+  LOCAL_FULL_TTL_IDLE_MS,
 };
