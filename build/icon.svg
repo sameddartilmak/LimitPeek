@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Usage Notch app icon. Master artwork, 1024x1024.
+    Reproduces the landing page tile: site/index.html .appicon, site/styles.css
+    .appicon / __track / __sweep / __dot. Tile 116px, radius 30px, glyph 66px,
+    all scaled by 912/116 onto a 912px tile with a 56px transparent margin.
+      background  linear-gradient(155deg, #212B2A 0%, #121817 70%)
+      edge        inset 0 0 0 1px rgba(237,242,240,.1)
+      highlight   inset 0 1px 0 rgba(255,255,255,.1)
+    The page's outer drop shadow and teal glow are page decoration, not part of
+    the tile, and are left out: Windows draws icons on arbitrary backgrounds.
+    Regenerate the PNG/ICO outputs with: npx electron scripts/make-app-icon.js
+  -->
+  <defs>
+    <!-- CSS 155deg over a 912px box: gradient line length 912*(sin155+cos155) -->
+    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="255.9" y1="-37.2" x2="768.1" y2="1061.2">
+      <stop offset="0" stop-color="#212B2A"/>
+      <stop offset="0.7" stop-color="#121817"/>
+      <stop offset="1" stop-color="#121817"/>
+    </linearGradient>
+    <clipPath id="tile">
+      <rect x="56" y="56" width="912" height="912" rx="236" ry="236"/>
+    </clipPath>
+  </defs>
+
+  <rect x="56" y="56" width="912" height="912" rx="236" ry="236" fill="url(#bg)"/>
+  <!-- inset 0 1px 0 highlight: the tile minus itself shifted down 1 CSS px -->
+  <path clip-path="url(#tile)" fill="#FFFFFF" fill-opacity="0.1" fill-rule="evenodd"
+        d="M292 56h440a236 236 0 0 1 236 236v440a236 236 0 0 1-236 236H292A236 236 0 0 1 56 732V292A236 236 0 0 1 292 56z
+           M292 63.86h440a236 236 0 0 1 236 236v440a236 236 0 0 1-236 236H292A236 236 0 0 1 56 739.86V299.86A236 236 0 0 1 292 63.86z"/>
+  <!-- inset 0 0 0 1px edge -->
+  <rect x="59.93" y="59.93" width="904.14" height="904.14" rx="232.07" ry="232.07"
+        fill="none" stroke="#EDF2F0" stroke-opacity="0.1" stroke-width="7.86"/>
+
+  <!-- glyph: 66/116 of the tile, centred; inner coordinates are the page's own -->
+  <svg x="252.52" y="252.52" width="518.97" height="518.97" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="8.5" fill="none" stroke="#2A3432" stroke-width="4.2"/>
+    <circle cx="12" cy="12" r="8.5" fill="none" stroke="#3FB89E" stroke-width="4.2" stroke-dasharray="20.3 53.41" transform="rotate(-90 12 12)"/>
+    <circle cx="12" cy="12" r="2.3" fill="#C96442"/>
+  </svg>
+</svg>
