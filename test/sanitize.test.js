@@ -470,6 +470,22 @@ test.describe('the per-period usage history survives the boundary', () => {
     assert.equal(out.usageHistory.pricesAsOf, '');
   });
 
+  test('pricesAsOfByProvider carries each known tool date that parses, and nothing else', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [], months: [], pricesAsOf: '2026-06-24',
+      pricesAsOfByProvider: { claude: '2026-06-24', codex: '2026-09-14', openai: '2026-01-01', kimi: 'dün' },
+    }));
+    assert.deepEqual(out.usageHistory.pricesAsOfByProvider, { claude: '2026-06-24', codex: '2026-09-14' });
+  });
+
+  test('a missing or malformed pricesAsOfByProvider is an empty map, not a dropped history', () => {
+    for (const bad of [undefined, null, 'x', 42, ['2026-06-24']]) {
+      const out = s.sanitizeSnapshot(historyWith({ weeks: [], months: [], pricesAsOf: '2026-06-24', pricesAsOfByProvider: bad }));
+      assert.deepEqual(out.usageHistory.pricesAsOfByProvider, {}, JSON.stringify(bad));
+      assert.equal(out.usageHistory.pricesAsOf, '2026-06-24');
+    }
+  });
+
   test('a garbage history collapses to null rather than half-rendering', () => {
     for (const bad of [42, 'history', true]) {
       assert.equal(s.sanitizeSnapshot(historyWith(bad)).usageHistory, null, JSON.stringify(bad));
@@ -478,19 +494,52 @@ test.describe('the per-period usage history survives the boundary', () => {
 });
 
 test.describe('the per-model breakdown survives the boundary', () => {
-  test('a well-formed byModel passes through, each entry with model, cost and floor', () => {
+  test('a well-formed byModel passes through, each entry with provider, model, cost and floor', () => {
     const out = s.sanitizeSnapshot(historyWith({
       weeks: [period({ byModel: [
-        { model: 'claude-opus-5', costUsd: 200.5, isFloor: false },
-        { model: 'claude-sonnet-5', costUsd: 12.25, isFloor: true },
+        { provider: 'claude', model: 'claude-opus-5', costUsd: 200.5, isFloor: false },
+        { provider: 'claude', model: 'claude-sonnet-5', costUsd: 12.25, isFloor: true },
       ] })],
       months: [],
       pricesAsOf: '2026-06-24',
     }));
     const byModel = out.usageHistory.weeks[0].byModel;
     assert.equal(byModel.length, 2);
-    assert.deepEqual(byModel[0], { model: 'claude-opus-5', costUsd: 200.5, isFloor: false });
-    assert.deepEqual(byModel[1], { model: 'claude-sonnet-5', costUsd: 12.25, isFloor: true });
+    assert.deepEqual(byModel[0], { provider: 'claude', model: 'claude-opus-5', costUsd: 200.5, isFloor: false });
+    assert.deepEqual(byModel[1], { provider: 'claude', model: 'claude-sonnet-5', costUsd: 12.25, isFloor: true });
+  });
+
+  test('Claude and Codex entries share one list, each keeping its provider', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ byModel: [
+        { provider: 'claude', model: 'claude-opus-5', costUsd: 20, isFloor: false },
+        { provider: 'codex', model: 'gpt-5.6-sol', costUsd: 7.5, isFloor: false },
+        { provider: 'codex', model: 'gpt-9-imaginary', costUsd: null, isFloor: false },
+      ] })],
+      months: [],
+      pricesAsOf: '2026-06-24',
+    }));
+    const byModel = out.usageHistory.weeks[0].byModel;
+    assert.deepEqual(byModel.map((e) => [e.provider, e.model, e.costUsd]), [
+      ['claude', 'claude-opus-5', 20],
+      ['codex', 'gpt-5.6-sol', 7.5],
+      ['codex', 'gpt-9-imaginary', null],
+    ]);
+  });
+
+  test('an entry with a missing or unknown provider is dropped, not guessed', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ byModel: [
+        { model: 'no-provider', costUsd: 5, isFloor: false },
+        { provider: 'openai', model: 'not-an-id', costUsd: 5, isFloor: false },
+        { provider: 42, model: 'numeric', costUsd: 5, isFloor: false },
+        { provider: 'codex', model: 'gpt-5.6-sol', costUsd: 5, isFloor: false },
+      ] })],
+      months: [],
+      pricesAsOf: '2026-06-24',
+    }));
+    const byModel = out.usageHistory.weeks[0].byModel;
+    assert.deepEqual(byModel.map((e) => e.model), ['gpt-5.6-sol']);
   });
 
   test('byModel defaults to an empty array when main omits it', () => {
@@ -502,7 +551,7 @@ test.describe('the per-model breakdown survives the boundary', () => {
 
   test('a null cost survives as null — the "fiyatlanamadı" signal, never coerced to 0', () => {
     const out = s.sanitizeSnapshot(historyWith({
-      weeks: [period({ byModel: [{ model: 'mystery-9', costUsd: null, isFloor: true }] })],
+      weeks: [period({ byModel: [{ provider: 'claude', model: 'mystery-9', costUsd: null, isFloor: true }] })],
       months: [], pricesAsOf: '2026-06-24',
     }));
     assert.equal(out.usageHistory.weeks[0].byModel[0].costUsd, null);
@@ -511,7 +560,7 @@ test.describe('the per-model breakdown survives the boundary', () => {
   test('a negative or non-finite cost becomes null (unpriced), never a shown figure', () => {
     for (const bad of [-5, NaN, Infinity, 'lots', undefined]) {
       const out = s.sanitizeSnapshot(historyWith({
-        weeks: [period({ byModel: [{ model: 'm', costUsd: bad, isFloor: false }] })],
+        weeks: [period({ byModel: [{ provider: 'claude', model: 'm', costUsd: bad, isFloor: false }] })],
         months: [], pricesAsOf: '2026-06-24',
       }));
       assert.equal(out.usageHistory.weeks[0].byModel[0].costUsd, null, JSON.stringify(bad));
@@ -521,9 +570,9 @@ test.describe('the per-model breakdown survives the boundary', () => {
   test('an entry with no usable model name is dropped, not shown unlabelled', () => {
     const out = s.sanitizeSnapshot(historyWith({
       weeks: [period({ byModel: [
-        { model: '', costUsd: 5, isFloor: false },
-        { model: 42, costUsd: 5, isFloor: false },
-        { model: 'claude-opus-5', costUsd: 5, isFloor: false },
+        { provider: 'claude', model: '', costUsd: 5, isFloor: false },
+        { provider: 'claude', model: 42, costUsd: 5, isFloor: false },
+        { provider: 'claude', model: 'claude-opus-5', costUsd: 5, isFloor: false },
       ] })],
       months: [], pricesAsOf: '2026-06-24',
     }));
@@ -535,7 +584,7 @@ test.describe('the per-model breakdown survives the boundary', () => {
   test('isFloor on a per-model entry admits only the boolean true', () => {
     for (const truthy of ['true', 1, {}, 'yes']) {
       const out = s.sanitizeSnapshot(historyWith({
-        weeks: [period({ byModel: [{ model: 'm', costUsd: 5, isFloor: truthy }] })],
+        weeks: [period({ byModel: [{ provider: 'claude', model: 'm', costUsd: 5, isFloor: truthy }] })],
         months: [], pricesAsOf: '2026-06-24',
       }));
       assert.equal(out.usageHistory.weeks[0].byModel[0].isFloor, false, JSON.stringify(truthy));
@@ -545,12 +594,12 @@ test.describe('the per-model breakdown survives the boundary', () => {
   test('no merged token total can ride in on a per-model entry either', () => {
     const out = s.sanitizeSnapshot(historyWith({
       weeks: [period({ byModel: [
-        { model: 'm', costUsd: 5, isFloor: false, tokens: { billable: 9 }, billable: 9 },
+        { provider: 'claude', model: 'm', costUsd: 5, isFloor: false, tokens: { billable: 9 }, billable: 9 },
       ] })],
       months: [], pricesAsOf: '2026-06-24',
     }));
     const entry = out.usageHistory.weeks[0].byModel[0];
-    assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model']);
+    assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model', 'provider']);
     assert.equal('tokens' in entry, false);
     assert.equal('billable' in entry, false);
   });
@@ -562,5 +611,35 @@ test.describe('the per-model breakdown survives the boundary', () => {
     }));
     assert.equal(out.usageHistory.weeks.length, 1);
     assert.deepEqual(out.usageHistory.weeks[0].byModel, []);
+  });
+});
+
+test.describe('a missing price tier is not a claim of the standard tier', () => {
+  const costWith = (entry) => ({
+    totalUsd: 1,
+    byModel: [entry],
+    unpricedModels: [],
+    fallbackWriteEvents: 0,
+    cacheWriteEvents: 0,
+    unrecordedWriteEvents: 0,
+    windowAnchored: false,
+  });
+  const tokens = { input: 1, output: 1, cacheWrite: 0, cacheRead: 0, billable: 2 };
+
+  test("a missing or unusable ModelCost.speed becomes the neutral 'other', never 'standard'", () => {
+    for (const speed of [undefined, null, '', '   ', 42]) {
+      const out = s.sanitizeSnapshot(snapshotWith({
+        weeklyCost: costWith({ model: 'gpt-5.6-sol', speed, pricedAs: null, usd: null, tokens }),
+      }));
+      const row = claudeOf(out).weeklyCost.byModel[0];
+      assert.equal(row.speed, 'other', `speed ${JSON.stringify(speed)}`);
+    }
+  });
+
+  test('a long-context tier code survives whole, so its reason is not cut off', () => {
+    const out = s.sanitizeSnapshot(snapshotWith({
+      weeklyCost: costWith({ model: 'gpt-5.5', speed: 'unknown-tier-long-context', pricedAs: null, usd: null, tokens }),
+    }));
+    assert.equal(claudeOf(out).weeklyCost.byModel[0].speed, 'unknown-tier-long-context');
   });
 });

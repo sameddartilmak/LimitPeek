@@ -78,9 +78,20 @@ test.describe('the codex rollout reader', () => {
       plan_type: 'pro',
     })] });
     const r = readCodexRateLimits({ now: NOW, home });
-    assert.equal(r.fiveHour.resetsAtMs, NOW + 2 * HOUR, 'countdown resolved against now');
-    assert.equal(r.sevenDay.resetsAtMs, NOW + 3 * DAY);
+    // The countdown runs from the record's own timestamp (11:59), not from now.
+    assert.equal(r.fiveHour.resetsAtMs, Date.parse('2026-09-14T11:59:00.000Z') + 2 * HOUR, 'countdown resolved against the capture');
+    assert.equal(r.sevenDay.resetsAtMs, Date.parse('2026-09-14T11:59:00.000Z') + 3 * DAY);
     assert.equal(r.planType, 'pro');
+  });
+
+  test('a STALE countdown is not pushed into the future by the capture age', () => {
+    const home = tmpHome();
+    const captured = NOW - 2 * DAY;
+    writeRollout(home, { lines: [tokenCount({
+      secondary: { used_percent: 8, window_minutes: 10080, resets_in_seconds: 3 * DAY / 1000 },
+    }, new Date(captured).toISOString())] });
+    const r = readCodexRateLimits({ now: NOW, home });
+    assert.equal(r.sevenDay.resetsAtMs, captured + 3 * DAY, 'reset = capture + countdown = NOW + 1 day, not NOW + 3 days');
   });
 
   test('takes the LAST rate_limits in the file, not the first', () => {

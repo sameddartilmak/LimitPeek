@@ -370,7 +370,7 @@ class PanelWindow {
       y = clamp(edge === 'top' ? minY : maxY, minY, maxY);
     }
 
-    this.win.setBounds({ x: Math.round(x), y: Math.round(y), width: this.width, height: this.height });
+    this._placeAcrossDpi({ x: Math.round(x), y: Math.round(y), width: this.width, height: this.height });
 
     // Report what the OS actually gave us, not what we asked for. On a
     // fractional scale factor Chromium rounds the size through physical
@@ -390,6 +390,41 @@ class PanelWindow {
       window: bounds,
       edge,
     };
+  }
+
+  /**
+   * `setBounds` onto the anchor, guarding the cross-DPI reveal bug.
+   *
+   * The window PARKS off-screen at OFFSCREEN {-32000,-32000}, which Windows
+   * associates with the left-most monitor — on a laptop-plus-external setup
+   * that is the internal panel, and its scale factor need not match the
+   * monitor the panel is about to open on. Electron converts the 440x680 DIP
+   * size to physical pixels using the scale of the monitor the window is
+   * CURRENTLY on, so the first `setBounds` after a park onto a
+   * differently-scaled monitor sizes the window for the WRONG scale.
+   *
+   * MEASURED on this machine (internal 1.25x at negative x, external 1.0x
+   * primary): parked at -32000 then `setBounds(440x680)` onto the 1.0x primary
+   * read back as 550x850 — exactly 1.25x — so the right edge ran past 1920 and
+   * the bottom past the work area, i.e. "part of it is off the screen". A
+   * SECOND `setBounds`, now that the window is physically on the target
+   * monitor, read back 440x680 and sat inside the work area.
+   *
+   * So: set, then re-assert ONCE if the read-back size is grossly off. Both
+   * calls are synchronous, so no frame paints between them and the oversized
+   * placement is never shown. A fractional scale legitimately rounds 440x680
+   * to 442x681 (see the `getBounds` note in `positionFor`), so only a mismatch
+   * far larger than that rounding — the 1.25x inflation — triggers the re-set;
+   * on a single monitor, or a target on the park monitor, the check passes and
+   * the second call never runs.
+   */
+  _placeAcrossDpi(bounds) {
+    if (!this.win || this.win.isDestroyed()) return;
+    this.win.setBounds(bounds);
+    const got = this.win.getBounds();
+    if (Math.abs(got.width - bounds.width) > 4 || Math.abs(got.height - bounds.height) > 4) {
+      this.win.setBounds(bounds);
+    }
   }
 
   /**

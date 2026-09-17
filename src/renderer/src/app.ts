@@ -20,7 +20,7 @@ import { captureExpired } from './components/row.js';
 import { createPanel, type PanelContext } from './components/panel.js';
 import { trimMessage } from './format.js';
 import { formatLocale, language, setLocale, t } from './i18n.js';
-import { defaultFormatLocale, fallbackLanguage } from './sanitize.js';
+import { defaultFormatLocale, fallbackLanguage, pendingUsageOf } from './sanitize.js';
 import { freshnessOf, shouldDegrade, Store } from './store.js';
 import { createTheme, DEFAULT_THEME } from './theme.js';
 
@@ -89,6 +89,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     generatedAt: null,
     staleOverride: false,
     isBusy: (id) => store.get().busy.includes(id),
+    isPending: (id) => pendingUsageOf(store.get().snapshot).includes(id),
     onRetry: (providerId) => void runRefresh(providerId),
     onSetup: (providerId) => beginSetup(providerId),
     onRefresh: () => void runRefresh(null),

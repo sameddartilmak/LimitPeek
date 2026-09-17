@@ -10,7 +10,9 @@ const paths = require('./paths');
 const { readClaudeRateLimits, retainClaudeFigures, readAntigravityQuota } = require('./ratelimits');
 const { readAntigravityIdeQuota } = require('./antigravity/ide-quota');
 const { resolveAntigravityIdeStore } = require('./antigravity/install');
-const { readCodexRateLimits, codexSessionsDir } = require('./codex/rollout');
+const { readCodexRateLimits, codexSessionsDir, resolveLocalDir } = require('./codex/rollout');
+const { isRolloutRelPath } = require('./codex/usage');
+const { historyStartMs } = require('./history');
 const { buildSnapshot, loadingSnapshot } = require('./snapshot');
 const { sanitizeOrder } = require('./order');
 const { sanitizeEnabled } = require('./enabled');
@@ -28,6 +30,24 @@ const WORKER_TIMEOUT_MS = 30 * 1000;
 /** Floor between two scans. Hovering the tray repeatedly would otherwise
  *  dispatch a worker per hover. */
 const MIN_SCAN_GAP_MS = 1500;
+
+/**
+ * Codex usage scan cadence (ADR-002 A3.11). The scan runs in a long-lived
+ * worker (codex/scan-worker.js) that keeps the per-file cache.
+ *  - A watcher event that names a rollout re-examines ONLY that file.
+ *  - A full walk of the day-folders runs when nothing has been scanned yet,
+ *    when a watcher event cannot be attributed to one rollout, and at most
+ *    every CODEX_FULL_TTL_MS otherwise (a missed watcher event heals there).
+ *  - Two dispatches are at least CODEX_MIN_GAP_MS apart, so a burst of appends
+ *    in one turn is one scan; a request inside the gap schedules exactly one
+ *    follow-up.
+ */
+const CODEX_MIN_GAP_MS = 3 * 1000;
+const CODEX_FULL_TTL_MS = 60 * 1000;
+/** Generous on purpose: a cold scan of a year of heavy use (GBs of rollouts)
+ *  measured ~11 ms/MB off-thread, and a timeout shorter than that would kill
+ *  and restart the worker — losing its cache — for ever. */
+const CODEX_SCAN_TIMEOUT_MS = 15 * 60 * 1000;
 
 /** Shallow compare of the cursor maps: same files, same size, same mtime. */
 function cursorsDiffer(a, b) {
@@ -73,6 +93,38 @@ class Collector extends EventEmitter {
     this.ideAppDataDir = options.ideAppDataDir || null;
     // Override for `~/.codex` (tests, CODEX_HOME). null lets the reader resolve it.
     this.codexHome = options.codexHome || null;
+    /**
+     * The last COMPLETED Codex usage scan: turn deltas (recent) and UTC 15-minute buckets
+     * (older), or null until the first result — Codex usage is then PENDING,
+     * not zero (ADR-002 A3.11). `rebuild()` only ever reads this.
+     */
+    this._codexEvents = null;
+    this._codexStats = null;
+    this.codexWorkerPath = options.codexWorkerPath || path.join(__dirname, 'codex', 'scan-worker.js');
+    this._codexWorker = null;
+    /** The request the worker is running: { id, now, full, timer } or null. */
+    this._codexInFlight = null;
+    this._codexSeq = 0;
+    /** What the next dispatch must cover. */
+    this._codexWant = { full: false, changed: new Set() };
+    /** When the last dispatch went out, and when the last FULL scan was asked for. */
+    this._codexDispatchedAt = 0;
+    this._codexFullAt = 0;
+    /** One pending dispatch for a request that arrived inside the gap. */
+    this._codexFollowUp = null;
+    /** Rebuilds only keep the Codex scan fresh once `start()` has run. */
+    this._codexAuto = false;
+    /**
+     * Has Claude's corpus been settled — a persisted store loaded, or the first
+     * scan finished (ADR-002 A3.14)? Until then a snapshot built from the empty
+     * store would claim "no local usage" while Claude's first scan is still
+     * running, so `rebuild()` sends the loading snapshot instead, and a Codex
+     * result does not rebuild (Claude's settle rebuild picks it up).
+     *
+     * true for a collector that is never `start()`ed (direct `rebuild()` use:
+     * the caller owns the store); `start()` decides it from the store.
+     */
+    this._claudeSettled = true;
     /** Last IDE reading, for callers that must not re-open the database. */
     this.antigravityIde = null;
     this.workerPath = options.workerPath || path.join(__dirname, 'scan', 'worker.js');
@@ -117,16 +169,21 @@ class Collector extends EventEmitter {
 
   /** Loads the persisted store and emits a snapshot before any I/O work. */
   start() {
+    this._codexAuto = true;
+    // Codex's first scan starts NOW, off-thread, instead of waiting for the
+    // first rebuild — which on a cold start waits for Claude's scan (review F12).
+    this._codexTick(Date.now());
     this.store = store.load(this.userDataDir);
+    this._claudeSettled = this.store.events.length > 0 || Boolean(this.store.builtAt);
     // On a cold start the persisted events were last good when they were
     // written, not now. Saying otherwise would make a week-old store claim it
     // is current for the seconds before the first scan lands.
     const builtAtMs = Date.parse(this.store.builtAt);
     this.scanGoodAtMs = Number.isFinite(builtAtMs) ? builtAtMs : null;
-    if (this.store.events.length > 0 || this.store.builtAt) {
+    if (this._claudeSettled) {
       this.rebuild();
     } else {
-      this.snapshot = loadingSnapshot(Date.now(), this.order, this.enabled);
+      this.snapshot = loadingSnapshot(Date.now(), this.order, this.enabled, this._pendingUsage());
       this.emit('snapshot', this.snapshot);
     }
     this._startWatchers();
@@ -139,6 +196,9 @@ class Collector extends EventEmitter {
     this._stopped = true;
     if (this._debounce) clearTimeout(this._debounce);
     if (this._rlDebounce) clearTimeout(this._rlDebounce);
+    if (this._codexFollowUp) clearTimeout(this._codexFollowUp);
+    this._codexFollowUp = null;
+    this._stopCodexWorker();
     if (this._ideDebounce) clearTimeout(this._ideDebounce);
     if (this._throttle) clearTimeout(this._throttle);
     if (this._sweep) clearTimeout(this._sweep);
@@ -221,6 +281,14 @@ class Collector extends EventEmitter {
    */
   rebuild() {
     const now = Date.now();
+    if (!this._claudeSettled) {
+      // Claude's first scan is still running on an empty store: say LOADING,
+      // not "no usage" (ADR-002 A3.14). Covers every rebuild path — panel open,
+      // order/enablement changes, a Codex result.
+      this.snapshot = loadingSnapshot(now, this.order, this.enabled, this._pendingUsage());
+      this.emit('snapshot', this.snapshot);
+      return this.snapshot;
+    }
     // Retain the last valid figure for a window that is still current, so a
     // transient null in the bridge capture (Claude Code omitting
     // `used_percentage` for a render) does not wipe a figure that is still true.
@@ -237,8 +305,14 @@ class Collector extends EventEmitter {
     // re-opening the store. Read-only to everyone else.
     this.antigravityIde = antigravityIde;
     // Codex writes its own server-computed rate limits into its session
-    // rollout; read them passively (never the tokens beside them).
+    // rollout; this reads only the TAIL of the newest rollout for them. Token
+    // usage from the same logs is read separately, off the main thread, by the
+    // Codex scan worker.
     const codexRateLimits = readCodexRateLimits({ now: Date.now(), home: this.codexHome || undefined });
+    // The last completed Codex usage scan (null while pending). Reading it is
+    // free; keeping it fresh is the worker's job, nudged here on a TTL.
+    this._codexTick(Date.now());
+    const codexEvents = this._codexEvents;
     this.snapshot = buildSnapshot({
       now: Date.now(),
       events: this.store.events,
@@ -246,6 +320,7 @@ class Collector extends EventEmitter {
       antigravityQuota,
       antigravityIde,
       codexRateLimits,
+      codexEvents,
       scanOk: this.scanOk,
       scanGoodAtMs: this.scanGoodAtMs,
       planLabel: this.planLabel,
@@ -448,6 +523,9 @@ class Collector extends EventEmitter {
     // stuck true forever: every later scan is swallowed as "pending", and
     // refreshNow() awaits a 'scan-settled' that will never be emitted, so the
     // renderer's refresh hangs with no recovery short of restarting the app.
+    // The first settle, successful or not, ends the loading state: a failed
+    // scan is reported by the row's own status, not by an endless skeleton.
+    this._claudeSettled = true;
     try {
       this.rebuild();
     } finally {
@@ -555,7 +633,18 @@ class Collector extends EventEmitter {
     // scan). The directory is simply absent when Codex is not installed — then
     // the periodic sweep covers it, so ENOENT is not worth a warning.
     try {
-      const w = fs.watch(codexSessionsDir(this.codexHome || undefined), { recursive: true, persistent: false }, () => {
+      // The RESOLVED, checked path (ADR-003 A3.2): never the raw one, which
+      // could be a link to a share. Refused or absent -> no watcher.
+      const rawSessions = codexSessionsDir(this.codexHome || undefined);
+      const sessionsDir = rawSessions ? resolveLocalDir(rawSessions) : null;
+      if (!sessionsDir) throw Object.assign(new Error('no local codex sessions'), { code: 'ENOENT' });
+      const w = fs.watch(sessionsDir, { recursive: true, persistent: false }, (_evt, name) => {
+        // A turn changed a rollout. When the event names the file, only that
+        // file is re-examined; otherwise (a new day-folder, a platform that
+        // gives no name) the day-folders are walked.
+        const rel = name ? String(name) : null;
+        if (rel && isRolloutRelPath(rel)) this._requestCodexScan({ changed: [rel] });
+        else this._requestCodexScan({ full: true });
         this._onRateLimitChange();
       });
       w.on('error', () => { /* watcher died; the sweep still runs */ });
@@ -585,6 +674,144 @@ class Collector extends EventEmitter {
     }, DEBOUNCE_MS);
   }
 
+  /**
+   * Keeps the Codex usage scan fresh from `rebuild()`: a full scan when none
+   * has completed yet or the last one is older than CODEX_FULL_TTL_MS. A clock
+   * that went BACKWARDS (age < 0) counts as expired, never as fresh for ever.
+   */
+  _codexTick(now) {
+    if (this._stopped || !this._codexAuto) return;
+    // A full scan already running answers this tick (review F11): no second
+    // full scan queued behind the first at startup.
+    if (this._codexInFlight && this._codexInFlight.full) return;
+    const age = now - this._codexFullAt;
+    if (this._codexEvents === null || this._codexFullAt === 0 || age < 0 || age >= CODEX_FULL_TTL_MS) {
+      this._requestCodexScan({ full: true }, now);
+    }
+  }
+
+  /**
+   * Ask the worker for a Codex usage scan. Coalesces: requests made while one
+   * is running are merged and sent when it finishes; requests inside the gap
+   * schedule exactly one follow-up. Until a FULL scan has completed, every
+   * request is full — a changed-files scan over an empty cache would present a
+   * few files as the whole corpus.
+   *
+   * @param {{full?: boolean, changed?: string[]}} [want]
+   */
+  _requestCodexScan(want = {}, now = Date.now(), afterGap = false) {
+    if (this._stopped) return;
+    if (want.full || this._codexFullAt === 0) this._codexWant.full = true;
+    if (Array.isArray(want.changed)) for (const rel of want.changed) this._codexWant.changed.add(rel);
+    if (!this._codexWant.full && this._codexWant.changed.size === 0) return;
+    if (this._codexInFlight) return; // the result handler sends what accumulated
+
+    const age = now - this._codexDispatchedAt;
+    // `afterGap`: the follow-up timer IS the gap having passed; it does not
+    // re-measure against a clock that a timer may fire slightly early on.
+    const gapOk = afterGap || this._codexDispatchedAt === 0 || age < 0 || age >= CODEX_MIN_GAP_MS;
+    if (!gapOk) {
+      if (!this._codexFollowUp) {
+        this._codexFollowUp = setTimeout(() => {
+          this._codexFollowUp = null;
+          this._requestCodexScan({}, Date.now(), true);
+        }, CODEX_MIN_GAP_MS - age);
+        if (typeof this._codexFollowUp.unref === 'function') this._codexFollowUp.unref();
+      }
+      return;
+    }
+    this._dispatchCodexScan(now);
+  }
+
+  _dispatchCodexScan(now) {
+    const want = this._codexWant;
+    this._codexWant = { full: false, changed: new Set() };
+    let worker;
+    try {
+      worker = this._ensureCodexWorker();
+    } catch (err) {
+      log.warn(`codex scan worker unavailable: code=${(err && err.code) || 'UNKNOWN'}`);
+      return;
+    }
+    const id = ++this._codexSeq;
+    const timer = setTimeout(() => {
+      log.warn('codex usage scan timed out; restarting its worker');
+      this._stopCodexWorker();
+    }, CODEX_SCAN_TIMEOUT_MS);
+    if (typeof timer.unref === 'function') timer.unref();
+    this._codexInFlight = { id, now, full: want.full, timer };
+    this._codexDispatchedAt = now;
+    if (want.full) this._codexFullAt = now;
+    worker.postMessage({
+      type: 'scan',
+      id,
+      now,
+      startMs: historyStartMs(now),
+      home: this.codexHome || null,
+      changed: want.full ? undefined : [...want.changed],
+    });
+  }
+
+  _ensureCodexWorker() {
+    if (this._codexWorker) return this._codexWorker;
+    const worker = new Worker(this.codexWorkerPath);
+    // Never keeps the process alive on its own; `stop()` terminates it.
+    if (typeof worker.unref === 'function') worker.unref();
+    worker.on('message', (msg) => this._onCodexMessage(worker, msg));
+    worker.on('error', (err) => {
+      log.warn(`codex scan worker failed: code=${(err && err.code) || 'UNKNOWN'}`);
+      this._onCodexWorkerGone(worker);
+    });
+    worker.on('exit', () => this._onCodexWorkerGone(worker));
+    this._codexWorker = worker;
+    return worker;
+  }
+
+  _onCodexMessage(worker, msg) {
+    if (worker !== this._codexWorker || !msg || typeof msg !== 'object') return;
+    if (msg.type === 'log') { log.warn(String(msg.msg)); return; }
+    const flight = this._codexInFlight;
+    if (!flight || msg.id !== flight.id) return;
+    clearTimeout(flight.timer);
+    this._codexInFlight = null;
+    if (msg.type === 'result' && Array.isArray(msg.events)) {
+      this._codexEvents = msg.events;
+      this._codexStats = msg.stats || null;
+      this.emit('codex-scan', this._codexStats);
+      // Not before Claude has settled: that rebuild would replace the loading
+      // snapshot with one built from an empty Claude store (A3.14). Claude's
+      // settle rebuild reads `_codexEvents` anyway.
+      if (!this._stopped && this._claudeSettled) this.rebuild();
+    } else if (msg.type === 'error') {
+      log.warn(`codex usage scan failed: code=${msg.code || 'UNKNOWN'}`);
+      if (flight.full) this._codexFullAt = 0; // retry the full scan next time
+    }
+    if (!this._stopped) this._requestCodexScan({}, Date.now());
+  }
+
+  /** The worker died or was stopped: its cache is gone, so the next scan is full. */
+  _onCodexWorkerGone(worker) {
+    if (worker !== this._codexWorker) return;
+    this._codexWorker = null;
+    if (this._codexInFlight) {
+      clearTimeout(this._codexInFlight.timer);
+      this._codexInFlight = null;
+    }
+    this._codexFullAt = 0;
+  }
+
+  /** Tools whose local usage is not read yet (Snapshot.pendingUsage). */
+  _pendingUsage() {
+    return this._codexEvents === null ? ['codex'] : [];
+  }
+
+  _stopCodexWorker() {
+    const worker = this._codexWorker;
+    if (!worker) return;
+    this._onCodexWorkerGone(worker);
+    try { worker.terminate(); } catch { /* already exiting */ }
+  }
+
   _onRateLimitChange() {
     if (this._rlDebounce) clearTimeout(this._rlDebounce);
     this._rlDebounce = setTimeout(() => {
@@ -606,4 +833,13 @@ class Collector extends EventEmitter {
   }
 }
 
-module.exports = { Collector, cursorsDiffer, DEBOUNCE_MS, SWEEP_OPEN_MS, SWEEP_IDLE_MS, MIN_SCAN_GAP_MS };
+module.exports = {
+  Collector,
+  cursorsDiffer,
+  DEBOUNCE_MS,
+  SWEEP_OPEN_MS,
+  SWEEP_IDLE_MS,
+  MIN_SCAN_GAP_MS,
+  CODEX_MIN_GAP_MS,
+  CODEX_FULL_TTL_MS,
+};

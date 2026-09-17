@@ -151,10 +151,13 @@ app.whenReady().then(async () => {
   check('the accessible name carries the frame AND the denial',
     /API fiyatlarıyla/.test(claude.aria) && /fatura değildir/.test(claude.aria)
     && /ABD doları/.test(claude.aria), claude.aria);
+  // Since the one-row cache-write design there are FOUR classes, and input
+  // ($0,02 of $226,81, <0.5%) is below renderBar's sub-pixel floor, so the bar
+  // draws three segments: cache read, cache write, output.
   check('the breakdown is visible without expanding',
-    claude.captionHidden === false && claude.segs.length >= 4, [claude.caption, claude.segs]);
+    claude.captionHidden === false && claude.segs.length === 3, [claude.caption, claude.segs]);
   check('the caption names the two largest classes, largest first',
-    claude.caption === 'Önbellek okuma %65 · Çıktı %14', claude.caption);
+    claude.caption === 'Önbellek okuma %65 · Önbellek yazma %21', claude.caption);
   check('the composition bar is largest-first',
     claude.segs.map(Number).every((v, i, a) => i === 0 || a[i - 1] >= v), claude.segs);
   check('the detail starts collapsed', claude.expanded === 'false' && claude.detailHidden === true);
@@ -227,8 +230,9 @@ app.whenReady().then(async () => {
   check('the denial is present and unambiguous',
     /fatura değil/.test(detail.claude.denial) && /ödenmiyor/.test(detail.claude.denial),
     detail.claude.denial);
-  check('all five token classes are broken out, largest first',
-    detail.claude.rows.length === 5 && detail.claude.rows[0].k === 'Önbellek okuma',
+  check('the four token classes are broken out, largest first (the two cache-write tiers are one row)',
+    detail.claude.rows.length === 4 && detail.claude.rows[0].k === 'Önbellek okuma'
+    && detail.claude.rows.some(r => r.k === 'Önbellek yazma'),
     detail.claude.rows.map(r => r.k));
   check('cache read is the dominant class at ~65%',
     detail.claude.rows[0].p === '%65' && detail.claude.rows[0].v === '$147,04',
@@ -338,7 +342,243 @@ app.whenReady().then(async () => {
              rows: c.querySelectorAll('.cost__row').length };
   })()`);
   check('the disclosure survives a pushed snapshot',
-    after.expanded === 'true' && after.rows === 5, after);
+    after.expanded === 'true' && after.rows === 4, after);
+
+  // ---- Codex tier-aware pricing (ADR-002 Amendment 3) ---------------------
+  //
+  // The codex row is swapped to a Codex-shaped week for this section only:
+  // 38 records with cached reads and 0 RECORDED writes on a model that bills
+  // writes (a floor with its own caveat, never the TTL one), and unpriced rows
+  // under every group label src/core/codex/pricing.js emits. A producer code
+  // ("unknown-tier", "…-long-context", "flex") must never reach the screen.
+  const readCodexCost = `(async () => {
+    const c = ${q('codex')}.querySelector('.cost');
+    const t = c.querySelector('.cost__toggle');
+    if (t.getAttribute('aria-expanded') !== 'true') t.click();
+    await new Promise((r) => setTimeout(r, 80));
+    const clip = (n) => n.scrollWidth > n.clientWidth;
+    const unrec = c.querySelector('.cost__caveat[data-caveat="unrecorded-writes"]');
+    return {
+      lang: document.documentElement.getAttribute('lang'),
+      summary: c.querySelector('.cost__summary').textContent,
+      caveats: [...c.querySelectorAll('.cost__caveat')].map((p) => p.textContent),
+      unrecorded: unrec ? unrec.textContent : null,
+      unrecordedClipped: unrec ? clip(unrec) : null,
+      unrecordedTov: unrec ? getComputedStyle(unrec).textOverflow : null,
+      unpriced: [...c.querySelectorAll('.cost__unpriced li')].map((li) => li.textContent),
+      unpricedClipped: [...c.querySelectorAll('.cost__unpriced li')].map(clip),
+      unpricedTov: [...c.querySelectorAll('.cost__unpriced li')].map((li) => getComputedStyle(li).textOverflow),
+    };
+  })()`;
+  const RAW_CODES = /unknown-tier|long-context|\bflex\b/;
+  check('the fixture swapped a Codex-shaped week onto the codex row',
+    (await js(`window.__probe.setCostDirect('codex', 'codexTier')`)) === true);
+  await sleep(250);
+  const codexTr = await js(readCodexCost);
+  say('codex tier (tr): ' + JSON.stringify(codexTr));
+  check('unrecorded cache writes make the Codex figure a floor: "en az"',
+    /^Yayımlanan API fiyatlarıyla en az \$/.test(codexTr.summary), codexTr.summary);
+  check('and the unrecorded-writes caveat says why, with its count',
+    /^38 kayıtta, önbellek yazmasını ücretlendiren bir modelde önbellek yazması 0 kaydedilmiş; oysa bu kayıtlar önbellekten okumuş ya da önbelleğe alınabilecek uzunlukta \(1\.024\+ token\) istem göndermiş\. Bu yüzden toplam bir alt sınır\.$/.test(codexTr.unrecorded || '')
+      && /alt sınır/.test(codexTr.unrecorded || ''), codexTr.unrecorded);
+  check('the Claude TTL caveat is NOT shown for Codex: no 5m/1h split was missing',
+    !codexTr.caveats.some((p) => /TTL/.test(p)), codexTr.caveats);
+  check('an unknown-tier unpriced entry shows the Turkish label, not the code',
+    codexTr.unpriced.some((u) => /^gpt-5\.6-sol · katman belirlenemedi · /.test(u)), codexTr.unpriced);
+  check('a long-context exclusion names both the tier and the reason',
+    codexTr.unpriced.some((u) => /^gpt-5\.5 · katman belirlenemedi, uzun bağlam \(272K üstü\) · /.test(u)),
+    codexTr.unpriced);
+  check('a tier with no published row degrades to a neutral label, even a well-formed one',
+    codexTr.unpriced.some((u) => /^gpt-5\.6-terra · tanınmayan fiyat katmanı · /.test(u)), codexTr.unpriced);
+  check('no raw producer code is printed anywhere in the unpriced list',
+    codexTr.unpriced.length === 4 && !codexTr.unpriced.some((u) => RAW_CODES.test(u)), codexTr.unpriced);
+  check('an unresolved model is named as unresolved, never as a model called "unknown"',
+    codexTr.unpriced.some((u) => /^model belirlenemedi · katman belirlenemedi · /.test(u))
+      && !codexTr.unpriced.some((u) => /^unknown/.test(u)), codexTr.unpriced);
+  check('the unpriced lines wrap, they are never cut',
+    codexTr.unpricedClipped.every((c) => c === false) && codexTr.unpricedTov.every((v) => v !== 'ellipsis'),
+    [codexTr.unpricedClipped, codexTr.unpricedTov]);
+
+  // English: reached the way main does it, persisted then pushed.
+  await js('window.__probe.setDeferPrefs(true)');
+  await js(`window.usageNotch.setLanguage('en')`);
+  await js('window.__probe.flushPrefs()');
+  await js('window.__probe.setDeferPrefs(false)');
+  await sleep(300);
+  const codexEn = await js(readCodexCost);
+  say('codex tier (en): ' + JSON.stringify(codexEn));
+  check('[en] the unrecorded-writes caveat is plural-aware and keeps the floor claim',
+    codexEn.lang === 'en'
+      && /^38 records recorded 0 cache writes on a model that charges for them, although they read from the cache or sent a prompt long enough to be cached \(1,024\+ tokens\), so the total is a lower bound\.$/.test(codexEn.unrecorded || '')
+      && /lower bound/.test(codexEn.unrecorded || ''), codexEn.unrecorded);
+  check('[en] the caveat wraps and is not clipped',
+    codexEn.unrecordedClipped === false && codexEn.unrecordedTov !== 'ellipsis', codexEn);
+  check('[en] tier labels are English and no raw code is printed',
+    codexEn.unpriced.some((u) => /· tier not determinable, long context \(over 272K\) ·/.test(u))
+      && codexEn.unpriced.some((u) => /^model not determinable · tier not determinable · /.test(u))
+      && !codexEn.unpriced.some((u) => RAW_CODES.test(u) || /^unknown/.test(u)), codexEn.unpriced);
+  check('[en] the unpriced lines are not clipped either',
+    codexEn.unpricedClipped.every((c) => c === false), codexEn.unpricedClipped);
+
+  // Put the suite back: Turkish, and the codex row's own Claude-shaped caveats.
+  await js(`window.usageNotch.setLanguage('tr')`);
+  await sleep(300);
+
+  // qa F3: unrecorded writes as the ONLY floor cause. Nothing unpriced, no TTL
+  // fallback, not degraded — so if isFloor ignored unrecordedWriteEvents, this
+  // summary would print a bare "$226,81" and the check fails.
+  check('the fixture swapped the unrecorded-writes-only week onto the codex row',
+    (await js(`window.__probe.setCostDirect('codex', 'codexUnrecordedOnly')`)) === true);
+  await sleep(250);
+  const onlyUnrec = await js(readCodexCost);
+  say('codex unrecorded-only (tr): ' + JSON.stringify(onlyUnrec));
+  check('with no other floor cause, unrecorded cache writes alone make the figure "en az"',
+    /^Yayımlanan API fiyatlarıyla en az \$/.test(onlyUnrec.summary)
+      && onlyUnrec.unpriced.length === 0
+      && onlyUnrec.caveats.length === 1, onlyUnrec);
+  check('and the one caveat is the unrecorded-writes caveat, in the singular count',
+    // Singular: "bu kayıt", not "bu kayıtlar" (ADR-004 A2, same claim at count 1).
+    /^1 kayıtta, önbellek yazmasını ücretlendiren bir modelde önbellek yazması 0 kaydedilmiş; oysa bu kayıt önbellekten okumuş ya da önbelleğe alınabilecek uzunlukta \(1\.024\+ token\) istem göndermiş\. Bu yüzden toplam bir alt sınır\.$/.test(onlyUnrec.unrecorded || ''),
+    onlyUnrec.unrecorded);
+  await js(`window.__probe.setCostDirect('codex', 'caveat')`);
+  await sleep(250);
+
+  // ---- pending: a tool whose first usage scan has not answered -----------
+  //
+  // ADR-002 A3.12. Codex's scan runs in a worker, so its first snapshot carries
+  // pendingUsage: ['codex'] with no tokens and no cost. Every surface must say
+  // "still calculating" — not "Token bilgisi yok", not a hidden cost block
+  // (which reads as no usage), not "—" for a period that may hold Codex usage.
+  const readPending = `(async () => {
+    const row = ${q('codex')};
+    const cost = row.querySelector('.cost');
+    const pendingLine = cost ? cost.querySelector('.cost__pending') : null;
+    // Read BEFORE opening settings: the row list is display:none in that view,
+    // and innerText of an undrawn subtree falls back to every text node.
+    const costText = cost && !cost.hidden ? cost.innerText : '';
+    const view = document.getElementById('settings-view');
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    view.querySelector('.acc__trigger[data-acc="usage"]').click();
+    await new Promise((r) => setTimeout(r, 80));
+    const note = view.querySelector('.usage__pending');
+    const out = {
+      meta: (row.querySelector('.row__meta') || {}).textContent || '',
+      rowPending: !!row.querySelector('.row__meta .row__pending'),
+      costHidden: cost ? cost.hidden : null,
+      costPendingText: pendingLine && !pendingLine.hidden ? pendingLine.textContent : null,
+      costToggleHidden: cost ? cost.querySelector('.cost__toggle').hidden : null,
+      // innerText, not textContent: what is RENDERED (and so what a screen
+      // reader reads). The hidden toggle may still hold the previous figure.
+      costText,
+      note: note && !note.hidden ? note.textContent : null,
+      noteRole: note ? note.getAttribute('role') : null,
+      amounts: [...view.querySelectorAll('.usage__row')].map((r) => ({
+        text: r.querySelector('.usage__amount').textContent,
+        pending: r.getAttribute('data-pending'),
+      })),
+      emptyText: (() => { const e = view.querySelector('.usage__empty'); return e && !e.hidden ? e.textContent : null; })(),
+    };
+    view.querySelector('.acc__trigger[data-acc="models"]').click();
+    await new Promise((r) => setTimeout(r, 60));
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    return out;
+  })()`;
+  await js(`window.__probe.setPendingDirect(['codex'], { codex: { tokens: null, weeklyCost: null, burnRatePerHour: null } })`);
+  await sleep(250);
+  const pend = await js(readPending);
+  say('pending (tr): ' + JSON.stringify(pend));
+  check('a pending tool says its usage is being calculated, not that there is no token data',
+    pend.rowPending === true && /Kullanım hesaplanıyor…/.test(pend.meta) && !/Token bilgisi yok/.test(pend.meta),
+    pend.meta);
+  check('a pending tool shows a cost line instead of hiding the block (hidden reads as "no usage")',
+    pend.costHidden === false && pend.costPendingText === 'Maliyet hesaplanıyor — yerel kayıtlar okunuyor.',
+    pend);
+  check('and that line carries no figure and offers no disclosure: nothing is known yet',
+    pend.costToggleHidden === true && !/\$/.test(pend.costText), pend);
+  check('Toplam Kullanım names the tool still being counted, as a live status',
+    pend.note === 'Codex kullanımı hâlâ hesaplanıyor; toplamlar henüz eksik.' && pend.noteRole === 'status',
+    pend.note);
+  check('an empty period is not shown as "—" while a tool is pending',
+    pend.amounts.length > 0 && !pend.amounts.some((a) => a.text === '—')
+      && pend.amounts.some((a) => a.text === 'hesaplanıyor…' && a.pending === 'true'), pend.amounts);
+
+  // Main's first result lands: pendingUsage is [] and the row has its data.
+  await js(`window.__probe.setPendingDirect([])`);
+  await js(`window.__probe.restore()`);
+  await sleep(300);
+  const done = await js(readPending);
+  say('pending cleared (tr): ' + JSON.stringify(done));
+  check('after a push with pendingUsage [] every pending text is gone',
+    done.rowPending === false && !/hesaplanıyor/.test(done.meta)
+      && done.costPendingText === null && done.costToggleHidden === false
+      && done.note === null && !done.amounts.some((a) => a.pending === 'true' || /hesaplanıyor/.test(a.text)),
+    done);
+  check('and the period that was pending reads as the empty period it is',
+    done.amounts.some((a) => a.text === '—'), done.amounts);
+
+  // A pending tool that already carries token figures (a partial read) must
+  // still say "calculating": pending is checked FIRST, so no token count or
+  // burn rate is presented as complete while the first scan is running.
+  await js(`window.__probe.setPendingDirect(['codex'], { codex: { weeklyCost: null } })`);
+  await sleep(250);
+  const pendWithTokens = await js(`(() => {
+    const row = ${q('codex')};
+    return {
+      meta: (row.querySelector('.row__meta') || {}).innerText || '',
+      pending: !!row.querySelector('.row__meta .row__pending'),
+    };
+  })()`);
+  say('pending with tokens (tr): ' + JSON.stringify(pendWithTokens));
+  check('pending wins over tokens that are already present: no figure is shown as complete',
+    pendWithTokens.pending === true && /^Kullanım hesaplanıyor…$/.test(pendWithTokens.meta.trim())
+      && !/token/.test(pendWithTokens.meta), pendWithTokens);
+  await js(`window.__probe.setPendingDirect([])`);
+  await js(`window.__probe.restore()`);
+  await sleep(250);
+
+  // ---- the price-date note states only dates of tables that priced something
+  const readNote = `(async () => {
+    const view = document.getElementById('settings-view');
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    view.querySelector('.acc__trigger[data-acc="usage"]').click();
+    await new Promise((r) => setTimeout(r, 80));
+    const n = view.querySelector('.usage__note');
+    const out = { text: n && !n.hidden ? n.textContent : null,
+                  clipped: n ? n.scrollWidth > n.clientWidth : null };
+    view.querySelector('.acc__trigger[data-acc="models"]').click();
+    await new Promise((r) => setTimeout(r, 60));
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    return out;
+  })()`;
+  // Codex-only: main leaves Claude out of the map on purpose.
+  await js(`window.__probe.setHistoryPricesDirect({ codex: '2026-08-15T00:00:00.000Z' }, '2026-08-01T00:00:00.000Z')`);
+  await sleep(200);
+  const codexOnlyNote = await js(readNote);
+  say('codex-only note (tr): ' + JSON.stringify(codexOnlyNote));
+  check('a Codex-only history states the Codex price date and no Claude date',
+    /^Codex fiyatları 15 Ağustos 2026 tarihli listeye göre\./.test(codexOnlyNote.text || '')
+      && !/Claude/.test(codexOnlyNote.text || '') && !/1 Ağustos/.test(codexOnlyNote.text || ''), codexOnlyNote);
+  check('and it names both floor causes, whole',
+    /fiyatlanamayan kullanım toplama katılmadığı/.test(codexOnlyNote.text || '')
+      && /kaydetmediği önbellek yazmaları/.test(codexOnlyNote.text || '') && codexOnlyNote.clipped === false,
+    codexOnlyNote);
+  // An older main: no map at all, so the legacy (Claude) date is the only one.
+  await js(`window.__probe.setHistoryPricesDirect({}, '2026-08-01T00:00:00.000Z')`);
+  await sleep(200);
+  const legacyNote = await js(readNote);
+  say('legacy note (tr): ' + JSON.stringify(legacyNote));
+  check('with no per-tool map (older main) the single-date note still uses pricesAsOf',
+    /^Fiyatlar 1 Ağustos 2026 tarihli listeye göre\./.test(legacyNote.text || ''), legacyNote);
+  check('the Claude-only note names both Claude floor causes: unpriced usage and the missing TTL split',
+    /fiyatlanamayan kullanım toplama katılmadığı/.test(legacyNote.text || '')
+      && /TTL ayrımı olmayan önbellek yazmaları 1,25× ile fiyatlandırıldığı, 1 saatlik yazmalar ise gerçekte 2× olduğu/.test(legacyNote.text || '')
+      && !/Codex/.test(legacyNote.text || '') && legacyNote.clipped === false, legacyNote);
+  await js(`window.__probe.setHistoryPricesDirect()`);
+  await sleep(200);
 
   // ---- per-model quota detail ------------------------------------------
   //

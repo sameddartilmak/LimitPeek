@@ -783,6 +783,8 @@ test.describe('the collector follows the IDE store', () => {
       projectsRoot: path.join(dir, 'projects'),
       rateLimitsDir: dir,
       rateLimitsFile: path.join(dir, 'claude-rate-limits.json'),
+      // An empty Codex home, so the rollout scan never reads the developer's own ~/.codex.
+      codexHome: path.join(dir, 'codex'),
       antigravityQuotaFile: path.join(dir, 'antigravity-quota.json'),
       ideAppDataDir: base,
     });

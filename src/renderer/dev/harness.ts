@@ -146,7 +146,7 @@ function makeBridge(scenario: Scenario): Bridge {
           .map((id) => byId.get(id))
           .filter((p): p is NonNullable<typeof p> => p !== undefined);
         if (ordered.length === base.providers.length) {
-          base = { generatedAt: new Date().toISOString(), providers: ordered };
+          base = { generatedAt: new Date().toISOString(), providers: ordered, pendingUsage: base.pendingUsage };
           pushSnapshot?.(base);
         }
       }
@@ -169,6 +169,7 @@ function makeBridge(scenario: Scenario): Bridge {
         base = {
           generatedAt: new Date().toISOString(),
           providers: base.providers.map((p) => (p.id === id ? { ...p, enabled } : p)),
+          pendingUsage: base.pendingUsage,
         };
         pushSnapshot?.(base);
       }

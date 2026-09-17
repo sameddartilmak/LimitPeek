@@ -211,7 +211,13 @@ export interface CostByClass {
 }
 
 export interface ModelCost {
-  /** Raw id as recorded, e.g. "claude-haiku-4-5-20251001". */
+  /**
+   * Raw id as recorded, e.g. "claude-haiku-4-5-20251001". The exact string
+   * `'unknown'` is a placeholder: the tool recorded usage but no model could be
+   * resolved for it (Codex: no `turn_context` and no model in the session
+   * header). Such usage is always unpriced; the renderer maps the placeholder
+   * to a catalog label instead of printing it as a model name.
+   */
   model: string;
   /**
    * The speed this group was billed at ('standard' | 'fast' | ...). Present
@@ -265,6 +271,17 @@ export interface WeeklyCost {
    * are very different claims about how much of a floor the total is.
    */
   cacheWriteEvents: number;
+  /**
+   * Priced events whose RECORDED cache writes are 0 although a write was
+   * likely — they read from the cache, OR sent an uncached prompt of at least
+   * 1,024 tokens (OpenAI's minimum cacheable prompt) — on a model that has a
+   * published cache-write price (ADR-002 Amendment 3 rule 3, as broadened by
+   * A3.9: Codex records 0 writes on every record). Zero recorded writes is not zero writes, so non-zero
+   * means the figure is a FLOOR ("en az"); no write count is estimated. A
+   * different claim from `fallbackWriteEvents` (a missing TTL split) and never
+   * folded into it. Always present: Codex fills it, Claude is always 0.
+   */
+  unrecordedWriteEvents: number;
   windowStart: string;
   windowEnd: string;
   /** true when anchored to sevenDay.resetsAt; false for a trailing 7 days. */
@@ -281,9 +298,20 @@ export interface WeeklyCost {
  */
 export interface PeriodModelCost {
   /**
+   * The tool this usage was recorded by. A period's list holds BOTH Claude Code
+   * and Codex models, each priced through its own tool's published price table
+   * (`src/core/pricing.js` / `src/core/codex/pricing.js`) under that table's own
+   * rules — so the renderer can mark which tool a model belongs to, and no
+   * entry's figure mixes two tables. Only dollars are combined into the period
+   * total; token counts are never summed across tools.
+   */
+  provider: ProviderSnapshot['id'];
+  /**
    * The RAW recorded model id, e.g. "claude-opus-5" (or a dated id like
    * "claude-haiku-4-5-20251001"). Shown as it appears — no marketing name is
    * invented, and the codebase has no display-label table to draw one from.
+   * The exact string `'unknown'` is the unresolved-model placeholder (see
+   * `ModelCost.model`): always unpriced, mapped to a catalog label.
    */
   model: string;
   /**
@@ -359,19 +387,33 @@ export interface PeriodUsage {
 
 /**
  * Week-by-week and month-by-month notional usage, for the settings "Toplam
- * Kullanım" section. Derived from LOCAL transcripts, which today means Claude
- * Code — the only provider with a local corpus (README). Both lists are
- * contiguous and NEWEST FIRST, and include honest empty periods between the
- * first observed usage and now. Main computes every figure; the renderer only
- * renders (contract rule: no renderer arithmetic on usage).
+ * Kullanım" section. Derived from LOCAL records only: Claude Code transcripts
+ * and Codex session rollouts. Each tool is priced by its own table; a period's
+ * `costUsd`, `byClass`, `isFloor` and `hasUsage` combine both, and `byModel`
+ * lists both tools' models tagged by `provider`. Both lists are contiguous and
+ * NEWEST FIRST, and include honest empty periods between the first observed
+ * usage and now. Main computes every figure; the renderer only renders
+ * (contract rule: no renderer arithmetic on usage).
  */
 export interface UsageHistory {
   /** ISO-week-aligned (Mon–Sun) buckets, newest first. */
   weeks: PeriodUsage[];
   /** Calendar-month buckets, newest first. */
   months: PeriodUsage[];
-  /** ISO date the price table was current (see `WeeklyCost.pricesAsOf`). */
+  /**
+   * ISO date the CLAUDE price table was current (see `WeeklyCost.pricesAsOf`).
+   * Kept for compatibility and always set, even when no Claude usage is in the
+   * history; it is not the date of every figure — read `pricesAsOfByProvider`.
+   */
   pricesAsOf: string;
+  /**
+   * ISO date each price table in these figures was current, keyed by tool. A
+   * tool is present only when its usage is part of the history — Claude
+   * included — because the date of a table that priced nothing is not a fact
+   * about these figures. Empty when there is no usage at all. Prices drift
+   * independently per vendor, so one date for all would be false for some.
+   */
+  pricesAsOfByProvider: Partial<Record<ProviderSnapshot['id'], string>>;
 }
 
 /**
@@ -536,6 +578,24 @@ export interface Snapshot {
    * fact about the local corpus, not a one-off answer to a user action.
    */
   usageHistory?: UsageHistory | null;
+  /**
+   * Tools whose LOCAL usage scan has not produced its first result yet
+   * (ADR-002 A3.12). Always present; empty when nothing is pending.
+   *
+   * While a tool is listed, its absent figures mean "not read yet", never "no
+   * usage": its `tokens` / `weeklyCost` are null because they are unknown, and
+   * its contribution to `usageHistory` is missing, not zero. The renderer must
+   * say so rather than show "no token data", hide the cost block silently, or
+   * present a history that leaves the tool out as complete.
+   *
+   * Today only 'codex' is ever listed: its rollout scan runs in a worker and
+   * its first result arrives after the first snapshot. Claude is not listed —
+   * before its first scan the collector sends `loadingSnapshot` (rows in
+   * status 'loading', `usageHistory: null`), and on a warm start it shows the
+   * persisted store, so it never presents unread data as absent. A worker
+   * restart does not re-enter pending: the previous result stays valid.
+   */
+  pendingUsage: ProviderSnapshot['id'][];
 }
 
 /**

@@ -145,6 +145,18 @@ export function asOf(iso: string): string {
 }
 
 /**
+ * A recorded model id for display. Codex writes exactly 'unknown' when no
+ * model could be resolved for an event (src/core/codex/usage.js); printed raw
+ * it reads as a model NAMED "unknown". Every other id is shown verbatim — no
+ * marketing name is invented.
+ */
+export const UNKNOWN_MODEL_ID = 'unknown';
+
+export function modelName(id: string): string {
+  return id === UNKNOWN_MODEL_ID ? t('cost.model.unknown') : id;
+}
+
+/**
  * "en az $12,40" / "at least $12.40". A floor, stated as one.
  *
  * The bound word is attached to the amount HERE, so a sentence that places

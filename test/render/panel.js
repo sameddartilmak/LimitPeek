@@ -1497,6 +1497,87 @@ app.whenReady().then(async () => {
   check('and so does the panel lang', langAfter.panel === 'en', langAfter);
   check('and the words are English', langAfter.title === 'Settings', langAfter);
 
+  // ---- Toplam Kullanım: each model row says which tool it belongs to ------
+  //
+  // Since the Codex merge one period lists Claude Code AND Codex models. Each
+  // row carries the tool's brand mark (same connected/grey rule as the settings
+  // rows) and — because the mark is decorative — names the tool in text for a
+  // screen reader, in the panel's language. The fixture's newest month holds
+  // two Claude and two Codex models; both fixture tools are connected.
+  //
+  // Opens the usage section and the newest period's disclosure, reads, then
+  // puts the accordion back on "Model Yönetimi" so the view is left as found.
+  const usageRead = `(async () => {
+    const view = document.getElementById('settings-view');
+    view.querySelector('.acc__trigger[data-acc="usage"]').click();
+    await new Promise((r) => setTimeout(r, 60));
+    const toggle = view.querySelector('.usage__row .usage__toggle');
+    if (toggle && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+    await new Promise((r) => setTimeout(r, 60));
+    const rows = [...view.querySelectorAll('.usage__row')[0].querySelectorAll('li.usage__model')];
+    const note = view.querySelector('.usage__note');
+    const out = {
+      rows: rows.map((r) => {
+        const m = r.querySelector('.usage__model-mark .mark');
+        const cs = m ? getComputedStyle(m) : null;
+        const box = m ? m.getBoundingClientRect() : null;
+        return {
+          provider: r.dataset.provider,
+          connected: r.dataset.connected,
+          logo: m ? m.getAttribute('data-logo') : null,
+          markHidden: r.querySelector('.usage__model-mark')?.getAttribute('aria-hidden'),
+          w: box ? Math.round(box.width) : 0,
+          h: box ? Math.round(box.height) : 0,
+          filter: cs ? cs.filter : null,
+          spoken: (r.querySelector('.usage__model-name .u-sr') || {}).textContent || null,
+          name: (r.querySelector('.usage__model-name') || {}).textContent || '',
+          title: (r.querySelector('.usage__model-name') || { getAttribute: () => null }).getAttribute('title'),
+          rowH: Math.round(r.getBoundingClientRect().height),
+        };
+      }),
+      note: note ? { text: note.textContent, scrollW: note.scrollWidth, clientW: note.clientWidth,
+                     ws: getComputedStyle(note).whiteSpace, tov: getComputedStyle(note).textOverflow } : null,
+    };
+    view.querySelector('.acc__trigger[data-acc="models"]').click();
+    await new Promise((r) => setTimeout(r, 60));
+    return out;
+  })()`;
+  const usageChecks = (u, lang) => {
+    const tr = lang === 'tr';
+    say(`usage models (${lang}): ` + JSON.stringify(u));
+    const providers = u.rows.map((r) => r.provider);
+    check(`[${lang}] the newest period lists both Claude Code and Codex models`,
+      providers.includes('claude') && providers.includes('codex'), providers);
+    check(`[${lang}] every model row draws its own tool's brand mark`,
+      u.rows.length > 0 && u.rows.every((r) => r.logo === r.provider), u.rows.map((r) => [r.provider, r.logo]));
+    check(`[${lang}] the mark is sized for the micro row, and the row does not grow past it`,
+      u.rows.every((r) => r.w === 14 && r.h === 14 && r.rowH <= 20), u.rows.map((r) => [r.w, r.h, r.rowH]));
+    check(`[${lang}] a connected tool's mark is in colour, the settings-row rule`,
+      u.rows.every((r) => r.connected === 'true' && r.filter === 'none'), u.rows.map((r) => [r.connected, r.filter]));
+    check(`[${lang}] the mark is decorative, so the tool is named in text for a screen reader`,
+      u.rows.every((r) => r.markHidden === 'true')
+        && u.rows.every((r) => r.spoken === (r.provider === 'codex'
+          ? (tr ? 'Codex modeli: ' : 'Codex model: ')
+          : (tr ? 'Claude Code modeli: ' : 'Claude Code model: '))),
+      u.rows.map((r) => r.spoken));
+    const unresolved = tr ? 'model belirlenemedi' : 'model not determinable';
+    check(`[${lang}] an unresolved Codex model is named as unresolved, in text and title`,
+      u.rows.some((r) => r.provider === 'codex' && r.name.endsWith(unresolved) && r.title === unresolved)
+        && !u.rows.some((r) => /(^|: )unknown$/.test(r.name) || r.title === 'unknown'),
+      u.rows.map((r) => [r.name, r.title]));
+    check(`[${lang}] the two-date price note is whole: it wraps, it is never cut`,
+      u.note !== null && u.note.scrollW <= u.note.clientW && u.note.tov !== 'ellipsis'
+        && u.note.ws !== 'nowrap' && /Codex/.test(u.note.text) && /Claude Code/.test(u.note.text)
+        && (tr ? /önbellek yazma/.test(u.note.text) && /kaydetmediği/.test(u.note.text)
+                 && /Claude Code’da TTL ayrımı olmayan önbellek yazmaları 1,25× ile/.test(u.note.text)
+                 && /Codex’te ise Codex’in kaydetmediği/.test(u.note.text)
+               : /cache write/.test(u.note.text) && /not record/.test(u.note.text)
+                 && /for Claude Code, a cache write that did not record its TTL was priced at 1\.25×/.test(u.note.text)
+                 && /for Codex, Codex did not record cache writes/.test(u.note.text)),
+      u.note);
+  };
+  usageChecks(await js(usageRead), 'en');
+
   // Back to Turkish, undeferred, for the checks below, which read Turkish copy.
   await js('window.__probe.setDeferPrefs(false)');
   await js(`document.querySelector('#settings-view label[for="language-tr"]').click()`);
@@ -1504,6 +1585,7 @@ app.whenReady().then(async () => {
   const langBack = await js(langState);
   check('picking Türkçe again restores Turkish everywhere',
     langBack.html === 'tr' && langBack.panel === 'tr' && langBack.title === 'Ayarlar', langBack);
+  usageChecks(await js(usageRead), 'tr');
 
   await js(`document.querySelector('.iconbtn--settings').click()`);
   await sleep(160);

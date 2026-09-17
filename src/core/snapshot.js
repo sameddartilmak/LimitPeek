@@ -5,6 +5,8 @@ const { resolveEnabled } = require('./enabled');
 const pricing = require('./pricing');
 const agg = require('./aggregate');
 const history = require('./history');
+const codexUsage = require('./codex/usage');
+const codexPricing = require('./codex/pricing');
 
 /**
  * Builds the Snapshot described by `src/shared/contract.ts`.
@@ -546,6 +548,28 @@ function buildSnapshot(input) {
     ? new Date(cxCapturedAtMs).toISOString()
     : null;
 
+  // Codex token usage and its notional API cost, from the per-turn rollout
+  // deltas the collector scanned. Row tokens track the five-hour window (as
+  // Claude's do); the cost block is the week at OpenAI's published prices —
+  // never a bill, the same framing as Claude's.
+  const cxEvents = Array.isArray(input.codexEvents) ? input.codexEvents : [];
+  // Five-hour tokens: anchored to Codex's own five-hour reset while it is
+  // still ahead, exactly as Claude's are; a trailing 5h otherwise. The window
+  // end is capped at now — the rest of it has not happened.
+  const cxFiveResetsAtMs = cx.fiveHour ? cx.fiveHour.resetsAtMs : null;
+  const cxFiveAnchorMs = Number.isFinite(cxFiveResetsAtMs) && now < cxFiveResetsAtMs ? cxFiveResetsAtMs : null;
+  const cxFiveWin = agg.fiveHourWindow(now, cxFiveAnchorMs);
+  const cxFiveUsage = codexUsage.sumCodexTokens(cxEvents, cxFiveWin.start, Math.min(cxFiveWin.end, now));
+  const cxTokens = cxFiveUsage.tokens.billable > 0 ? cxFiveUsage.tokens : null;
+  const cxByModel = cxFiveUsage.byModel;
+  // Same window rule as Claude's (ADR-002 rule 4): the Codex quota week, ending
+  // at its own seven-day reset, while that reset is still ahead of us; a
+  // trailing 7 days otherwise, which the block labels as such (windowAnchored).
+  const cxSevenResetsAtMs = cx.sevenDay ? cx.sevenDay.resetsAtMs : null;
+  const cxWeekAnchorMs = Number.isFinite(cxSevenResetsAtMs) && now < cxSevenResetsAtMs ? cxSevenResetsAtMs : null;
+  const cxWeekWin = agg.sevenDayWindow(now, cxWeekAnchorMs);
+  const cxWeeklyCost = codexPricing.codexCost(cxEvents, cxWeekWin.start, cxWeekWin.end, cxWeekWin.anchored);
+
   const providers = PROVIDERS.map((p) => {
     if (p.id === 'antigravity') {
       const snap = {
@@ -585,9 +609,10 @@ function buildSnapshot(input) {
         planLabel: null,
         fiveHour: cxFive,
         sevenDay: cxSeven,
-        tokens: null,
+        tokens: cxTokens,
         burnRatePerHour: null,
-        weeklyCost: null,
+        byModel: cxByModel.slice(0, 6),
+        weeklyCost: cxWeeklyCost,
         setupAction: cxRow.setup ? { ...p.setupAction } : null,
         lastGoodAt: cxLastGoodAt,
       };
@@ -643,14 +668,20 @@ function buildSnapshot(input) {
     providers: applyOrder(providers, input.order),
     // Week/month notional cost from the SAME deduped local corpus every other
     // figure uses — so the 115.3% resume-replay inflation cannot land on the
-    // history any more than it can on the weekly total. Today that corpus is
-    // Claude's; the settings section is labelled accordingly.
-    usageHistory: history.usageHistory(deduped, now),
+    // history any more than it can on the weekly total. Codex joins it from the
+    // SAME scanned turn deltas its row's tokens and weekly cost are built from,
+    // priced by its own table; the settings section names both sources.
+    usageHistory: history.usageHistory(deduped, now, { codexEvents: cxEvents }),
+    // ADR-002 A3.12. The collector passes `codexEvents: null` until the Codex
+    // worker's first result, so its empty figures above read as NOT READ YET.
+    // Claude never needs an entry: before its first scan the collector sends
+    // `loadingSnapshot` instead of this, and afterwards its store is real.
+    pendingUsage: Array.isArray(input.codexEvents) ? [] : ['codex'],
   };
 }
 
 /** Shown before the first scan completes, and if the store is empty. */
-function loadingSnapshot(now = Date.now(), order, enabledRaw) {
+function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage) {
   // Same resolution as buildSnapshot: the skeleton must show exactly the rows
   // the first real snapshot will, or the panel visibly drops rows on load.
   const enabled = resolveEnabled(enabledRaw);
@@ -680,6 +711,10 @@ function loadingSnapshot(now = Date.now(), order, enabledRaw) {
     // Nothing has been scanned yet, so there is no history to state. Null, not
     // an empty history: "we have not looked" is not "you used nothing".
     usageHistory: null,
+    // Claude's rows already say 'loading'. Codex's figures come from a
+    // separate worker that may already have answered, so the collector passes
+    // its real state; with no caller state, nothing has been scanned.
+    pendingUsage: Array.isArray(pendingUsage) ? pendingUsage.slice() : ['codex'],
   };
 }
 

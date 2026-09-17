@@ -62,7 +62,8 @@ import type {
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { enabledOf, type PanelState } from '../store.js';
 import { themeLabel } from '../theme.js';
-import { atLeast, dayRange, lowerFirst, priceDate, usd } from '../format.js';
+import { pendingUsageOf } from '../sanitize.js';
+import { atLeast, dayRange, lowerFirst, modelName, multiplier, priceDate, usd } from '../format.js';
 import { language as currentLanguage, t } from '../i18n.js';
 import { providerMark } from './logo.js';
 
@@ -450,11 +451,21 @@ function createLanguageControl(ctx: SettingsContext): LanguageHandleLocal {
  */
 interface UsageHandleLocal {
   el: HTMLElement;
-  update(history: UsageHistory | null, hasData: boolean): void;
+  update(
+    history: UsageHistory | null,
+    hasData: boolean,
+    providers: readonly ProviderSnapshot[],
+    pending: readonly string[],
+  ): void;
 }
 
 /** The amount cell's text, framed and honest. Never a bare "$0,00". */
-function amountText(period: PeriodUsage): string {
+function amountText(period: PeriodUsage, pending: boolean): string {
+  // While a tool is still being counted, an empty or zero period is not known
+  // to be empty: that tool's usage in it has not been read. "—" would claim it.
+  // A figure that IS present stays unqualified — pending is not a floor ("en
+  // az"), it is incomplete, and the section's note says so.
+  if (pending && (!period.hasUsage || period.costUsd <= 0)) return t('settings.amount.pending');
   if (!period.hasUsage) return '—';
   if (period.costUsd > 0) return period.isFloor ? atLeast(usd(period.costUsd)) : usd(period.costUsd);
   // Usage happened, but none of it could be priced: say so rather than print a
@@ -478,6 +489,10 @@ function createUsageSection(): UsageHandleLocal {
   let grain: UsageGrain = DEFAULT_GRAIN;
   let current: UsageHistory | null = null;
   let hasData = false;
+  /** The snapshot's providers, for each model row's mark and tool name. */
+  let known: readonly ProviderSnapshot[] = [];
+  /** Tools whose first usage scan has not answered (Snapshot.pendingUsage). */
+  let pendingIds: readonly string[] = [];
 
   // "yaklaşık maliyet" (approximate cost) is gone (ADR-004 A1.6): "approximate"
   // claims error in both directions beside figures whose only known error is
@@ -488,7 +503,7 @@ function createUsageSection(): UsageHandleLocal {
   const intro = el(
     'p',
     { class: 'usage__intro' },
-    `${t('settings.usage.intro')} ${t('provider.claude.usageSource')}`,
+    `${t('settings.usage.intro')} ${t('settings.usage.sources')}`,
   );
 
   const GRAINS: ReadonlyArray<{ v: UsageGrain; label: string }> = [
@@ -521,8 +536,12 @@ function createUsageSection(): UsageHandleLocal {
   const list = el('ul', { class: 'usage__list', role: 'list' });
   const empty = el('p', { class: 'usage__empty' }, '');
   const note = el('p', { class: 'usage__note' }, '');
+  // ADR-002 A3.12. Above the list, not in the footnote: it changes what every
+  // total below it means, and it must be read before them.
+  const pendingNote = el('p', { class: 'usage__pending', role: 'status' }, '');
+  pendingNote.hidden = true;
 
-  const root = el('div', { class: 'usage' }, intro, toggle, list, empty, note);
+  const root = el('div', { class: 'usage' }, intro, toggle, pendingNote, list, empty, note);
 
   function periodsFor(): PeriodUsage[] {
     if (!current) return [];
@@ -535,11 +554,38 @@ function createUsageSection(): UsageHandleLocal {
    * so a model name decoded from a file cannot become markup.
    */
   function renderModelRow(model: PeriodModelCost): HTMLElement {
-    const name = el('span', { class: 'usage__model-name' }, model.model);
+    // Which tool the model belongs to: the list mixes Claude Code and Codex.
+    // The brand mark says it to the eye, with the same connected/grey rule as
+    // the settings rows (keyed off `data-connected` on this row). The mark is
+    // decorative, so the tool is ALSO named in text for a screen reader —
+    // "Codex model: gpt-5 …" — and never left to the picture alone.
+    const provider = known.find((p) => p.id === model.provider) ?? null;
+    const toolName = provider?.displayName || model.provider;
+    const toolLabel = t('settings.usage.modelOf', { tool: toolName });
+    // `title` for the pointer: the mark alone is a picture to someone who does
+    // not know the logo. The name's own title is the full id, which ellipsizes.
+    const mark = el('span', { class: 'usage__model-mark', 'aria-hidden': 'true', title: toolLabel });
+    mark.appendChild(providerMark(model.provider));
+    const name = el(
+      'span',
+      // An unresolved model is named as unresolved in the title too, never
+      // as a model called "unknown".
+      { class: 'usage__model-name', title: modelName(model.model) },
+      el('span', { class: 'u-sr' }, `${toolLabel}: `),
+      modelName(model.model),
+    );
     const amount = el('span', { class: 'usage__model-amount u-num' }, modelAmountText(model));
-    const row = el('li', { class: 'usage__model', role: 'listitem' }, name, amount) as HTMLElement;
+    const row = el(
+      'li',
+      { class: 'usage__model', role: 'listitem' },
+      mark,
+      name,
+      amount,
+    ) as HTMLElement;
     setAttr(row, 'data-floor', model.isFloor ? 'true' : null);
     setAttr(row, 'data-unpriced', model.costUsd === null ? 'true' : null);
+    setAttr(row, 'data-provider', model.provider);
+    setAttr(row, 'data-connected', provider?.connected ? 'true' : 'false');
     return row;
   }
 
@@ -587,7 +633,8 @@ function createUsageSection(): UsageHandleLocal {
 
   function renderRow(period: PeriodUsage, maxCost: number, index: number): HTMLElement {
     const range = el('span', { class: 'usage__range' }, dayRange(period.startsAt, period.endsAt) || '—');
-    const amount = el('span', { class: 'usage__amount u-num' }, amountText(period));
+    const pending = pendingIds.length > 0;
+    const amount = el('span', { class: 'usage__amount u-num' }, amountText(period, pending));
     const bar = el('span', { class: 'usage__bar', 'aria-hidden': 'true' });
     if (maxCost > 0 && period.costUsd > 0) {
       const fill = el('i', { class: 'usage__fill' });
@@ -597,7 +644,8 @@ function createUsageSection(): UsageHandleLocal {
       bar.hidden = true;
     }
     const row = el('li', { class: 'usage__row', role: 'listitem' }, range, amount, bar) as HTMLElement;
-    setAttr(row, 'data-empty', period.hasUsage ? null : 'true');
+    setAttr(row, 'data-empty', period.hasUsage || pending ? null : 'true');
+    setAttr(row, 'data-pending', pending && (!period.hasUsage || period.costUsd <= 0) ? 'true' : null);
     setAttr(row, 'data-floor', period.isFloor ? 'true' : null);
     // Only a period with a per-model split gets a disclosure — an empty period
     // has nothing to break down. The region id is unique per grain+index so the
@@ -609,11 +657,24 @@ function createUsageSection(): UsageHandleLocal {
     return row;
   }
 
+  /** "Codex" / "Claude Code ve Codex", in the panel's language. */
+  function pendingToolsText(): string {
+    const names = pendingIds.map((id) => known.find((p) => p.id === id)?.displayName || id);
+    try {
+      return new Intl.ListFormat(currentLanguage(), { style: 'long', type: 'conjunction' }).format(names);
+    } catch {
+      return names.join(', ');
+    }
+  }
+
   function renderList(): void {
     for (const [v, input] of radios) {
       const on_ = grain === v;
       if (input.checked !== on_) input.checked = on_;
     }
+
+    pendingNote.hidden = pendingIds.length === 0;
+    setText(pendingNote, pendingIds.length > 0 ? t('settings.usage.pending', { tools: pendingToolsText() }) : '');
 
     if (!hasData) {
       list.hidden = true;
@@ -627,8 +688,10 @@ function createUsageSection(): UsageHandleLocal {
     if (periods.length === 0) {
       list.hidden = true;
       note.hidden = true;
-      empty.hidden = false;
-      setText(empty, t('settings.usage.empty'));
+      // "No records found" is a claim about the corpus; with a tool still
+      // being read it is not yet true. The pending note above says what is.
+      empty.hidden = pendingIds.length > 0;
+      setText(empty, pendingIds.length > 0 ? '' : t('settings.usage.empty'));
       return;
     }
 
@@ -638,17 +701,49 @@ function createUsageSection(): UsageHandleLocal {
     replaceChildrenWith(list, periods.map((p, i) => renderRow(p, maxCost, i)));
 
     note.hidden = false;
+    // Each vendor's table has its own date. When Codex prices are in the
+    // figures, both dates are stated; a single date would be false for one.
+    //
+    // `pricesAsOfByProvider` lists a table only when it priced something in
+    // these figures, so a Codex-only history deliberately has no Claude date.
+    // The legacy `pricesAsOf` (always Claude's) is used ONLY when the map is
+    // absent or empty — an older main — never to fill a gap the map left on
+    // purpose, or a Codex-only user would read a date for a table that priced
+    // nothing.
+    const byProvider = current ? current.pricesAsOfByProvider : undefined;
+    const hasMap = !!byProvider && Object.keys(byProvider).length > 0;
+    const claudeDate = hasMap ? byProvider?.claude : current?.pricesAsOf;
+    const codexDate = hasMap ? byProvider?.codex : undefined;
+    // Every note names every floor cause of the tools it covers: unpriced usage
+    // (both), Claude's missing TTL split priced at the 1.25x floor (same facts
+    // as cost.caveat.ttl), and Codex's unrecorded cache writes.
+    const ttl = { low: multiplier(1.25), high: multiplier(2) };
     setText(
       note,
-      current && current.pricesAsOf
-        ? t('settings.usage.note', { date: priceDate(current.pricesAsOf) })
-        : t('settings.usage.noteNoDate'),
+      claudeDate && codexDate
+        ? t('settings.usage.noteByProvider', {
+            claude: priceDate(claudeDate),
+            codex: priceDate(codexDate),
+            ...ttl,
+          })
+        : codexDate
+          ? t('settings.usage.noteCodexOnly', { codex: priceDate(codexDate) })
+          : claudeDate
+            ? t('settings.usage.note', { date: priceDate(claudeDate), ...ttl })
+            : t('settings.usage.noteNoDate'),
     );
   }
 
-  function update(history: UsageHistory | null, dataArrived: boolean): void {
+  function update(
+    history: UsageHistory | null,
+    dataArrived: boolean,
+    providers: readonly ProviderSnapshot[],
+    pending: readonly string[],
+  ): void {
     current = history;
     hasData = dataArrived;
+    known = providers;
+    pendingIds = pending;
     renderList();
   }
 
@@ -873,7 +968,14 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     // history.
     theme.update(state);
     languageControl.update(state);
-    usage.update(state.snapshot?.usageHistory ?? null, state.hasData);
+    // The FULL snapshot list, not the added subset: a model row names its tool
+    // even when that tool's row was removed from the main panel.
+    usage.update(
+      state.snapshot?.usageHistory ?? null,
+      state.hasData,
+      state.snapshot?.providers ?? providers,
+      pendingUsageOf(state.snapshot),
+    );
 
     // Three states for the models list, told apart in words. "Still scanning"
     // and "this machine has nothing" are different claims.

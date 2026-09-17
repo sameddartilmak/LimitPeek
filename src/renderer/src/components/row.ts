@@ -86,6 +86,12 @@ export interface RowContext {
    * to infer it.
    */
   isTrayRow(providerId: string): boolean;
+  /**
+   * True while this tool's local usage scan has not produced its first result
+   * (Snapshot.pendingUsage, ADR-002 A3.12). Its tokens and cost are then
+   * MISSING, not absent: the row says "calculating", never "no token data".
+   */
+  isPending(providerId: string): boolean;
   /** Snapshot.generatedAt, used for the "as of" line on stale rows. */
   generatedAt: string | null;
   /**
@@ -440,11 +446,18 @@ function buildLive(
         metaChildren.push(metaTokens);
       }
     } else {
-      if (p.tokens) {
+      // Pending FIRST, as in cost.ts. Until the tool's first scan answers, a
+      // token figure or burn rate on this line would present a partial read as
+      // complete; and no figure is a gap in what we have READ, which "Token
+      // bilgisi yok" would state as a fact about the tool.
+      const pending = ctx.isPending(p.id);
+      if (pending) {
+        metaChildren.push(el('span', { class: 'row__pending' }, t('row.tokens.pending')));
+      } else if (p.tokens) {
         metaTokens = el('span', { title: tokensTitle(p) }, tokens(p.tokens.billable));
         metaChildren.push(metaTokens);
       }
-      if (p.burnRatePerHour !== null) {
+      if (!pending && p.burnRatePerHour !== null) {
         metaBurn = el(
           'span',
           { title: modelsTitle(p) || t('row.burnTitle') },
@@ -607,7 +620,9 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
       fiveHour: expireWindow(raw.fiveHour, atNow),
       sevenDay: expireWindow(raw.sevenDay, atNow),
     };
-    const nextShape = shapeKeyOf(p);
+    // Pending decides whether the token line is "calculating" or a figure, so
+    // it is structure: the flip to [] must rebuild the line.
+    const nextShape = `${shapeKeyOf(p)}|${context.isPending(p.id) ? 'pending' : 'read'}`;
     if (nextShape !== shapeKey) {
       shapeKey = nextShape;
       rebuild(p, context, atNow);
@@ -653,7 +668,7 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
       body.appendChild(refs.quotas.el);
     }
 
-    refs.cost.update(p.weeklyCost, p.displayName, degraded);
+    refs.cost.update(p.weeklyCost, p.displayName, degraded, context.isPending(p.id));
     if (!refs.cost.el.hidden && refs.cost.el.parentElement !== body) {
       body.appendChild(refs.cost.el);
     }

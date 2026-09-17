@@ -481,6 +481,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onRetry: (id) => ctx.onRetry(id),
     onSetup: (id) => ctx.onSetup(id),
     isBusy: (id) => ctx.isBusy(id),
+    isPending: (id) => ctx.isPending(id),
     attachGrip: (grip, id, name) => reorder.attach(grip, id, name),
     isTrayRow: (id) => id === trayRowId,
     get generatedAt(): string | null {

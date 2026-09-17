@@ -88,7 +88,6 @@
   "panel.modeHoverTitle": "The panel is not pinned: it closes when the pointer leaves it. The pin button in the header keeps it on screen.",
   "providers.noneFound": "No supported AI tool was found on this machine.",
   "provider.antigravity.notRunning": "Antigravity is not open, so its values are not updating — nothing is wrong. Only the last measurements that are still valid are shown below; open Antigravity for the current figures of windows that have expired.",
-  "provider.claude.usageSource": "Calculated only from local Claude Code transcripts.",
 
   "meter.window5h.label": "5-hour window",
   "meter.window5h.spoken": "Five-hour window",
@@ -129,6 +128,7 @@
   "row.retryLabel": "{name}: retry",
   "row.burnTitle": "Billable token rate in the active window",
   "row.noTokens": "No token data",
+  "row.tokens.pending": "Calculating usage…",
   "row.loadingLabel": "{name}: loading",
   "row.gripLabel": "{name}: change order",
   "row.gripTitle": "{name} — drag to move.",
@@ -140,11 +140,13 @@
 
   "cost.class.cacheRead": "Cache read",
   "cost.class.output": "Output",
-  "cost.class.cacheWrite1h": "Cache write · 1h",
-  "cost.class.cacheWrite5m": "Cache write · 5m",
+  "cost.class.cacheWrite": "Cache write",
   "cost.class.input": "Input",
   "cost.speed.standard": "standard",
   "cost.speed.fast": "fast",
+  "cost.speed.unknownTier": "tier not determinable",
+  "cost.speed.longContext": "{tier}, long context (over 272K)",
+  "cost.speed.other": "unrecognised price tier",
   "cost.window.last7": "Last 7 days",
   "cost.window.last7Range": "Last 7 days · {range}",
   "cost.window.quotaWeek": "This quota week",
@@ -161,6 +163,10 @@
     "other": "{count} cache-write records"
   },
   "cost.caveat.ttl": "{scope} did not record a TTL. A write without a TTL is priced at {low}; 1-hour writes actually cost {high}, so the total is a lower bound.",
+  "cost.caveat.unrecordedWrites": {
+    "one": "{count} record recorded 0 cache writes on a model that charges for them, although it read from the cache or sent a prompt long enough to be cached (1,024+ tokens), so the total is a lower bound.",
+    "other": "{count} records recorded 0 cache writes on a model that charges for them, although they read from the cache or sent a prompt long enough to be cached (1,024+ tokens), so the total is a lower bound."
+  },
   "cost.caveat.degraded": "Data from this tool is not current. The amount covers only the last readable events, so it does not describe the whole window.",
   "cost.summary": "Would have cost {amount} at published API prices",
   "cost.toggleLabel": "{provider}: this week's usage would have cost {amount} at published API prices. This is not a bill; you do not pay this amount under your subscription. Activate to open the breakdown.",
@@ -169,6 +175,7 @@
   "cost.detailLead": "{amount} at published API prices",
   "cost.detailLeadUnpriced": "No price could be calculated for this usage",
   "cost.denial": "This is not a bill: you do not pay this amount under your subscription. It is what the same usage would cost through the API.",
+  "cost.pending": "Calculating cost — reading local logs.",
   "cost.pricesAsOf": "Prices from the list dated {date}",
   "cost.pricesDateMissing": "The price list's date was not reported",
 
@@ -221,13 +228,20 @@
   "settings.language.help": "The language of the panel, the tray icon and notices. With System, the Windows language is followed.",
   "settings.language.helpSystem": "Following the Windows language — currently {language}.",
   "settings.usage.intro": "What each period's usage would have cost at published API prices. This is not a bill — you do not pay this amount (US dollars) under your subscription.",
+  "settings.usage.sources": "Calculated only from local Claude Code transcripts and Codex session logs.",
   "settings.grain.legend": "Period length",
   "settings.grain.month": "Monthly",
   "settings.grain.week": "Weekly",
   "settings.amount.unpriced": "could not be priced",
+  "settings.amount.pending": "calculating…",
   "settings.models.breakdown": "Breakdown by model",
   "settings.usage.loading": "Loading usage history…",
+  "settings.usage.pending": "Still counting {tools} usage; totals are incomplete.",
   "settings.usage.empty": "No local usage records were found yet.",
-  "settings.usage.note": "Prices from the list dated {date}. “At least” means a lower bound: usage that could not be priced is not included in the total.",
+  "settings.usage.note": "Prices from the list dated {date}. “At least” means a lower bound, for one of these reasons: usage that could not be priced is not included in the total; or a cache write that did not record its TTL was priced at {low}, while 1-hour writes actually cost {high}.",
+  "settings.usage.noteByProvider": "Claude Code prices from the list dated {claude}, Codex prices from the list dated {codex}. “At least” means a lower bound, for one of these reasons: usage that could not be priced is not included in the total; for Claude Code, a cache write that did not record its TTL was priced at {low}, while 1-hour writes actually cost {high}; for Codex, Codex did not record cache writes on a model that charges for them, so those writes are not in the total either.",
+  "cost.model.unknown": "model not determinable",
+  "settings.usage.noteCodexOnly": "Codex prices from the list dated {codex}. “At least” means a lower bound, for either of two reasons: usage that could not be priced is not included in the total, or Codex did not record cache writes on a model that charges for them, so those writes are not in the total either.",
+  "settings.usage.modelOf": "{tool} model",
   "settings.usage.noteNoDate": "The price list's date was not reported."
 }

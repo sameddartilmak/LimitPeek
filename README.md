@@ -212,6 +212,31 @@ sunulmuyorlar — ama "farklı ufuk", "farklı havuz" demek değil. Kesin cevap 
 makinede öyle değil. Cevap gelene kadar ikisi de oldukları şey olarak
 gösteriliyor: ayrı kaynaklı iki pencere, her biri geldiği alanla etiketli.
 
+### Codex
+
+Kurulacak bir şey yok: Codex her oturumu `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`
+dosyasına kendisi yazıyor, uygulama yalnızca bu dosyaları okur.
+
+| Ne | Kaynak |
+| --- | --- |
+| 5 saatlik ve haftalık yüzde | rollout'taki `rate_limits` (sunucunun hesapladığı yüzde) |
+| Token sayıları ve maliyet | rollout'taki `token_count` kayıtları |
+
+Maliyet, abonelikteki kullanımın **OpenAI'nin yayımlanan API fiyatlarıyla ne
+tutacağıdır**, fatura değil. Fiyat model ve katmana (tier) göre seçilir:
+
+- Fast mod (`priority`/`fast`) kendi fiyat satırıyla, ayrı fiyatlanır.
+- Katmanı belirlenemeyen kullanım (Codex bir oturumun başında katmanı yazmıyor)
+  **fiyatlanmaz** — Standart varsayılmaz. Fiyat listesinde olmayan model, katman
+  veya 272.000 token üstü bir istem de öyle.
+- Codex önbellek yazmalarını her kayıtta 0 yazıyor; yazma ücreti olan modelde
+  bu, tutarı **en az** yapar. Yazma sayısı tahmin edilmez.
+
+Tarama arka planda ayrı bir iş parçacığında (worker) çalışır; ilk sonuç gelene
+kadar panel Codex için "hesaplanıyor" der, sıfır ya da "kullanım yok" demez.
+Ayarlar → **Toplam Kullanım**, Claude modellerinin yanında Codex modellerini de
+gösterir.
+
 ## Güvenlik duruşu
 
 - **Çalışma anında sıfır giden ağ trafiği.** Bağımlılık ağacında HTTP istemcisi yok.
@@ -231,6 +256,10 @@ gösteriliyor: ayrı kaynaklı iki pencere, her biri geldiği alanla etiketli.
   Antigravity IDE'nin `state.vscdb` deposu **salt okunur** açılır ve tek bir
   anahtar adıyla sorgulanır; aynı tablodaki `...oauthToken` hiç adlandırılmaz.
   Kodda `SELECT *` bulunmuyor ve bu bir testle sabitlenmiş durumda.
+- **Codex'te yalnızca rollout dosyaları okunur.** `~/.codex/auth.json` ve
+  `config.toml` hiç açılmaz. Rollout'lar istem ve kod içerir; her satırdan yalnızca
+  token sayıları, zaman damgası, model adı ve katman alınır, içerik saklanmaz ve
+  loglanmaz. Ağ konumundaki (UNC) bir Codex klasörüne bağlantı açılmaz.
 - **`node:sqlite` bir bağımlılık değil.** Electron 44'ün getirdiği Node'un
   içinde geliyor; kimsenin taşıdığı yerel bir modül eklenmedi. Yüklerken
   bastırdığımız tek şey kendi `ExperimentalWarning`'i — diğer tüm uyarılar
@@ -246,7 +275,7 @@ gösteriliyor: ayrı kaynaklı iki pencere, her biri geldiği alanla etiketli.
 ## Geliştirme
 
 ```bash
-npm test     # tip kontrolü + 902 test
+npm test     # tip kontrolü + 1158 test
 npm run scan # gerçek corpus üzerinde tarama ölçümü
 npm run build # paketleme derlemesi (dist/ temizlenip yeniden üretilir)
 npm run smoke # Electron IPC duman testi
@@ -270,6 +299,9 @@ sunucusu dinleyen bir soket açar ve yayınlanan uygulamada böyle bir şey yokt
 - `src/core/antigravity/**` — IDE durum deposu okuyucusu: kurulum çözümleme
   (koruma 1), katı protobuf çözücü (koruma 3a), `node:sqlite` sarmalayıcısı ve
   süreç sondası (`process.js`) ve tek-tık `agy` kurulumu (`cli-install.js` — uygulamanın tek ağ erişiminin yaşadığı dar, onay kapılı yer).
+- `src/core/codex/**` — rollout okuyucuları: `rate_limits` (`rollout.js`),
+  `token_count` taraması (`usage.js`, `scan-worker.js` içinde çalışır) ve OpenAI
+  fiyat tablosu (`pricing.js`).
 - `bridge/claude-statusline.mjs`, `bridge/antigravity-statusline.mjs` —
   statusline köprüleri. Aynı disiplin: stdin'den oku, yalnızca sayısal kota
   alanlarını küçük bir dosyaya yaz, başka hiçbir şeyi kaydetme, ağ açma.
@@ -280,12 +312,14 @@ Kararların gerekçesi: `ADR-001` (orkestratör karar kaydı).
 
 **Var:** Claude Code canlı (gerçek yüzde + mutlak token), Antigravity canlı
 (IDE deposundan beş saatlik yüzde + model kırılımı; `agy` kuruluysa haftalık
-yüzde; token/maliyet yok), açılışta başlatma, tepsi simgesi,
-hover paneli, altı sağlayıcı satırı, Bağla/Ekle düğmeleri.
+yüzde; token/maliyet yok), Codex canlı (rollout'tan 5 saatlik ve haftalık
+yüzde, token sayıları ve model/katman bazlı API fiyatı karşılığı), açılışta
+başlatma, tepsi simgesi, hover paneli, altı sağlayıcı satırı, Bağla/Ekle
+düğmeleri.
 
-**Yok:** Codex, Kimi, Copilot, Gemini için canlı veri. Bunların her biri farklı
-bir mekanizma gerektiriyor (Codex bir JSON-RPC el sıkışması ve SQLite; Gemini
-hiç yüzde vermiyor) — "yerel dosya oku" ortak bir soyutlama değil. Satırlar
+**Yok:** Kimi, Copilot, Gemini için canlı veri. Bunların her biri farklı bir
+mekanizma gerektiriyor (Gemini hiç yüzde vermiyor) — "yerel dosya oku" ortak
+bir soyutlama değil. Satırlar
 pasif duruyor ve hiçbiri uydurma sayı göstermiyor.
 
 **Haftalık limit neden yok:** Depodaki 130 anahtarın tamamı tarandı, her

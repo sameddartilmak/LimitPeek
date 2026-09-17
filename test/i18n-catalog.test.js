@@ -353,6 +353,26 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     { file: 'renderer.json', key: 'row.tokens.cacheRead', en: [/\bnot included in the billable total\b/i], tr: [/dahil değil/] },
     // decoded, undocumented source
     { file: 'renderer.json', key: 'quota.derived', en: [/\bnot a documented interface\b/i], tr: [/belgelenmiş bir arayüz değil/i] },
+    // cache reads with zero recorded writes on a model that bills writes: the
+    // total is a floor (A2.2). Every plural form is checked (variants()).
+    { file: 'renderer.json', key: 'cost.caveat.unrecordedWrites', en: [/\brecorded 0 cache writes\b/i, /\blower bound\b/i, /read from the cache/, /1,024\+ tokens/], tr: [/önbellek yazması 0 kaydedilmiş/, /alt sınır/, /önbellekten okumuş/, /1\.024\+ token/] },
+    // usage history is computed locally, from local files only (A2.2, Codex merge)
+    { file: 'renderer.json', key: 'settings.usage.sources', en: [/\bonly from local\b/i, /\bClaude Code transcripts\b/, /\bCodex session logs\b/], tr: [/^Yalnızca yerel\b/, /Claude Code transkriptlerinden/, /Codex oturum kayıtlarından/] },
+    // per-provider price dates, and "at least" still means a lower bound — for
+    // BOTH causes: unpriced usage, and cache writes Codex did not record on a
+    // model that bills them (ADR-002 A3.8-9)
+    // Each price note names EVERY floor cause of the tools it covers: unpriced
+    // usage (both), a cache write without a TTL split (Claude Code), and cache
+    // writes Codex did not record (Codex).
+    { file: 'renderer.json', key: 'settings.usage.note', en: [/\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bdid not record its TTL\b/, /\{low\}/, /\{high\}/], tr: [/\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /TTL ayrımı olmayan/, /\{low\}/, /\{high\}/] },
+    { file: 'renderer.json', key: 'settings.usage.noteByProvider', en: [/\{claude\}/, /\{codex\}/, /\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bdid not record its TTL\b/, /\{low\}/, /\{high\}/, /\bcache write/i, /\bnot record/i], tr: [/\{claude\}/, /\{codex\}/, /\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /TTL ayrımı olmayan/, /\{low\}/, /\{high\}/, /önbellek yazma/, /kaydetmediği|kaydedilmemiş/] },
+    { file: 'renderer.json', key: 'settings.usage.noteCodexOnly', en: [/\{codex\}/, /\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bcache write/i, /\bnot record/i], tr: [/\{codex\}/, /\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /önbellek yazma/, /kaydetmediği|kaydedilmemiş/] },
+    // pending state (ADR-002 A3.12): the totals are still being computed —
+    // incomplete, which is neither zero nor a floor
+    { file: 'renderer.json', key: 'row.tokens.pending', en: [/\bcalculating\b/i], tr: [/hesaplanıyor/] },
+    { file: 'renderer.json', key: 'cost.pending', en: [/\bcalculating\b/i, /\blocal\b/i], tr: [/hesaplanıyor/, /yerel/] },
+    { file: 'renderer.json', key: 'settings.usage.pending', en: [/\{tools\}/, /\bincomplete\b/i], tr: [/\{tools\}/, /eksik/] },
+    { file: 'renderer.json', key: 'settings.amount.pending', en: [/\bcalculating\b/i], tr: [/hesaplanıyor/] },
     // consent dialogs: no network, and the one network access is consented
     { file: 'main.json', key: 'dialog.claude.promise', en: [/\bno network connection\b/i], tr: [/hiçbir ağ bağlantısı açmaz/] },
     { file: 'main.json', key: 'dialog.agy.promise', en: [/\bno network connection\b/i], tr: [/hiçbir ağ bağlantısı açmaz/] },
@@ -380,6 +400,33 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
       }
     }
     assert.deepEqual(failures, []);
+  });
+
+  test('the Codex-only price note never names Claude or a Claude price date', () => {
+    for (const lang of LANGS) {
+      const entries = catalogs[lang]['renderer.json'];
+      assert.ok(entries && has(entries, 'settings.usage.noteCodexOnly'), `${lang}: settings.usage.noteCodexOnly exists`);
+      for (const text of variants(entries['settings.usage.noteCodexOnly'])) {
+        assert.doesNotMatch(text, /\{claude\}|Claude/, `${lang}: a Codex-only note must not mention Claude`);
+      }
+    }
+  });
+
+  test('no pending-state copy reads as a floor: never "en az" / "at least" (ADR-002 A3.12)', () => {
+    let seen = 0;
+    for (const lang of LANGS) {
+      for (const [file, entries] of Object.entries(catalogs[lang])) {
+        for (const [key, entry] of Object.entries(entries)) {
+          if (!/(^|\.)pending$/.test(key)) continue;
+          seen += 1;
+          for (const text of variants(entry)) {
+            assert.doesNotMatch(text, /\ben az\b|\bat least\b/i,
+              `${lang}/${file} "${key}": pending means incomplete, not a lower bound`);
+          }
+        }
+      }
+    }
+    assert.ok(seen >= 8, `the four A3.12 pending keys exist in both languages (saw ${seen})`);
   });
 
   test('"approximate cost" is gone in both languages (ADR-004 A1.6)', () => {

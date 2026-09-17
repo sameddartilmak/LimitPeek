@@ -559,6 +559,9 @@ function bootstrap() {
     order: settings.providerOrder,
     enabled: settings.enabledProviders,
     workerPath: path.join(__dirname, '..', 'core', 'scan', 'worker.js'),
+    // The long-lived Codex usage scan worker (ADR-002 A3.11): rollouts are
+    // never read for usage on this thread.
+    codexWorkerPath: path.join(__dirname, '..', 'core', 'codex', 'scan-worker.js'),
   });
 
   collector.on('snapshot', (snapshot) => {

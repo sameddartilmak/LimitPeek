@@ -125,6 +125,12 @@ function nonNegative(value: unknown): number | null {
   return n === null || n < 0 ? null : n;
 }
 
+/** A count of records: a non-negative integer, else 0. */
+function eventCount(value: unknown): number {
+  const n = nonNegative(value);
+  return n !== null && Number.isInteger(n) ? n : 0;
+}
+
 function percentage(value: unknown): number | null {
   const n = finite(value);
   if (n === null) return null;
@@ -417,7 +423,18 @@ function modelCost(raw: unknown): ModelCost | null {
     model,
     // A model can be priced at one speed and unpriced at another, so the
     // speed is part of the row's identity, not a decoration.
-    speed: text(source.speed, 24) ?? 'standard',
+    // 40, not 24: Codex's group label is a tier of up to 24 characters plus
+    // "-long-context" (src/core/codex/pricing.js speedOf). At 24,
+    // "unknown-tier-long-context" (25) was cut to "unknown-tier-long-conte…",
+    // and cost.ts could no longer tell it was long context.
+    // A missing or unusable speed is NOT 'standard': that would be a price-tier
+    // claim the payload never made. 'other' is the neutral code cost.ts
+    // renders as "tanınmayan fiyat katmanı" (it is also what Codex's own
+    // normalizeTier emits for an unrecognisable tier). Safe for priced rows:
+    // speed is only ever read for UNPRICED rows (cost.ts unpricedRows), and
+    // both producers always emit a string (core/pricing.js speedOf defaults
+    // it; codex/pricing.js speedOf always builds one).
+    speed: text(source.speed, 40) ?? 'other',
     pricedAs: text(source.pricedAs, 64),
     // null means "no price for this model". A missing price must never be
     // coerced to 0, or an unpriced model quietly reads as a free one.
@@ -480,6 +497,10 @@ function weeklyCost(raw: unknown): WeeklyCost | null {
     // presence into a proportion. Zero is legitimate — a window whose only
     // usage is output tokens has no cache writes at all.
     cacheWriteEvents: nonNegative(source.cacheWriteEvents) ?? 0,
+    // ADR-002 Amendment 3 rule 3: a COUNT of records, so only a non-negative
+    // integer is one. Anything else is not this field and reads as 0 — which
+    // only drops a floor the producer failed to state, never invents one.
+    unrecordedWriteEvents: eventCount(source.unrecordedWriteEvents),
     windowStart,
     windowEnd,
     windowAnchored: source.windowAnchored === true,
@@ -519,7 +540,11 @@ function periodModelCost(raw: unknown): PeriodModelCost | null {
   const source = raw as Record<string, unknown>;
   const model = text(source.model, 64);
   if (model === null) return null;
+  // Same rule as the model name: the provider is part of the entry's label (a
+  // period lists two tools' models), and there is no honest default to invent.
+  if (!PROVIDER_IDS.has(source.provider as ProviderSnapshot['id'])) return null;
   return {
+    provider: source.provider as ProviderSnapshot['id'],
     model,
     costUsd: nonNegative(source.costUsd),
     isFloor: source.isFloor === true,
@@ -596,7 +621,18 @@ function usageHistory(raw: unknown): UsageHistory | null {
   // is empty, and the renderer branches on it to say the date was not given
   // rather than printing an empty one.
   const pricesAsOf = isoInstant(source.pricesAsOf) ?? '';
-  return { weeks, months, pricesAsOf };
+  // Per-tool price dates. Unknown tools and unparseable dates are dropped, not
+  // blanked: an absent key already reads as "that table's date was not given".
+  const pricesAsOfByProvider: UsageHistory['pricesAsOfByProvider'] = {};
+  const byProvider = source.pricesAsOfByProvider;
+  if (byProvider && typeof byProvider === 'object' && !Array.isArray(byProvider)) {
+    for (const [id, date] of Object.entries(byProvider as Record<string, unknown>)) {
+      if (!PROVIDER_IDS.has(id as ProviderSnapshot['id'])) continue;
+      const iso = isoInstant(date);
+      if (iso !== null) pricesAsOfByProvider[id as ProviderSnapshot['id']] = iso;
+    }
+  }
+  return { weeks, months, pricesAsOf, pricesAsOfByProvider };
 }
 
 function setupAction(raw: unknown): SetupAction | null {
@@ -807,6 +843,28 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
 }
 
 /** Returns null when the payload is not a usable Snapshot at all. */
+/**
+ * ADR-002 A3.12: the tools whose local usage scan has not produced its FIRST
+ * result yet. Known provider ids only, de-duplicated; anything else is dropped
+ * and a missing or malformed field is []. An unknown id is not a pending tool,
+ * and a malformed payload must not put every row into a "calculating" state.
+ */
+function pendingUsage(raw: unknown): ProviderSnapshot['id'][] {
+  if (!Array.isArray(raw)) return [];
+  const out: ProviderSnapshot['id'][] = [];
+  for (const entry of raw) {
+    if (PROVIDER_IDS.has(entry as ProviderSnapshot['id']) && !out.includes(entry)) {
+      out.push(entry as ProviderSnapshot['id']);
+    }
+  }
+  return out;
+}
+
+/** The pending tools on a snapshot, [] when there is no snapshot yet. */
+export function pendingUsageOf(snapshot: Snapshot | null | undefined): readonly string[] {
+  return snapshot?.pendingUsage ?? [];
+}
+
 export function sanitizeSnapshot(raw: unknown): Snapshot | null {
   if (!raw || typeof raw !== 'object') return null;
   const source = raw as Record<string, unknown>;
@@ -831,7 +889,13 @@ export function sanitizeSnapshot(raw: unknown): Snapshot | null {
   // state, which is the same thing an older main process should produce.
   const history = usageHistory(source.usageHistory);
 
-  return notices.length > 0
-    ? { generatedAt, providers, refreshNotices: notices, usageHistory: history }
-    : { generatedAt, providers, usageHistory: history };
+  const pending = pendingUsage(source.pendingUsage);
+
+  const base: Snapshot = {
+    generatedAt,
+    providers,
+    usageHistory: history,
+    pendingUsage: pending,
+  };
+  return notices.length > 0 ? { ...base, refreshNotices: notices } : base;
 }

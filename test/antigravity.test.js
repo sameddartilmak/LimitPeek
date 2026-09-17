@@ -859,6 +859,8 @@ test.describe('an unreadable quota is nameable, not just "Güncellenemedi"', () 
         userDataDir: dir,
         projectsRoot: path.join(dir, 'projects'),
         rateLimitsFile: path.join(dir, 'claude-rate-limits.json'),
+        // An empty Codex home, so the rollout scan never reads the developer's own ~/.codex.
+        codexHome: path.join(dir, 'codex'),
         rateLimitsDir: dir,
         antigravityQuotaFile: quotaFile,
       });
@@ -885,6 +887,8 @@ test.describe('an unreadable quota is nameable, not just "Güncellenemedi"', () 
         userDataDir: dir,
         projectsRoot: path.join(dir, 'projects'),
         rateLimitsFile: path.join(dir, 'claude-rate-limits.json'),
+        // An empty Codex home, so the rollout scan never reads the developer's own ~/.codex.
+        codexHome: path.join(dir, 'codex'),
         rateLimitsDir: dir,
         antigravityQuotaFile: path.join(dir, 'nope.json'),
       });
