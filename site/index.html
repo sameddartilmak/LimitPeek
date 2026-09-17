@@ -441,26 +441,25 @@
       <h2 class="h2" id="h-details"><span class="h2__a"><span class="l-tr" lang="tr">Küçük bir uygulama.</span><span class="l-en" lang="en">A small app.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Ayrıntıları dürüst.</span><span class="l-en" lang="en">Honest in the details.</span></span></h2>
       <div class="wheel__grid">
         <div class="wheel__col">
-          <span class="wheel__rail" aria-hidden="true"><i></i></span>
           <div class="wheel__view">
             <ol class="wheel__list" id="wheel" data-active="1">
-              <li class="wheel__item" data-i="1" data-d="0">
+              <li class="wheel__item" data-i="1">
                 <a class="wheel__link" href="#d-1"><span class="wheel__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Bilmediğini göstermez</span><span class="l-en" lang="en">It never guesses</span></a>
                 <p class="wheel__line"><span class="l-tr" lang="tr">Güvenilir bir limit yoksa ne yüzde ne çubuk çizer; “bildirilmiyor” yazar. Yerel token sayısından yüzde üretmez.</span><span class="l-en" lang="en">Without a trustworthy limit it draws no percentage and no bar; it says “not reported”. It never turns local token counts into a percentage.</span></p>
               </li>
-              <li class="wheel__item" data-i="2" data-d="1">
+              <li class="wheel__item" data-i="2">
                 <a class="wheel__link" href="#d-2"><span class="wheel__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Veri bilgisayarında kalır</span><span class="l-en" lang="en">Data stays on your PC</span></a>
                 <p class="wheel__line"><span class="l-tr" lang="tr">Araçların yerel dosyalarından yalnızca ölçüm alanlarını alır ve çalışırken ağa çıkmaz. Tek istisna: onayınla bir kez indirilen Antigravity CLI.</span><span class="l-en" lang="en">It takes only measurement fields from the tools’ local files and does not go online while it runs. The one exception: the Antigravity CLI, downloaded once with your consent.</span></p>
               </li>
-              <li class="wheel__item" data-i="3" data-d="2">
+              <li class="wheel__item" data-i="3">
                 <a class="wheel__link" href="#d-3"><span class="wheel__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Maliyet, fatura değil</span><span class="l-en" lang="en">Cost, not a bill</span></a>
                 <p class="wheel__line"><span class="l-tr" lang="tr">Claude Code ve Codex kullanımının yayımlanan API fiyatlarıyla karşılığı, model ve katmana göre. Fiyatlanamayan kısım toplama girmez.</span><span class="l-en" lang="en">What Claude Code and Codex usage would cost at published API prices, by model and tier. Anything that cannot be priced stays out of the total.</span></p>
               </li>
-              <li class="wheel__item" data-i="4" data-d="3">
+              <li class="wheel__item" data-i="4">
                 <a class="wheel__link" href="#d-4"><span class="wheel__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Toplam Kullanım</span><span class="l-en" lang="en">Total usage</span></a>
                 <p class="wheel__line"><span class="l-tr" lang="tr">Ayarlar’da haftalık ve aylık geçmiş, modele göre dağılımıyla.</span><span class="l-en" lang="en">Weekly and monthly history in Settings, broken down by model.</span></p>
               </li>
-              <li class="wheel__item" data-i="5" data-d="4">
+              <li class="wheel__item" data-i="5">
                 <a class="wheel__link" href="#d-5"><span class="wheel__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Tema ve dil</span><span class="l-en" lang="en">Theme and language</span></a>
                 <p class="wheel__line"><span class="l-tr" lang="tr">Açık, koyu ya da Windows’a uyar. Türkçe ya da İngilizce.</span><span class="l-en" lang="en">Light, dark or follow Windows. Turkish or English.</span></p>
               </li>
@@ -511,6 +510,7 @@
                 <div class="cost__row"><span><span class="l-tr" lang="tr">Önbellek yazma</span><span class="l-en" lang="en">Cache write</span></span><span class="cost__v"><span class="l-tr" lang="tr">$2,40</span><span class="l-en" lang="en">$2.40</span></span><span class="cost__p"><span class="l-tr" lang="tr">%19</span><span class="l-en" lang="en">19%</span></span></div>
                 <div class="cost__row"><span><span class="l-tr" lang="tr">Girdi</span><span class="l-en" lang="en">Input</span></span><span class="cost__v"><span class="l-tr" lang="tr">$0,60</span><span class="l-en" lang="en">$0.60</span></span><span class="cost__p"><span class="l-tr" lang="tr">%5</span><span class="l-en" lang="en">5%</span></span></div>
               </div>
+              <ul class="cost__causes art__causes"><li class="cost__group"><span class="cost__cause"><span class="l-tr" lang="tr">Süresi kaydedilmemiş önbellek yazması: 14 kayıt</span><span class="l-en" lang="en">Cache writes without a recorded TTL: 14 records</span></span></li></ul>
             </div>
           </div>
           <!-- 4: total usage -->
@@ -524,6 +524,7 @@
                 <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">1 Ağustos – 31 Ağustos</span><span class="l-en" lang="en">Aug 1 – Aug 31</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$58,90</span><span class="l-en" lang="en">$58.90</span></span><span class="usage__bar"><i class="usage__fill b100"></i></span></li>
                 <li class="usage__row" data-unpriced="true"><span class="usage__range"><span class="l-tr" lang="tr">1 Temmuz – 31 Temmuz</span><span class="l-en" lang="en">Jul 1 – Jul 31</span></span><span class="usage__amount"><span class="l-tr" lang="tr">fiyatlanamadı</span><span class="l-en" lang="en">could not be priced</span></span></li>
               </ul>
+              <p class="usage__note art__note"><span class="l-tr" lang="tr">“En az” alt sınır demektir: fiyatlanamayan kullanım toplama katılmaz; Claude Code’da TTL ayrımı olmayan önbellek yazmaları 1,25× ile fiyatlandırılır; Codex’te kaydedilmeyen önbellek yazmaları ya da doğrulanamayan katman toplamı eksik bırakır.</span><span class="l-en" lang="en">“At least” means a lower bound: usage that could not be priced is not in the total; for Claude Code, cache writes without a recorded TTL are priced at 1.25×; for Codex, unrecorded cache writes or an unverified tier leave part of the cost out.</span></p>
             </div>
           </div>
           <!-- 5: theme and language -->

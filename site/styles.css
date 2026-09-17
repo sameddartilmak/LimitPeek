@@ -657,52 +657,70 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
 .mini-cost__why { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-400); }
 
 /* ========================================================= details wheel */
-.wheel { position: relative; height: 420vh; border-top: 1px solid var(--line); }
-.smark--w1 { top: 0; height: 114vh; }
-.smark--w2 { top: 114vh; height: 64vh; }
-.smark--w3 { top: 178vh; height: 64vh; }
-.smark--w4 { top: 242vh; height: 64vh; }
-.smark--w5 { top: 306vh; height: 114vh; }
+/* The list is a picker wheel driven by one number, --t: the continuous index
+ * (0..4) of the item at the centre line. CSS scroll-driven animations animate
+ * it from the section's view timeline; otherwise site.js writes it from a
+ * rAF-throttled scroll handler. Items and the list use it through transform,
+ * opacity and filter only. Section height: 90vh of scroll per item step, and
+ * the first/last items rest at centre for the first/last 6% of the range. */
+@property --t { syntax: "<number>"; inherits: true; initial-value: 0; }
+.wheel { --t: 0; position: relative; height: 510vh; border-top: 1px solid var(--line); }
+/* Anchor targets: scrolling a marker to the viewport top centres its item
+ * (top = span * (0.06 + i * 0.22), span = 410vh). */
+.smark--w1 { top: 24.6vh; height: 1px; }
+.smark--w2 { top: 114.8vh; height: 1px; }
+.smark--w3 { top: 205vh; height: 1px; }
+.smark--w4 { top: 295.2vh; height: 1px; }
+.smark--w5 { top: 385.4vh; height: 1px; }
 .wheel__pin { position: sticky; top: 0; height: 100vh; height: 100svh; display: flex; align-items: center; padding-top: 56px; overflow: clip; }
 .wheel__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 48px; margin-top: 36px; }
 .wheel__col { position: relative; }
 .wheel__view {
-  --ih: 56px; --center: 112px;
-  position: relative; height: calc(var(--ih) * 5); margin-left: -8px; overflow: hidden; perspective: 900px;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 28%, #000 72%, transparent 100%);
-  mask-image: linear-gradient(180deg, transparent 0, #000 28%, #000 72%, transparent 100%);
+  --ih: 56px; --rows: 5;
+  position: relative; height: calc(var(--ih) * var(--rows)); margin-left: -32px; padding-left: 24px; overflow: hidden; perspective: 900px;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 30%, #000 70%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 30%, #000 70%, transparent 100%);
 }
-.wheel__list { --a: 1; margin: 0; padding: 0; list-style: none; transform: translateY(calc(var(--center) - (var(--a) - 1) * var(--ih))); transition: transform 800ms var(--ease); }
-.wheel__list[data-active="2"] { --a: 2; } .wheel__list[data-active="3"] { --a: 3; }
-.wheel__list[data-active="4"] { --a: 4; } .wheel__list[data-active="5"] { --a: 5; }
+.wheel__list {
+  margin: 0; padding: 0; list-style: none;
+  transform: translateY(calc((var(--rows) - 1) / 2 * var(--ih) - var(--t) * var(--ih)));
+}
 .wheel__item {
+  --i: 0;
+  --d: calc(var(--i) - var(--t));
+  --ad: max(var(--d), calc(var(--d) * -1));
   display: flex; align-items: center; height: var(--ih); transform-origin: 0 50%;
-  opacity: 0; transform: scale(.8);
-  transition: transform 800ms var(--ease), opacity 500ms var(--ease), filter 500ms var(--ease);
+  /* Text falls off with distance, but never reaches active brightness: the
+   * active label is lit by the discrete state below, not by distance. */
+  opacity: max(0, min(.6, calc(1 - var(--ad) * .52)));
+  transform: translateX(calc(min(var(--ad), 2.5) * -9px)) rotateX(calc(var(--d) * -20deg)) scale(calc(1 - min(var(--ad), 2.5) * .08));
+  filter: blur(calc(max(0, var(--ad) - 1) * .6px));
 }
-.wheel__item[data-d="0"] { opacity: 1; transform: none; }
-.wheel__item[data-d="-1"] { opacity: .42; transform: translateX(-8px) rotateX(24deg) scale(.9); }
-.wheel__item[data-d="1"] { opacity: .42; transform: translateX(-8px) rotateX(-24deg) scale(.9); }
-.wheel__item[data-d="-2"] { opacity: .16; transform: translateX(-20px) rotateX(44deg) scale(.8); filter: blur(.6px); }
-.wheel__item[data-d="2"] { opacity: .16; transform: translateX(-20px) rotateX(-44deg) scale(.8); filter: blur(.6px); }
+.wheel__item[data-i="2"] { --i: 1; } .wheel__item[data-i="3"] { --i: 2; }
+.wheel__item[data-i="4"] { --i: 3; } .wheel__item[data-i="5"] { --i: 4; }
+.wheel__item.is-active { opacity: 1; filter: none; }
 .wheel__link {
   display: inline-flex; align-items: center; gap: 14px; min-height: 44px; padding: 0 10px 0 8px; border-radius: 10px;
-  color: var(--text); font-size: 22px; font-weight: 600; letter-spacing: -.015em; text-decoration: none; white-space: nowrap;
+  color: var(--text); font-size: 22px; font-weight: 500; letter-spacing: -.015em; text-decoration: none; white-space: nowrap;
 }
+.wheel__item.is-active .wheel__link { font-weight: 620; }
 .wheel__link:focus-visible { outline-offset: -2px; }
-.wheel__dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--faint); transition: background-color 300ms linear, box-shadow 300ms linear; }
-.wheel__item[data-d="0"] .wheel__dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(63, 184, 158, .16), 0 0 14px rgba(63, 184, 158, .6); }
+.wheel__dot { position: relative; flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--faint); }
+.wheel__dot::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(63, 184, 158, .16), 0 0 14px rgba(63, 184, 158, .6);
+  /* Discrete: exactly one filled dot, the item whose description is shown. */
+  opacity: 0; transition: opacity 150ms var(--ease);
+}
+.wheel__item.is-active .wheel__dot::after { opacity: 1; }
 .js .wheel__line { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .wheel__desc { display: grid; max-width: 31em; min-height: 6.4em; margin-top: 24px; }
 .wheel__desc > p {
   grid-area: 1 / 1; font-size: 17px; line-height: 1.6; color: var(--text-2);
-  opacity: 0; transform: translateY(10px); filter: blur(4px);
-  transition: opacity 400ms var(--ease), transform 700ms var(--ease), filter 400ms var(--ease);
+  opacity: 0; transform: translateY(8px);
+  transition: opacity 250ms var(--ease), transform 450ms var(--ease);
 }
-.wheel__desc > p.is-on { opacity: 1; transform: none; filter: none; }
-.wheel__rail { position: absolute; left: -26px; top: 0; height: calc(var(--ih, 56px) * 5); width: 2px; border-radius: 1px; background: var(--line); overflow: hidden; }
-.wheel__rail i { display: block; height: 100%; background: var(--accent); transform-origin: top; transform: scaleY(0); }
-
+.wheel__desc > p.is-on { opacity: 1; transform: none; transition-delay: 60ms; }
 .wheel__art { position: relative; display: grid; place-items: center; min-height: 460px; }
 .wheel__art::before {
   content: ""; position: absolute; left: 50%; top: 50%; width: 520px; height: 520px; margin: -260px 0 0 -260px; border-radius: 50%;
@@ -711,10 +729,10 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
 .art {
   grid-area: 1 / 1; position: relative; display: grid; justify-items: center; gap: 18px; width: 100%;
   font-size: 13px; line-height: 1.25; color: var(--ink-200, #C2CFCB);
-  opacity: 0; visibility: hidden; transform: translateY(28px) scale(.96); filter: blur(10px);
-  transition: opacity 450ms var(--ease), transform 900ms var(--ease), filter 450ms var(--ease), visibility 0s 450ms;
+  opacity: 0; visibility: hidden; transform: translateY(14px) scale(.98); filter: blur(6px);
+  transition: opacity 250ms var(--ease), transform 450ms var(--ease), filter 250ms var(--ease), visibility 0s 250ms;
 }
-.art.is-on { opacity: 1; visibility: visible; transform: none; filter: none; transition: opacity 450ms var(--ease) 80ms, transform 900ms var(--ease), filter 450ms var(--ease) 80ms, visibility 0s; }
+.art.is-on { opacity: 1; visibility: visible; transform: none; filter: none; transition: opacity 250ms var(--ease), transform 450ms var(--ease), filter 250ms var(--ease), visibility 0s; }
 .art__card {
   width: min(400px, 100%); border-radius: 18px; background: linear-gradient(180deg, var(--ink-850), var(--ink-900));
   box-shadow: inset 0 0 0 1px var(--ink-700), 0 50px 90px -40px rgba(0, 0, 0, .95), 0 0 0 1px rgba(0, 0, 0, .4);
@@ -725,6 +743,8 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
 .art__card .cost__denial, .art__card .cost__table { font-size: 11.5px; }
 .art__card .cost__table { gap: 5px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--ink-700); }
 .art__card .cost__row { grid-template-columns: 1fr auto 40px; }
+.art__causes { margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--ink-700); font-size: 11px; }
+.art__note { margin: 6px 0 0; font-size: 10.5px; }
 .art__title { font-size: 13px; font-weight: 600; color: var(--ink-100); }
 .art__card .seg { padding: 0 0 4px; }
 .usage--art { padding: 0; }
@@ -870,7 +890,7 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
   from { transform: perspective(700px) rotateX(18deg) rotateY(-34deg); }
   to   { transform: perspective(700px) rotateX(4deg) rotateY(8deg); }
 }
-@keyframes rail { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes wheel-t { 0%, 6% { --t: 0; } 94%, 100% { --t: 4; } }
 
 @media (prefers-reduced-motion: no-preference) {
   .drop { animation: drop 1000ms var(--ease) both; }
@@ -884,25 +904,28 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
   html.sdt .wheel { view-timeline: --wheel block; }
   html.sdt .stack { animation: tilt linear both; animation-timeline: --moves; animation-range: contain 0% contain 100%; }
   html.sdt .appicon { animation: icon-turn linear both; animation-timeline: --moves; animation-range: contain 0% contain 100%; }
-  html.sdt .wheel__rail i { animation: rail linear both; animation-timeline: --wheel; animation-range: contain 0% contain 100%; }
+  html.sdt .wheel__pin { animation: wheel-t linear both; animation-timeline: --wheel; animation-range: contain 0% contain 100%; }
 
   /* Fallback: site.js writes --p (0..1) from a rAF-throttled scroll handler
    * and the same keyframes are seeked through a paused animation. */
   html.sdt-js .stack { animation: tilt 1s linear paused both; animation-delay: calc(var(--p, 0) * -1s); }
   html.sdt-js .appicon { animation: icon-turn 1s linear paused both; animation-delay: calc(var(--p, 0) * -1s); }
-  html.sdt-js .wheel__rail i { animation: rail 1s linear paused both; animation-delay: calc(var(--p, 0) * -1s); }
   html.js-io .rise { transition: opacity 700ms var(--ease), transform 900ms var(--ease), filter 700ms var(--ease); }
   html.js-io .rise:not(.is-in) { opacity: 0; transform: translateY(32px); filter: blur(6px); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-  .wheel__rail i { transform: scaleY(1); }
+  /* Static list: every item readable, the active one marked by site.js. */
+  .wheel__view { height: auto; overflow: visible; -webkit-mask-image: none; mask-image: none; }
+  .wheel__list { transform: none; }
+  .wheel__item { opacity: .5; transform: none; filter: none; }
+  .wheel__item.is-active { opacity: 1; }
 }
 
 /* Without JavaScript the pinned stages read as plain lists. */
 html:not(.js) .moves, html:not(.js) .wheel { height: auto; padding: 120px 0; }
 html:not(.js) .moves__pin, html:not(.js) .wheel__pin { position: static; height: auto; padding-top: 0; }
-html:not(.js) .smark, html:not(.js) .steps, html:not(.js) .wheel__desc, html:not(.js) .wheel__rail { display: none; }
+html:not(.js) .smark, html:not(.js) .steps, html:not(.js) .wheel__desc { display: none; }
 html:not(.js) .moves__scene { perspective: none; min-height: 0; }
 html:not(.js) .stack { width: 100%; height: auto; margin: 0; display: grid; gap: 16px; transform: none; }
 html:not(.js) .card { position: relative; transform: none; opacity: 1; filter: none; }
@@ -948,9 +971,8 @@ html:not(.js) .art[data-i="1"] { opacity: 1; visibility: visible; transform: non
   .card__art { padding: 12px; }
 
   .wheel__grid { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 20px; }
-  .wheel__view { --ih: 50px; --center: 50px; height: 150px; margin-left: -8px; }
+  .wheel__view { --ih: 50px; --rows: 3; margin-left: -20px; padding-left: 12px; }
   .wheel__link { font-size: 18px; gap: 12px; }
-  .wheel__rail { display: none; }
   .wheel__desc { min-height: 5.2em; margin-top: 8px; }
   .wheel__desc > p { font-size: 15px; line-height: 1.55; }
   .wheel__art { min-height: 290px; }

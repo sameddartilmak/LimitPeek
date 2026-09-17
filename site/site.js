@@ -563,11 +563,24 @@
   }
 
   /* ============================================================ wheel */
+  // A picker wheel. One number drives it: t, the continuous index (0..4) of
+  // the item on the centre line. With CSS scroll-driven animations the CSS
+  // animates --t itself; otherwise this writes --t. Either way the same
+  // formula picks the active item (the one nearest the centre), so the
+  // illustration and description follow the moving list.
+  var WHEEL_REST = 0.06; // first/last items rest at centre for 6% of the range
+  var WHEEL_HOLD = 0.08; // hysteresis band, in items, around each midpoint
+  function wheelT(p, n) {
+    var q = Math.max(0, Math.min(1, (p - WHEEL_REST) / (1 - 2 * WHEEL_REST)));
+    return q * (n - 1);
+  }
   function setupWheel() {
+    var section = document.getElementById('details');
     var list = document.getElementById('wheel');
     var desc = document.getElementById('wheel-desc');
-    if (!list || !desc) return;
+    if (!section || !list || !desc) return;
     var items = list.querySelectorAll('.wheel__item');
+    var n = items.length;
     var arts = document.querySelectorAll('.art[data-i]');
     // The visible description is a clone of the (visually hidden) line inside
     // each item; screen readers read the originals, in order.
@@ -580,18 +593,59 @@
       desc.appendChild(p);
     });
     var lines = desc.querySelectorAll('p');
-    function setActive(n) {
-      var a = +n;
+    var active = 0;
+    function setActive(a) {
+      if (a === active) return;
+      active = a;
       list.setAttribute('data-active', String(a));
       each(items, function (li) {
-        var d = +li.getAttribute('data-i') - a;
-        li.setAttribute('data-d', String(Math.max(-3, Math.min(3, d))));
+        var on = +li.getAttribute('data-i') === a;
+        li.classList.toggle('is-active', on);
+        var link = li.querySelector('.wheel__link');
+        if (on) link.setAttribute('aria-current', 'true'); else link.removeAttribute('aria-current');
       });
       each(lines, function (p) { p.classList.toggle('is-on', +p.getAttribute('data-i') === a); });
       each(arts, function (el) { el.classList.toggle('is-on', +el.getAttribute('data-i') === a); });
     }
-    setActive(1);
-    midline(document.querySelectorAll('.smark[data-item]'), function (m) { setActive(m.getAttribute('data-item')); });
+
+    // Geometry is measured on load and resize only; the scroll handler reads
+    // scrollY and writes, never measures.
+    var geo = { top: 0, span: 1 };
+    var writeT = !root.classList.contains('sdt') && !reduce;
+    var ticking = false;
+    function measure() {
+      geo.top = section.getBoundingClientRect().top + window.scrollY;
+      geo.span = Math.max(1, section.offsetHeight - window.innerHeight);
+      update();
+    }
+    function update() {
+      ticking = false;
+      var p = (window.scrollY - geo.top) / geo.span;
+      var t = wheelT(p, n);
+      if (writeT) section.style.setProperty('--t', t.toFixed(4));
+      // Hysteresis: keep the current item until t is clearly past the
+      // midpoint to a neighbour, so resting between two items never flickers.
+      var cur = active - 1;
+      if (active === 0 || t > cur + 0.5 + WHEEL_HOLD || t < cur - 0.5 - WHEEL_HOLD) setActive(Math.round(t) + 1);
+    }
+    window.addEventListener('scroll', function () {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(update);
+    }, { passive: true });
+    window.addEventListener('resize', measure);
+    if ('ResizeObserver' in window) new ResizeObserver(measure).observe(document.body);
+
+    // An item link scrolls the page so that item sits on the centre line.
+    each(items, function (li) {
+      li.querySelector('.wheel__link').addEventListener('click', function (e) {
+        e.preventDefault();
+        var i = +li.getAttribute('data-i') - 1;
+        var y = geo.top + geo.span * (WHEEL_REST + (1 - 2 * WHEEL_REST) * i / (n - 1));
+        window.scrollTo({ top: Math.round(y), behavior: reduce ? 'auto' : 'smooth' });
+      });
+    });
+    measure();
   }
 
   /* ======================================= scroll progress (fallback) */
@@ -599,7 +653,7 @@
   // outside the scroll handler; the handler reads scrollY, and one rAF writes
   // --p. No layout reads while scrolling.
   function setupProgress() {
-    var stages = [document.getElementById('how'), document.getElementById('details')].filter(Boolean);
+    var stages = [document.getElementById('how')].filter(Boolean);
     var geo = [];
     var ticking = false;
     function cache() {
