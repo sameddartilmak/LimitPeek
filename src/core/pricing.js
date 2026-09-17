@@ -318,6 +318,12 @@ function weeklyCost(events, startMs, endMs, anchored) {
     cacheWriteEvents,
     // Codex-only floor cause (ADR-002 A3 rule 3). Claude records its writes.
     unrecordedWriteEvents: 0,
+    // Codex-only tier floors (ADR-002 A3.17-18). Claude records its speed.
+    assumedTierEvents: 0,
+    fastRequestedEvents: 0,
+    // A pure price lookup cannot know whether the events were fully read; the
+    // snapshot sets this from the scan (ADR-002 A3.15).
+    sourceIncomplete: false,
     pricesAsOf: PRICES_AS_OF,
     windowStart: new Date(startMs).toISOString(),
     windowEnd: new Date(endMs).toISOString(),

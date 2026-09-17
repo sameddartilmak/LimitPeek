@@ -465,7 +465,10 @@ function buildLive(
         );
         metaChildren.push(metaBurn);
       }
-      if (metaChildren.length === 0) {
+      // ADR-002 A3.19: when the cost reader KNOWS records could not be read,
+      // "Token bilgisi yok" would state the gap as a fact about the tool. The
+      // cost block beneath says what happened, so the line stays silent.
+      if (metaChildren.length === 0 && !p.weeklyCost?.sourceIncomplete) {
         metaChildren.push(el('span', {}, t('row.noTokens')));
       }
     }
@@ -622,7 +625,9 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     };
     // Pending decides whether the token line is "calculating" or a figure, so
     // it is structure: the flip to [] must rebuild the line.
-    const nextShape = `${shapeKeyOf(p)}|${context.isPending(p.id) ? 'pending' : 'read'}`;
+    // sourceIncomplete decides whether the empty meta line says "no token
+    // data", so it is structure too: a flip must rebuild the line.
+    const nextShape = `${shapeKeyOf(p)}|${context.isPending(p.id) ? 'pending' : 'read'}|${p.weeklyCost?.sourceIncomplete ? 'incomplete' : 'complete'}`;
     if (nextShape !== shapeKey) {
       shapeKey = nextShape;
       rebuild(p, context, atNow);
@@ -655,8 +660,10 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     // Re-appended rather than rebuilt: the builders call replaceChildrenWith()
     // on `body`, which would otherwise detach it on every shape change.
     // `p.status` here is the EFFECTIVE status, already run through
-    // effectiveStatus() at the top of update(), so a snapshot that main has
-    // stopped pushing degrades the cost figure too — not just the meter.
+    // effectiveStatus() at the top of update(). It describes the LIMIT capture,
+    // so it qualifies the per-model quota figures below (same capture) and
+    // NOT the cost block: whether the token logs were read is the cost
+    // source's own `sourceIncomplete` (ADR-002 A3.15).
     const degraded = p.status === 'stale' || p.status === 'error';
 
     // Per-model quota detail, ABOVE the cost block. Order is deliberate: this
@@ -668,7 +675,7 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
       body.appendChild(refs.quotas.el);
     }
 
-    refs.cost.update(p.weeklyCost, p.displayName, degraded, context.isPending(p.id));
+    refs.cost.update(p.weeklyCost, p.displayName, context.isPending(p.id));
     if (!refs.cost.el.hidden && refs.cost.el.parentElement !== body) {
       body.appendChild(refs.cost.el);
     }

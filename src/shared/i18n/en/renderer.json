@@ -167,7 +167,44 @@
     "one": "{count} record recorded 0 cache writes on a model that charges for them, although it read from the cache or sent a prompt long enough to be cached (1,024+ tokens), so the total is a lower bound.",
     "other": "{count} records recorded 0 cache writes on a model that charges for them, although they read from the cache or sent a prompt long enough to be cached (1,024+ tokens), so the total is a lower bound."
   },
-  "cost.caveat.degraded": "Data from this tool is not current. The amount covers only the last readable events, so it does not describe the whole window.",
+  "cost.caveat.degraded": "Some local records for this tool could not be read. The amount covers only the records that could be read, so it is a lower bound.",
+  "cost.caveat.degradedNoFigure": "Some local records for this tool could not be read, so no amount can be given.",
+  "cost.caveat.assumedTier": {
+    "one": "{count} record came before Codex had recorded its service tier. Standard is the cheapest tier Codex can send, so this record was priced at Standard; the amount is a lower bound.",
+    "other": "{count} records came before Codex had recorded its service tier. Standard is the cheapest tier Codex can send, so these records were priced at Standard; the amount is a lower bound."
+  },
+  "cost.caveat.fastRequested": {
+    "one": "{count} record requested Fast, but the record does not show that Fast was actually applied. It was priced at Standard; if Fast was applied, the real cost is higher.",
+    "other": "{count} records requested Fast, but the records do not show that Fast was actually applied. They were priced at Standard; if Fast was applied, the real cost is higher."
+  },
+  "cost.caveat.unpricedMore": {
+    "one": "… {count} more entry",
+    "other": "… {count} more entries"
+  },
+  "cost.cause.assumedTier": {
+    "one": "Requests with no recorded tier (priced at Standard): {count} record",
+    "other": "Requests with no recorded tier (priced at Standard): {count} records"
+  },
+  "cost.cause.fastRequested": {
+    "one": "Fast requested (priced at Standard): {count} record",
+    "other": "Fast requested (priced at Standard): {count} records"
+  },
+  "cost.cause.unpriced": "Could not be priced: {item}",
+  "cost.cause.unpricedMore": {
+    "one": "Could not be priced: {count} more entry",
+    "other": "Could not be priced: {count} more entries"
+  },
+  "cost.cause.ttl": {
+    "one": "Cache writes without a recorded TTL: {count} record",
+    "other": "Cache writes without a recorded TTL: {count} records"
+  },
+  "cost.cause.unrecordedWrites": {
+    "one": "Unrecorded cache writes: {count} record",
+    "other": "Unrecorded cache writes: {count} records"
+  },
+  "cost.cause.sourceIncomplete": "Some records could not be read",
+  "cost.why.toggle": "Why at least?",
+  "cost.why.toggleUnpriced": "Why no amount?",
   "cost.summary": "Would have cost {amount} at published API prices",
   "cost.toggleLabel": "{provider}: this week's usage would have cost {amount} at published API prices. This is not a bill; you do not pay this amount under your subscription. Activate to open the breakdown.",
   "cost.unpricedSummary": "This week's usage is not in the price list",
@@ -234,14 +271,16 @@
   "settings.grain.week": "Weekly",
   "settings.amount.unpriced": "could not be priced",
   "settings.amount.pending": "calculating…",
+  "settings.amount.incomplete": "could not be read",
   "settings.models.breakdown": "Breakdown by model",
   "settings.usage.loading": "Loading usage history…",
   "settings.usage.pending": "Still counting {tools} usage; totals are incomplete.",
   "settings.usage.empty": "No local usage records were found yet.",
   "settings.usage.note": "Prices from the list dated {date}. “At least” means a lower bound, for one of these reasons: usage that could not be priced is not included in the total; or a cache write that did not record its TTL was priced at {low}, while 1-hour writes actually cost {high}.",
-  "settings.usage.noteByProvider": "Claude Code prices from the list dated {claude}, Codex prices from the list dated {codex}. “At least” means a lower bound, for one of these reasons: usage that could not be priced is not included in the total; for Claude Code, a cache write that did not record its TTL was priced at {low}, while 1-hour writes actually cost {high}; for Codex, Codex did not record cache writes on a model that charges for them, so those writes are not in the total either.",
+  "settings.usage.noteByProvider": "Claude Code prices from the list dated {claude}, Codex prices from the list dated {codex}. “At least” means a lower bound, for one of these reasons: usage that could not be priced is not included in the total; for Claude Code, a cache write that did not record its TTL was priced at {low}, while 1-hour writes actually cost {high}; for Codex, Codex did not record cache writes on a model that charges for them, or the service tier could not be verified (with no recorded tier, or with Fast requested, the Standard price is used), so part of the cost is not in the total either.",
   "cost.model.unknown": "model not determinable",
-  "settings.usage.noteCodexOnly": "Codex prices from the list dated {codex}. “At least” means a lower bound, for either of two reasons: usage that could not be priced is not included in the total, or Codex did not record cache writes on a model that charges for them, so those writes are not in the total either.",
+  "settings.usage.noteCodexOnly": "Codex prices from the list dated {codex}. “At least” means a lower bound, for one of these reasons: usage that could not be priced is not included in the total, or Codex did not record cache writes on a model that charges for them, or the service tier could not be verified (with no recorded tier, or with Fast requested, the Standard price is used), so part of the cost is not in the total either.",
   "settings.usage.modelOf": "{tool} model",
-  "settings.usage.noteNoDate": "The price list's date was not reported."
+  "settings.usage.noteNoDate": "The price list's date was not reported.",
+  "settings.usage.incomplete": "Some local records for {tools} could not be read; affected periods are a lower bound."
 }

@@ -643,3 +643,65 @@ test.describe('a missing price tier is not a claim of the standard tier', () => 
     assert.equal(claudeOf(out).weeklyCost.byModel[0].speed, 'unknown-tier-long-context');
   });
 });
+
+test.describe('WeeklyCost.sourceIncomplete (ADR-002 A3.15)', () => {
+  const cost = (extra) => ({
+    totalUsd: 1,
+    byModel: [],
+    unpricedModels: [],
+    fallbackWriteEvents: 0,
+    cacheWriteEvents: 0,
+    unrecordedWriteEvents: 0,
+    windowAnchored: false,
+    ...extra,
+  });
+
+  test('a literal true survives: the reader stated it missed events', () => {
+    const out = s.sanitizeSnapshot(snapshotWith({ weeklyCost: cost({ sourceIncomplete: true }) }));
+    assert.equal(claudeOf(out).weeklyCost.sourceIncomplete, true);
+  });
+
+  test('absent (an older main) or anything but true reads as false, never as a floor', () => {
+    for (const value of [undefined, false, null, 'true', 1, {}]) {
+      const out = s.sanitizeSnapshot(snapshotWith({ weeklyCost: cost({ sourceIncomplete: value }) }));
+      assert.equal(claudeOf(out).weeklyCost.sourceIncomplete, false, JSON.stringify(value));
+    }
+  });
+
+  test('a stale row status does not make the cost source incomplete', () => {
+    const out = s.sanitizeSnapshot(snapshotWith({ status: 'stale', weeklyCost: cost({}) }));
+    assert.equal(claudeOf(out).status, 'stale');
+    assert.equal(claudeOf(out).weeklyCost.sourceIncomplete, false);
+  });
+});
+
+test.describe('Codex tier floors and history incompleteness (ADR-002 A3.20-21)', () => {
+  const cost = (extra) => ({
+    totalUsd: 1, byModel: [], unpricedModels: [], fallbackWriteEvents: 0,
+    cacheWriteEvents: 0, unrecordedWriteEvents: 0, windowAnchored: false, ...extra,
+  });
+
+  test('assumedTierEvents and fastRequestedEvents survive as non-negative integers', () => {
+    const out = s.sanitizeSnapshot(snapshotWith({ weeklyCost: cost({ assumedTierEvents: 24, fastRequestedEvents: 1 }) }));
+    assert.equal(claudeOf(out).weeklyCost.assumedTierEvents, 24);
+    assert.equal(claudeOf(out).weeklyCost.fastRequestedEvents, 1);
+  });
+
+  test('anything but a non-negative integer count reads as 0, never inventing a floor', () => {
+    for (const value of [undefined, null, -1, 1.5, '3', NaN, Infinity]) {
+      const out = s.sanitizeSnapshot(snapshotWith({ weeklyCost: cost({ assumedTierEvents: value, fastRequestedEvents: value }) }));
+      assert.equal(claudeOf(out).weeklyCost.assumedTierEvents, 0, String(value));
+      assert.equal(claudeOf(out).weeklyCost.fastRequestedEvents, 0, String(value));
+    }
+  });
+
+  test('incompleteProviders keeps known ids only, each once; absent is []', () => {
+    const base = { weeks: [], months: [], pricesAsOf: '2026-06-24' };
+    const out = s.sanitizeSnapshot(historyWith({ ...base, incompleteProviders: ['codex', 'bogus', 'codex', 42, 'claude'] }));
+    assert.deepEqual(out.usageHistory.incompleteProviders, ['codex', 'claude']);
+    for (const bad of [undefined, null, 'codex', {}]) {
+      const o = s.sanitizeSnapshot(historyWith({ ...base, incompleteProviders: bad }));
+      assert.deepEqual(o.usageHistory.incompleteProviders, [], JSON.stringify(bad));
+    }
+  });
+});

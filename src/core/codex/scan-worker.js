@@ -14,7 +14,7 @@ const log = require('../log');
  *
  * Protocol (one request at a time; the collector never overlaps them):
  *   in   { type: 'scan', id, now, startMs, home, changed? }
- *   out  { type: 'result', id, events, stats }
+ *   out  { type: 'result', id, events, stats, unreadRange }
  *        { type: 'error', id, code }
  *        { type: 'log', level, msg }   fixed messages only, never content
  */
@@ -34,7 +34,14 @@ if (parentPort) {
         home: msg.home || undefined,
         changed: Array.isArray(msg.changed) ? msg.changed : undefined,
       });
-      parentPort.postMessage({ type: 'result', id: msg.id, events, stats: scanner.stats() });
+      parentPort.postMessage({
+        type: 'result',
+        id: msg.id,
+        events,
+        stats: scanner.stats(),
+        // { fromMs, throughMs } of turns known unread, or null (ADR-002 A3.15).
+        unreadRange: scanner.unreadRange(),
+      });
     } catch (err) {
       // A code only: an error message could quote a path or a line.
       parentPort.postMessage({ type: 'error', id: msg.id, code: (err && err.code) || 'ESCAN' });

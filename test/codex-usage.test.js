@@ -383,7 +383,7 @@ test.describe('Codex accounting rules (ADR-002 Amendment 3)', () => {
   }
   const r6 = (x) => Math.round(x * 1e6) / 1e6;
 
-  test('a priority -> default change prices each turn at its own tier (priority is the Fast row)', () => {
+  test('a priority -> default change: the priority turn is Fast REQUESTED, priced at Standard as a floor (A3.18)', () => {
     const home = tmpHome();
     const evs = lines(home, [
       metaLine(), turnLine('gpt-5.6-sol'),
@@ -396,10 +396,15 @@ test.describe('Codex accounting rules (ADR-002 Amendment 3)', () => {
     const cost = codexCost(evs, SINCE, NOW, false);
     const fast = cost.byModel.find((m) => m.speed === 'fast');
     const std = cost.byModel.find((m) => m.speed === 'standard');
-    assert.equal(fast.usd, r6(0.1 * 8 + 0.01 * 40), '100K in x $8 + 10K out x $40 (Fast)');
+    assert.equal(fast.usd, r6(0.1 * 4 + 0.01 * 20), '100K in x $4 + 10K out x $20: the Standard row, not Fast');
+    assert.equal(fast.pricedAs, 'gpt-5.6-sol|standard');
     assert.equal(std.usd, r6(0.1 * 4 + 0.01 * 20), '100K in x $4 + 10K out x $20 (Standard)');
     assert.equal(cost.totalUsd, r6(fast.usd + std.usd));
     assert.deepEqual(cost.unpricedModels, []);
+    assert.equal(cost.fastRequestedEvents, 1);
+    assert.equal(cost.assumedTierEvents, 0);
+    const { weeks } = history.usageHistory([], NOW, { codexEvents: evs });
+    assert.equal(weekOf(weeks).isFloor, true, 'Fast requested: the real cost may be higher');
   });
 
   test('a tier that cannot be determined is unpriced, never assumed Standard', () => {
@@ -457,10 +462,10 @@ test.describe('Codex accounting rules (ADR-002 Amendment 3)', () => {
       metaLine(), turnLine('gpt-5'), settingsLine('priority'),
       countLine(T + 2 * HOUR, { ...cumOf(100000, 0), cache_write_input_tokens: 100000 }),
     ]);
-    assert.equal(codexCost(evs, SINCE, NOW, false).byClass.cacheWrite5m, r6(0.1 * 2.5), 'Fast gpt-5 input $2.50');
+    assert.equal(codexCost(evs, SINCE, NOW, false).byClass.cacheWrite5m, r6(0.1 * 1.25), 'Standard gpt-5 input $1.25 (priority requested, A3.18)');
   });
 
-  test('gpt-5-codex has no Fast row: unpriced at Fast, priced at Standard', () => {
+  test('gpt-5-codex publishes no Fast row: a Fast request is still priced at Standard, as a floor (A3.18)', () => {
     const home = tmpHome();
     const evs = lines(home, [
       metaLine(), turnLine('gpt-5-codex'),
@@ -468,11 +473,13 @@ test.describe('Codex accounting rules (ADR-002 Amendment 3)', () => {
       settingsLine('default'), countLine(T + 2 * HOUR, cumOf(2000, 200)),
     ]);
     const cost = codexCost(evs, SINCE, NOW, false);
-    assert.equal(cost.byModel.find((m) => m.speed === 'fast').usd, null);
-    assert.ok(cost.byModel.find((m) => m.speed === 'standard').usd > 0);
-    // History folds the tiers: priced part as the figure, and a floor.
+    const fast = cost.byModel.find((m) => m.speed === 'fast');
+    const std = cost.byModel.find((m) => m.speed === 'standard');
+    assert.equal(fast.usd, std.usd, 'same token counts, same Standard row');
+    assert.equal(cost.fastRequestedEvents, 1);
+    // History folds the tiers into one entry, and it is a floor.
     const entry = history.usageHistory([], NOW, { codexEvents: evs }).weeks.find((w) => w.hasUsage).byModel[0];
-    assert.equal(entry.costUsd, cost.byModel.find((m) => m.speed === 'standard').usd);
+    assert.equal(entry.costUsd, r6(fast.usd + std.usd));
     assert.equal(entry.isFloor, true);
   });
 
@@ -508,8 +515,95 @@ test.describe('Codex accounting rules (ADR-002 Amendment 3)', () => {
       turnLine('gpt-6-astra'), countLine(T + 2 * HOUR, cumOf(200000, 0)),
     ]);
     const cost = codexCost(evs, SINCE, NOW, false);
-    assert.equal(cost.byModel.find((m) => m.model === 'gpt-5.6-sol').usd, r6(0.1 * 8));
-    assert.equal(cost.byModel.find((m) => m.model === 'gpt-6-astra').usd, r6(0.1 * 20));
+    // Priority requested on both: each model's own Standard row (A3.18).
+    assert.equal(cost.byModel.find((m) => m.model === 'gpt-5.6-sol').usd, r6(0.1 * 4));
+    assert.equal(cost.byModel.find((m) => m.model === 'gpt-6-astra').usd, r6(0.1 * 10));
+    assert.equal(cost.fastRequestedEvents, 2);
+  });
+
+  test('A3.17: in a rollout recording only default/priority/fast, turns before the first settings record are Standard, counted', () => {
+    const home = tmpHome();
+    const evs = lines(home, [
+      metaLine(), turnLine('gpt-5.6-sol'),
+      countLine(T, cumOf(100000, 10000)), // no tier recorded yet
+      settingsLine('priority'),
+      countLine(T + HOUR, cumOf(200000, 20000)),
+      settingsLine('default'),
+      countLine(T + 2 * HOUR, cumOf(300000, 30000)),
+    ]);
+    assert.deepEqual(evs.map((e) => [e.tier, e.tierAssumable]), [[null, true], ['fast', undefined], ['standard', undefined]]);
+    const cost = codexCost(evs, SINCE, NOW, false);
+    assert.deepEqual(cost.unpricedModels, []);
+    const assumed = cost.byModel.find((m) => m.speed === 'unknown-tier');
+    assert.equal(assumed.usd, r6(0.1 * 4 + 0.01 * 20));
+    assert.equal(assumed.pricedAs, 'gpt-5.6-sol|standard');
+    assert.equal(cost.assumedTierEvents, 1);
+    assert.equal(cost.fastRequestedEvents, 1);
+    assert.equal(cost.totalUsd, r6(3 * (0.1 * 4 + 0.01 * 20)));
+    const { weeks } = history.usageHistory([], NOW, { codexEvents: evs });
+    assert.equal(weekOf(weeks).isFloor, true);
+    assert.equal(weekOf(weeks).byModel[0].isFloor, true);
+  });
+
+  test('A3.17: a rollout with no settings record at all is eligible too', () => {
+    const home = tmpHome();
+    const evs = lines(home, [metaLine(), turnLine('gpt-5'), countLine(T, cumOf(100000, 0))]);
+    const cost = codexCost(evs, SINCE, NOW, false);
+    assert.equal(cost.totalUsd, r6(0.1 * 1.25));
+    assert.equal(cost.assumedTierEvents, 1);
+  });
+
+  for (const tier of ['flex', 'ultrafast']) {
+    test(`A3.17: a rollout that records ${tier} leaves its pre-settings turns unpriced`, () => {
+      const home = tmpHome();
+      const evs = lines(home, [
+        metaLine(), turnLine('gpt-5.6-sol'),
+        countLine(T, cumOf(1000, 100)),
+        settingsLine('default'),
+        countLine(T + HOUR, cumOf(2000, 200)),
+        settingsLine(tier),
+      ]);
+      const cost = codexCost(evs, SINCE, NOW, false);
+      assert.equal(cost.byModel.find((m) => m.speed === 'unknown-tier').usd, null, 'a LATER record decides it');
+      assert.equal(cost.assumedTierEvents, 0);
+      assert.deepEqual(cost.unpricedModels, ['gpt-5.6-sol']);
+    });
+  }
+
+  test('A3.17: a flex record APPENDED later makes already-scanned, already-FOLDED assumed turns unpriced', () => {
+    const { createCodexUsageScanner } = require('../src/core/codex/usage');
+    const home = tmpHome();
+    const file = rolloutPath(home, 'rollout-grow.jsonl');
+    fs.writeFileSync(file, [
+      metaLine(), turnLine('gpt-5.6-sol'),
+      countLine(T, cumOf(100000, 10000)),
+      countLine(T + 20 * 60 * 1000, cumOf(200000, 20000)),
+    ].join('\n') + '\n');
+    const scanner = createCodexUsageScanner();
+    // rawSinceMs past both turns: they are folded into a 15-minute bucket each.
+    const opts = { now: NOW, startMs: SINCE, home, rawSinceMs: T + DAY };
+    const first = scanner.scan(opts);
+    assert.ok(first.every((e) => e.count >= 1), 'folded buckets');
+    assert.equal(codexCost(first, SINCE, NOW, false).assumedTierEvents, 2);
+    assert.ok(codexCost(first, SINCE, NOW, false).totalUsd > 0);
+
+    fs.appendFileSync(file, settingsLine('flex') + '\n');
+    const second = scanner.scan(opts);
+    assert.equal(scanner.stats().appended, 1, 'read incrementally, not from the start');
+    const cost = codexCost(second, SINCE, NOW, false);
+    assert.equal(cost.totalUsd, 0);
+    assert.equal(cost.assumedTierEvents, 0);
+    assert.deepEqual(cost.unpricedModels, ['gpt-5.6-sol']);
+  });
+
+  test('A3.17: eligibility is per rollout: a flex session elsewhere does not unprice an eligible one', () => {
+    const home = tmpHome();
+    lines(home, [metaLine(), turnLine('gpt-5.6-sol'), countLine(T, cumOf(1000, 100)), settingsLine('flex')], 'rollout-flex.jsonl');
+    const evs = lines(home, [metaLine(), turnLine('gpt-5.6-sol'), countLine(T, cumOf(1000, 100)), settingsLine('default')], 'rollout-ok.jsonl');
+    const cost = codexCost(evs, SINCE, NOW, false);
+    assert.equal(cost.assumedTierEvents, 1);
+    const rows = cost.byModel.filter((m) => m.speed === 'unknown-tier').map((m) => m.usd === null);
+    assert.deepEqual(rows.sort(), [false, true], 'one priced group, one unpriced group');
   });
 });
 

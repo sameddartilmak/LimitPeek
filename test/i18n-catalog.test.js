@@ -347,8 +347,34 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // stale data says it is not current
     { file: 'renderer.json', key: 'header.fresh.stale', en: [/\bnot current\b/i], tr: [/güncel değil/] },
     { file: 'renderer.json', key: 'header.spoken.stale', en: [/\bnot current\b/i], tr: [/güncel değil/] },
-    { file: 'renderer.json', key: 'cost.caveat.degraded', en: [/\bnot current\b/i], tr: [/güncel değil/] },
     { file: 'renderer.json', key: 'quota.degraded', en: [/\bnot current\b/i], tr: [/güncel değil/] },
+    // the cost block's degraded caveat is driven by WeeklyCost.sourceIncomplete,
+    // not by limit freshness: records could not be read, so the amount is a
+    // lower bound (ADR-002 A3.15-16)
+    { file: 'renderer.json', key: 'cost.caveat.degraded', en: [/\bcould not be read\b/, /\blower bound\b/i], tr: [/okunamadı/, /alt sınır/] },
+    // the short cause lines each name their cause, and the "why" toggles ask
+    // about the claim without softening it (ADR-002 A3.15-16)
+    { file: 'renderer.json', key: 'cost.cause.unpriced', en: [/^Could not be priced\b/, /\{item\}/], tr: [/^Fiyatlanamadı:/, /\{item\}/] },
+    { file: 'renderer.json', key: 'cost.cause.unpricedMore', en: [/^Could not be priced\b/, /\{count\}/], tr: [/^Fiyatlanamadı:/, /\{count\}/] },
+    { file: 'renderer.json', key: 'cost.cause.ttl', en: [/\bwithout a recorded TTL\b/, /\{count\}/], tr: [/kaydedilmemiş/, /\{count\}/] },
+    { file: 'renderer.json', key: 'cost.cause.unrecordedWrites', en: [/^Unrecorded cache writes\b/, /\{count\}/], tr: [/^Kaydedilmemiş önbellek yazması:/, /\{count\}/] },
+    { file: 'renderer.json', key: 'cost.cause.sourceIncomplete', en: [/\bcould not be read\b/], tr: [/okunamayan/i] },
+    { file: 'renderer.json', key: 'cost.why.toggle', en: [/\bat least\b/i, /\?$/], tr: [/\ben az\b/i, /\?$/] },
+    { file: 'renderer.json', key: 'cost.why.toggleUnpriced', en: [/\bno amount\b/i, /\?$/], tr: [/tutar yok/i, /\?$/] },
+    // ADR-002 A3.17-21. Unreadable records with NO figure (A3.19): says why there
+    // is no amount (and, by the guard below, never calls a missing amount a floor).
+    { file: 'renderer.json', key: 'cost.caveat.degradedNoFigure', en: [/\bcould not be read\b/, /\bno amount can be given\b/], tr: [/okunamadı/, /tutar verilemiyor/] },
+    // a history amount cell whose records could not be read (guarded below: no figure)
+    { file: 'renderer.json', key: 'settings.amount.incomplete', en: [/\bcould not be read\b/], tr: [/okunamadı/] },
+    // a tier Codex did not record is priced at Standard, the cheapest it can send: a floor
+    { file: 'renderer.json', key: 'cost.cause.assumedTier', en: [/\bStandard\b/, /\{count\}/], tr: [/Standart/, /\{count\}/] },
+    { file: 'renderer.json', key: 'cost.caveat.assumedTier', en: [/\bStandard\b/, /\blower bound\b/i, /\{count\}/], tr: [/Standart/, /alt sınır/, /\{count\}/] },
+    // Fast requested but not shown applied: priced at Standard, the real cost may be higher
+    { file: 'renderer.json', key: 'cost.cause.fastRequested', en: [/\bFast\b/, /\brequested\b/, /\bStandard\b/, /\{count\}/], tr: [/Fast/, /istendi/, /Standart/, /\{count\}/] },
+    { file: 'renderer.json', key: 'cost.caveat.fastRequested', en: [/\bFast\b/, /\brequested\b/, /\bStandard\b/, /\bhigher\b/, /\{count\}/], tr: [/Fast/, /istendi/, /Standart/, /daha yüksek/, /\{count\}/] },
+    { file: 'renderer.json', key: 'cost.caveat.unpricedMore', en: [/\{count\}/], tr: [/\{count\}/] },
+    // unreadable records in the history: affected periods are a floor
+    { file: 'renderer.json', key: 'settings.usage.incomplete', en: [/\{tools\}/, /\bcould not be read\b/, /\blower bound\b/i], tr: [/\{tools\}/, /okunamadı/, /alt sınır/] },
     // cache reads are outside the billable total
     { file: 'renderer.json', key: 'row.tokens.cacheRead', en: [/\bnot included in the billable total\b/i], tr: [/dahil değil/] },
     // decoded, undocumented source
@@ -365,8 +391,8 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // usage (both), a cache write without a TTL split (Claude Code), and cache
     // writes Codex did not record (Codex).
     { file: 'renderer.json', key: 'settings.usage.note', en: [/\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bdid not record its TTL\b/, /\{low\}/, /\{high\}/], tr: [/\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /TTL ayrımı olmayan/, /\{low\}/, /\{high\}/] },
-    { file: 'renderer.json', key: 'settings.usage.noteByProvider', en: [/\{claude\}/, /\{codex\}/, /\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bdid not record its TTL\b/, /\{low\}/, /\{high\}/, /\bcache write/i, /\bnot record/i], tr: [/\{claude\}/, /\{codex\}/, /\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /TTL ayrımı olmayan/, /\{low\}/, /\{high\}/, /önbellek yazma/, /kaydetmediği|kaydedilmemiş/] },
-    { file: 'renderer.json', key: 'settings.usage.noteCodexOnly', en: [/\{codex\}/, /\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bcache write/i, /\bnot record/i], tr: [/\{codex\}/, /\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /önbellek yazma/, /kaydetmediği|kaydedilmemiş/] },
+    { file: 'renderer.json', key: 'settings.usage.noteByProvider', en: [/\{claude\}/, /\{codex\}/, /\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bdid not record its TTL\b/, /\{low\}/, /\{high\}/, /\bcache write/i, /\bnot record/i, /\bservice tier could not be verified\b/], tr: [/\{claude\}/, /\{codex\}/, /\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /TTL ayrımı olmayan/, /\{low\}/, /\{high\}/, /önbellek yazma/, /kaydetmediği|kaydedilmemiş/, /hizmet katmanı doğrulanamadı/] },
+    { file: 'renderer.json', key: 'settings.usage.noteCodexOnly', en: [/\{codex\}/, /\bat least\b/i, /\blower bound\b/i, /\bnot included in the total\b/i, /\bcache write/i, /\bnot record/i, /\bservice tier could not be verified\b/], tr: [/\{codex\}/, /\ben az\b/i, /alt sınır/, /toplama katılmadığı/, /önbellek yazma/, /kaydetmediği|kaydedilmemiş/, /hizmet katmanı doğrulanamadı/] },
     // pending state (ADR-002 A3.12): the totals are still being computed —
     // incomplete, which is neither zero nor a floor
     { file: 'renderer.json', key: 'row.tokens.pending', en: [/\bcalculating\b/i], tr: [/hesaplanıyor/] },
@@ -400,6 +426,66 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
       }
     }
     assert.deepEqual(failures, []);
+  });
+
+  test('no cost cause line or "why" toggle hedges or reassures (ADR-002 A3.15-16)', () => {
+    // A cause line states WHY the figure is a floor or missing. An estimate
+    // word turns a one-sided floor into a two-sided guess; a minimiser or a
+    // reassurance talks the reader out of the claim the line exists to make.
+    const SOFTENING = /yaklaşık|approximate|\broughly\b|\babout\b|\bonly\b|\bjust\b|\bmerely\b|\bminor\b|\bsmall\b|\bnegligible\b|\bslight(ly)?\b|worry|\bno problem\b|sadece|yalnızca|\bkücük\b|küçük|önemsiz|ihmal edilebilir|endişe|merak etme|sorun değil|\bbiraz\b/i;
+    let seen = 0;
+    for (const lang of LANGS) {
+      const entries = catalogs[lang]['renderer.json'] || {};
+      for (const [key, entry] of Object.entries(entries)) {
+        if (!/^cost\.(cause|why)\./.test(key)) continue;
+        seen += 1;
+        for (const text of variants(entry)) {
+          assert.doesNotMatch(text, SOFTENING, `${lang} "${key}" softens its claim: ${text}`);
+        }
+      }
+    }
+    // Nine cause/why keys per language today (unpriced, unpricedMore, ttl,
+    // unrecordedWrites, sourceIncomplete, assumedTier, fastRequested, and the two
+    // toggles). A renamed key would silently leave the guard; more keys are fine.
+    assert.ok(seen >= 18, `the nine cause/why keys exist in both languages (saw ${seen})`);
+  });
+
+  test('the unreadable history amount shows no figure: no dash, no zero, no currency (ADR-002 A3.19)', () => {
+    for (const lang of LANGS) {
+      const entries = catalogs[lang]['renderer.json'] || {};
+      assert.ok(has(entries, 'settings.amount.incomplete'), `${lang}: settings.amount.incomplete exists`);
+      for (const text of variants(entries['settings.amount.incomplete'])) {
+        assert.doesNotMatch(text, /[—–]|\d|[$€£₺¢]|\b(USD|TL|TRY|dolar|dollars?)\b/i, `${lang}: an unreadable amount must not read as a figure: ${text}`);
+      }
+    }
+  });
+
+  test('an amount that cannot be given is never called a floor (ADR-002 A3.19)', () => {
+    for (const lang of LANGS) {
+      const entries = catalogs[lang]['renderer.json'] || {};
+      assert.ok(has(entries, 'cost.caveat.degradedNoFigure'), `${lang}: cost.caveat.degradedNoFigure exists`);
+      for (const text of variants(entries['cost.caveat.degradedNoFigure'])) {
+        assert.doesNotMatch(text, /alt sınır|lower bound|\ben az\b|\bat least\b/i, `${lang}: no amount is not a lower bound: ${text}`);
+      }
+    }
+  });
+
+  test('a requested Fast tier is never claimed as applied, nor priced as Fast (ADR-002 A3.18)', () => {
+    // Affirmative forms only: "does not show that Fast was applied" and "if
+    // Fast was applied" are the honest conditional and stay allowed.
+    const CLAIMS_APPLIED = {
+      en: /(^|[.;:]\s*)Fast (was|is|has been) (actually )?applied\b|\bpriced at Fast\b|\bFast was used\b|\bat Fast prices?\b/i,
+      tr: /(^|[.;:]\s*)Fast( gerçekten)? uygulandı(?!ğ|ys)|Fast fiyat(ın)?dan|Fast olarak (fiyatlandı|hesaplandı)/i,
+    };
+    for (const lang of LANGS) {
+      const entries = catalogs[lang]['renderer.json'] || {};
+      for (const key of ['cost.cause.fastRequested', 'cost.caveat.fastRequested']) {
+        assert.ok(has(entries, key), `${lang}: ${key} exists`);
+        for (const text of variants(entries[key])) {
+          assert.doesNotMatch(text, CLAIMS_APPLIED[lang], `${lang} "${key}" claims Fast was applied: ${text}`);
+        }
+      }
+    }
   });
 
   test('the Codex-only price note never names Claude or a Claude price date', () => {

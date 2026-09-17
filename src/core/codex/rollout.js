@@ -224,6 +224,17 @@ function resolveLocalDir(p) {
   }
 }
 
+/**
+ * Was `p` refused by `resolveLocalDir` (a network target, or a resolution that
+ * failed for a reason other than "not there")? Lets a caller that got `null`
+ * tell "this directory exists and was not read" (ADR-002 A3.15) from "there is
+ * no such directory". Reads the remembered set only; touches no filesystem.
+ */
+function isRefusedDir(p) {
+  if (typeof p !== 'string' || p.length === 0) return false;
+  return refusedPaths.has(p) || refusedPaths.has(path.resolve(p));
+}
+
 /** Test seam: forget remembered refusals and the once-per-process log flag. */
 function _resetPathGuardForTests() {
   refusedPaths.clear();
@@ -489,6 +500,7 @@ module.exports = {
   isNetworkPath,
   isNetworkResolved,
   resolveLocalDir,
+  isRefusedDir,
   _resetPathGuardForTests,
   newestRollout,
   newestDayDirs,

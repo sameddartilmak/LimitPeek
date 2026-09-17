@@ -50,9 +50,19 @@
  * no tier. The Codex app resolves a new request's tier from its own per-host
  * selection and only then from config.toml's `service_tier`, whose CURRENT
  * value says nothing about the value when an older session ran. So before the
- * first settings record the tier is not determinable, the event's `tier` is
- * `null`, and the pricer leaves it unpriced (ADR-002 Amendment 3 rule 1) —
- * never assumed Standard.
+ * first settings record no tier is RECORDED: the event's `tier` is `null` and it
+ * carries `preSettings: true`.
+ *
+ * Whether such a turn may be priced at Standard is ADR-002 A3.17's question, and
+ * it is answered per ROLLOUT, not per turn: Codex core sends only a tier the
+ * model catalog advertises and no observed catalog lists flex, so a rollout whose
+ * every recorded tier is default/priority/fast (or that records none) is
+ * eligible. Eligibility depends on records AFTER the turn too, so it is not
+ * baked into the event or its folded bucket: each scan emits pre-settings turns
+ * with `tierAssumable` set from the whole file read so far, and a flex record
+ * appended later turns it false for every earlier turn. The pricer prices
+ * `tierAssumable` turns at Standard as a counted floor (`assumedTierEvents`) and
+ * leaves the rest unpriced — never a silent Standard.
  *
  * WINDOWING ACROSS STALE MTIMES
  * -----------------------------
@@ -84,7 +94,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { codexSessionsDir, resolveLocalDir } = require('./rollout');
+const { codexSessionsDir, resolveLocalDir, isRefusedDir } = require('./rollout');
 const { normalizeTier, classifyCodexEvent } = require('./pricing');
 
 /** Day-folders scanned BEFORE the earliest instant a caller needs: slack for a
@@ -151,17 +161,94 @@ function freshEntry() {
     metaModel: null, // first session_meta fallback
     metaSeen: false, // only the FIRST header is the session's own (a fork carries its parent's too)
     tier: null, // latest thread_settings_applied service_tier; null = not determinable
+    // A settings record that STATES a tier has been read. Turns before it carry
+    // `preSettings: true` (ADR-002 A3.17).
+    settingsSeen: false,
+    // Some recorded service_tier is outside {default, priority, fast} (flex,
+    // ultrafast, anything else, or a non-string). Decided over the WHOLE file
+    // read so far — including records AFTER a turn — so a later flex record
+    // makes every earlier pre-settings turn unassumable again (A3.17).
+    tierIneligible: false,
+    // Local date of the day-folder the rollout sits in: sessions append into
+    // their START day, so no turn in it is older (bounds unread ranges).
+    dayMs: NaN,
+    // Timestamp range of usage records this file HAS but could not count
+    // (corrupt line, invalid counts, over the line cap, an unreadable timestamp,
+    // a reset with no per-turn figure); null when none (ADR-002 A3.15).
+    // `droppedUntimed`: one of them had no usable timestamp. Records are
+    // appended in order, so it is no later than the NEXT timestamped record
+    // (`untimedThroughMs`); while none has followed (`untimedOpen`) it may be as
+    // late as now (review F2).
+    droppedFromMs: null,
+    droppedThroughMs: null,
+    droppedUntimed: false,
+    untimedOpen: false,
+    untimedThroughMs: null,
+    // Latest turn or record timestamp read from this file. A resumed or
+    // long-lived session keeps appending into its START folder, so the folder
+    // date alone does not bound it (review F2).
+    maxTs: null,
     events: [], // raw turn deltas since the raw cutoff, oldest first
     buckets: new Map(), // older turns, folded per UTC 15-min slot + model + tier + flags
   };
 }
 
 /**
+ * How many leading bytes of a line identify its record. Codex writes
+ * `{"timestamp":"…","type":"event_msg","payload":{"type":"token_count"` in that
+ * order, so a token_count record names itself well inside this; a prompt or
+ * tool output that merely MENTIONS token_count further in does not.
+ */
+const HEAD_BYTES = 256;
+const HEAD_TOKEN_COUNT = /"type"\s*:\s*"token_count"/;
+const HEAD_TIMESTAMP = /^\{\s*"timestamp"\s*:\s*"([^"]{1,40})"/;
+
+/**
+ * A line that could not be decoded or counted: when its head says it is a
+ * token_count record, the file knowingly lost usage (ADR-002 A3.15). Only the
+ * head's timestamp is read out of it, and nothing is logged.
+ */
+function noteUnreadable(entry, line) {
+  const head = line.subarray(0, HEAD_BYTES).toString('utf8');
+  if (!HEAD_TOKEN_COUNT.test(head)) return;
+  const m = HEAD_TIMESTAMP.exec(head);
+  noteDropped(entry, m ? Date.parse(m[1]) : NaN);
+}
+
+/** Record one lost usage record at `ts` (NaN when its timestamp is unusable). */
+function noteDropped(entry, ts) {
+  if (!Number.isFinite(ts)) {
+    entry.droppedUntimed = true;
+    entry.untimedOpen = true;
+    return;
+  }
+  noteTimestamp(entry, ts);
+  if (entry.droppedFromMs === null || ts < entry.droppedFromMs) entry.droppedFromMs = ts;
+  if (entry.droppedThroughMs === null || ts > entry.droppedThroughMs) entry.droppedThroughMs = ts;
+}
+
+/** A timestamped record was read: it bounds any untimed loss before it. */
+function noteTimestamp(entry, ts) {
+  if (entry.maxTs === null || ts > entry.maxTs) entry.maxTs = ts;
+  if (entry.untimedOpen) {
+    entry.untimedOpen = false;
+    if (entry.untimedThroughMs === null || ts > entry.untimedThroughMs) entry.untimedThroughMs = ts;
+  }
+}
+
+/** Recorded service tiers Codex core can send for a catalog model (A3.17). */
+const ASSUMABLE_TIERS = new Set(['default', 'priority', 'fast']);
+
+/**
  * One complete line. Cheap byte-marker test first, so prompt and tool-output
  * lines are never decoded to a string, let alone parsed.
  */
 function consumeLine(entry, line) {
-  if (line.length === 0 || line.length > MAX_LINE_BYTES) return;
+  if (line.length === 0) return;
+  if (line.length > MAX_LINE_BYTES) {
+    noteUnreadable(entry, line);
+    return;
+  }
   // The markers only decide whether a line is worth decoding; what a record IS
   // is decided by its parsed `type`, never by which marker happened to match.
   const worth = line.indexOf('token_count') !== -1
@@ -174,7 +261,10 @@ function consumeLine(entry, line) {
   try {
     o = JSON.parse(line.toString('utf8'));
   } catch {
-    return; // never log: the message can quote the line
+    // Never log: the message can quote the line. A corrupt token_count record
+    // is still usage this file has and the figure lacks.
+    noteUnreadable(entry, line);
+    return;
   }
   if (!o || typeof o !== 'object' || !o.payload || typeof o.payload !== 'object') return;
 
@@ -189,6 +279,9 @@ function consumeLine(entry, line) {
     // a non-string value makes the tier undeterminable again, not Standard.
     if (s && typeof s === 'object' && Object.prototype.hasOwnProperty.call(s, 'service_tier')) {
       entry.tier = normalizeTier(s.service_tier);
+      entry.settingsSeen = true;
+      const raw = typeof s.service_tier === 'string' ? s.service_tier.trim().toLowerCase() : null;
+      if (!ASSUMABLE_TIERS.has(raw)) entry.tierIneligible = true;
     }
     return;
   }
@@ -219,8 +312,12 @@ function consumeLine(entry, line) {
   const cur = hasTotal ? usageOf(p.info.total_token_usage) : null;
   const hasLast = p.info.last_token_usage !== undefined && p.info.last_token_usage !== null;
   const last = hasLast ? usageOf(p.info.last_token_usage) : null;
-  if (hasTotal && cur === null) return;
-  if (hasLast && last === null) return;
+  const recordTs = Date.parse(o.timestamp);
+  if ((hasTotal && cur === null) || (hasLast && last === null)) {
+    // Skipped per A3.10, but it IS a usage record the figure now lacks.
+    noteDropped(entry, recordTs);
+    return;
+  }
 
   let delta;
   if (cur) {
@@ -231,8 +328,9 @@ function consumeLine(entry, line) {
     } else if (KEYS.some((k) => cur[k] < prev[k])) {
       if (last === null) {
         // A reset with no per-turn figure: the new baseline is taken, nothing
-        // is counted — an undercount, never an invented charge.
+        // is counted — an undercount, never an invented charge, and a KNOWN one.
         entry.cum = cur;
+        noteDropped(entry, recordTs);
         return;
       }
       delta = { ...last };
@@ -250,13 +348,19 @@ function consumeLine(entry, line) {
     delta = { ...last };
   }
 
-  const ts = Date.parse(o.timestamp);
-  if (!Number.isFinite(ts)) return;
+  const ts = recordTs;
+  if (Number.isFinite(ts)) noteTimestamp(entry, ts);
   if (delta.input === 0 && delta.cached === 0 && delta.write === 0 && delta.output === 0) return;
+  if (!Number.isFinite(ts)) {
+    // The running total already moved past this turn; it cannot be placed in
+    // any window, so it is a known loss rather than a silent one.
+    noteDropped(entry, NaN);
+    return;
+  }
   // `input` is the WHOLE prompt; `cached` and `write` are disjoint subsets, so
   // the full-price share is what remains. `output` already includes reasoning
   // tokens (a subset), so nothing is added for them.
-  entry.events.push({
+  const event = {
     ts,
     model: entry.turnModel || entry.metaModel || 'unknown',
     tier: entry.tier,
@@ -264,7 +368,11 @@ function consumeLine(entry, line) {
     cachedInput: delta.cached,
     cacheWrite: delta.write,
     output: delta.output,
-  });
+  };
+  // Before any settings record stated a tier (A3.17). Whether it may be priced
+  // at Standard depends on the whole rollout, so it is decided at output.
+  if (!entry.settingsSeen) event.preSettings = true;
+  entry.events.push(event);
 }
 
 /**
@@ -300,6 +408,8 @@ function readForward(file, entry, size) {
           const piece = buf.subarray(start, nl);
           if (carry.length + piece.length <= MAX_LINE_BYTES) {
             consumeLine(entry, Buffer.concat([carry, piece]));
+          } else {
+            noteUnreadable(entry, carry);
           }
         } else {
           consumeLine(entry, buf.subarray(start, nl));
@@ -312,6 +422,8 @@ function readForward(file, entry, size) {
         const rest = buf.subarray(start, n);
         const len = (carry ? carry.length : 0) + rest.length;
         if (len > MAX_LINE_BYTES) {
+          // The head is where the line started: the carried bytes, then this rest.
+          noteUnreadable(entry, carry ? Buffer.concat([carry, rest.subarray(0, HEAD_BYTES)]) : rest);
           carry = null;
           skipping = true;
         } else {
@@ -327,6 +439,46 @@ function readForward(file, entry, size) {
     try { fs.closeSync(fd); } catch { /* already closed */ }
   }
   return bytes;
+}
+
+/**
+ * How long an unterminated last line is taken to be a write in progress. Past
+ * it, on a file that has not changed, the writer is gone and the line will
+ * never be completed. Same value as the Claude scanner's (scan/scanner.js).
+ */
+const TORN_WRITE_GRACE_MS = 5 * 60 * 1000;
+
+/**
+ * An unterminated tail (`entry.offset < size`) on a file last written more than
+ * TORN_WRITE_GRACE_MS ago is not in progress (review F1): it is read once as a
+ * final line — counted if it happens to be whole, noted as a loss if it is a
+ * truncated token_count — and the offset moves past it. If the file ever grows
+ * again, the byte before the new offset is not a newline, so `refresh` re-reads
+ * it from the start and nothing is counted twice.
+ *
+ * Codex does not reliably update a rollout's mtime while appending, so a live
+ * session can look idle: its half-written line is then noted early (an
+ * over-mark, allowed by A3.9) and the next append re-reads the file.
+ */
+function settleDeadTail(file, entry, size, mtimeMs, now) {
+  if (entry.offset >= size || !(mtimeMs < now - TORN_WRITE_GRACE_MS)) return;
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const len = Math.min(size - entry.offset, MAX_LINE_BYTES + 1);
+    const buf = Buffer.alloc(len);
+    const n = fs.readSync(fd, buf, 0, len, entry.offset);
+    const line = buf.subarray(0, n);
+    if (size - entry.offset > MAX_LINE_BYTES) noteUnreadable(entry, line);
+    else consumeLine(entry, line);
+    entry.offset = size;
+  } catch {
+    // Left pending: the next scan tries again.
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* already closed */ }
+    }
+  }
 }
 
 /** Is the byte before `offset` a newline? Confirms an append did not rewrite
@@ -360,40 +512,89 @@ function folderDayMs(y, m, d) {
   return Number.isFinite(ms) ? ms : NaN;
 }
 
-/** Names in `dir` that are all digits of length `len`, newest first. */
-function digitNames(dir, len) {
+/**
+ * Names in `dir` that are all digits of length `len`, newest first. A listing
+ * that FAILED for a reason other than the directory being gone calls
+ * `onUnread` (ADR-002 A3.15): the directory exists and its rollouts were not read.
+ */
+function digitNames(dir, len, onUnread) {
   try {
     return fs.readdirSync(dir).filter((n) => n.length === len && /^\d+$/.test(n)).sort().reverse();
-  } catch {
+  } catch (err) {
+    if (onUnread && !(err && (err.code === 'ENOENT' || err.code === 'ENOTDIR'))) onUnread();
     return [];
   }
 }
 
 /**
- * Day-folders (`YYYY/MM/DD`) whose LOCAL date is on or after `fromMs`'s day,
- * newest first, as RESOLVED paths. Local links and junctions are followed (a
- * sessions tree junctioned to another drive works); a directory that resolves
- * to the network is refused (`resolveLocalDir`, review F7). Names that are not
- * a date are ignored.
+ * The latest instant a rollout started on local day `dayMs` can carry turns
+ * this scanner would read: the scanner reaches back DAY_SPAN days before the
+ * window for sessions still appending (mtimes do not bound them), so an
+ * unread file or folder is taken to reach DAY_SPAN days past its date — the
+ * same assumption, never later than `now`.
  */
-function dayDirsSince(sessionsDir, fromMs) {
+function unreadThrough(dayMs, now) {
+  return Number.isFinite(dayMs) ? Math.min(now, dayMs + (DAY_SPAN + 1) * DAY_MS) : now;
+}
+
+/**
+ * The instant range `{ fromMs, throughMs }` an unread folder or file covering
+ * local days `firstDayMs`..`lastDayMs` can hold turns in: none older than its
+ * first day (sessions append into their START folder), none later than
+ * `unreadThrough` of its last. An unknown first day is 0 (unbounded).
+ */
+function unreadRange(firstDayMs, lastDayMs, now) {
+  return {
+    fromMs: Number.isFinite(firstDayMs) ? Math.min(firstDayMs, now) : 0,
+    throughMs: unreadThrough(lastDayMs, now),
+  };
+}
+
+/**
+ * Day-folders (`YYYY/MM/DD`) whose LOCAL date is on or after `fromMs`'s day,
+ * newest first, as `{ dir, dayMs }` with RESOLVED paths. Local links and
+ * junctions are followed (a sessions tree junctioned to another drive works); a
+ * directory that resolves to the network is refused (`resolveLocalDir`, review
+ * F7). Names that are not a date are ignored.
+ *
+ * `onUnread(key, range)` is told about every directory in range that exists but
+ * was refused or could not be listed, with the `unreadRange` its rollouts could
+ * cover (ADR-002 A3.15). A directory that is simply absent is not unread.
+ */
+function dayDirsSince(sessionsDir, fromMs, now, onUnread = () => {}) {
   const out = [];
   const root = sessionsDir ? resolveLocalDir(sessionsDir) : null;
-  if (!root) return out;
+  if (!root) {
+    if (sessionsDir && isRefusedDir(sessionsDir)) onUnread(sessionsDir, unreadRange(NaN, NaN, now));
+    return out;
+  }
   const fromDay = localDayStart(fromMs);
   const fromYear = new Date(fromDay).getFullYear();
-  for (const y of digitNames(root, 4)) {
+  for (const y of digitNames(root, 4, () => onUnread(root, unreadRange(NaN, NaN, now)))) {
     if (Number(y) < fromYear) break;
-    const yDir = resolveLocalDir(path.join(root, y));
-    if (!yDir) continue;
-    for (const m of digitNames(yDir, 2)) {
-      const mDir = resolveLocalDir(path.join(yDir, m));
-      if (!mDir) continue;
-      for (const d of digitNames(mDir, 2)) {
+    const year = unreadRange(new Date(Number(y), 0, 1).getTime(), new Date(Number(y), 11, 31).getTime(), now);
+    const yKey = path.join(root, y);
+    const yDir = resolveLocalDir(yKey);
+    if (!yDir) {
+      if (isRefusedDir(yKey)) onUnread(yKey, year);
+      continue;
+    }
+    for (const m of digitNames(yDir, 2, () => onUnread(yDir, year))) {
+      // Day 0 of the next month is this month's last day.
+      const month = unreadRange(new Date(Number(y), Number(m) - 1, 1).getTime(), new Date(Number(y), Number(m), 0).getTime(), now);
+      const mKey = path.join(yDir, m);
+      const mDir = resolveLocalDir(mKey);
+      if (!mDir) {
+        if (isRefusedDir(mKey)) onUnread(mKey, month);
+        continue;
+      }
+      for (const d of digitNames(mDir, 2, () => onUnread(mDir, month))) {
         const dayMs = folderDayMs(y, m, d);
         if (!Number.isFinite(dayMs) || dayMs < fromDay) continue;
-        const dDir = resolveLocalDir(path.join(mDir, d));
-        if (dDir) out.push(dDir);
+        const dKey = path.join(mDir, d);
+        const dDir = resolveLocalDir(dKey);
+        if (dDir) out.push({ dir: dDir, dayMs });
+        else if (isRefusedDir(dKey)) onUnread(dKey, unreadRange(dayMs, dayMs, now));
       }
     }
   }
@@ -429,13 +630,17 @@ const BUCKET_MS = 15 * 60 * 1000;
 function foldInto(buckets, ev) {
   const { longContext, writeFloor, hasWrite } = classifyCodexEvent(ev);
   const slot = Math.floor(ev.ts / BUCKET_MS) * BUCKET_MS;
-  const key = `${slot}|${ev.model}|${ev.tier}|${longContext ? 1 : 0}${writeFloor ? 1 : 0}${hasWrite ? 1 : 0}`;
+  const pre = ev.preSettings === true;
+  const key = `${slot}|${ev.model}|${ev.tier}|${longContext ? 1 : 0}${writeFloor ? 1 : 0}${hasWrite ? 1 : 0}${pre ? 1 : 0}`;
   let b = buckets.get(key);
   if (!b) {
     b = {
       ts: slot,
       model: ev.model,
       tier: ev.tier,
+      // Kept apart: whether these may be priced at Standard is decided per
+      // scan from the rollout's eligibility, which a later record can change.
+      ...(pre ? { preSettings: true } : {}),
       inputUncached: 0,
       cachedInput: 0,
       cacheWrite: 0,
@@ -476,14 +681,36 @@ function createCodexUsageScanner() {
   let lastStats = null;
   /** The highest `rawSinceMs` any entry has been folded to. */
   let foldedTo = -Infinity;
+  /**
+   * Rollouts and directories in range that EXIST but could not be read — a
+   * locked or access-denied file, a refused (network) or unlistable folder —
+   * keyed by path, valued by the `unreadRange` their turns could cover
+   * (ADR-002 A3.15). Rebuilt by every full walk; a changed-files scan updates
+   * only the files it re-examines.
+   * @type {Map<string, {fromMs:number, throughMs:number}>}
+   */
+  const unread = new Map();
+  let lastUnread = null;
 
   /** Bring one rollout's cache entry up to date. Returns false when the file
-   *  is gone or unusable (its entry is then dropped). */
-  function refresh(file, stats) {
+   *  is gone or unusable (its entry is then dropped, and an unusable one is
+   *  remembered in `unread`). `dayMs` is its folder's local date. */
+  function refresh(file, stats, dayMs, now) {
+    unread.delete(file);
+    const prior = cache.get(file);
+    // Where an unreadable rollout's turns can reach (review F2): its folder's
+    // span, but never short of the latest turn already read from it — a resumed
+    // session appends into its START folder — and through now if it grew since.
+    const failedRange = () => {
+      const r = unreadRange(dayMs, dayMs, now);
+      if (prior && Number.isFinite(prior.maxTs)) r.throughMs = Math.max(r.throughMs, Math.min(prior.maxTs, now));
+      return r;
+    };
     let st;
     try {
       st = fs.lstatSync(file);
-    } catch {
+    } catch (err) {
+      if (!(err && (err.code === 'ENOENT' || err.code === 'ENOTDIR'))) unread.set(file, failedRange());
       cache.delete(file);
       return false;
     }
@@ -492,13 +719,25 @@ function createCodexUsageScanner() {
       return false;
     }
     stats.files += 1;
-    let entry = cache.get(file);
+    let entry = prior;
     const unchanged = entry && entry.size === st.size && entry.mtimeMs === st.mtimeMs;
-    if (unchanged) return true;
+    if (unchanged) {
+      settleDeadTail(file, entry, st.size, st.mtimeMs, now);
+      return true;
+    }
+    const priorSize = prior ? prior.size : null;
+    const priorMaxTs = prior ? prior.maxTs : null;
     const appended = entry && st.size > entry.size && endsAtLineBoundary(file, entry.offset);
     if (!appended) entry = freshEntry();
     const read = readForward(file, entry, st.size);
     if (read < 0) {
+      // It was there a moment ago (lstat succeeded): locked or denied, and the
+      // turns it held drop out of the figure. `prior` may have been advanced by
+      // a partial append read, so its pre-read facts are used.
+      const r = unreadRange(dayMs, dayMs, now);
+      if (priorSize !== null && st.size !== priorSize) r.throughMs = now; // grew since its last read
+      else if (Number.isFinite(priorMaxTs)) r.throughMs = Math.max(r.throughMs, Math.min(priorMaxTs, now));
+      unread.set(file, r);
       cache.delete(file);
       return false;
     }
@@ -507,6 +746,8 @@ function createCodexUsageScanner() {
     else stats.parsed += 1;
     entry.size = st.size;
     entry.mtimeMs = st.mtimeMs;
+    entry.dayMs = dayMs;
+    settleDeadTail(file, entry, st.size, st.mtimeMs, now);
     cache.set(file, entry);
     return true;
   }
@@ -545,6 +786,7 @@ function createCodexUsageScanner() {
 
     if (!sessionsDir) {
       cache.clear();
+      unread.clear();
     } else if (Array.isArray(options.changed) && !stats.cacheReset) {
       stats.mode = 'changed';
       const fromDay = localDayStart(fromMs);
@@ -559,18 +801,34 @@ function createCodexUsageScanner() {
         const yDir = root && resolveLocalDir(path.join(root, m[1]));
         const mDir = yDir && resolveLocalDir(path.join(yDir, m[2]));
         const dDir = mDir && resolveLocalDir(path.join(mDir, m[3]));
-        if (!dDir) continue; // refused or gone; the next full walk drops its entry
-        refresh(path.join(dDir, m[4]), stats);
+        if (!dDir) {
+          // Refused or gone; the next full walk drops its entry. Refused means
+          // the rollout exists and was not read.
+          const key = !root ? sessionsDir
+            : !yDir ? path.join(root, m[1])
+              : !mDir ? path.join(yDir, m[2])
+                : path.join(mDir, m[3]);
+          if (isRefusedDir(key)) unread.set(path.join(sessionsDir, String(rel)), unreadRange(dayMs, dayMs, now));
+          continue;
+        }
+        refresh(path.join(dDir, m[4]), stats, dayMs, now);
       }
     } else {
       const seen = new Set();
-      for (const dir of dayDirsSince(sessionsDir, fromMs)) {
+      unread.clear();
+      const onUnread = (key, range) => unread.set(key, range);
+      for (const { dir, dayMs } of dayDirsSince(sessionsDir, fromMs, now, onUnread)) {
         let names;
-        try { names = fs.readdirSync(dir); } catch { continue; }
+        try {
+          names = fs.readdirSync(dir);
+        } catch (err) {
+          if (!(err && (err.code === 'ENOENT' || err.code === 'ENOTDIR'))) unread.set(dir, unreadRange(dayMs, dayMs, now));
+          continue;
+        }
         for (const name of names) {
           if (!/^rollout-.*\.jsonl$/.test(name)) continue;
           const file = path.join(dir, name);
-          if (refresh(file, stats)) seen.add(file);
+          if (refresh(file, stats, dayMs, now)) seen.add(file);
         }
       }
       // A rollout that disappeared, or aged out of the scanned range, is dropped.
@@ -579,15 +837,43 @@ function createCodexUsageScanner() {
       }
     }
 
+    // The hull of every known-unread range (A3.15, A3.20). A hull can mark a
+    // quiet gap between two unread ranges too: over-marking is allowed (A3.9).
+    // The history already accepts a LIST of ranges, if this is ever refined.
+    let hull = null;
+    const reach = (fromMs, throughMs) => {
+      if (!Number.isFinite(fromMs) || !Number.isFinite(throughMs)) return;
+      if (hull === null) hull = { fromMs, throughMs };
+      else {
+        if (fromMs < hull.fromMs) hull.fromMs = fromMs;
+        if (throughMs > hull.throughMs) hull.throughMs = throughMs;
+      }
+    };
+    for (const r of unread.values()) reach(r.fromMs, r.throughMs);
+
     const out = [];
     const merged = new Map();
     for (const entry of cache.values()) {
+      if (entry.droppedFromMs !== null) reach(entry.droppedFromMs, entry.droppedThroughMs);
+      if (entry.droppedUntimed) {
+        // No timestamp: from the folder date; through the next timestamped
+        // record after it, never short of the folder's span — or now while no
+        // record has followed it (review F2).
+        const r = unreadRange(entry.dayMs, entry.dayMs, now);
+        if (entry.untimedOpen) r.throughMs = now;
+        else if (Number.isFinite(entry.untimedThroughMs)) r.throughMs = Math.max(r.throughMs, Math.min(entry.untimedThroughMs, now));
+        reach(r.fromMs, r.throughMs);
+      }
+      // A3.17: a pre-settings turn may be priced at Standard only while every
+      // tier this rollout has recorded — before OR after it — is assumable.
+      const assumable = !entry.tierIneligible;
       foldOld(entry, rawSinceMs);
       for (const [key, b] of entry.buckets) {
         if (b.ts < startMs || b.ts >= now) continue;
-        const m = merged.get(key);
+        const outKey = b.preSettings ? `${key}|${assumable ? 1 : 0}` : key;
+        const m = merged.get(outKey);
         if (!m) {
-          merged.set(key, { ...b });
+          merged.set(outKey, b.preSettings ? { ...b, tierAssumable: assumable } : { ...b });
         } else {
           m.inputUncached += b.inputUncached;
           m.cachedInput += b.cachedInput;
@@ -597,7 +883,7 @@ function createCodexUsageScanner() {
         }
       }
       for (const ev of entry.events) {
-        if (ev.ts >= startMs && ev.ts < now) out.push(ev);
+        if (ev.ts >= startMs && ev.ts < now) out.push(ev.preSettings ? { ...ev, tierAssumable: assumable } : ev);
       }
     }
     for (const b of merged.values()) out.push(b);
@@ -608,6 +894,8 @@ function createCodexUsageScanner() {
     stats.rawEvents = out.length - merged.size;
     stats.buckets = merged.size;
     lastStats = stats;
+    // Never past `now`.
+    lastUnread = hull === null ? null : { fromMs: Math.min(hull.fromMs, now), throughMs: Math.min(hull.throughMs, now) };
     return out;
   }
 
@@ -615,6 +903,18 @@ function createCodexUsageScanner() {
     scan,
     /** Counts and timings of the last scan. Numbers only — safe to log. */
     stats: () => lastStats,
+    /**
+     * After the last scan: the latest instant Codex turns it KNOWS it could not
+     * read may carry, or null when it missed none (ADR-002 A3.15). A cost window
+     * starting at or before it is missing usage.
+     */
+    unreadThroughMs: () => (lastUnread ? lastUnread.throughMs : null),
+    /**
+     * After the last scan: `{ fromMs, throughMs }`, the hull of every instant
+     * range holding Codex turns it KNOWS it could not read, or null (ADR-002
+     * A3.15, A3.20). A window or period overlapping it is missing usage.
+     */
+    unreadRange: () => (lastUnread ? { ...lastUnread } : null),
   };
 }
 

@@ -186,10 +186,31 @@ app.whenReady().then(async () => {
   check('no composition is drawn for a week with nothing priced',
     unpricedWeek.captionHidden === true && unpricedWeek.segs.length === 0, unpricedWeek.segs);
 
-  // ---- code-reviewer F2: a stale row's figure is a floor ----------------
+  // ---- ADR-002 A3.15: a stale LIMIT reading is not an incomplete log read ----
+  //
+  // Supersedes code-reviewer F2. The row status says the rate-limit capture is
+  // old; it says nothing about whether the token logs were read. Owner's
+  // screenshot 2026-09-17: "veriler güncel değil" under a figure whose logs had
+  // all been read. The gemini row is stale with sourceIncomplete: false.
   const staleRow = framing.gemini;
-  check('a stale row states its figure as a lower bound',
-    /^Yayımlanan API fiyatlarıyla en az /.test(staleRow.summary), staleRow.summary);
+  const staleCost = await js(`(() => {
+    const row = ${q('gemini')};
+    const c = row.querySelector('.cost');
+    return {
+      rowStatus: row.getAttribute('data-status'),
+      causeBlockHidden: c.querySelector('.cost__cause-block').hidden,
+      causes: [...c.querySelectorAll('.cost__cause')].map((li) => li.textContent),
+      caveats: [...c.querySelectorAll('.cost__caveat')].map((p) => p.textContent),
+    };
+  })()`);
+  say('stale row cost: ' + JSON.stringify(staleCost));
+  check('control: the gemini row really is stale, so the check below is not vacuous',
+    staleCost.rowStatus === 'stale', staleCost.rowStatus);
+  check('a stale row with sourceIncomplete false prints NO floor from its status',
+    !/en az/.test(staleRow.summary), staleRow.summary);
+  check('and no cause line, no "why" disclosure and no degraded sentence at all',
+    staleCost.causeBlockHidden === true && staleCost.causes.length === 0
+      && !staleCost.caveats.some((t) => /okunamadı/.test(t)), staleCost);
 
   // ---- caveats make the figure a floor ---------------------------------
   const codex = framing.codex;
@@ -216,7 +237,8 @@ app.whenReady().then(async () => {
         })),
         caveats: [...c.querySelectorAll('.cost__caveat')].map(p => p.textContent),
         unpriced: [...c.querySelectorAll('.cost__unpriced li')].map(li => li.textContent),
-        caveatsHidden: c.querySelector('.cost__caveats').hidden,
+        causeBlockHidden: c.querySelector('.cost__cause-block').hidden,
+        causes: [...c.querySelectorAll('.cost__cause')].map(li => li.textContent),
         prov: [...c.querySelectorAll('.cost__prov span')].map(s => s.textContent),
       };
     };
@@ -246,9 +268,15 @@ app.whenReady().then(async () => {
   check('the anchored label is NOT "son 7 gün"', !/Son 7 gün/.test(detail.claude.prov[0]), detail.claude.prov[0]);
   check('the price list date is shown, as a calendar date',
     detail.claude.prov[1] === 'Fiyatlar 24 Haziran 2026 tarihli listeye göre', detail.claude.prov[1]);
-  check('no caveats means no caveat block', detail.claude.caveatsHidden === true);
+  check('no caveats means no cause list and no "why" disclosure',
+    detail.claude.causeBlockHidden === true && detail.claude.caveats.length === 0, detail.claude);
 
   // ---- the two caveats are separate statements -------------------------
+  check('the compact causes name the unpriced entry and the TTL fallback, one line each',
+    detail.codex.causes.length === 2
+      && /^Fiyatlanamadı: claude-opus-4-8 · hızlı · /.test(detail.codex.causes[0])
+      && detail.codex.causes[1] === 'Süresi kaydedilmemiş önbellek yazması: 1.412 kayıt',
+    detail.codex.causes);
   check('both caveats render, as two separate sentences', detail.codex.caveats.length === 2,
     detail.codex.caveats);
   check('the unpriced caveat says the usage was EXCLUDED from the total',
@@ -282,6 +310,8 @@ app.whenReady().then(async () => {
         rows: c.querySelectorAll('.cost__row').length,
         caveats: [...c.querySelectorAll('.cost__caveat')].map(p => p.textContent),
         unpriced: [...c.querySelectorAll('.cost__unpriced li')].map(li => li.textContent),
+        causes: [...c.querySelectorAll('.cost__cause')].map(li => li.textContent),
+        why: c.querySelector('.cost__whytext').textContent,
         flag: c.dataset.unpriced || null,
       };
     };
@@ -302,8 +332,11 @@ app.whenReady().then(async () => {
       && noPrice.anti.unpriced.some(u => /hızlı/.test(u)),
     noPrice.anti.unpriced);
   check('the row is flagged as unpriced for styling', noPrice.anti.flag === 'true');
-  check('a stale row explains WHY its figure is a bound',
-    noPrice.gem.caveats.some(t => /güncel değil/.test(t)), noPrice.gem.caveats);
+  check('an all-unpriced week still has visible causes, and its disclosure does not say "en az"',
+    noPrice.anti.causes.length === 2 && noPrice.anti.causes.every(u => /^Fiyatlanamadı: claude-opus-6/.test(u))
+      && noPrice.anti.why === 'Neden tutar yok?', noPrice.anti);
+  check('a stale row with sourceIncomplete false does not claim records could not be read',
+    !noPrice.gem.caveats.some(t => /okunamadı/.test(t)), noPrice.gem.caveats);
 
   // ---- a partial payload degrades, it does not vanish -------------------
   await js(`${q('copilot')}.querySelector('.cost__toggle').click()`);
@@ -316,7 +349,7 @@ app.whenReady().then(async () => {
       barHidden: c.querySelector('.cost__bar').hidden,
       captionHidden: c.querySelector('.cost__caption').hidden,
       rows: c.querySelectorAll('.cost__row').length,
-      caveats: c.querySelector('.cost__caveats').hidden,
+      causeBlockHidden: c.querySelector('.cost__cause-block').hidden,
       prov: [...c.querySelectorAll('.cost__prov span')].map(s => s.textContent),
       gap: !!c.querySelector('.cost__gap'),
     };
@@ -331,7 +364,8 @@ app.whenReady().then(async () => {
     partial.gap === true && partial.prov.some(t => /tarihi bildirilmedi/.test(t)), partial.prov);
   check('a missing window range falls back to the un-dated label',
     /kota haftası/.test(partial.prov[0]) && !/–/.test(partial.prov[0]), partial.prov[0]);
-  check('no floor caveat when nothing took the fallback', partial.caveats === true);
+  check('no cause list when nothing took the fallback (and an older main without sourceIncomplete adds none)',
+    partial.causeBlockHidden === true, partial);
 
   // ---- survives a snapshot push ----------------------------------------
   await js(`window.__probe.push()`);
@@ -355,6 +389,10 @@ app.whenReady().then(async () => {
     const c = ${q('codex')}.querySelector('.cost');
     const t = c.querySelector('.cost__toggle');
     if (t.getAttribute('aria-expanded') !== 'true') t.click();
+    // The full sentences live behind "why" (ADR-002 A3.16). Open it, or the
+    // clip measurements below read 0 > 0 on undrawn nodes and pass vacuously.
+    const w = c.querySelector('.cost__why');
+    if (w && !w.closest('[hidden]') && w.getAttribute('aria-expanded') !== 'true') w.click();
     await new Promise((r) => setTimeout(r, 80));
     const clip = (n) => n.scrollWidth > n.clientWidth;
     const unrec = c.querySelector('.cost__caveat[data-caveat="unrecorded-writes"]');
@@ -368,6 +406,8 @@ app.whenReady().then(async () => {
       unpriced: [...c.querySelectorAll('.cost__unpriced li')].map((li) => li.textContent),
       unpricedClipped: [...c.querySelectorAll('.cost__unpriced li')].map(clip),
       unpricedTov: [...c.querySelectorAll('.cost__unpriced li')].map((li) => getComputedStyle(li).textOverflow),
+      causes: [...c.querySelectorAll('.cost__cause')].map((li) => li.textContent),
+      unrecordedDrawn: unrec ? unrec.getClientRects().length > 0 : null,
     };
   })()`;
   const RAW_CODES = /unknown-tier|long-context|\bflex\b/;
@@ -395,6 +435,15 @@ app.whenReady().then(async () => {
   check('an unresolved model is named as unresolved, never as a model called "unknown"',
     codexTr.unpriced.some((u) => /^model belirlenemedi · katman belirlenemedi · /.test(u))
       && !codexTr.unpriced.some((u) => /^unknown/.test(u)), codexTr.unpriced);
+  check('the full sentences were actually drawn when measured (why is open)',
+    codexTr.unrecordedDrawn === true, codexTr.unrecordedDrawn);
+  check('four unpriced entries: two named lines and one counted line, then the unrecorded-writes line',
+    codexTr.causes.length === 4
+      && /^Fiyatlanamadı: gpt-5\.6-sol · katman belirlenemedi · /.test(codexTr.causes[0])
+      && /^Fiyatlanamadı: gpt-5\.5 · /.test(codexTr.causes[1])
+      && codexTr.causes[2] === 'Fiyatlanamadı: 2 kalem daha'
+      && codexTr.causes[3] === 'Kaydedilmemiş önbellek yazması: 38 kayıt',
+    codexTr.causes);
   check('the unpriced lines wrap, they are never cut',
     codexTr.unpricedClipped.every((c) => c === false) && codexTr.unpricedTov.every((v) => v !== 'ellipsis'),
     [codexTr.unpricedClipped, codexTr.unpricedTov]);
@@ -417,6 +466,10 @@ app.whenReady().then(async () => {
     codexEn.unpriced.some((u) => /· tier not determinable, long context \(over 272K\) ·/.test(u))
       && codexEn.unpriced.some((u) => /^model not determinable · tier not determinable · /.test(u))
       && !codexEn.unpriced.some((u) => RAW_CODES.test(u) || /^unknown/.test(u)), codexEn.unpriced);
+  check('[en] the compact causes are English and plural-aware',
+    codexEn.causes.length === 4 && /^Could not be priced: gpt-5\.6-sol · tier not determinable · /.test(codexEn.causes[0])
+      && codexEn.causes[2] === 'Could not be priced: 2 more entries'
+      && codexEn.causes[3] === 'Unrecorded cache writes: 38 records', codexEn.causes);
   check('[en] the unpriced lines are not clipped either',
     codexEn.unpricedClipped.every((c) => c === false), codexEn.unpricedClipped);
 
@@ -436,10 +489,267 @@ app.whenReady().then(async () => {
     /^Yayımlanan API fiyatlarıyla en az \$/.test(onlyUnrec.summary)
       && onlyUnrec.unpriced.length === 0
       && onlyUnrec.caveats.length === 1, onlyUnrec);
+  check('and exactly one cause line says so, with its count',
+    onlyUnrec.causes.length === 1 && onlyUnrec.causes[0] === 'Kaydedilmemiş önbellek yazması: 1 kayıt',
+    onlyUnrec.causes);
   check('and the one caveat is the unrecorded-writes caveat, in the singular count',
     // Singular: "bu kayıt", not "bu kayıtlar" (ADR-004 A2, same claim at count 1).
     /^1 kayıtta, önbellek yazmasını ücretlendiren bir modelde önbellek yazması 0 kaydedilmiş; oysa bu kayıt önbellekten okumuş ya da önbelleğe alınabilecek uzunlukta \(1\.024\+ token\) istem göndermiş\. Bu yüzden toplam bir alt sınır\.$/.test(onlyUnrec.unrecorded || ''),
     onlyUnrec.unrecorded);
+
+  // ---- ADR-002 A3.15/A3.16: sourceIncomplete, the compact causes, "why" ----
+  //
+  // One reader for every state below. It measures what is DRAWN: the "why"
+  // panel is read collapsed first (aria wiring), then opened for the clip
+  // measurements, so a hidden node's 0 > 0 cannot pass a clip check.
+  const readCauses = `(async () => {
+    const c = ${q('codex')}.querySelector('.cost');
+    const block = c.querySelector('.cost__cause-block');
+    const why = c.querySelector('.cost__why');
+    const panelId = why.getAttribute('aria-controls');
+    const panel = panelId ? document.getElementById(panelId) : null;
+    const listId = why.getAttribute('aria-describedby');
+    const list = listId ? document.getElementById(listId) : null;
+    if (why.getAttribute('aria-expanded') === 'true') why.click();
+    await new Promise((r) => setTimeout(r, 60));
+    // The carets rotate with a 120ms transition. Finish any running one before
+    // reading, or the reading depends on how far a transition got.
+    const settled = (n) => { for (const x of n.getAnimations()) x.finish(); return getComputedStyle(n).transform; };
+    const mainChev = () => settled(c.querySelector('.cost__toggle .cost__chev'));
+    const closed = {
+      mainChev: mainChev(),
+      mainExpanded: c.querySelector('.cost__toggle').getAttribute('aria-expanded'),
+      whyChev: settled(why.querySelector('.cost__chev')),
+      expanded: why.getAttribute('aria-expanded'),
+      panelHidden: panel ? panel.hidden : null,
+      panelDrawn: panel ? panel.getClientRects().length > 0 : null,
+    };
+    why.click();
+    await new Promise((r) => setTimeout(r, 80));
+    const clip = (n) => n.scrollWidth > n.clientWidth + 0.5;
+    const causeNodes = [...c.querySelectorAll('.cost__cause')];
+    const caveatNodes = [...c.querySelectorAll('.cost__caveat')];
+    const out = {
+      lang: document.documentElement.getAttribute('lang'),
+      summary: c.querySelector('.cost__summary').textContent,
+      blockHidden: block.hidden,
+      causes: causeNodes.map((n) => n.textContent),
+      causesDrawn: causeNodes.every((n) => n.getClientRects().length > 0),
+      causesClipped: causeNodes.map(clip),
+      causesTov: causeNodes.map((n) => getComputedStyle(n).textOverflow),
+      whyText: why.textContent,
+      whyTag: why.tagName,
+      whyType: why.getAttribute('type'),
+      whyName: why.getAttribute('aria-label'),
+      whyTabbable: why.tabIndex >= 0 && !why.disabled,
+      panelIsControlled: !!panel && panel.contains(caveatNodes[0] || null),
+      describedByList: !!list && list.tagName === 'UL' && list.contains(causeNodes[0] || null),
+      closed,
+      open: {
+        expanded: why.getAttribute('aria-expanded'),
+        panelHidden: panel ? panel.hidden : null,
+        panelDrawn: panel ? panel.getClientRects().length > 0 : null,
+      },
+      caveats: caveatNodes.map((n) => n.textContent),
+      caveatsClipped: caveatNodes.map(clip),
+      caveatsTov: caveatNodes.map((n) => getComputedStyle(n).textOverflow),
+      sourceSentence: (c.querySelector('.cost__caveat[data-caveat="source-incomplete"]') || {}).textContent || null,
+      unpricedClipped: [...c.querySelectorAll('.cost__unpriced li')].map(clip),
+      // The main toggle's caret must not move when only "why" opens.
+      mainChevMoved: mainChev() !== closed.mainChev,
+      // Calm, measurement-first: no warning accent on the caveat panel.
+      panelBorder: panel ? getComputedStyle(panel).borderLeftColor : null,
+      watch: (() => {
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--watch)';
+        c.appendChild(probe);
+        const v = getComputedStyle(probe).color;
+        probe.remove();
+        return v;
+      })(),
+    };
+    why.click();
+    await new Promise((r) => setTimeout(r, 40));
+    return out;
+  })()`;
+
+  // sourceIncomplete as the ONLY cause: LIVE_COST's clean week plus the flag.
+  check('the fixture swapped the source-incomplete week onto the codex row',
+    (await js(`window.__probe.setCostDirect('codex', 'sourceIncomplete')`)) === true);
+  await sleep(250);
+  const incomplete = await js(readCauses);
+  say('source incomplete (tr): ' + JSON.stringify(incomplete));
+  check('sourceIncomplete alone makes the figure "en az"',
+    /^Yayımlanan API fiyatlarıyla en az \$226,81 tutardı$/.test(incomplete.summary), incomplete.summary);
+  check('and the floor has its visible cause line',
+    incomplete.blockHidden === false && incomplete.causesDrawn === true
+      && incomplete.causes.length === 1 && incomplete.causes[0] === 'Okunamayan kayıtlar var',
+    incomplete.causes);
+  check('the full signed-off sentence is one click away, and only there',
+    incomplete.closed.panelHidden === true && incomplete.closed.panelDrawn === false
+      && incomplete.open.panelHidden === false && incomplete.open.panelDrawn === true
+      && /^Bu araca ait bazı yerel kayıtlar okunamadı\. Tutar yalnızca okunabilen kayıtları kapsıyor, bu yüzden bir alt sınır\.$/.test(incomplete.sourceSentence || '')
+      && incomplete.caveats.length === 1,
+    [incomplete.closed, incomplete.open, incomplete.caveats]);
+  check('"why" is a real, tabbable button whose name is its visible text',
+    incomplete.whyTag === 'BUTTON' && incomplete.whyType === 'button' && incomplete.whyTabbable === true
+      && incomplete.whyText === 'Neden en az?' && incomplete.whyName === null, incomplete);
+  check('aria-expanded follows the panel, and aria-controls points at the panel holding the sentences',
+    incomplete.closed.expanded === 'false' && incomplete.open.expanded === 'true'
+      && incomplete.panelIsControlled === true, incomplete);
+  check('aria-describedby points at the visible cause list, so the spoken causes match the screen',
+    incomplete.describedByList === true, incomplete);
+  check('the two carets are independent: "why" does not move the breakdown caret, nor vice versa',
+    incomplete.mainChevMoved === false
+      && incomplete.closed.mainExpanded === 'true' && incomplete.closed.whyChev === 'none',
+    [incomplete.mainChevMoved, incomplete.closed]);
+  check('the caveat panel carries no warning accent',
+    !!incomplete.panelBorder && !!incomplete.watch && incomplete.panelBorder !== incomplete.watch,
+    [incomplete.panelBorder, incomplete.watch]);
+
+  // The owner's week: one unpriced tier and 202 unrecorded writes, logs read.
+  check('the fixture swapped the owner\'s week onto the codex row',
+    (await js(`window.__probe.setCostDirect('codex', 'owner')`)) === true);
+  await sleep(250);
+  const owner = await js(readCauses);
+  say('owner week (tr): ' + JSON.stringify(owner));
+  check('the owner\'s week: two short cause lines instead of three paragraphs',
+    owner.causes.length === 2
+      && /^Fiyatlanamadı: gpt-5\.6-sol · katman belirlenemedi · 169,8\sB token$/.test(owner.causes[0])
+      && owner.causes[1] === 'Kaydedilmemiş önbellek yazması: 202 kayıt', owner.causes);
+  check('and no "could not be read" sentence: its logs were read',
+    !owner.caveats.some((t) => /okunamadı/.test(t)) && owner.sourceSentence === null, owner.caveats);
+
+  // F5: records missed and nothing priced. Shown, with no amount and no
+  // "not in the price list" claim: the cause line and its "why" alone.
+  check('the fixture swapped the incomplete, unpriced-nothing week onto the codex row',
+    (await js(`window.__probe.setCostDirect('codex', 'incompleteNoFigure')`)) === true);
+  await sleep(250);
+  const noFig = await js(readCauses);
+  const noFigShape = await js(`(() => {
+    const c = ${q('codex')}.querySelector('.cost');
+    return {
+      hidden: c.hidden,
+      toggleHidden: c.querySelector('.cost__toggle').hidden,
+      barHidden: c.querySelector('.cost__bar').hidden,
+      captionHidden: c.querySelector('.cost__caption').hidden,
+      detailHidden: c.querySelector('.cost__detail').hidden,
+      text: c.innerText,
+    };
+  })()`);
+  say('incomplete, no figure (tr): ' + JSON.stringify([noFig, noFigShape]));
+  check('a week with unreadable records and no priced figure is SHOWN, not hidden',
+    noFigShape.hidden === false && noFig.blockHidden === false, noFigShape);
+  check('it shows the cause line alone: no amount, no toggle, no breakdown, no price-list claim',
+    noFig.causes.length === 1 && noFig.causes[0] === 'Okunamayan kayıtlar var'
+      && noFigShape.toggleHidden === true && noFigShape.barHidden === true
+      && noFigShape.captionHidden === true && noFigShape.detailHidden === true
+      && !/\$|en az|fiyat listesinde/.test(noFigShape.text), [noFig.causes, noFigShape]);
+  check('and its "why" carries the reworded sentence, with working aria wiring',
+    noFig.whyText === 'Neden tutar yok?' && noFig.closed.expanded === 'false' && noFig.open.expanded === 'true'
+      && noFig.open.panelDrawn === true && noFig.panelIsControlled === true
+      && noFig.caveatsClipped.every((v) => v === false),
+    noFig);
+  check('with no amount, the sentence says no amount can be given, never "the amount is a lower bound"',
+    noFig.sourceSentence === 'Bu araca ait bazı yerel kayıtlar okunamadı, bu yüzden bir tutar verilemiyor.'
+      && !/alt sınır|Tutar/.test(noFig.sourceSentence || ''), noFig.sourceSentence);
+
+  // ADR-002 A3.17/A3.18/A3.21: the two tier floors, each its own line and sentence.
+  check('the fixture swapped the tier-floor week onto the codex row',
+    (await js(`window.__probe.setCostDirect('codex', 'tierFloor')`)) === true);
+  await sleep(250);
+  const tierTr = await js(readCauses);
+  const tierSentences = await js(`(() => {
+    const c = ${q('codex')}.querySelector('.cost');
+    const pick = (k) => (c.querySelector('.cost__caveat[data-caveat="' + k + '"]') || {}).textContent || null;
+    return { assumed: pick('assumed-tier'), fast: pick('fast-requested') };
+  })()`);
+  say('tier floor (tr): ' + JSON.stringify([tierTr, tierSentences]));
+  check('the tier floors alone make the figure "en az"',
+    /^Yayımlanan API fiyatlarıyla en az \$/.test(tierTr.summary), tierTr.summary);
+  check('each tier floor has its own cause line, with its count',
+    tierTr.causes.length === 2
+      && tierTr.causes[0] === 'Katmanı kaydedilmemiş istek (Standart fiyattan): 24 kayıt'
+      && tierTr.causes[1] === 'Fast istendi (Standart fiyattan): 1 kayıt', tierTr.causes);
+  check('and its own full sentence: Standard price, a lower bound; Fast possibly higher',
+    tierSentences.assumed === '24 kayıtta Codex hizmet katmanını henüz kaydetmemişti. Codex’in gönderebileceği en ucuz katman Standart olduğu için bu kayıtlar Standart fiyattan hesaplandı; tutar bir alt sınır.'
+      && tierSentences.fast === '1 kayıtta Fast istendi, ancak kayıt Fast’in gerçekten uygulandığını göstermiyor. Bu kayıt Standart fiyattan hesaplandı; Fast uygulandıysa gerçek tutar daha yüksek.',
+    tierSentences);
+  check('[tr] the tier lines and sentences are not clipped',
+    tierTr.causesClipped.every((v) => v === false) && tierTr.caveatsClipped.every((v) => v === false)
+      && tierTr.open.panelDrawn === true, tierTr);
+  await js(`window.__probe.setLocaleDirect('en', 'en-US')`);
+  await sleep(300);
+  const tierEn = await js(readCauses);
+  say('tier floor (en): ' + JSON.stringify(tierEn));
+  check('[en] the tier lines are English and plural-aware',
+    tierEn.causes[0] === 'Requests with no recorded tier (priced at Standard): 24 records'
+      && tierEn.causes[1] === 'Fast requested (priced at Standard): 1 record', tierEn.causes);
+  check('[en] the tier sentences keep their claims, whole',
+    tierEn.caveats.some((t) => /^24 records came before Codex had recorded its service tier\..*priced at Standard; the amount is a lower bound\.$/.test(t))
+      && tierEn.caveats.some((t) => /^1 record requested Fast, but the record does not show .*if Fast was applied, the real cost is higher\.$/.test(t))
+      && tierEn.caveatsClipped.every((v) => v === false), tierEn.caveats);
+  await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
+  await sleep(300);
+
+  // Review F9: more than eight unpriced entries. Named up to eight, then counted.
+  check('the fixture swapped the ten-unpriced week onto the codex row',
+    (await js(`window.__probe.setCostDirect('codex', 'manyUnpriced')`)) === true);
+  await sleep(250);
+  const many = await js(readCauses);
+  const manyList = await js(`(() => [...${q('codex')}.querySelectorAll('.cost__unpriced li')].map((li) => li.textContent))()`);
+  say('many unpriced (tr): ' + JSON.stringify([many.causes, manyList]));
+  check('the "why" list names eight unpriced entries and counts the other two',
+    manyList.length === 9 && manyList.slice(0, 8).every((u) => /^gpt-5\.\d-probe · katman belirlenemedi · /.test(u))
+      && manyList[8] === '… 2 kalem daha', manyList);
+  check('and the compact list still shows two lines plus a counted line',
+    many.causes.length === 3 && many.causes[2] === 'Fiyatlanamadı: 8 kalem daha', many.causes);
+
+  // Every cause at once, in all three formats: nothing is cut.
+  check('the fixture swapped the every-cause week onto the codex row',
+    (await js(`window.__probe.setCostDirect('codex', 'allCauses')`)) === true);
+  await sleep(250);
+  const clipCheck = (label, r) => {
+    check(`[${label}] all four kinds of cause render, in order`,
+      r.causes.length === 6 && r.caveats.length === 4, [r.causes, r.caveats.length]);
+    check(`[${label}] no cause line is clipped or ellipsized`,
+      r.causesDrawn === true && r.causesClipped.every((v) => v === false)
+        && r.causesTov.every((v) => v !== 'ellipsis'), [r.causesClipped, r.causesTov]);
+    check(`[${label}] no full sentence is clipped or ellipsized`,
+      r.open.panelDrawn === true && r.caveatsClipped.every((v) => v === false)
+        && r.caveatsTov.every((v) => v !== 'ellipsis') && r.unpricedClipped.every((v) => v === false),
+      [r.caveatsClipped, r.caveatsTov, r.unpricedClipped]);
+  };
+  const allTr = await js(readCauses);
+  say('all causes (tr): ' + JSON.stringify(allTr));
+  clipCheck('tr', allTr);
+  check('[tr] the TTL, unrecorded-writes and unreadable lines are the short labels',
+    allTr.causes[3] === 'Süresi kaydedilmemiş önbellek yazması: 1.412 kayıt'
+      && allTr.causes[4] === 'Kaydedilmemiş önbellek yazması: 38 kayıt'
+      && allTr.causes[5] === 'Okunamayan kayıtlar var', allTr.causes);
+
+  await js(`window.__probe.setLocaleDirect('en', 'en-US')`);
+  await sleep(300);
+  const allUs = await js(readCauses);
+  say('all causes (en-US): ' + JSON.stringify(allUs));
+  check('[en-US] reached', allUs.lang === 'en', allUs.lang);
+  clipCheck('en-US', allUs);
+  check('[en-US] the short labels are English, with en-US digits',
+    allUs.causes[3] === 'Cache writes without a recorded TTL: 1,412 records'
+      && allUs.causes[4] === 'Unrecorded cache writes: 38 records'
+      && allUs.causes[5] === 'Some records could not be read'
+      && allUs.whyText === 'Why at least?', allUs);
+
+  await js(`window.__probe.setLocaleDirect('en', 'en-GB')`);
+  await sleep(300);
+  const allGb = await js(readCauses);
+  say('all causes (en-GB): ' + JSON.stringify(allGb));
+  clipCheck('en-GB', allGb);
+  check('[en-GB] the figure keeps its floor in the en-GB currency form',
+    /^Would have cost at least US\$/.test(allGb.summary), allGb.summary);
+
+  await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
+  await sleep(300);
   await js(`window.__probe.setCostDirect('codex', 'caveat')`);
   await sleep(250);
 
@@ -579,6 +889,152 @@ app.whenReady().then(async () => {
       && !/Codex/.test(legacyNote.text || '') && legacyNote.clipped === false, legacyNote);
   await js(`window.__probe.setHistoryPricesDirect()`);
   await sleep(200);
+
+  // ADR-002 A3.21: the two-date note names tier uncertainty in the Codex clause,
+  // and still wraps whole in every format.
+  const readUsageNotes = `(async () => {
+    const view = document.getElementById('settings-view');
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    view.querySelector('.acc__trigger[data-acc="usage"]').click();
+    await new Promise((r) => setTimeout(r, 80));
+    const n = view.querySelector('.usage__note');
+    const inc = view.querySelector('.usage__incomplete');
+    const list = view.querySelector('.usage__list');
+    const out = {
+      note: n && !n.hidden ? n.textContent : null,
+      noteClipped: n ? n.scrollWidth > n.clientWidth : null,
+      noteTov: n ? getComputedStyle(n).textOverflow : null,
+      incomplete: inc && !inc.hidden ? inc.textContent : null,
+      incompleteDrawn: inc ? inc.getClientRects().length > 0 : null,
+      incompleteClipped: inc ? inc.scrollWidth > inc.clientWidth : null,
+      incompleteBeforeList: !!(inc && list) && (inc.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+      incompleteCount: view.querySelectorAll('.usage__incomplete').length,
+    };
+    view.querySelector('.acc__trigger[data-acc="models"]').click();
+    await new Promise((r) => setTimeout(r, 60));
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    return out;
+  })()`;
+  const notesTr = await js(readUsageNotes);
+  say('usage notes (tr): ' + JSON.stringify(notesTr));
+  check('[tr] the two-date note keeps its Codex clause and adds tier uncertainty to it, whole',
+    /Codex’te ise Codex’in kaydetmediği önbellek yazmaları bunları ücretlendiren modellerde toplamda yer almadığı ya da hizmet katmanı doğrulanamadığı \(katman kaydedilmemişse veya Fast istendiyse Standart fiyat kullanılır\) için\.$/.test(notesTr.note || '')
+      && notesTr.noteClipped === false && notesTr.noteTov !== 'ellipsis', notesTr);
+  check('no incomplete note while no tool is incomplete', notesTr.incomplete === null, notesTr.incomplete);
+
+  await js(`window.__probe.setHistoryIncompleteDirect(['codex', 'bogus', 'codex'])`);
+  await sleep(200);
+  const incTr = await js(readUsageNotes);
+  say('usage incomplete (tr): ' + JSON.stringify(incTr));
+  check('[tr] an incomplete tool gets ONE note above the list, known ids only, named once',
+    incTr.incomplete === 'Codex için bazı yerel kayıtlar okunamadı; etkilenen dönemler bir alt sınırdır.'
+      && incTr.incompleteCount === 1 && incTr.incompleteBeforeList === true
+      && incTr.incompleteDrawn === true && incTr.incompleteClipped === false, incTr);
+  await js(`window.__probe.setLocaleDirect('en', 'en-US')`);
+  await sleep(300);
+  const incEn = await js(readUsageNotes);
+  say('usage incomplete (en-US): ' + JSON.stringify(incEn));
+  check('[en-US] the incomplete note and the tier clause read in English, whole',
+    incEn.incomplete === 'Some local records for Codex could not be read; affected periods are a lower bound.'
+      && incEn.incompleteClipped === false
+      && /or the service tier could not be verified \(with no recorded tier, or with Fast requested, the Standard price is used\)/.test(incEn.note || '')
+      && incEn.noteClipped === false, incEn);
+  await js(`window.__probe.setLocaleDirect('en', 'en-GB')`);
+  await sleep(300);
+  const incGb = await js(readUsageNotes);
+  say('usage incomplete (en-GB): ' + JSON.stringify(incGb));
+  check('[en-GB] nothing in the notes is clipped',
+    incGb.incompleteClipped === false && incGb.noteClipped === false && incGb.incomplete !== null, incGb);
+  await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
+  await js(`window.__probe.setHistoryIncompleteDirect([])`);
+  await sleep(300);
+
+  // ---- F6: nothing says "no data" when records are known to be unread -----
+  const readHistory = `(async () => {
+    const view = document.getElementById('settings-view');
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    view.querySelector('.acc__trigger[data-acc="usage"]').click();
+    await new Promise((r) => setTimeout(r, 80));
+    const e = view.querySelector('.usage__empty');
+    const inc = view.querySelector('.usage__incomplete');
+    const out = {
+      amounts: [...view.querySelectorAll('.usage__row')].map((r) => ({
+        text: r.querySelector('.usage__amount').textContent,
+        incomplete: r.getAttribute('data-incomplete'),
+        empty: r.getAttribute('data-empty'),
+      })),
+      emptyText: e && !e.hidden ? e.textContent : null,
+      incomplete: inc && !inc.hidden ? inc.textContent : null,
+    };
+    view.querySelector('.acc__trigger[data-acc="models"]').click();
+    await new Promise((r) => setTimeout(r, 60));
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    return out;
+  })()`;
+  // Control first: the fixture's empty month reads "—" when nothing is unread.
+  const histBase = await js(readHistory);
+  say('history base (tr): ' + JSON.stringify(histBase));
+  check('control: a genuinely empty period still reads "—" and carries no incomplete mark',
+    histBase.amounts.some((a) => a.text === '—' && a.empty === 'true' && a.incomplete === null), histBase.amounts);
+  await js(`window.__probe.setHistoryShapeDirect('emptyFloor')`);
+  await sleep(250);
+  const histFloor = await js(readHistory);
+  say('history empty floor (tr): ' + JSON.stringify(histFloor));
+  check('a floored period with no usage reads "okunamadı", not "—", and is marked data-incomplete',
+    histFloor.amounts.length === 3 && !histFloor.amounts.some((a) => a.text === '—')
+      && histFloor.amounts[2].text === 'okunamadı' && histFloor.amounts[2].incomplete === 'true'
+      && histFloor.amounts[2].empty === null, histFloor.amounts);
+  await js(`window.__probe.setLocaleDirect('en', 'en-US')`);
+  await sleep(300);
+  const histFloorEn = await js(readHistory);
+  check('[en] and "could not be read" in English',
+    histFloorEn.amounts[2] && histFloorEn.amounts[2].text === 'could not be read', histFloorEn.amounts);
+  await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
+  await sleep(300);
+  await js(`window.__probe.setHistoryShapeDirect('noPeriods')`);
+  await sleep(250);
+  const histNone = await js(readHistory);
+  say('history no periods, incomplete (tr): ' + JSON.stringify(histNone));
+  check('no periods with a tool known incomplete: no "no records found", only the incomplete note',
+    histNone.emptyText === null && histNone.amounts.length === 0
+      && histNone.incomplete === 'Codex için bazı yerel kayıtlar okunamadı; etkilenen dönemler bir alt sınırdır.', histNone);
+  await js(`window.__probe.setHistoryShapeDirect('restore')`);
+  await sleep(250);
+  const histBack = await js(readHistory);
+  check('control: the fixture history is restored, with no incomplete note',
+    histBack.incomplete === null && histBack.amounts.length === 3, histBack);
+
+  // Row: the causes-only cost block states the gap; "Token bilgisi yok" must not.
+  const readMeta = `(() => {
+    const row = ${q('codex')};
+    const meta = row.querySelector('.row__meta');
+    const cost = row.querySelector('.cost');
+    return {
+      meta: meta ? meta.textContent : null,
+      costShown: !!cost && !cost.hidden,
+      causes: cost ? [...cost.querySelectorAll('.cost__cause')].map((n) => n.textContent) : [],
+    };
+  })()`;
+  await js(`window.__probe.setPendingDirect([], { codex: { tokens: null, burnRatePerHour: null } })`);
+  await js(`window.__probe.setCostDirect('codex', 'codexUnrecordedOnly')`);
+  await sleep(250);
+  const metaControl = await js(readMeta);
+  say('row meta, logs read (tr): ' + JSON.stringify(metaControl));
+  check('control: a row with no tokens and a fully read source still says "Token bilgisi yok"',
+    /Token bilgisi yok/.test(metaControl.meta || ''), metaControl);
+  await js(`window.__probe.setCostDirect('codex', 'incompleteNoFigure')`);
+  await sleep(250);
+  const metaInc = await js(readMeta);
+  say('row meta, source incomplete (tr): ' + JSON.stringify(metaInc));
+  check('with sourceIncomplete the row drops "Token bilgisi yok" and the cost block states the gap',
+    !/Token bilgisi yok/.test(metaInc.meta || '') && metaInc.costShown === true
+      && metaInc.causes.length === 1 && metaInc.causes[0] === 'Okunamayan kayıtlar var', metaInc);
+  await js(`window.__probe.restore()`);
+  await sleep(250);
 
   // ---- per-model quota detail ------------------------------------------
   //

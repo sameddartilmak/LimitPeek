@@ -17,11 +17,22 @@
  *
  * THE ACCOUNTING RULES (ADR-002 Amendment 3)
  * ------------------------------------------
- *  1. The key is `model|tier`, as Claude's is `model|speed`. `priority` and
- *     `fast` are the same published Fast tier. A tier with no row for that
- *     model — or a tier that could not be determined at all — is UNPRICED.
- *     Never assumed Standard: Flex is cheaper and Fast dearer, so Standard is
- *     neither a floor nor a ceiling.
+ *  1. The key is `model|tier`, as Claude's is `model|speed`. A tier with no
+ *     row for that model is UNPRICED. As amended by A3.17-18, the tier used for
+ *     the DISPLAYED figure is:
+ *       - `default`/`standard` recorded -> Standard;
+ *       - `priority`/`fast` recorded -> Standard AS A FLOOR, counted as
+ *         `fastRequestedEvents`. The record is the tier REQUESTED, not proven
+ *         billed (core drops a tier the catalog does not list; the API documents
+ *         downgrading Fast), so a Fast price could exceed the true cost. The
+ *         Fast rows below stay for reference and are not used for the figure;
+ *       - no tier recorded yet (before the first settings record) -> Standard
+ *         AS A FLOOR, counted as `assumedTierEvents`, ONLY in a rollout whose
+ *         every recorded tier is default/priority/fast (`tierAssumable`, from
+ *         usage.js): Codex core sends only a tier the model catalog advertises,
+ *         no observed catalog lists flex, and an omitted tier is Standard. A
+ *         rollout recording flex, ultrafast or anything else keeps them UNPRICED;
+ *       - any other recorded tier (flex, ...) -> its own row, i.e. unpriced.
  *  2. The model is the one in effect for each turn (resolved in usage.js).
  *  3. Zero RECORDED cache writes are not zero writes. On a model with a write
  *     price, an event with recorded writes of 0 that read cache or sent an
@@ -45,8 +56,11 @@ const PRICES_AS_OF = '2026-09-14';
 /**
  * The `ModelCost.speed` CODES this module emits. Stable: the renderer maps
  * them to catalog text, so changing one is a contract change.
- *   'standard' | 'fast'          a tier with published rows
- *   SPEED_UNKNOWN_TIER            'unknown-tier': tier not determinable (unpriced)
+ *   'standard' | 'fast'          the RECORDED tier ('fast' events are priced at
+ *                                Standard, A3.18; see `pricedAs`)
+ *   SPEED_UNKNOWN_TIER            'unknown-tier': no tier recorded yet — priced at
+ *                                Standard when its rollout is eligible (A3.17),
+ *                                unpriced otherwise
  *   <tier> + LONG_CONTEXT_SUFFIX  e.g. 'standard-long-context', 'fast-long-context',
  *                                 'unknown-tier-long-context': prompt over 272K
  *                                 on a long-context model (unpriced)
@@ -89,7 +103,10 @@ const PRICES = Object.freeze({
   'o4-mini|standard': { input: 1.10, cachedInput: 0.275, output: 4.40, cacheWrite: null },
 
   // Fast tier (formerly "priority"; renamed Fast mode 2026-07-30).
-  // gpt-5-nano and gpt-5-codex publish no Fast row: unpriced at Fast.
+  // Kept as the published reference only: a recorded priority/fast is the tier
+  // REQUESTED, so the displayed figure prices it at Standard as a floor
+  // (A3.18, `billingTierOf`) and never looks these rows up.
+  // gpt-5-nano and gpt-5-codex publish no Fast row.
   'gpt-5.6-sol|fast': { input: 8.00, cachedInput: 0.80, output: 40.00, cacheWrite: 10.00 },
   'gpt-5.6-terra|fast': { input: 4.00, cachedInput: 0.40, output: 24.00, cacheWrite: 5.00 },
   'gpt-5.6-luna|fast': { input: 0.40, cachedInput: 0.04, output: 2.40, cacheWrite: 0.50 },
@@ -130,6 +147,22 @@ function normalizeTier(raw) {
 }
 
 /**
+ * The tier an event is PRICED at for the displayed figure (A3.17-18), and which
+ * floor cause that choice carries. `tier: null` -> unpriced.
+ *
+ * @returns {{tier: string|null, fastRequested: boolean, assumed: boolean}}
+ */
+function billingTierOf(ev) {
+  if (ev.tier === 'fast') return { tier: 'standard', fastRequested: true, assumed: false };
+  if (ev.tier === null || ev.tier === undefined) {
+    return ev.tierAssumable === true
+      ? { tier: 'standard', fastRequested: false, assumed: true }
+      : { tier: null, fastRequested: false, assumed: false };
+  }
+  return { tier: typeof ev.tier === 'string' ? ev.tier : null, fastRequested: false, assumed: false };
+}
+
+/**
  * The price row for an EXACT model id at a tier, or null. No prefix matching
  * and no date-suffix stripping (Amendment 3 rule 5). An unknown model, an
  * unknown tier, or a null tier returns null and is NEVER priced at zero.
@@ -164,7 +197,12 @@ function classifyCodexEvent(ev) {
     : LONG_CONTEXT_MODELS.has(ev.model) && promptTokens > LONG_CONTEXT_INPUT;
   let writeFloor = ev.writeFloor;
   if (typeof writeFloor !== 'boolean') {
-    const price = longContext ? null : priceFor(ev.model, ev.tier);
+    // Decided against the row the event would be priced at if it is priced at
+    // all. A pre-settings turn is judged at Standard whatever its rollout's
+    // eligibility today: the flag is only ever counted while the event is
+    // priced, and eligibility can change after the turn is folded.
+    const tier = ev.tier === null || ev.tier === undefined ? 'standard' : billingTierOf(ev).tier;
+    const price = longContext ? null : priceFor(ev.model, tier);
     writeFloor = Boolean(price) && price.cacheWrite != null && ev.cacheWrite === 0
       && (ev.cachedInput > 0 || ev.inputUncached >= MIN_CACHEABLE_PROMPT);
   }
@@ -198,7 +236,12 @@ function speedOf(ev, longContext) {
  * missing TTL split — a different claim.
  * `writeFloorByModel` is the same count per model id.
  *
- * @returns {{cost: object|null, writeFloorEvents: number, writeFloorByModel: Map<string, number>}}
+ * `assumedTierEvents` / `fastRequestedEvents` count priced events whose tier was
+ * assumed Standard or requested Fast (A3.17-18); `tierFloorByModel` is their
+ * sum per model id. Each makes the figure a floor.
+ *
+ * @returns {{cost: object|null, writeFloorEvents: number, writeFloorByModel: Map<string, number>,
+ *   assumedTierEvents: number, fastRequestedEvents: number, tierFloorByModel: Map<string, number>}}
  */
 function codexCostDetail(events, startMs, endMs, anchored) {
   const groups = new Map();
@@ -208,6 +251,10 @@ function codexCostDetail(events, startMs, endMs, anchored) {
   let cacheWriteEvents = 0;
   let writeFloorEvents = 0;
   const writeFloorByModel = new Map();
+  let assumedTierEvents = 0;
+  let fastRequestedEvents = 0;
+  /** Per model: priced events carrying a tier floor cause (A3.17-18). */
+  const tierFloorByModel = new Map();
 
   for (const ev of events || []) {
     if (!ev || !Number.isFinite(ev.ts)) continue;
@@ -217,15 +264,20 @@ function codexCostDetail(events, startMs, endMs, anchored) {
     // A folded 15-minute bucket stands for `count` turns; a raw event for one.
     const n = Number.isSafeInteger(ev.count) && ev.count > 0 ? ev.count : 1;
     const { longContext, writeFloor, hasWrite } = classifyCodexEvent(ev);
-    const price = longContext ? null : priceFor(ev.model, ev.tier);
+    const billing = billingTierOf(ev);
+    const price = longContext || billing.tier === null ? null : priceFor(ev.model, billing.tier);
+    // The speed CODE stays the recorded tier ('fast', 'unknown-tier'), so a row
+    // says what was recorded; `pricedAs` says which row priced it. Priced and
+    // unpriced events of one code (an eligible and an ineligible rollout) are
+    // separate groups: a group is either priced or not.
     const speed = speedOf(ev, longContext);
-    const key = `${ev.model}|${speed}`;
+    const key = `${ev.model}|${speed}|${price ? 1 : 0}`;
     let group = groups.get(key);
     if (!group) {
       group = {
         model: ev.model,
         speed,
-        pricedAs: price ? `${ev.model}|${ev.tier}` : null,
+        pricedAs: price ? `${ev.model}|${billing.tier}` : null,
         usd: price ? 0 : null,
         tokens: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
       };
@@ -239,6 +291,11 @@ function codexCostDetail(events, startMs, endMs, anchored) {
 
     if (!price) continue; // tokens accumulate, dollars do not (ADR-002 rule 2)
 
+    if (billing.assumed) assumedTierEvents += n;
+    if (billing.fastRequested) fastRequestedEvents += n;
+    if (billing.assumed || billing.fastRequested) {
+      tierFloorByModel.set(ev.model, (tierFloorByModel.get(ev.model) || 0) + n);
+    }
     if (hasWrite) cacheWriteEvents += n;
     if (writeFloor) {
       writeFloorEvents += n;
@@ -260,7 +317,9 @@ function codexCostDetail(events, startMs, endMs, anchored) {
     totalUsd += eventUsd;
   }
 
-  if (!seenAny) return { cost: null, writeFloorEvents: 0, writeFloorByModel };
+  if (!seenAny) {
+    return { cost: null, writeFloorEvents: 0, writeFloorByModel, assumedTierEvents: 0, fastRequestedEvents: 0, tierFloorByModel };
+  }
 
   const byModel = [...groups.values()].map((g) => ({
     model: g.model,
@@ -298,6 +357,13 @@ function codexCostDetail(events, startMs, endMs, anchored) {
       // Rule 3 (A3.9): priced events with 0 recorded writes that read cache or
       // sent a cacheable prompt, on a write-priced model. Non-zero: a floor.
       unrecordedWriteEvents: writeFloorEvents,
+      // A3.17: pre-settings turns in an eligible rollout, priced at Standard.
+      assumedTierEvents,
+      // A3.18: turns that REQUESTED Fast, priced at Standard.
+      fastRequestedEvents,
+      // Set by the snapshot from the rollout scan (ADR-002 A3.15); pricing
+      // alone cannot know what was not read.
+      sourceIncomplete: false,
       pricesAsOf: PRICES_AS_OF,
       windowStart: new Date(startMs).toISOString(),
       windowEnd: new Date(endMs).toISOString(),
@@ -305,13 +371,17 @@ function codexCostDetail(events, startMs, endMs, anchored) {
     },
     writeFloorEvents,
     writeFloorByModel,
+    assumedTierEvents,
+    fastRequestedEvents,
+    tierFloorByModel,
   };
 }
 
 /**
  * A `WeeklyCost`-shaped notional cost for Codex events in [startMs, endMs), or
  * null when the window has no events. Carries every floor signal, including
- * the zero-recorded-write floor (rule 3) as `unrecordedWriteEvents`.
+ * the zero-recorded-write floor (rule 3) as `unrecordedWriteEvents` and the tier
+ * floors (A3.17-18) as `assumedTierEvents` / `fastRequestedEvents`.
  */
 function codexCost(events, startMs, endMs, anchored) {
   return codexCostDetail(events, startMs, endMs, anchored).cost;
@@ -322,6 +392,7 @@ module.exports = {
   codexCostDetail,
   normalizeTier,
   priceFor,
+  billingTierOf,
   PRICES,
   PRICES_AS_OF,
   LONG_CONTEXT_INPUT,
