@@ -433,8 +433,32 @@ function resetMsOf(win, slot, now, capturedAtMs) {
   return Math.abs(ms - now) <= RESET_SKEW_MS[slot] ? ms : null;
 }
 
-/** The last `rate_limits` object in a rollout, with the instant it was seen. */
+/** Does this `rate_limits` object carry at least one window to read? */
+function hasWindow(rl) {
+  return ['primary', 'secondary'].some((key) => rl[key] && typeof rl[key] === 'object');
+}
+
+/**
+ * The plan's own limits, as opposed to a separate bucket such as `premium`.
+ * Older Codex builds wrote no `limit_id` at all, and those were the plan's.
+ */
+function isPlanLimit(rl) {
+  return rl.limit_id === undefined || rl.limit_id === null || rl.limit_id === 'codex';
+}
+
+/**
+ * The newest `rate_limits` object in a rollout that can fill the row, with the
+ * instant it was seen.
+ *
+ * NOT simply the last one. Codex also writes records for other buckets, e.g.
+ * `{limit_id:"premium", primary:null, secondary:null}`, right after the plan's
+ * own `limit_id:"codex"` record. Taking that empty record made the row say
+ * "awaiting report" while the real 5-hour figure was 99%. So: the newest plan
+ * record that has a window wins. If the tail holds none, the newest record of
+ * any bucket that has a window does.
+ */
 function lastRateLimits(text) {
+  let fallback = null;
   const lines = text.split(/\r?\n/);
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
@@ -452,11 +476,15 @@ function lastRateLimits(text) {
       && payload.rate_limits
       && typeof payload.rate_limits === 'object'
     ) {
+      const rl = payload.rate_limits;
+      if (!hasWindow(rl)) continue;
       const stampMs = Date.parse(obj.timestamp);
-      return { rl: payload.rate_limits, stampMs: Number.isFinite(stampMs) ? stampMs : null };
+      const found = { rl, stampMs: Number.isFinite(stampMs) ? stampMs : null };
+      if (isPlanLimit(rl)) return found;
+      if (!fallback) fallback = found;
     }
   }
-  return null;
+  return fallback;
 }
 
 /**

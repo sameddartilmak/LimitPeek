@@ -939,7 +939,7 @@ test.describe('review F7: a failed dispatch repaints through the same transition
 test.describe('review F8: eligibility inside one folded 15-minute slot', () => {
   const { codexCost } = require('../src/core/codex/pricing');
 
-  test('a pre- and a post-settings turn in the SAME slot: an appended flex unprices only the pre-settings one', () => {
+  test('a pre- and a post-settings turn in the SAME slot: the pre-settings one is backfilled, and an appended flex unprices only it', () => {
     const home = tmp('src-incomplete-final-');
     const slot = Math.floor((NOW - 2 * DAY) / (15 * 60 * 1000)) * 15 * 60 * 1000;
     const settings = (tier) => JSON.stringify({ type: 'event_msg', payload: { type: 'thread_settings_applied', thread_settings: { service_tier: tier } } });
@@ -954,9 +954,13 @@ test.describe('review F8: eligibility inside one folded 15-minute slot', () => {
     const first = scanner.scan(opts);
     assert.equal(first.length, 2, 'two buckets for one slot: pre-settings kept apart');
     assert.ok(first.every((e) => e.count === 1 && e.ts === slot));
-    const one = Math.round((0.1 * 4 + 0.01 * 20) * 1e6) / 1e6;
+    // The pre-settings bucket takes the first record's tier (backfill, 2026-09-23).
+    assert.deepEqual(first.map((e) => [e.tier, e.preSettings, e.tierAssumable]),
+      [['standard', undefined, undefined], ['standard', undefined, undefined]]);
+    // 100K uncached with 0 recorded writes: priced at the $5 write rate (upper bound).
+    const one = Math.round((0.1 * 5 + 0.01 * 20) * 1e6) / 1e6;
     const before = codexCost(first, NOW - 7 * DAY, NOW, false);
-    assert.equal(before.assumedTierEvents, 1);
+    assert.equal(before.assumedTierEvents, 0, 'backfilled, not assumed');
     assert.equal(before.totalUsd, Math.round(2 * one * 1e6) / 1e6);
 
     fs.appendFileSync(file, settings('flex') + '\n');

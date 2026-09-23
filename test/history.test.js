@@ -766,14 +766,17 @@ test.describe('tokenFloorCausesByProvider marks missing counts, with causes, not
       'the cost note has no cause to lend, so the token side states its own');
   });
 
-  test('Codex is marked on the zero-recorded-write pattern, including on an unpriced model', () => {
+  test('Codex is NOT marked on the zero-recorded-write pattern, priced or unpriced (2026-09-23)', () => {
+    // An unrecorded write is part of the prompt already counted in input, so
+    // the count is not short; only the input/write split is unknown.
     const priced = history.usageHistory([], NOW, { codexEvents: [cx({ output: 10, cachedInput: 5000 })] });
-    assert.deepEqual(priced.weeks[0].tokenFloorCausesByProvider, { codex: ['unrecorded-writes'] });
+    assert.deepEqual(priced.weeks[0].tokenFloorCausesByProvider, {});
+    assert.equal((priced.floorCausesByProvider.codex || []).includes('unrecorded-writes'), false,
+      'and no cost cause either: the writes are priced as an upper bound');
     const unpriced = history.usageHistory([], NOW, {
       codexEvents: [cx({ model: 'gpt-9-imaginary', output: 10, cachedInput: 5000 })],
     });
-    assert.deepEqual(unpriced.weeks[0].tokenFloorCausesByProvider, { codex: ['unrecorded-writes'] },
-      'the writes are missing whatever the price');
+    assert.deepEqual(unpriced.weeks[0].tokenFloorCausesByProvider, {}, 'whatever the price');
   });
 
   test('a Codex week that recorded its writes is exact', () => {
@@ -825,18 +828,22 @@ test.describe('tokenFloorCausesByProvider marks missing counts, with causes, not
   });
 
   test('several tools marked at once keep the fixed claude, codex, gemini, kimi order', () => {
+    // Codex is marked by its own unread range: the zero-write pattern is no
+    // longer a token cause (2026-09-23), so the cached-read turn adds nothing.
     const { weeks, usageProviders } = history.usageHistory([ev({ ts: at, key: 'o1', output: 1000 })], NOW, {
       codexEvents: [cx({ output: 10, cachedInput: 5000 })],
       geminiEvents: [gm({ output: 100 })],
       kimiEvents: [km({ output: 5 })],
-      unreadRanges: { kimi: [{ fromMs: at, throughMs: at }], claude: [{ fromMs: at, throughMs: at }] },
+      unreadRanges: {
+        kimi: [{ fromMs: at, throughMs: at }], codex: [{ fromMs: at, throughMs: at }], claude: [{ fromMs: at, throughMs: at }],
+      },
     });
     assert.deepEqual(Object.keys(weeks[0].tokenFloorCausesByProvider), ['claude', 'codex', 'gemini', 'kimi']);
     assert.deepEqual(Object.keys(weeks[0].tokenFloorCausesByProvider), usageProviders, 'same order as usageProviders');
     // Each tool states its OWN causes, in HistoryFloorCause order.
     assert.deepEqual(weeks[0].tokenFloorCausesByProvider, {
       claude: ['unread-range'],
-      codex: ['unrecorded-writes'],
+      codex: ['unread-range'],
       gemini: ['unrecorded-calls'],
       kimi: ['unread-range'],
     });
@@ -892,12 +899,12 @@ test.describe('the panel row and the history period agree about every tool', () 
     assert.deepEqual(sides.gemini.period, sides.gemini.row);
   });
 
-  test('Codex: both sides say unrecorded-writes off the same recorded pattern', () => {
+  test('Codex: neither side says unrecorded-writes off the zero-recorded-write pattern', () => {
     const sides = bothSides({
       codexEvents: [{ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 5000, cacheWrite: 0, output: 20 }],
     });
     assert.equal(sides.codex.counted, true);
-    assert.deepEqual(sides.codex.row, ['unrecorded-writes']);
+    assert.deepEqual(sides.codex.row, []);
     assert.deepEqual(sides.codex.period, sides.codex.row);
   });
 
@@ -929,7 +936,7 @@ test.describe('the panel row and the history period agree about every tool', () 
       assert.deepEqual(sides[id].period, sides[id].row, `${id}: the two producers disagree`);
     }
     assert.deepEqual(sides.claude.row, []);
-    assert.deepEqual(sides.codex.row, ['unrecorded-writes']);
+    assert.deepEqual(sides.codex.row, []);
     assert.deepEqual(sides.gemini.row, ['unrecorded-calls']);
     assert.deepEqual(sides.kimi.row, []);
   });

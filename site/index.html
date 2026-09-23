@@ -120,7 +120,7 @@
         <div class="anchor" id="demo-anchor">
           <div class="panel" id="demo-panel" role="dialog" aria-labelledby="demo-title">
             <div class="hdr">
-              <span class="hdr__title" id="demo-title"><span class="l-tr" lang="tr">Kullanım</span><span class="l-en" lang="en">Usage</span></span>
+              <span class="hdr__title" id="demo-title"><img class="hdr__logo" src="assets/icon.svg" alt="" width="16" height="16">Usage Notch</span>
               <span class="fresh" aria-hidden="true"><i class="fresh__dot"></i></span>
               <span class="hdr__spacer"></span>
               <button type="button" class="iconbtn" id="demo-settings-btn" aria-expanded="false" aria-controls="demo-settings" data-i18n-aria="settings">
@@ -165,26 +165,12 @@
                     <div class="cost" data-expanded="false">
                       <button type="button" class="cost__toggle" id="demo-cost-toggle" aria-expanded="false" aria-controls="demo-cost-detail">
                         <span class="cost__chev" aria-hidden="true"></span>
-                        <span class="cost__summary"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla en az $12,40 tutardı</span><span class="l-en" lang="en">Would have cost at least $12.40 at published API prices</span></span>
+                        <span class="cost__summary"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla $12,40 tutardı</span><span class="l-en" lang="en">Would have cost $12.40 at published API prices</span></span>
                       </button>
                       <div class="cost__bar" aria-hidden="true"><i class="cost__seg s41" data-rank="0"></i><i class="cost__seg s35" data-rank="1"></i><i class="cost__seg s19" data-rank="2"></i><i class="cost__seg s05" data-rank="3"></i></div>
                       <p class="cost__caption"><span class="l-tr" lang="tr">Önbellek okuma %41 · Çıktı %35</span><span class="l-en" lang="en">Cache read 41% · Output 35%</span></p>
-                      <!-- ADR-004 A3: "why" heads the list; open, it adds one lead
-                           sentence and one short muted line under each cause. -->
-                      <div class="cost__cause-block" data-why="false">
-                        <button type="button" class="cost__why" id="demo-why" aria-expanded="false" aria-controls="demo-why-body" aria-describedby="demo-causes">
-                          <span class="cost__chev" aria-hidden="true"></span>
-                          <span class="cost__whytext"><span class="l-tr" lang="tr">Neden en az?</span><span class="l-en" lang="en">Why at least?</span></span>
-                        </button>
-                        <div class="cost__why-body" id="demo-why-body">
-                          <p class="cost__why-lead" hidden><span class="l-tr" lang="tr">Bu yüzden tutar bir alt sınır; gerçek maliyet daha yüksek olabilir.</span><span class="l-en" lang="en">So the amount is a lower bound; the real cost may be higher.</span></p>
-                          <ul class="cost__causes" id="demo-causes">
-                            <li class="cost__group" data-cause="ttl"><span class="cost__cause"><span class="l-tr" lang="tr">Süresi kaydedilmemiş önbellek yazması: 14 kayıt</span><span class="l-en" lang="en">Cache writes without a recorded TTL: 14 records</span></span><span class="cost__caveat" data-caveat="ttl" hidden><span class="l-tr" lang="tr">Yazma süresi kaydedilmemiş; düşük olan 1,25× fiyattan sayıldı (1 saatlik yazma 2×).</span><span class="l-en" lang="en">No write duration recorded; counted at the lower 1.25× rate (1-hour writes cost 2×).</span></span></li>
-                          </ul>
-                        </div>
-                      </div>
                       <div class="cost__detail" id="demo-cost-detail" hidden>
-                        <p class="cost__lead"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla en az $12,40</span><span class="l-en" lang="en">At least $12.40 at published API prices</span></p>
+                        <p class="cost__lead"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla $12,40</span><span class="l-en" lang="en">$12.40 at published API prices</span></p>
                         <p class="cost__denial"><span class="l-tr" lang="tr">Bu bir fatura değil: abonelik kapsamında bu tutar ödenmiyor. Aynı kullanımın API üzerinden karşılığıdır.</span><span class="l-en" lang="en">This is not a bill: you do not pay this amount under your subscription. It is what the same usage would cost through the API.</span></p>
                         <div class="cost__table">
                           <div class="cost__row"><span><span class="l-tr" lang="tr">Önbellek okuma</span><span class="l-en" lang="en">Cache read</span></span><span class="cost__v"><span class="l-tr" lang="tr">$5,10</span><span class="l-en" lang="en">$5.10</span></span><span class="cost__p"><span class="l-tr" lang="tr">%41</span><span class="l-en" lang="en">41%</span></span></div>
@@ -304,9 +290,9 @@
                       <input class="seg__radio" type="radio" name="demo-grain" id="demo-grain-week" value="week"><label class="seg__opt" for="demo-grain-week"><span class="l-tr" lang="tr">Haftalık</span><span class="l-en" lang="en">Weekly</span></label>
                     </fieldset>
                     <ul class="usage" data-grain="month">
-                      <li class="usage__row" data-floor="true"><span class="usage__range"><span class="l-tr" lang="tr">1 Eylül – 30 Eylül</span><span class="l-en" lang="en">Sep 1 – Sep 30</span></span><span class="usage__amount"><span class="l-tr" lang="tr">en az $31,20</span><span class="l-en" lang="en">at least $31.20</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b53"></i></span>
+                      <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">1 Eylül – 30 Eylül</span><span class="l-en" lang="en">Sep 1 – Sep 30</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$31,20</span><span class="l-en" lang="en">$31.20</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b53"></i></span>
                         <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-m1"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">2 model</span><span class="l-en" lang="en">2 models</span></button>
-                        <ul class="usage__models" id="demo-m1" hidden><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">en az $22,00</span><span class="l-en" lang="en">at least $22.00</span></span></li><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$9,20</span><span class="l-en" lang="en">$9.20</span></span></li></ul></li>
+                        <ul class="usage__models" id="demo-m1" hidden><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">$22,00</span><span class="l-en" lang="en">$22.00</span></span></li><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$9,20</span><span class="l-en" lang="en">$9.20</span></span></li></ul></li>
                       <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">1 Ağustos – 31 Ağustos</span><span class="l-en" lang="en">Aug 1 – Aug 31</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$58,90</span><span class="l-en" lang="en">$58.90</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b100"></i></span>
                         <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-m2"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">2 model</span><span class="l-en" lang="en">2 models</span></button>
                         <ul class="usage__models" id="demo-m2" hidden><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">$40,20</span><span class="l-en" lang="en">$40.20</span></span></li><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$18,70</span><span class="l-en" lang="en">$18.70</span></span></li></ul></li>
@@ -315,9 +301,9 @@
                         <ul class="usage__models" id="demo-m3" hidden><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">fiyatlanamadı</span><span class="l-en" lang="en">could not be priced</span></span></li></ul></li>
                     </ul>
                     <ul class="usage" data-grain="week" hidden>
-                      <li class="usage__row" data-floor="true"><span class="usage__range"><span class="l-tr" lang="tr">14 Eylül – 20 Eylül</span><span class="l-en" lang="en">Sep 14 – Sep 20</span></span><span class="usage__amount"><span class="l-tr" lang="tr">en az $12,40</span><span class="l-en" lang="en">at least $12.40</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b82"></i></span>
+                      <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">14 Eylül – 20 Eylül</span><span class="l-en" lang="en">Sep 14 – Sep 20</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$12,40</span><span class="l-en" lang="en">$12.40</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b82"></i></span>
                         <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-w1"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">1 model</span><span class="l-en" lang="en">1 model</span></button>
-                        <ul class="usage__models" id="demo-w1" hidden><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">en az $12,40</span><span class="l-en" lang="en">at least $12.40</span></span></li></ul></li>
+                        <ul class="usage__models" id="demo-w1" hidden><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">$12,40</span><span class="l-en" lang="en">$12.40</span></span></li></ul></li>
                       <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">7 Eylül – 13 Eylül</span><span class="l-en" lang="en">Sep 7 – Sep 13</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$15,10</span><span class="l-en" lang="en">$15.10</span></span><span class="usage__bar" aria-hidden="true"><i class="usage__fill b100"></i></span>
                         <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-w2"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">2 model</span><span class="l-en" lang="en">2 models</span></button>
                         <ul class="usage__models" id="demo-w2" hidden><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">$9,80</span><span class="l-en" lang="en">$9.80</span></span></li><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$5,30</span><span class="l-en" lang="en">$5.30</span></span></li></ul></li>
@@ -325,7 +311,6 @@
                         <button type="button" class="usage__toggle" aria-expanded="false" aria-controls="demo-w3"><span class="cost__chev" aria-hidden="true"></span><span class="l-tr" lang="tr">1 model</span><span class="l-en" lang="en">1 model</span></button>
                         <ul class="usage__models" id="demo-w3" hidden><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$9,60</span><span class="l-en" lang="en">$9.60</span></span></li></ul></li>
                     </ul>
-                    <p class="usage__note"><span class="l-tr" lang="tr">“En az” alt sınır demektir: fiyatlanamayan kullanım toplama katılmaz; Claude Code’da TTL ayrımı olmayan önbellek yazmaları 1,25× ile fiyatlandırılır; Codex’te kaydedilmeyen önbellek yazmaları ya da doğrulanamayan katman toplamı eksik bırakır.</span><span class="l-en" lang="en">“At least” means a lower bound: usage that could not be priced is not in the total; for Claude Code, cache writes without a recorded TTL are priced at 1.25×; for Codex, unrecorded cache writes or an unverified tier leave part of the cost out.</span></p>
                   </div>
                 </div>
 
@@ -413,13 +398,12 @@
           </li>
           <li class="card" data-card="3">
             <div class="card__head"><span class="card__icon" aria-hidden="true"><svg class="ico"><use href="#i-coin"/></svg></span><h3><span class="l-tr" lang="tr">Maliyeti aç.</span><span class="l-en" lang="en">Open the cost.</span></h3></div>
-            <p class="card__text"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla karşılığı, fatura değil. “En az” yazıyorsa nedeni hemen altında.</span><span class="l-en" lang="en">What it would cost at published API prices, not a bill. If it says “at least”, the reason is right below.</span></p>
+            <p class="card__text"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla bir tahmin, fatura değil. Codex’in kaydetmediği önbellek yazmaları yüksek taraftan sayılır.</span><span class="l-en" lang="en">An estimate at published API prices, not a bill. Cache writes Codex does not record are counted on the high side.</span></p>
             <div class="card__art ui" aria-hidden="true">
               <div class="mini-cost">
-                <p class="mini-cost__sum"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla <b>en az $12,40</b> tutardı</span><span class="l-en" lang="en">Would have cost <b>at least $12.40</b> at published API prices</span></p>
-                <p class="mini-cost__why"><span class="cost__chev cost__chev--open"></span><span class="l-tr" lang="tr">Neden en az?</span><span class="l-en" lang="en">Why at least?</span></p>
-                <p class="cost__why-lead"><span class="l-tr" lang="tr">Bu yüzden tutar bir alt sınır; gerçek maliyet daha yüksek olabilir.</span><span class="l-en" lang="en">So the amount is a lower bound; the real cost may be higher.</span></p>
-                <p class="cost__group"><span class="cost__cause"><span class="l-tr" lang="tr">Süresi kaydedilmemiş önbellek yazması: 14 kayıt</span><span class="l-en" lang="en">Cache writes without a recorded TTL: 14 records</span></span><span class="cost__caveat"><span class="l-tr" lang="tr">Yazma süresi kaydedilmemiş; düşük olan 1,25× fiyattan sayıldı (1 saatlik yazma 2×).</span><span class="l-en" lang="en">No write duration recorded; counted at the lower 1.25× rate (1-hour writes cost 2×).</span></span></p>
+                <p class="mini-cost__sum"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla <b>$12,40</b> tutardı</span><span class="l-en" lang="en">Would have cost <b>$12.40</b> at published API prices</span></p>
+                <div class="cost__bar"><i class="cost__seg s41" data-rank="0"></i><i class="cost__seg s35" data-rank="1"></i><i class="cost__seg s19" data-rank="2"></i><i class="cost__seg s05" data-rank="3"></i></div>
+                <p class="cost__caption"><span class="l-tr" lang="tr">Önbellek okuma %41 · Çıktı %35</span><span class="l-en" lang="en">Cache read 41% · Output 35%</span></p>
 </div>
             </div>
           </li>
@@ -502,7 +486,7 @@
           <!-- 3: cost, not a bill -->
           <div class="art ui" data-i="3">
             <div class="art__card art__card--pad">
-              <p class="cost__lead"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla en az $12,40</span><span class="l-en" lang="en">At least $12.40 at published API prices</span></p>
+              <p class="cost__lead"><span class="l-tr" lang="tr">Yayımlanan API fiyatlarıyla $12,40</span><span class="l-en" lang="en">$12.40 at published API prices</span></p>
               <p class="cost__denial"><span class="l-tr" lang="tr">Bu bir fatura değil: abonelik kapsamında bu tutar ödenmiyor.</span><span class="l-en" lang="en">This is not a bill: you do not pay this amount under your subscription.</span></p>
               <div class="cost__table">
                 <div class="cost__row"><span><span class="l-tr" lang="tr">Önbellek okuma</span><span class="l-en" lang="en">Cache read</span></span><span class="cost__v"><span class="l-tr" lang="tr">$5,10</span><span class="l-en" lang="en">$5.10</span></span><span class="cost__p"><span class="l-tr" lang="tr">%41</span><span class="l-en" lang="en">41%</span></span></div>
@@ -510,7 +494,6 @@
                 <div class="cost__row"><span><span class="l-tr" lang="tr">Önbellek yazma</span><span class="l-en" lang="en">Cache write</span></span><span class="cost__v"><span class="l-tr" lang="tr">$2,40</span><span class="l-en" lang="en">$2.40</span></span><span class="cost__p"><span class="l-tr" lang="tr">%19</span><span class="l-en" lang="en">19%</span></span></div>
                 <div class="cost__row"><span><span class="l-tr" lang="tr">Girdi</span><span class="l-en" lang="en">Input</span></span><span class="cost__v"><span class="l-tr" lang="tr">$0,60</span><span class="l-en" lang="en">$0.60</span></span><span class="cost__p"><span class="l-tr" lang="tr">%5</span><span class="l-en" lang="en">5%</span></span></div>
               </div>
-              <ul class="cost__causes art__causes"><li class="cost__group"><span class="cost__cause"><span class="l-tr" lang="tr">Süresi kaydedilmemiş önbellek yazması: 14 kayıt</span><span class="l-en" lang="en">Cache writes without a recorded TTL: 14 records</span></span></li></ul>
             </div>
           </div>
           <!-- 4: total usage -->
@@ -519,25 +502,24 @@
               <p class="art__title"><span class="l-tr" lang="tr">Toplam Kullanım</span><span class="l-en" lang="en">Total usage</span></p>
               <div class="seg seg--static"><span class="seg__opt is-on"><span class="l-tr" lang="tr">Aylık</span><span class="l-en" lang="en">Monthly</span></span><span class="seg__opt"><span class="l-tr" lang="tr">Haftalık</span><span class="l-en" lang="en">Weekly</span></span></div>
               <ul class="usage usage--art">
-                <li class="usage__row" data-floor="true"><span class="usage__range"><span class="l-tr" lang="tr">1 Eylül – 30 Eylül</span><span class="l-en" lang="en">Sep 1 – Sep 30</span></span><span class="usage__amount"><span class="l-tr" lang="tr">en az $31,20</span><span class="l-en" lang="en">at least $31.20</span></span><span class="usage__bar"><i class="usage__fill b53"></i></span>
-                  <ul class="usage__models"><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">en az $22,00</span><span class="l-en" lang="en">at least $22.00</span></span></li><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$9,20</span><span class="l-en" lang="en">$9.20</span></span></li></ul></li>
+                <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">1 Eylül – 30 Eylül</span><span class="l-en" lang="en">Sep 1 – Sep 30</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$31,20</span><span class="l-en" lang="en">$31.20</span></span><span class="usage__bar"><i class="usage__fill b53"></i></span>
+                  <ul class="usage__models"><li><img src="assets/logos/claude-color.svg" alt="" width="12" height="12"><span>claude-sonnet-5</span><span class="usage__v"><span class="l-tr" lang="tr">$22,00</span><span class="l-en" lang="en">$22.00</span></span></li><li><img src="assets/logos/codex-color.svg" alt="" width="12" height="12"><span>gpt-5.5</span><span class="usage__v"><span class="l-tr" lang="tr">$9,20</span><span class="l-en" lang="en">$9.20</span></span></li></ul></li>
                 <li class="usage__row"><span class="usage__range"><span class="l-tr" lang="tr">1 Ağustos – 31 Ağustos</span><span class="l-en" lang="en">Aug 1 – Aug 31</span></span><span class="usage__amount"><span class="l-tr" lang="tr">$58,90</span><span class="l-en" lang="en">$58.90</span></span><span class="usage__bar"><i class="usage__fill b100"></i></span></li>
                 <li class="usage__row" data-unpriced="true"><span class="usage__range"><span class="l-tr" lang="tr">1 Temmuz – 31 Temmuz</span><span class="l-en" lang="en">Jul 1 – Jul 31</span></span><span class="usage__amount"><span class="l-tr" lang="tr">fiyatlanamadı</span><span class="l-en" lang="en">could not be priced</span></span></li>
               </ul>
-              <p class="usage__note art__note"><span class="l-tr" lang="tr">“En az” alt sınır demektir: fiyatlanamayan kullanım toplama katılmaz; Claude Code’da TTL ayrımı olmayan önbellek yazmaları 1,25× ile fiyatlandırılır; Codex’te kaydedilmeyen önbellek yazmaları ya da doğrulanamayan katman toplamı eksik bırakır.</span><span class="l-en" lang="en">“At least” means a lower bound: usage that could not be priced is not in the total; for Claude Code, cache writes without a recorded TTL are priced at 1.25×; for Codex, unrecorded cache writes or an unverified tier leave part of the cost out.</span></p>
             </div>
           </div>
           <!-- 5: theme and language -->
           <div class="art" data-i="5">
             <div class="themes">
               <div class="ui themes__p themes__p--light" data-theme="light" lang="tr">
-                <div class="themes__hdr">Kullanım<i class="fresh__dot"></i></div>
+                <div class="themes__hdr"><img class="hdr__logo" src="assets/icon.svg" alt="" width="16" height="16">Usage Notch<i class="fresh__dot"></i></div>
                 <div class="win" data-state="watch"><div class="win__head"><span class="win__label">Haftalık pencere</span><span class="win__gap"></span><span class="win__pct">%62</span></div><div class="rail"><i class="rail__fill f62"></i></div></div>
                 <div class="seg seg--static"><span class="seg__opt is-on">Açık</span><span class="seg__opt">Koyu</span><span class="seg__opt">Sistem</span></div>
                 <div class="seg seg--static"><span class="seg__opt is-on">Türkçe</span><span class="seg__opt">English</span><span class="seg__opt">Sistem</span></div>
               </div>
               <div class="ui themes__p themes__p--dark" data-theme="dark" lang="en">
-                <div class="themes__hdr">Usage<i class="fresh__dot"></i></div>
+                <div class="themes__hdr"><img class="hdr__logo" src="assets/icon.svg" alt="" width="16" height="16">Usage Notch<i class="fresh__dot"></i></div>
                 <div class="win" data-state="watch"><div class="win__head"><span class="win__label">Weekly window</span><span class="win__gap"></span><span class="win__pct">62%</span></div><div class="rail"><i class="rail__fill f62"></i></div></div>
                 <div class="seg seg--static"><span class="seg__opt">Light</span><span class="seg__opt is-on">Dark</span><span class="seg__opt">System</span></div>
                 <div class="seg seg--static"><span class="seg__opt">Türkçe</span><span class="seg__opt is-on">English</span><span class="seg__opt">System</span></div>
@@ -672,7 +654,7 @@
       </details>
       <details class="q">
         <summary><span class="l-tr" lang="tr">Maliyet bir fatura mı?</span><span class="l-en" lang="en">Is the cost a bill?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
-        <p><span class="l-tr" lang="tr">Hayır. Aboneliğindeki kullanımın yayımlanan API fiyatlarıyla ne tutacağıdır. Bir kısmı fiyatlanamazsa tutar “en az” olarak yazılır ve nedeni hemen altında durur.</span><span class="l-en" lang="en">No. It is what your subscription usage would cost at published API prices. If part of it cannot be priced, the amount reads “at least”, with the reason right below.</span></p>
+        <p><span class="l-tr" lang="tr">Hayır. Aboneliğindeki kullanımın yayımlanan API fiyatlarıyla ne tutacağının tahminidir. Kaydedilmeyen ayrıntılar hep aynı yöne kaymaz: Codex’in kaydetmediği önbellek yazmaları yüksek taraftan sayılır; süresi kaydedilmemiş Claude Code önbellek yazmaları ve Codex’te istenen hızlı katman ise düşük taraftan. Fiyatlanamayan kullanım toplama girmez.</span><span class="l-en" lang="en">No. It is an estimate of what your subscription usage would cost at published API prices. Missing details do not all lean the same way: cache writes Codex does not record are counted on the high side, while Claude Code cache writes with no recorded duration and a requested Codex fast tier are counted on the low side. Usage that cannot be priced stays out of the total.</span></p>
       </details>
       <details class="q">
         <summary><span class="l-tr" lang="tr">İnternete bağlanıyor mu?</span><span class="l-en" lang="en">Does it go online?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>

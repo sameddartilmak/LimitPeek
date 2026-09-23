@@ -159,27 +159,6 @@ export function modelName(id: string): string {
   return id === UNKNOWN_MODEL_ID ? t('cost.model.unknown') : id;
 }
 
-/**
- * "en az $12,40" / "at least $12.40". A floor, stated as one.
- *
- * The bound word is attached to the amount HERE, so a sentence that places
- * `{amount}` anywhere in its word order can never separate "at least" from the
- * number it qualifies.
- */
-export function atLeast(amount: string): string {
-  return t('amount.atLeast', { amount });
-}
-
-/**
- * A price multiplier: "1,25×" in Turkish, "1.25×" in English. It was a
- * hand-written "1,25×" inside a sentence, so the English caveat would have
- * printed a Turkish decimal. Up to two decimals, because the multipliers the
- * pricing rules use (1.25, 2) need no more and must not be rounded to fewer.
- */
-export function multiplier(value: number): string {
-  return new Intl.NumberFormat(formatLocale(), { maximumFractionDigits: 2 }).format(value) + '×';
-}
-
 export function clockTime(iso: string | number | Date): string {
   return fmt().clock.format(new Date(iso as never));
 }

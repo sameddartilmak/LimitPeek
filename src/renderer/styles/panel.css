@@ -165,11 +165,25 @@
 }
 
 .hdr__title {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
   margin: 0;
   font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: .01em;
   color: var(--ink-100);
+}
+
+/* The app tile (assets/app-icon.svg, the small ICO art). 16 CSS px on purpose:
+ * that is 16, 20 and 24 device px at 100, 125 and 150% scaling — the sizes the
+ * art is drawn for, so its ring edges land on whole pixels. Centred on its own
+ * so the title keeps a text baseline for the row to align on. */
+.hdr__logo {
+  flex: none;
+  align-self: center;
+  width: 16px; height: 16px;
+  background: url(../assets/app-icon.svg) center / contain no-repeat;
 }
 
 .hdr__sub {
@@ -618,12 +632,12 @@
 
 /* The plan the user says they are on, per tool.
  *
- * A native `<input list>`: it offers what we know and accepts what we do not,
- * which is the whole requirement. Styled as a quiet field rather than a
- * prominent one — it is an optional note, not something the panel is waiting
- * for, and an empty one must not read as an unfinished task.
+ * A native `<select>` over the plans we know. Styled as a quiet field rather
+ * than a prominent one — it is an optional note, not something the panel is
+ * waiting for, and "Belirtilmedi" must not read as an unfinished task.
  *
- * The browser draws the datalist affordance itself; nothing here fights it. */
+ * The browser draws the select's arrow and its popup (which follows
+ * `color-scheme`, so it is dark in the dark theme); nothing here fights it. */
 .settings__plan {
   /* Its own full-width line under the switch — see the wrap note on the item. */
   flex: 1 0 100%;
@@ -632,11 +646,12 @@
   gap: 2px;
   margin-top: 4px;
 }
+.settings__plan[hidden] { display: none !important; }
 .settings__plan-label {
   font-size: var(--fs-micro);
   color: var(--ink-400);
 }
-.settings__plan-input {
+.settings__plan-select {
   width: 100%;
   min-width: 0;
   padding: 2px var(--s-1);
@@ -647,12 +662,11 @@
   font: inherit;
   font-size: var(--fs-micro);
 }
-.settings__plan-input::placeholder { color: var(--ink-500); }
-.settings__plan-input[aria-busy="true"] { opacity: .7; }
+.settings__plan-select[aria-busy="true"] { opacity: .7; }
 /* Main refused the write, so the field went back to what is stored. Held for a
  * moment as an attribute so the revert is SEEN and not only described in the
  * notice — the same treatment `data-revert` gives the switch. */
-.settings__item[data-plan-reverted="true"] .settings__plan-input {
+.settings__item[data-plan-reverted="true"] .settings__plan-select {
   border-color: var(--watch);
 }
 .settings__plan-hint {
@@ -1041,9 +1055,6 @@
   color: var(--ink-100);
   white-space: nowrap;
 }
-/* A lower bound ("en az") is not an exact figure, so it does not wear the full
- * weight of one. */
-.usage__row[data-floor="true"] .usage__amount { font-weight: 500; }
 /* An empty period is stated, quietly: dimmed, no bar. */
 .usage__row[data-empty="true"] .usage__range,
 .usage__row[data-empty="true"] .usage__amount {
@@ -1156,14 +1167,6 @@
   white-space: nowrap;
 }
 .usage__model-tokens[hidden] { display: none !important; }
-/* A lower bound is not an exact figure, so it does not wear the full weight of
- * one — same treatment as the period amount. */
-.usage__model[data-floor="true"] .usage__model-amount { font-weight: 500; }
-/* The TOKEN floor is a different claim from the money floor and is marked on
- * the token cell alone. The two can legitimately disagree on one line: an
- * unpriced model counted every token it saw, so "en az $301,12" sits beside an
- * exact count, and a Codex line with unrecorded cache writes is the reverse. */
-.usage__model[data-token-floor="true"] .usage__model-tokens { color: var(--ink-300); }
 
 /* Per-tool token subtotals under a period's model list.
  *
@@ -1171,8 +1174,7 @@
  * do not (each vendor counts its classes its own way, and cacheRead sits in a
  * different proportion in each), so a merged "tokens used this period" is the
  * figure ADR-001 bans. The absence of a total row here is the design, not an
- * omission — and the lead line says so in words, because an absence cannot
- * make a claim on its own. */
+ * omission. */
 .usage__tokens {
   grid-column: 1 / -1;
   list-style: none;
@@ -1184,11 +1186,6 @@
   border-left: 1px solid var(--ink-700);
 }
 .usage__tokens[hidden] { display: none !important; }
-.usage__tokens-lead {
-  font-size: var(--fs-micro);
-  color: var(--ink-500);
-  padding-top: 2px;
-}
 .usage__tokens-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1206,17 +1203,6 @@
   font-size: var(--fs-micro);
   color: var(--ink-200);
   white-space: nowrap;
-}
-/* ADR-002 A3.16: the reason a count is a lower bound, on screen with it. Full
- * width under the tool and figure, because it is a sentence fragment and must
- * WRAP rather than ellipsize — a cause cut to fit is a cause dropped. Quiet
- * ink: it explains the figure, it does not compete with it. */
-.usage__tokens-cause {
-  grid-column: 1 / -1;
-  font-size: var(--fs-micro);
-  color: var(--ink-500);
-  white-space: normal;
-  overflow-wrap: break-word;
 }
 /* An unpriced model ("fiyatlanamadı") is stated, quietly. */
 .usage__model[data-unpriced="true"] .usage__model-amount {
@@ -1266,13 +1252,9 @@
   line-height: 1.4;
   color: var(--ink-500);
 }
-/* Composed per tool (ADR-003 A6), in the cost block's shape (ADR-004 A3): a
- * short lead, one muted source line per tool, and the causes behind "why". */
+/* Composed per tool (ADR-003 A6): one muted source line per tool. */
 .usage__note { display: flex; flex-direction: column; gap: 3px; }
-.usage__note-lead { margin: 0; color: var(--ink-400); overflow-wrap: break-word; }
-.usage__note-lead[hidden] { display: none !important; }
-.usage__sources,
-.usage__why-list {
+.usage__sources {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1282,13 +1264,3 @@
   font-variant-numeric: tabular-nums lining-nums;
 }
 .usage__source { overflow-wrap: anywhere; }
-.usage__why-block { display: flex; flex-direction: column; gap: 3px; }
-.usage__why-block[hidden] { display: none !important; }
-.usage__why-block[data-why="true"] .cost__chev { transform: rotate(90deg); }
-.usage__why-list[hidden] { display: none !important; }
-.usage__why-line {
-  padding-left: var(--s-2);
-  border-left: 1px solid var(--ink-600);
-  color: var(--ink-400);
-  overflow-wrap: break-word;
-}

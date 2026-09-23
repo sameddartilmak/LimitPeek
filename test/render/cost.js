@@ -100,8 +100,8 @@ app.whenReady().then(async () => {
     /0 token/.test(zeroWeek.meta || '') && !/sayılamadı/.test(zeroWeek.meta || ''), zeroWeek.meta);
   check('[tr] and it never prints "en az 0", whatever causes main sent',
     !/en az 0/.test(zeroWeek.meta || ''), zeroWeek.meta);
-  check('[tr] the cause is still shown, because the count still understates',
-    /kaydedilmemiş/.test(zeroWeek.meta || ''), zeroWeek.meta);
+  check('[tr] and no cause is printed beside it (the floor marker is gone)',
+    !/kaydedilmemiş|\(/.test(zeroWeek.meta || ''), zeroWeek.meta);
   check('[tr] "Token bilgisi yok" is unreachable while we have the data',
     !/Token bilgisi yok/.test(zeroWeek.meta || ''), zeroWeek.meta);
 
@@ -118,25 +118,21 @@ app.whenReady().then(async () => {
       && !/en az 0/.test(uncounted.meta || '') && !/0 token/.test(uncounted.meta || ''),
     uncounted.meta);
 
-  // A floor COUNT is marked from the CAUSES alone, and the cause is visible with
-  // it — a bare "en az" is what ADR-002 A3.16 forbids.
+  // The owner removed the floor marker (2026-09-23): a count main marks as a
+  // lower bound prints exactly like one it does not — no "en az", no cause in
+  // brackets. Main still sends the causes; the row just does not draw them.
   await js(`window.__probe.restore()`);
   await js(`window.__probe.setPendingDirect([], { codex: { weeklyTokenFloorCauses: ['unrecorded-writes'] } })`);
   await sleep(220);
   const floored = await js(readRowTokens('codex'));
   say('row tokens, floor count (tr): ' + JSON.stringify(floored));
-  check('[tr] a weekly count main marks as a lower bound prints "en az"',
-    /en az .*token/.test(floored.meta || ''), floored.meta);
-  check('[tr] and never bare: the reason is on the line with it (A3.16)',
-    /kaydedilmemiş önbellek yazmaları/.test(floored.meta || ''), floored.meta);
-
-  // No causes, no marker — an exact count is not hedged.
   await js(`window.__probe.setPendingDirect([], { codex: { weeklyTokenFloorCauses: [] } })`);
   await sleep(220);
   const exact = await js(readRowTokens('codex'));
-  check('[tr] a count with no causes is printed exactly, with no "en az" and no parenthetical',
-    !/en az/.test(exact.meta || '') && !/\(/.test(exact.meta || '') && /token/.test(exact.meta || ''),
-    exact.meta);
+  check('[tr] a weekly count main marks as a lower bound prints no "en az" and no cause',
+    /token/.test(floored.meta || '') && !/en az|~|kaydedilmemiş|\(/.test(floored.meta || ''), floored.meta);
+  check('[tr] and it reads exactly like the same count with no causes',
+    floored.meta === exact.meta, [floored.meta, exact.meta]);
   await js(`window.__probe.setPendingDirect([])`);
   await js(`window.__probe.restore()`);
   await sleep(250);
@@ -335,9 +331,8 @@ app.whenReady().then(async () => {
     const c = row.querySelector('.cost');
     return {
       rowStatus: row.getAttribute('data-status'),
-      causeBlockHidden: c.querySelector('.cost__cause-block').hidden,
-      causes: [...c.querySelectorAll('.cost__cause')].map((li) => li.textContent),
-      caveats: [...c.querySelectorAll('.cost__caveat')].map((p) => p.textContent),
+      floorUi: c.querySelectorAll('.cost__cause-block, .cost__why, .cost__why-lead, .cost__causes, .cost__cause, .cost__caveat').length,
+      text: c.innerText,
     };
   })()`);
   say('stale row cost: ' + JSON.stringify(staleCost));
@@ -346,13 +341,15 @@ app.whenReady().then(async () => {
   check('a stale row with sourceIncomplete false prints NO floor from its status',
     !/en az/.test(staleRow.summary), staleRow.summary);
   check('and no cause line, no "why" disclosure and no degraded sentence at all',
-    staleCost.causeBlockHidden === true && staleCost.causes.length === 0
-      && !staleCost.caveats.some((t) => /okunamadı/.test(t)), staleCost);
+    staleCost.floorUi === 0 && !/okunamadı/.test(staleCost.text), staleCost);
 
-  // ---- caveats make the figure a floor ---------------------------------
+  // ---- a floored week prints its figure plainly (owner, 2026-09-23) ------
+  // The codex row carries unpriced usage and the TTL fallback — two causes
+  // that used to make it "en az". The floor marker is gone: the same figure,
+  // no bound word.
   const codex = framing.codex;
-  check('any excluded or floored usage turns the figure into a lower bound',
-    /^Yayımlanan API fiyatlarıyla en az \$/.test(codex.summary), codex.summary);
+  check('a week main marks as a floor prints its figure with no "en az"',
+    /^Yayımlanan API fiyatlarıyla \$226,81 tutardı$/.test(codex.summary), codex.summary);
 
   // ---- expand ----------------------------------------------------------
   await js(`${q('claude')}.querySelector('.cost__toggle').click()`);
@@ -372,10 +369,8 @@ app.whenReady().then(async () => {
           p: r.querySelector('.cost__p').textContent,
           w: r.querySelector('.cost__rowbar').style.getPropertyValue('--w'),
         })),
-        caveats: [...c.querySelectorAll('.cost__caveat')].map(p => p.textContent),
-        unpriced: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map(li => li.textContent.replace(/^(Fiyatlanamadı|Could not be priced): /, '')),
-        causeBlockHidden: c.querySelector('.cost__cause-block').hidden,
-        causes: [...c.querySelectorAll('.cost__cause')].map(li => li.textContent),
+        floorUi: c.querySelectorAll('.cost__cause-block, .cost__why, .cost__why-lead, .cost__causes, .cost__cause, .cost__caveat').length,
+        text: c.innerText,
         prov: [...c.querySelectorAll('.cost__prov span')].map(s => s.textContent),
       };
     };
@@ -440,31 +435,16 @@ app.whenReady().then(async () => {
   check('the price list date is shown, as a calendar date',
     detail.claude.prov[1] === 'Fiyatlar 24 Haziran 2026 tarihli listeye göre', detail.claude.prov[1]);
   check('no caveats means no cause list and no "why" disclosure',
-    detail.claude.causeBlockHidden === true && detail.claude.caveats.length === 0, detail.claude);
+    detail.claude.floorUi === 0, detail.claude);
 
-  // ---- the two caveats are separate statements -------------------------
-  check('the compact causes name the unpriced entry and the TTL fallback, one line each',
-    detail.codex.causes.length === 2
-      && /^Fiyatlanamadı: claude-opus-4-8 · hızlı · /.test(detail.codex.causes[0])
-      && detail.codex.causes[1] === 'Süresi kaydedilmemiş önbellek yazması: 1.412 kayıt',
-    detail.codex.causes);
-  check('both causes get their own short explanation', detail.codex.caveats.length === 2,
-    detail.codex.caveats);
-  check('the unpriced explanation says the usage was EXCLUDED from the total',
-    detail.codex.caveats[0] === 'Fiyat listesinde olmadığı için toplama katılmadı.', detail.codex.caveats[0]);
-  check('the TTL explanation says how the writes were counted, with both rates',
-    detail.codex.caveats[1] === 'Yazma süresi kaydedilmemiş; düşük olan 1,25× fiyattan sayıldı (1 saatlik yazma 2×).',
-    detail.codex.caveats[1]);
-  check('counts stay on the cause line, never repeated in the explanation (ADR-004 A3.2)',
-    /1\.412/.test(detail.codex.causes[1]) && !detail.codex.caveats.some((t) => /\d{3}/.test(t)),
-    [detail.codex.causes, detail.codex.caveats]);
-  check('the two explanations are not merged into one sentence',
-    detail.codex.caveats[0] !== detail.codex.caveats[1]);
-  check('unpriced usage is named as a (model, speed) pair, not a bare model',
-    detail.codex.unpriced.length === 1 && /claude-opus-4-8/.test(detail.codex.unpriced[0])
-      && /hızlı/.test(detail.codex.unpriced[0]), detail.codex.unpriced);
-  check('the priced standard-speed row for the SAME model is not called unpriced',
-    !detail.codex.unpriced.some(u => /standart/.test(u)), detail.codex.unpriced);
+  // ---- a floored week draws no cause, open or closed ---------------------
+  // Unpriced usage and the TTL fallback used to be two cause lines with two
+  // explanations. Expanded, the block now shows the breakdown and nothing else.
+  check('expanded, a floored week shows no cause line, no explanation and no "why"',
+    detail.codex.floorUi === 0 && !/en az|Fiyatlanamadı|kaydedilmemiş/.test(detail.codex.text),
+    detail.codex);
+  check('and its expanded lead carries the plain figure',
+    /\$226,81 ABD doları/.test(detail.codex.lead) && !/en az/.test(detail.codex.lead), detail.codex.lead);
   check('a non-anchored window is labelled as a trailing seven days',
     /^Son 7 gün/.test(detail.codex.prov[0]), detail.codex.prov[0]);
 
@@ -479,10 +459,10 @@ app.whenReady().then(async () => {
         lead: c.querySelector('.cost__lead').textContent,
         denialHidden: c.querySelector('.cost__denial').hidden,
         rows: c.querySelectorAll('.cost__row').length,
-        caveats: [...c.querySelectorAll('.cost__caveat')].map(p => p.textContent),
-        unpriced: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map(li => li.textContent.replace(/^(Fiyatlanamadı|Could not be priced): /, '')),
-        causes: [...c.querySelectorAll('.cost__cause')].map(li => li.textContent),
-        why: c.querySelector('.cost__whytext').textContent,
+        floorUi: c.querySelectorAll('.cost__cause-block, .cost__why, .cost__why-lead, .cost__causes, .cost__cause, .cost__caveat').length,
+        text: c.innerText,
+        aria: c.querySelector('.cost__toggle').getAttribute('aria-label'),
+        meta: (document.querySelector('li.row[data-provider="'+id+'"] .row__meta') || {}).textContent || '',
         flag: c.dataset.unpriced || null,
       };
     };
@@ -493,22 +473,14 @@ app.whenReady().then(async () => {
     !/\$/.test(noPrice.anti.lead) && /hesaplanamadı/.test(noPrice.anti.lead), noPrice.anti.lead);
   check('the bill denial is suppressed when there is no amount to deny',
     noPrice.anti.denialHidden === true);
-  check('the all-unpriced explanation says why, and states no lower bound (there is no amount)',
-    noPrice.anti.caveats.length === 1
-      && noPrice.anti.caveats[0] === 'Fiyat listesinde olmadığı için toplama katılmadı.'
-      && !/alt sınır/.test(noPrice.anti.caveats.join(' ')), noPrice.anti.caveats);
-  check('the models and their token counts are named, so the usage is visible',
-    noPrice.anti.unpriced.length === 2
-      && noPrice.anti.unpriced.every(u => /claude-opus-6/.test(u) && /token/.test(u))
-      && noPrice.anti.unpriced.some(u => /standart/.test(u))
-      && noPrice.anti.unpriced.some(u => /hızlı/.test(u)),
-    noPrice.anti.unpriced);
+  check('the all-unpriced week draws no cause line, no explanation and no "why"',
+    noPrice.anti.floorUi === 0 && !/Fiyatlanamadı|Neden|alt sınır/.test(noPrice.anti.text), noPrice.anti);
+  check('its spoken name promises the details, not a model list the block no longer draws',
+    /Ayrıntıları açmak için etkinleştirin\.$/.test(noPrice.anti.aria || '')
+      && !/modelleri görmek/.test(noPrice.anti.aria || ''), noPrice.anti.aria);
   check('the row is flagged as unpriced for styling', noPrice.anti.flag === 'true');
-  check('an all-unpriced week still has visible causes, and its disclosure does not say "en az"',
-    noPrice.anti.causes.length === 2 && noPrice.anti.causes.every(u => /^Fiyatlanamadı: claude-opus-6/.test(u))
-      && noPrice.anti.why === 'Neden tutar yok?', noPrice.anti);
   check('a stale row with sourceIncomplete false does not claim records could not be read',
-    !noPrice.gem.caveats.some(t => /okunamadı/.test(t)), noPrice.gem.caveats);
+    noPrice.gem.floorUi === 0 && !/okunamadı/.test(noPrice.gem.text), noPrice.gem);
 
   // ---- a partial payload degrades, it does not vanish -------------------
   await js(`${q('copilot')}.querySelector('.cost__toggle').click()`);
@@ -521,7 +493,7 @@ app.whenReady().then(async () => {
       barHidden: c.querySelector('.cost__bar').hidden,
       captionHidden: c.querySelector('.cost__caption').hidden,
       rows: c.querySelectorAll('.cost__row').length,
-      causeBlockHidden: c.querySelector('.cost__cause-block').hidden,
+      floorUi: c.querySelectorAll('.cost__cause-block, .cost__why, .cost__why-lead, .cost__causes, .cost__cause, .cost__caveat').length,
       prov: [...c.querySelectorAll('.cost__prov span')].map(s => s.textContent),
       gap: !!c.querySelector('.cost__gap'),
     };
@@ -537,7 +509,7 @@ app.whenReady().then(async () => {
   check('a missing window range falls back to the un-dated label',
     /kota haftası/.test(partial.prov[0]) && !/–/.test(partial.prov[0]), partial.prov[0]);
   check('no cause list when nothing took the fallback (and an older main without sourceIncomplete adds none)',
-    partial.causeBlockHidden === true, partial);
+    partial.floorUi === 0, partial);
 
   // ---- survives a snapshot push ----------------------------------------
   await js(`window.__probe.push()`);
@@ -550,434 +522,69 @@ app.whenReady().then(async () => {
   check('the disclosure survives a pushed snapshot',
     after.expanded === 'true' && after.rows === 4, after);
 
-  // ---- Codex tier-aware pricing (ADR-002 Amendment 3) ---------------------
+  // ---- the floor marker is gone, whatever the week (owner, 2026-09-23) ----
   //
-  // The codex row is swapped to a Codex-shaped week for this section only:
-  // 38 records with cached reads and 0 RECORDED writes on a model that bills
-  // writes (a floor with its own caveat, never the TTL one), and unpriced rows
-  // under every group label src/core/codex/pricing.js emits. A producer code
-  // ("unknown-tier", "…-long-context", "flex") must never reach the screen.
-  const readCodexCost = `(async () => {
-    const c = ${q('codex')}.querySelector('.cost');
+  // Every fixture week that used to read "en az" with cause lines and a "why"
+  // disclosure — Codex tiers, unrecorded writes, unreadable records, tier
+  // floors, ten unpriced entries, every cause at once — is swapped onto the
+  // codex row in turn. Main still sends all of those fields. None of them may
+  // draw anything: the figure prints as it is, in every language and format.
+  const readFloorUi = `(() => {
+    const row = ${q('codex')};
+    const c = row.querySelector('.cost');
     const t = c.querySelector('.cost__toggle');
     if (t.getAttribute('aria-expanded') !== 'true') t.click();
-    // The full sentences live behind "why" (ADR-002 A3.16). Open it, or the
-    // clip measurements below read 0 > 0 on undrawn nodes and pass vacuously.
-    const w = c.querySelector('.cost__why');
-    if (w && !w.closest('[hidden]') && w.getAttribute('aria-expanded') !== 'true') w.click();
-    await new Promise((r) => setTimeout(r, 80));
-    const clip = (n) => n.scrollWidth > n.clientWidth;
-    const unrec = c.querySelector('.cost__caveat[data-caveat="unrecorded-writes"]');
     return {
       lang: document.documentElement.getAttribute('lang'),
+      shown: !c.hidden,
       summary: c.querySelector('.cost__summary').textContent,
-      caveats: [...c.querySelectorAll('.cost__caveat')].map((p) => p.textContent),
-      unrecorded: unrec ? unrec.textContent : null,
-      unrecordedClipped: unrec ? clip(unrec) : null,
-      unrecordedTov: unrec ? getComputedStyle(unrec).textOverflow : null,
-      unpriced: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map((li) => li.textContent.replace(/^(Fiyatlanamadı|Could not be priced): /, '')),
-      unpricedClipped: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map(clip),
-      unpricedTov: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map((li) => getComputedStyle(li).textOverflow),
-      causes: [...c.querySelectorAll('.cost__cause')].map((li) => li.textContent),
-      unrecordedDrawn: unrec ? unrec.getClientRects().length > 0 : null,
+      aria: t.getAttribute('aria-label'),
+      lead: c.querySelector('.cost__lead').textContent,
+      floorUi: c.querySelectorAll('.cost__cause-block, .cost__why, .cost__why-lead, .cost__causes, .cost__cause, .cost__caveat').length,
+      text: c.hidden ? '' : c.innerText,
+      meta: (row.querySelector('.row__meta') || {}).textContent || '',
     };
   })()`;
-  const RAW_CODES = /unknown-tier|long-context|\bflex\b/;
-  check('the fixture swapped a Codex-shaped week onto the codex row',
-    (await js(`window.__probe.setCostDirect('codex', 'codexTier')`)) === true);
-  await sleep(250);
-  const codexTr = await js(readCodexCost);
-  say('codex tier (tr): ' + JSON.stringify(codexTr));
-  check('unrecorded cache writes make the Codex figure a floor: "en az"',
-    /^Yayımlanan API fiyatlarıyla en az \$/.test(codexTr.summary), codexTr.summary);
-  check('and the unrecorded-writes explanation says why, short',
-    codexTr.unrecorded === 'Codex bu yazmaları kaydetmedi; bu modelde ücretli oldukları hâlde toplamda yoklar.',
-    codexTr.unrecorded);
-  check('the Claude TTL caveat is NOT shown for Codex: no 5m/1h split was missing',
-    !codexTr.caveats.some((p) => /TTL/.test(p)), codexTr.caveats);
-  check('an unknown-tier unpriced entry shows the Turkish label, not the code',
-    codexTr.unpriced.some((u) => /^gpt-5\.6-sol · katman belirlenemedi · /.test(u)), codexTr.unpriced);
-  check('a long-context exclusion names both the tier and the reason',
-    codexTr.unpriced.some((u) => /^gpt-5\.5 · katman belirlenemedi, uzun bağlam \(272K üstü\) · /.test(u)),
-    codexTr.unpriced);
-  check('a tier with no published row degrades to a neutral label, even a well-formed one',
-    codexTr.unpriced.some((u) => /^gpt-5\.6-terra · tanınmayan fiyat katmanı · /.test(u)), codexTr.unpriced);
-  check('no raw producer code is printed anywhere in the unpriced list',
-    codexTr.unpriced.length === 4 && !codexTr.unpriced.some((u) => RAW_CODES.test(u)), codexTr.unpriced);
-  check('an unresolved model is named as unresolved, never as a model called "unknown"',
-    codexTr.unpriced.some((u) => /^model belirlenemedi · katman belirlenemedi · /.test(u))
-      && !codexTr.unpriced.some((u) => /^unknown\b/.test(u)), codexTr.unpriced);
-  check('the full sentences were actually drawn when measured (why is open)',
-    codexTr.unrecordedDrawn === true, codexTr.unrecordedDrawn);
-  check('open, all four unpriced entries are named (no more than eight), then the unrecorded-writes line',
-    codexTr.causes.length === 5
-      && /^Fiyatlanamadı: gpt-5\.6-sol · katman belirlenemedi · /.test(codexTr.causes[0])
-      && /^Fiyatlanamadı: gpt-5\.5 · /.test(codexTr.causes[1])
-      && !codexTr.causes.some((t) => /kalem daha/.test(t))
-      && codexTr.causes[4] === 'Kaydedilmemiş önbellek yazması: 38 kayıt',
-    codexTr.causes);
-  check('the unpriced lines wrap, they are never cut',
-    codexTr.unpricedClipped.every((c) => c === false) && codexTr.unpricedTov.every((v) => v !== 'ellipsis'),
-    [codexTr.unpricedClipped, codexTr.unpricedTov]);
-
-  // English: reached the way main does it, persisted then pushed.
-  await js('window.__probe.setDeferPrefs(true)');
-  await js(`window.usageNotch.setLanguage('en')`);
-  await js('window.__probe.flushPrefs()');
-  await js('window.__probe.setDeferPrefs(false)');
-  await sleep(300);
-  const codexEn = await js(readCodexCost);
-  say('codex tier (en): ' + JSON.stringify(codexEn));
-  check('[en] the unrecorded-writes explanation is the short English line',
-    codexEn.lang === 'en'
-      && codexEn.unrecorded === "Codex didn't record these writes; the model charges for them, but they aren't in the total.",
-    codexEn.unrecorded);
-  check('[en] the caveat wraps and is not clipped',
-    codexEn.unrecordedClipped === false && codexEn.unrecordedTov !== 'ellipsis', codexEn);
-  check('[en] tier labels are English and no raw code is printed',
-    codexEn.unpriced.some((u) => /· tier not determinable, long context \(over 272K\) ·/.test(u))
-      && codexEn.unpriced.some((u) => /^model not determinable · tier not determinable · /.test(u))
-      && !codexEn.unpriced.some((u) => RAW_CODES.test(u) || /^unknown\b/.test(u)), codexEn.unpriced);
-  check('[en] the causes are English and plural-aware',
-    codexEn.causes.length === 5 && /^Could not be priced: gpt-5\.6-sol · tier not determinable · /.test(codexEn.causes[0])
-      && codexEn.causes[4] === 'Unrecorded cache writes: 38 records', codexEn.causes);
-  check('[en] the unpriced lines are not clipped either',
-    codexEn.unpricedClipped.every((c) => c === false), codexEn.unpricedClipped);
-
-  // Put the suite back: Turkish, and the codex row's own Claude-shaped caveats.
-  await js(`window.usageNotch.setLanguage('tr')`);
-  await sleep(300);
-
-  // qa F3: unrecorded writes as the ONLY floor cause. Nothing unpriced, no TTL
-  // fallback, not degraded — so if isFloor ignored unrecordedWriteEvents, this
-  // summary would print a bare "$226,81" and the check fails.
-  check('the fixture swapped the unrecorded-writes-only week onto the codex row',
-    (await js(`window.__probe.setCostDirect('codex', 'codexUnrecordedOnly')`)) === true);
-  await sleep(250);
-  const onlyUnrec = await js(readCodexCost);
-  say('codex unrecorded-only (tr): ' + JSON.stringify(onlyUnrec));
-  check('with no other floor cause, unrecorded cache writes alone make the figure "en az"',
-    /^Yayımlanan API fiyatlarıyla en az \$/.test(onlyUnrec.summary)
-      && onlyUnrec.unpriced.length === 0
-      && onlyUnrec.caveats.length === 1, onlyUnrec);
-  check('and exactly one cause line says so, with its count',
-    onlyUnrec.causes.length === 1 && onlyUnrec.causes[0] === 'Kaydedilmemiş önbellek yazması: 1 kayıt',
-    onlyUnrec.causes);
-  check('and the one explanation is the unrecorded-writes line; the count is only on the cause',
-    onlyUnrec.unrecorded === 'Codex bu yazmaları kaydetmedi; bu modelde ücretli oldukları hâlde toplamda yoklar.',
-    onlyUnrec.unrecorded);
-
-  // ---- ADR-002 A3.15/A3.16: sourceIncomplete, the compact causes, "why" ----
-  //
-  // One reader for every state below. It measures what is DRAWN: the "why"
-  // panel is read collapsed first (aria wiring), then opened for the clip
-  // measurements, so a hidden node's 0 > 0 cannot pass a clip check.
-  const readCauses = `(async () => {
-    const c = ${q('codex')}.querySelector('.cost');
-    const block = c.querySelector('.cost__cause-block');
-    const why = c.querySelector('.cost__why');
-    const panelId = why.getAttribute('aria-controls');
-    const panel = panelId ? document.getElementById(panelId) : null;
-    const listId = why.getAttribute('aria-describedby');
-    const list = listId ? document.getElementById(listId) : null;
-    if (why.getAttribute('aria-expanded') === 'true') why.click();
-    await new Promise((r) => setTimeout(r, 60));
-    // The carets rotate with a 120ms transition. Finish any running one before
-    // reading, or the reading depends on how far a transition got.
-    const settled = (n) => { for (const x of n.getAnimations()) x.finish(); return getComputedStyle(n).transform; };
-    const mainChev = () => settled(c.querySelector('.cost__toggle .cost__chev'));
-    const closed = {
-      mainChev: mainChev(),
-      mainExpanded: c.querySelector('.cost__toggle').getAttribute('aria-expanded'),
-      whyChev: settled(why.querySelector('.cost__chev')),
-      expanded: why.getAttribute('aria-expanded'),
-      explanationsHidden: [...c.querySelectorAll('.cost__caveat')].every((n) => n.hidden && n.getClientRects().length === 0),
-      leadDrawn: [...c.querySelectorAll('.cost__why-lead')].some((n) => n.getClientRects().length > 0),
-    };
-    why.click();
-    await new Promise((r) => setTimeout(r, 80));
-    const clip = (n) => n.scrollWidth > n.clientWidth + 0.5;
-    const causeNodes = [...c.querySelectorAll('.cost__cause')];
-    const caveatNodes = [...c.querySelectorAll('.cost__caveat')];
-    const out = {
-      lang: document.documentElement.getAttribute('lang'),
-      summary: c.querySelector('.cost__summary').textContent,
-      blockHidden: block.hidden,
-      causes: causeNodes.map((n) => n.textContent),
-      causesDrawn: causeNodes.every((n) => n.getClientRects().length > 0),
-      causesClipped: causeNodes.map(clip),
-      causesTov: causeNodes.map((n) => getComputedStyle(n).textOverflow),
-      whyText: why.textContent,
-      whyTag: why.tagName,
-      whyType: why.getAttribute('type'),
-      whyName: why.getAttribute('aria-label'),
-      whyTabbable: why.tabIndex >= 0 && !why.disabled,
-      panelIsControlled: !!panel && panel.contains(caveatNodes[0] || null) && !panel.hidden,
-      // Each explanation sits inside its own cause's list item, after its line.
-      explanationsTied: caveatNodes.every((n) => {
-        const g = n.closest('.cost__group');
-        const line = g ? g.querySelector('.cost__cause') : null;
-        return !!line && g.getAttribute('data-cause') === n.getAttribute('data-caveat')
-          && (line.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-      }),
-      leads: [...c.querySelectorAll('.cost__why-lead')].filter((n) => !n.hidden && n.getClientRects().length > 0).map((n) => n.textContent),
-      leadFirst: (() => {
-        const l = c.querySelector('.cost__why-lead');
-        const first = c.querySelector('.cost__cause');
-        return !!(l && first) && (l.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-      })(),
-      columnWidth: Math.round(c.querySelector('.cost__causes').getBoundingClientRect().width),
-      // Rendered line count of each explanation at the ADR-004 A3 reference
-      // column: the cause list is pinned to 264px for the measurement (the test
-      // window draws it at its own width), then released.
-      explanationLines: (() => {
-        const list = c.querySelector('.cost__causes');
-        const keep = list.style.width;
-        list.style.width = '264px';
-        const out = caveatNodes.map((n) => {
-          const lh = parseFloat(getComputedStyle(n).lineHeight);
-          return Math.round(n.getBoundingClientRect().height / lh);
-        });
-        list.style.width = keep;
-        return out;
-      })(),
-      describedByList: !!list && list.tagName === 'UL' && list.contains(causeNodes[0] || null),
-      closed,
-      open: {
-        expanded: why.getAttribute('aria-expanded'),
-        panelDrawn: caveatNodes.length > 0 && caveatNodes.every((n) => !n.hidden && n.getClientRects().length > 0),
-      },
-      caveats: caveatNodes.map((n) => n.textContent),
-      caveatsClipped: caveatNodes.map(clip),
-      caveatsTov: caveatNodes.map((n) => getComputedStyle(n).textOverflow),
-      sourceSentence: (c.querySelector('.cost__caveat[data-caveat="source-incomplete"]') || {}).textContent || null,
-      unpricedClipped: [...c.querySelectorAll('[data-cause="unpriced"] .cost__cause:not(.cost__cause--more)')].map(clip),
-      leadClipped: [...c.querySelectorAll('.cost__why-lead')].map(clip),
-      // The main toggle's caret must not move when only "why" opens.
-      mainChevMoved: mainChev() !== closed.mainChev,
-      // Calm, measurement-first: no warning accent on the caveat panel.
-      panelBorder: caveatNodes[0] ? getComputedStyle(caveatNodes[0]).borderLeftColor : null,
-      watch: (() => {
-        const probe = document.createElement('span');
-        probe.style.color = 'var(--watch)';
-        c.appendChild(probe);
-        const v = getComputedStyle(probe).color;
-        probe.remove();
-        return v;
-      })(),
-    };
-    why.click();
-    await new Promise((r) => setTimeout(r, 40));
-    return out;
-  })()`;
-
-  // sourceIncomplete as the ONLY cause: LIVE_COST's clean week plus the flag.
-  check('the fixture swapped the source-incomplete week onto the codex row',
-    (await js(`window.__probe.setCostDirect('codex', 'sourceIncomplete')`)) === true);
-  await sleep(250);
-  const incomplete = await js(readCauses);
-  say('source incomplete (tr): ' + JSON.stringify(incomplete));
-  check('sourceIncomplete alone makes the figure "en az"',
-    /^Yayımlanan API fiyatlarıyla en az \$226,81 tutardı$/.test(incomplete.summary), incomplete.summary);
-  check('and the floor has its visible cause line',
-    incomplete.blockHidden === false && incomplete.causesDrawn === true
-      && incomplete.causes.length === 1 && incomplete.causes[0] === 'Okunamayan kayıtlar var',
-    incomplete.causes);
-  check('the explanation and the lead are one click away, and only there',
-    incomplete.closed.explanationsHidden === true && incomplete.closed.leadDrawn === false
-      && incomplete.open.panelDrawn === true
-      && incomplete.sourceSentence === 'Bazı yerel kayıtlar okunamadı; tutar yalnızca okunanları kapsıyor.'
-      && incomplete.caveats.length === 1,
-    [incomplete.closed, incomplete.open, incomplete.caveats]);
-  check('open, the shared lead appears exactly once, before the causes',
-    incomplete.leads.length === 1
-      && incomplete.leads[0] === 'Bu yüzden tutar bir alt sınır; gerçek maliyet daha yüksek olabilir.'
-      && incomplete.leadFirst === true, [incomplete.leads, incomplete.leadFirst]);
-  check('each explanation is tied to its own cause line, directly after it',
-    incomplete.explanationsTied === true, incomplete.explanationsTied);
-  check('"why" is a real, tabbable button whose name is its visible text',
-    incomplete.whyTag === 'BUTTON' && incomplete.whyType === 'button' && incomplete.whyTabbable === true
-      && incomplete.whyText === 'Neden en az?' && incomplete.whyName === null, incomplete);
-  check('aria-expanded follows the state, and aria-controls points at the region holding the explanations',
-    incomplete.closed.expanded === 'false' && incomplete.open.expanded === 'true'
-      && incomplete.panelIsControlled === true, incomplete);
-  check('aria-describedby points at the visible cause list, so the spoken causes match the screen',
-    incomplete.describedByList === true, incomplete);
-  check('the two carets are independent: "why" does not move the breakdown caret, nor vice versa',
-    incomplete.mainChevMoved === false
-      && incomplete.closed.mainExpanded === 'true' && incomplete.closed.whyChev === 'none',
-    [incomplete.mainChevMoved, incomplete.closed]);
-  check('the explanations carry no warning accent',
-    !!incomplete.panelBorder && !!incomplete.watch && incomplete.panelBorder !== incomplete.watch,
-    [incomplete.panelBorder, incomplete.watch]);
-
-  // The owner's week: one unpriced tier and 202 unrecorded writes, logs read.
-  check('the fixture swapped the owner\'s week onto the codex row',
-    (await js(`window.__probe.setCostDirect('codex', 'owner')`)) === true);
-  await sleep(250);
-  const owner = await js(readCauses);
-  say('owner week (tr): ' + JSON.stringify(owner));
-  check('the owner\'s week: two short cause lines instead of three paragraphs',
-    owner.causes.length === 2
-      && /^Fiyatlanamadı: gpt-5\.6-sol · katman belirlenemedi · 169,8\sB token$/.test(owner.causes[0])
-      && owner.causes[1] === 'Kaydedilmemiş önbellek yazması: 202 kayıt', owner.causes);
-  check('and no "could not be read" sentence: its logs were read',
-    !owner.caveats.some((t) => /okunamadı/.test(t)) && owner.sourceSentence === null, owner.caveats);
-
-  // F5: records missed and nothing priced. Shown, with no amount and no
-  // "not in the price list" claim: the cause line and its "why" alone.
+  // Words the removed UI printed. "~" too: no approximation sign replaces it.
+  const FLOOR_WORDS = /\ben az\b|\bat least\b|Neden|\bWhy\b|alt sınır|lower bound|Fiyatlanamadı|Could not be priced|~/i;
+  const FLOORED_WEEKS = ['codexTier', 'codexUnrecordedOnly', 'sourceIncomplete', 'owner', 'tierFloor', 'manyUnpriced', 'allCauses', 'ownerTiers', 'caveat'];
+  for (const week of FLOORED_WEEKS) {
+    check(`the fixture swapped the ${week} week onto the codex row`,
+      (await js(`window.__probe.setCostDirect('codex', '${week}')`)) === true);
+    await sleep(200);
+    const r = await js(readFloorUi);
+    say(`floor ui, ${week} (tr): ` + JSON.stringify(r));
+    check(`[tr] ${week}: the figure prints plainly — no floor word, no cause line, no "why"`,
+      r.shown && r.summary === 'Yayımlanan API fiyatlarıyla $226,81 tutardı' && r.floorUi === 0
+        && !FLOOR_WORDS.test(r.text) && !FLOOR_WORDS.test(r.aria || '') && !FLOOR_WORDS.test(r.meta), r);
+  }
+  // No figure and nothing unpriced — records the reader could not open. The
+  // block used to show its cause line alone; with nothing true left to print
+  // it is hidden, and the row's own line says the week could not be counted.
   check('the fixture swapped the incomplete, unpriced-nothing week onto the codex row',
     (await js(`window.__probe.setCostDirect('codex', 'incompleteNoFigure')`)) === true);
+  await js(`window.__probe.setPendingDirect([], { codex: { tokens: null, weeklyTokens: null, burnRatePerHour: null } })`);
   await sleep(250);
-  const noFig = await js(readCauses);
-  const noFigShape = await js(`(() => {
-    const c = ${q('codex')}.querySelector('.cost');
-    return {
-      hidden: c.hidden,
-      toggleHidden: c.querySelector('.cost__toggle').hidden,
-      barHidden: c.querySelector('.cost__bar').hidden,
-      captionHidden: c.querySelector('.cost__caption').hidden,
-      detailHidden: c.querySelector('.cost__detail').hidden,
-      text: c.innerText,
-    };
+  const noFigure = await js(`(() => {
+    const row = ${q('codex')};
+    const c = row.querySelector('.cost');
+    return { shown: !!c && !c.hidden, meta: (row.querySelector('.row__meta') || {}).textContent || '' };
   })()`);
-  say('incomplete, no figure (tr): ' + JSON.stringify([noFig, noFigShape]));
-  check('a week with unreadable records and no priced figure is SHOWN, not hidden',
-    noFigShape.hidden === false && noFig.blockHidden === false, noFigShape);
-  check('it shows the cause line alone: no amount, no toggle, no breakdown, no price-list claim',
-    noFig.causes.length === 1 && noFig.causes[0] === 'Okunamayan kayıtlar var'
-      && noFigShape.toggleHidden === true && noFigShape.barHidden === true
-      && noFigShape.captionHidden === true && noFigShape.detailHidden === true
-      && !/\$|en az|fiyat listesinde/.test(noFigShape.text), [noFig.causes, noFigShape]);
-  check('and its "why" carries the reworded sentence, with working aria wiring',
-    noFig.whyText === 'Neden tutar yok?' && noFig.closed.expanded === 'false' && noFig.open.expanded === 'true'
-      && noFig.open.panelDrawn === true && noFig.panelIsControlled === true
-      && noFig.caveatsClipped.every((v) => v === false),
-    noFig);
-  check('with no amount there is no lower-bound lead at all',
-    noFig.leads.length === 0, noFig.leads);
-  check('with no amount, the sentence says no amount can be given, never "the amount is a lower bound"',
-    noFig.sourceSentence === 'Bu araca ait bazı yerel kayıtlar okunamadı, bu yüzden bir tutar verilemiyor.'
-      && !/alt sınır|Tutar/.test(noFig.sourceSentence || ''), noFig.sourceSentence);
+  say('floor ui, incompleteNoFigure (tr): ' + JSON.stringify(noFigure));
+  check('unreadable records with no figure hide the block, and the row line says the week could not be counted',
+    noFigure.shown === false && noFigure.meta === 'Haftalık: sayılamadı', noFigure);
+  await js(`window.__probe.setPendingDirect([])`);
 
-  // ADR-002 A3.17/A3.18/A3.21: the two tier floors, each its own line and sentence.
-  check('the fixture swapped the tier-floor week onto the codex row',
-    (await js(`window.__probe.setCostDirect('codex', 'tierFloor')`)) === true);
-  await sleep(250);
-  const tierTr = await js(readCauses);
-  const tierSentences = await js(`(() => {
-    const c = ${q('codex')}.querySelector('.cost');
-    const pick = (k) => (c.querySelector('.cost__caveat[data-caveat="' + k + '"]') || {}).textContent || null;
-    return { assumed: pick('assumed-tier'), fast: pick('fast-requested') };
-  })()`);
-  say('tier floor (tr): ' + JSON.stringify([tierTr, tierSentences]));
-  check('the tier floors alone make the figure "en az"',
-    /^Yayımlanan API fiyatlarıyla en az \$/.test(tierTr.summary), tierTr.summary);
-  check('each tier floor has its own cause line, with its count',
-    tierTr.causes.length === 2
-      && tierTr.causes[0] === 'Katmanı kaydedilmemiş istek (Standart fiyattan): 24 kayıt'
-      && tierTr.causes[1] === 'Fast istendi (Standart fiyattan): 1 kayıt', tierTr.causes);
-  check('and its own short explanation: counted at Standard; Fast possibly higher',
-    tierSentences.assumed === 'Katman kaydı yoktu; en ucuz katman olan Standart’tan sayıldı.'
-      && tierSentences.fast === 'Fast’in uygulandığı kayıtlı değil; Standart’tan sayıldı. Uygulandıysa gerçek tutar daha yüksek.',
-    tierSentences);
-  check('[tr] the tier lines and sentences are not clipped',
-    tierTr.causesClipped.every((v) => v === false) && tierTr.caveatsClipped.every((v) => v === false)
-      && tierTr.open.panelDrawn === true, tierTr);
-  await js(`window.__probe.setLocaleDirect('en', 'en-US')`);
-  await sleep(300);
-  const tierEn = await js(readCauses);
-  say('tier floor (en): ' + JSON.stringify(tierEn));
-  check('[en] the tier lines are English and plural-aware',
-    tierEn.causes[0] === 'Requests with no recorded tier (priced at Standard): 24 records'
-      && tierEn.causes[1] === 'Fast requested (priced at Standard): 1 record', tierEn.causes);
-  check('[en] the tier explanations keep their claims, whole',
-    tierEn.caveats[0] === 'No tier was recorded; counted at Standard, the cheapest tier.'
-      && tierEn.caveats[1] === "Fast isn't recorded as applied; counted at Standard. If it was, the real cost is higher."
-      && tierEn.leads[0] === 'So the amount is a lower bound; the real cost may be higher.'
-      && tierEn.caveatsClipped.every((v) => v === false), [tierEn.caveats, tierEn.leads]);
-  await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
-  await sleep(300);
-
-  // Review F9: more than eight unpriced entries. Named up to eight, then counted.
-  check('the fixture swapped the ten-unpriced week onto the codex row',
-    (await js(`window.__probe.setCostDirect('codex', 'manyUnpriced')`)) === true);
-  await sleep(250);
-  const many = await js(readCauses);
-  // readCauses closes "why" again on its way out: this is the collapsed list.
-  const manyClosed = await js(`(() => [...${q('codex')}.querySelectorAll('.cost__cause')].map((n) => n.textContent))()`);
-  say('many unpriced (tr): ' + JSON.stringify([many.causes, manyClosed]));
-  check('open, "why" names eight unpriced entries and counts the other two',
-    many.causes.length === 9 && many.causes.slice(0, 8).every((u) => /^Fiyatlanamadı: gpt-5\.\d-probe · katman belirlenemedi · /.test(u))
-      && many.causes[8] === 'Fiyatlanamadı: 2 kalem daha' && many.caveats.length === 1, many);
-  check('and collapsed, the list shows two lines plus a counted line',
-    manyClosed.length === 3 && manyClosed[2] === 'Fiyatlanamadı: 8 kalem daha', manyClosed);
-
-  // Every cause at once, in all three formats: nothing is cut.
-  check('the fixture swapped the every-cause week onto the codex row',
-    (await js(`window.__probe.setCostDirect('codex', 'allCauses')`)) === true);
-  await sleep(250);
-  const clipCheck = (label, r) => {
-    check(`[${label}] all six kinds of cause render, in order, one explanation each`,
-      r.causes.length === 9 && r.caveats.length === 6, [r.causes, r.caveats.length]);
-    check(`[${label}] the lead appears exactly once and is not clipped`,
-      r.leads.length === 1 && r.leadClipped.every((v) => v === false), [r.leads, r.leadClipped]);
-    check(`[${label}] every explanation is at most 2 lines at 264px (drawn column ${r.columnWidth}px)`,
-      r.explanationLines.length === 6 && r.explanationLines.every((n) => n >= 1 && n <= 2),
-      [r.columnWidth, r.explanationLines, r.caveats]);
-    check(`[${label}] every explanation sits under its own cause`, r.explanationsTied === true, r.explanationsTied);
-    check(`[${label}] no cause line is clipped or ellipsized`,
-      r.causesDrawn === true && r.causesClipped.every((v) => v === false)
-        && r.causesTov.every((v) => v !== 'ellipsis'), [r.causesClipped, r.causesTov]);
-    check(`[${label}] no full sentence is clipped or ellipsized`,
-      r.open.panelDrawn === true && r.caveatsClipped.every((v) => v === false)
-        && r.caveatsTov.every((v) => v !== 'ellipsis') && r.unpricedClipped.every((v) => v === false),
-      [r.caveatsClipped, r.caveatsTov, r.unpricedClipped]);
-  };
-  const allTr = await js(readCauses);
-  say('all causes (tr): ' + JSON.stringify(allTr));
-  clipCheck('tr', allTr);
-  check('[tr] the TTL, unrecorded-writes, tier and unreadable lines are the short labels',
-    allTr.causes[4] === 'Süresi kaydedilmemiş önbellek yazması: 1.412 kayıt'
-      && allTr.causes[5] === 'Kaydedilmemiş önbellek yazması: 38 kayıt'
-      && allTr.causes[6] === 'Katmanı kaydedilmemiş istek (Standart fiyattan): 30 kayıt'
-      && allTr.causes[7] === 'Fast istendi (Standart fiyattan): 23 kayıt'
-      && allTr.causes[8] === 'Okunamayan kayıtlar var', allTr.causes);
-
-  await js(`window.__probe.setLocaleDirect('en', 'en-US')`);
-  await sleep(300);
-  const allUs = await js(readCauses);
-  say('all causes (en-US): ' + JSON.stringify(allUs));
-  check('[en-US] reached', allUs.lang === 'en', allUs.lang);
-  clipCheck('en-US', allUs);
-  check('[en-US] the short labels are English, with en-US digits',
-    allUs.causes[4] === 'Cache writes without a recorded TTL: 1,412 records'
-      && allUs.causes[5] === 'Unrecorded cache writes: 38 records'
-      && allUs.causes[8] === 'Some records could not be read'
-      && allUs.whyText === 'Why at least?', allUs);
-
-  await js(`window.__probe.setLocaleDirect('en', 'en-GB')`);
-  await sleep(300);
-  const allGb = await js(readCauses);
-  say('all causes (en-GB): ' + JSON.stringify(allGb));
-  clipCheck('en-GB', allGb);
-  check('[en-GB] the figure keeps its floor in the en-GB currency form',
-    /^Would have cost at least US\$/.test(allGb.summary), allGb.summary);
-
-  // ADR-004 A3, the owner's case: three causes, one lead, three short lines.
-  await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
-  await js(`window.__probe.setCostDirect('codex', 'ownerTiers')`);
-  await sleep(300);
-  const ownerTiers = await js(readCauses);
-  say('owner tiers (tr): ' + JSON.stringify(ownerTiers));
-  check('the owner\'s case opens to one lead and three short explanations, no paragraphs',
-    ownerTiers.leads.length === 1 && ownerTiers.causes.length === 3 && ownerTiers.caveats.length === 3
-      && ownerTiers.causes[0] === 'Kaydedilmemiş önbellek yazması: 235 kayıt'
-      && ownerTiers.causes[1] === 'Katmanı kaydedilmemiş istek (Standart fiyattan): 30 kayıt'
-      && ownerTiers.causes[2] === 'Fast istendi (Standart fiyattan): 23 kayıt'
-      && ownerTiers.explanationLines.every((n) => n <= 2) && ownerTiers.explanationsTied === true,
-    ownerTiers);
-
+  for (const [lang, locale] of [['en', 'en-US'], ['en', 'en-GB']]) {
+    await js(`window.__probe.setLocaleDirect('${lang}', '${locale}')`);
+    await js(`window.__probe.setCostDirect('codex', 'allCauses')`);
+    await sleep(300);
+    const r = await js(readFloorUi);
+    say(`floor ui, allCauses (${locale}): ` + JSON.stringify(r));
+    check(`[${locale}] the every-cause week prints its plain figure in English, and nothing about bounds`,
+      r.lang === 'en' && /^Would have cost (US)?\$226\.81 at published API prices$/.test(r.summary)
+        && r.floorUi === 0 && !FLOOR_WORDS.test(r.text) && !FLOOR_WORDS.test(r.aria || ''), r);
+  }
   await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
   await sleep(300);
   await js(`window.__probe.setCostDirect('codex', 'caveat')`);
@@ -991,15 +598,7 @@ app.whenReady().then(async () => {
     const pill = row.querySelector('.row__line .tag-experimental');
     const t = c.querySelector('.cost__toggle');
     if (!t.hidden && t.getAttribute('aria-expanded') !== 'true') t.click();
-    const w = c.querySelector('.cost__why');
-    if (w.getAttribute('aria-expanded') !== 'true') w.click();
     await new Promise((r) => setTimeout(r, 80));
-    const list = c.querySelector('.cost__causes');
-    const keep = list.style.width;
-    list.style.width = '264px';
-    const caveatNodes = [...c.querySelectorAll('.cost__caveat')];
-    const lines = caveatNodes.map((n) => Math.round(n.getBoundingClientRect().height / parseFloat(getComputedStyle(n).lineHeight)));
-    list.style.width = keep;
     const out = {
       lang: document.documentElement.getAttribute('lang'),
       pill: pill ? { text: pill.firstChild.textContent, title: pill.getAttribute('title'),
@@ -1011,15 +610,11 @@ app.whenReady().then(async () => {
       summaryClipped: (() => { const s = c.querySelector('.cost__summary'); return s.scrollWidth > s.clientWidth + 0.5; })(),
       aria: t.getAttribute('aria-label'),
       toggleHidden: t.hidden,
-      causes: [...c.querySelectorAll('.cost__cause')].map((n) => n.textContent),
-      caveats: caveatNodes.map((n) => [n.getAttribute('data-caveat'), n.textContent]),
-      caveatLines: lines,
-      caveatsClipped: caveatNodes.map((n) => n.scrollWidth > n.clientWidth + 0.5),
+      floorUi: c.querySelectorAll('.cost__cause-block, .cost__why, .cost__why-lead, .cost__causes, .cost__cause, .cost__caveat').length,
       prov: [...c.querySelectorAll('.cost__prov span')].map((s) => s.textContent),
       text: c.textContent + ' ' + row.querySelector('.row__line').textContent,
       watch: (() => { const s = document.createElement('span'); s.style.color = 'var(--watch)'; c.appendChild(s); const v = getComputedStyle(s).color; s.remove(); return v; })(),
     };
-    w.click();
     return out;
   })()`;
   await js(`window.__probe.setPendingDirect([], {
@@ -1040,26 +635,15 @@ app.whenReady().then(async () => {
       && gemTr.pill.color !== gemTr.watch && gemTr.pill.border !== gemTr.watch, gemTr.pill);
   check('[tr] Gemini shows its tokens like Codex does',
     /token/.test(gemTr.meta) && !/Token bilgisi yok/.test(gemTr.meta), gemTr.meta);
-  check('[tr] the Gemini figure is always "en az", with unrecorded calls, long prompts and tool tokens as causes',
-    gemTr.summary === 'Gemini API standart fiyatlarıyla en az $12,34 tutardı'
-      && gemTr.causes.includes('Kaydedilmeyen çağrılar')
-      && gemTr.causes.includes('Uzun istem (200K üstü): 3 kayıt')
-      && gemTr.causes.includes('Araç tokenları: 7 kayıt'), [gemTr.summary, gemTr.causes]);
+  check('[tr] the Gemini figure prints plainly: no "en az", no cause line, no "why"',
+    gemTr.summary === 'Gemini API standart fiyatlarıyla $12,34 tutardı' && gemTr.floorUi === 0
+      && !/en az|Kaydedilmeyen|Uzun istem|Araç tokenları|Neden/.test(gemTr.text), [gemTr.summary, gemTr.floorUi]);
   check('[tr] Gemini names its price source in the summary, the spoken name and the provenance line',
-    /Gemini API standart fiyatlarıyla en az \$?12,34 ABD doları tutardı/.test(gemTr.aria || '')
+    /Gemini API standart fiyatlarıyla \$?12,34 ABD doları tutardı/.test(gemTr.aria || '')
       && gemTr.prov.includes('Gemini API standart fiyatları, 10 Eylül 2026 tarihli listeye göre')
       && gemTr.summaryLines <= 2 && gemTr.summaryClipped === false, [gemTr.aria, gemTr.prov, gemTr.summaryLines]);
-  check('[tr] each Gemini cause has its short "why" line',
-    gemTr.caveats.some(([k, v]) => k === 'unrecorded-calls' && v === 'Gemini CLI bazı yardımcı çağrıları ve başarısız denemeleri kaydetmez; toplamda yoklar.')
-      && gemTr.caveats.some(([k, v]) => k === 'long-prompt' && v === 'Uzun istemler daha yüksek ücretlendirilir; burada düşük fiyattan sayıldı.')
-      && gemTr.caveats.some(([k, v]) => k === 'tool-tokens' && v === 'Araç kullanım tokenlarının fiyatı yayımlanmıyor; toplama katılmadı.'),
-    gemTr.caveats);
-  check('[tr] tokens with no model get their own explanation, not "not in the price list"',
-    gemTr.caveats.some(([k, v]) => k === 'unpriced' && v === 'Model kaydı olmadığı için fiyatlanamadı.')
-      && !gemTr.caveats.some(([, v]) => v === 'Fiyat listesinde olmadığı için toplama katılmadı.'), gemTr.caveats);
-  check('[tr] tokens with no model are labelled, never "no-model"',
-    gemTr.causes.some((c) => /^Fiyatlanamadı: model belirlenemedi · model kaydı yok · /.test(c))
-      && !RAW_CODES_A6.test(gemTr.text), gemTr.causes);
+  check('[tr] no raw producer code reaches the Gemini row',
+    !RAW_CODES_A6.test(gemTr.text), gemTr.text);
 
   const kimiTr = await js(readLocalRow('kimi'));
   say('kimi row (tr): ' + JSON.stringify(kimiTr));
@@ -1069,17 +653,10 @@ app.whenReady().then(async () => {
     !/\$/.test(kimiTr.text) && !/0,00/.test(kimiTr.text) && !/en az/.test(kimiTr.summary)
       && kimiTr.summary === 'Kimi token başına fiyat yayımlamıyor; tutar yok.'
       && !/fiyat listesinde/.test(kimiTr.summary + ' ' + (kimiTr.aria || ''))
-      && kimiTr.aria === 'Kimi: token başına fiyat yayımlamıyor, bu yüzden tutar yok. Kullanılan modelleri görmek için etkinleştirin.',
+      && kimiTr.aria === 'Kimi: token başına fiyat yayımlamıyor, bu yüzden tutar yok. Ayrıntıları açmak için etkinleştirin.',
     [kimiTr.summary, kimiTr.aria]);
-  check('[tr] each Kimi model says why it is unpriced, by label',
-    kimiTr.causes.some((c) => /^Fiyatlanamadı: kimi-code\/kimi-for-coding · fiyat yayımlanmıyor · /.test(c))
-      && kimiTr.causes.some((c) => /^Fiyatlanamadı: openrouter\/claude-sonnet · Kimi Code üzerinden başka model · /.test(c))
-      && !RAW_CODES_A6.test(kimiTr.text), kimiTr.causes);
-  check('[tr] each Kimi reason has its own explanation, directly under its line',
-    JSON.stringify(kimiTr.caveats) === JSON.stringify([
-      ['unpriced', 'Bu araç token başına fiyat yayımlamıyor.'],
-      ['unpriced', 'Kimi Code üzerinden kullanılan başka bir model; fiyatı bilinmiyor.'],
-    ]) && kimiTr.caveatLines.every((n) => n >= 1 && n <= 2), [kimiTr.caveats, kimiTr.caveatLines]);
+  check('[tr] Kimi draws no cause line, no explanation and no "why", and no raw code',
+    kimiTr.floorUi === 0 && !/Fiyatlanamadı|Neden/.test(kimiTr.text) && !RAW_CODES_A6.test(kimiTr.text), kimiTr);
   check('[tr] the provenance says Kimi publishes no prices, not that a list date is missing',
     kimiTr.prov.includes('Kimi fiyat yayımlamıyor') && !kimiTr.prov.some((p) => /tarihi bildirilmedi/.test(p)), kimiTr.prov);
 
@@ -1088,29 +665,21 @@ app.whenReady().then(async () => {
     await sleep(300);
     const g = await js(readLocalRow('gemini'));
     const k = await js(readLocalRow('kimi'));
-    say(`gemini/kimi why lines (${locale}): ` + JSON.stringify([g.caveatLines, k.caveatLines, g.caveats]));
-    check(`[${locale}] Gemini and Kimi "why" lines are at most 2 lines at 264px and never clipped`,
-      g.caveatLines.length >= 4 && [...g.caveatLines, ...k.caveatLines].every((n) => n >= 1 && n <= 2)
-        && [...g.caveatsClipped, ...k.caveatsClipped].every((v) => v === false),
-      [g.caveatLines, k.caveatLines]);
+    say(`gemini/kimi (${locale}): ` + JSON.stringify([g.summary, k.summary]));
+    check(`[${locale}] neither row draws floor UI`,
+      g.floorUi === 0 && k.floorUi === 0, [g.floorUi, k.floorUi]);
     check(`[${locale}] no raw code on either row`,
-      !RAW_CODES_A6.test(g.text) && !RAW_CODES_A6.test(k.text), [g.causes, k.causes]);
+      !RAW_CODES_A6.test(g.text) && !RAW_CODES_A6.test(k.text), [g.text, k.text]);
     if (lang === 'en') {
-      check(`[${locale}] the English pill, causes and Kimi provenance`,
+      check(`[${locale}] the English pill, summaries and Kimi provenance`,
         g.pill && g.pill.text === 'experimental'
           && g.pill.title === "This tool's log format has not yet been verified on a real install."
-          && g.causes.includes('Unrecorded calls') && g.causes.includes('Long prompts (over 200K): 3 records')
-          && g.causes.includes('Tool tokens: 7 records')
-          && k.causes.some((c) => /· no published price ·/.test(c)) && k.causes.some((c) => /· other model via Kimi Code ·/.test(c))
           && k.prov.includes('Kimi does not publish prices')
           && k.summary === 'Kimi does not publish per-token prices, so there is no amount.'
-          && /^Would have cost at least (US)?\$12\.34 at Gemini API standard rates$/.test(g.summary)
+          && /^Would have cost (US)?\$12\.34 at Gemini API standard rates$/.test(g.summary)
           && g.prov.some((p) => /^Gemini API standard rates, from the list dated /.test(p))
-          && g.summaryLines <= 2 && g.summaryClipped === false
-          && g.caveats.some(([, v]) => v === 'No model was recorded, so it could not be priced.')
-          && k.caveats.some(([, v]) => v === 'This tool does not publish a per-token price.')
-          && k.caveats.some(([, v]) => v === 'Another model used through Kimi Code; its price is unknown.'),
-        [g.pill, g.causes, k.causes, k.prov, g.caveats, k.caveats]);
+          && g.summaryLines <= 2 && g.summaryClipped === false,
+        [g.pill, g.summary, k.summary, k.prov]);
     }
   }
   await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
@@ -1634,12 +1203,11 @@ app.whenReady().then(async () => {
   await js(`window.__probe.restore()`);
   await sleep(250);
 
-  // ---- ADR-003 A6 / ADR-004 A3: the price note, compact per tool -----------
+  // ---- ADR-003 A6: the price note, one source line per tool ----------------
   //
-  // Always visible: an optional lead and one short source line per tool.
-  // Behind "Neden en az?": one short cause line per tool. The reader opens the
-  // disclosure itself, measures every line at the drawn settings width, then
-  // closes it again, so each check sees both states.
+  // One short source line per tool, and nothing else: the "en az" leads and
+  // the per-tool causes behind "Neden en az?" were removed (owner, 2026-09-23)
+  // even though main still sends the cause map read below.
   const readNote = `(async () => {
     const view = document.getElementById('settings-view');
     document.querySelector('.iconbtn--settings').click();
@@ -1647,48 +1215,18 @@ app.whenReady().then(async () => {
     view.querySelector('.acc__trigger[data-acc="usage"]').click();
     await new Promise((r) => setTimeout(r, 80));
     const n = view.querySelector('.usage__note');
-    const lead = n.querySelector('.usage__note-lead');
-    const why = n.querySelector('.usage__why');
-    const block = n.querySelector('.usage__why-block');
-    const listId = why ? why.getAttribute('aria-controls') : null;
-    const list = listId ? document.getElementById(listId) : null;
     const clip = (e) => e.scrollWidth > e.clientWidth + 0.5;
     const linesOf = (e) => Math.round(e.getBoundingClientRect().height / parseFloat(getComputedStyle(e).lineHeight));
     const sources = [...n.querySelectorAll('.usage__source')];
-    const introSources = (view.querySelector('.usage__intro-sources') || {}).textContent || null;
-    const closed = {
-      expanded: why ? why.getAttribute('aria-expanded') : null,
-      listHidden: list ? list.hidden : null,
-      whyDrawn: list ? list.getClientRects().length > 0 : null,
-    };
-    if (why && !block.hidden) why.click();
-    await new Promise((r) => setTimeout(r, 60));
-    const whyLines = [...n.querySelectorAll('.usage__why-line')];
     const out = {
       text: n.textContent,
-      introSources,
-      lead: lead && !lead.hidden ? lead.textContent : null,
-      leadCount: [...n.querySelectorAll('.usage__note-lead')].filter((e) => !e.hidden).length,
+      introSources: (view.querySelector('.usage__intro-sources') || {}).textContent || null,
+      floorUi: view.querySelectorAll('.usage__note-lead, .usage__why, .usage__why-block, .usage__why-line, .cost__why').length,
       sources: sources.map((e) => e.textContent),
       sourceLines: sources.map(linesOf),
       sourcesClipped: sources.map(clip),
-      whyHidden: block ? block.hidden : null,
-      whyText: why ? why.textContent : null,
-      whyTag: why ? why.tagName : null,
-      closed,
-      open: {
-        expanded: why ? why.getAttribute('aria-expanded') : null,
-        listHidden: list ? list.hidden : null,
-        controlsList: !!list && list.classList.contains('usage__why-list'),
-      },
-      why: whyLines.map((e) => e.textContent),
-      whyLines: whyLines.map(linesOf),
-      whyClipped: whyLines.map(clip),
       width: Math.round(n.getBoundingClientRect().width),
-      watch: (() => { const s = document.createElement('span'); s.style.color = 'var(--watch)'; n.appendChild(s); const v = getComputedStyle(s).color; s.remove(); return v; })(),
-      whyBorder: whyLines[0] ? getComputedStyle(whyLines[0]).borderLeftColor : null,
     };
-    if (why && why.getAttribute('aria-expanded') === 'true') why.click();
     view.querySelector('.acc__trigger[data-acc="models"]').click();
     await new Promise((r) => setTimeout(r, 60));
     document.querySelector('.iconbtn--settings').click();
@@ -1706,40 +1244,20 @@ app.whenReady().then(async () => {
   await sleep(200);
   const noteAll = await js(readNote);
   say('compact note, four tools (tr): ' + JSON.stringify(noteAll));
-  check('[tr] always visible: one lead and one short source line per tool, in order',
-    // TWO leads: the cost gloss and the count gloss. They are different claims
-    // about different quantities, and each appears only when a floor of that
-    // kind is on screen — see the count-gloss checks below.
-    noteAll.leadCount === 2
-      && noteAll.lead === '“En az” alt sınır demektir; gerçek maliyet daha yüksek olabilir.'
+  check('[tr] one short source line per tool, in order, and no lead, "why" or cause line',
+    noteAll.floorUi === 0
       && JSON.stringify(noteAll.sources) === JSON.stringify([
         'Claude Code · 1 Ağu 2026 fiyatları',
         'Codex · 15 Ağu 2026 fiyatları',
         'Gemini · Gemini API standart, 10 Eyl 2026',
         'Kimi · fiyat yayımlamıyor',
-      ]), [noteAll.lead, noteAll.sources]);
+      ]) && !/en az|Neden|alt sınır/i.test(noteAll.text), [noteAll.floorUi, noteAll.sources]);
   check('[tr] each source is one line, never clipped',
     noteAll.sourceLines.every((n) => n === 1) && noteAll.sourcesClipped.every((v) => v === false),
     [noteAll.width, noteAll.sourceLines]);
-  check('[tr] the causes sit behind "Neden en az?", a real button with working aria wiring',
-    noteAll.whyTag === 'BUTTON' && noteAll.whyText === 'Neden en az?'
-      && noteAll.closed.expanded === 'false' && noteAll.closed.listHidden === true && noteAll.closed.whyDrawn === false
-      && noteAll.open.expanded === 'true' && noteAll.open.listHidden === false && noteAll.open.controlsList === true,
-    [noteAll.closed, noteAll.open]);
-  check('[tr] one short cause line per tool with causes, Kimi included',
-    JSON.stringify(noteAll.why) === JSON.stringify([
-      'Claude Code: fiyatlanamayan kullanım ve süresi kaydedilmemiş önbellek yazmaları (1,25× ile)',
-      'Codex: kaydedilmemiş önbellek yazmaları, katmanı kaydedilmemiş istekler (Standart’tan) ve Fast istenen kayıtlar (Standart’tan)',
-      'Gemini: kaydedilmeyen çağrılar, uzun istemler (200K üstü) ve araç tokenları',
-      'Kimi: fiyat yayımlamıyor',
-    ]), noteAll.why);
   check('[tr] F1: the source sentence names the tools in the history, and keeps "only local"',
     noteAll.introSources === 'Yalnızca bu bilgisayardaki Claude Code, Codex, Gemini ve Kimi kayıtlarından hesaplanır.',
     noteAll.introSources);
-  check(`[tr] every cause line is at most 2 lines at the settings width (${noteAll.width}px), never clipped, no warning colour`,
-    noteAll.whyLines.length === 4 && noteAll.whyLines.every((n) => n >= 1 && n <= 2)
-      && noteAll.whyClipped.every((v) => v === false) && noteAll.whyBorder !== noteAll.watch,
-    [noteAll.width, noteAll.whyLines]);
   check('[tr] no raw cause code and no unknown tool anywhere in the note',
     !RAW_CAUSE_CODES.test(noteAll.text) && !/bogus/.test(noteAll.text), noteAll.text);
   for (const locale of ['en-US', 'en-GB']) {
@@ -1748,53 +1266,44 @@ app.whenReady().then(async () => {
     const n = await js(readNote);
     say(`compact note, four tools (${locale}): ` + JSON.stringify(n));
     const gb = locale === 'en-GB';
-    check(`[${locale}] the compact note reads in English, one line per source, why lines at most 2 lines, nothing clipped`,
-      n.lead === '“At least” means a lower bound; the real cost may be higher.'
+    check(`[${locale}] the note reads in English, one line per source, nothing clipped, nothing about bounds`,
+      n.floorUi === 0
         && n.sources[0] === (gb ? 'Claude Code · 1 Aug 2026 prices' : 'Claude Code · Aug 1, 2026 prices')
         && n.sources[2] === (gb ? 'Gemini · Gemini API standard, 10 Sept 2026' : 'Gemini · Gemini API standard, Sep 10, 2026')
         && n.sources[3] === 'Kimi · does not publish prices'
-        && n.why[2] === 'Gemini: unrecorded calls, long prompts (over 200K), and tool tokens'
-        && n.whyText === 'Why at least?'
-        && n.why[3] === 'Kimi: does not publish prices'
         && n.introSources === 'Calculated only from local Claude Code, Codex, Gemini, and Kimi logs.'
         && n.sourceLines.every((x) => x === 1) && n.sourcesClipped.every((v) => v === false)
-        && n.whyLines.every((x) => x >= 1 && x <= 2) && n.whyClipped.every((v) => v === false)
-        && !RAW_CAUSE_CODES.test(n.text),
-      [n.sources, n.why, n.whyLines]);
+        && !/at least|lower bound|Why/i.test(n.text) && !RAW_CAUSE_CODES.test(n.text),
+      [n.sources, n.floorUi]);
   }
   await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
   await sleep(300);
 
-  // Gemini only: its source and its one cause, nothing about Claude or Codex.
+  // Gemini only: its source line, nothing about Claude or Codex.
   await js(`window.__probe.setHistoryPricesDirect({ gemini: '2026-09-10' }, '2026-08-01', ['gemini'], { gemini: ['unrecorded-calls'] })`);
   await sleep(200);
   const noteGem = await js(readNote);
   say('compact note, gemini only (tr): ' + JSON.stringify(noteGem));
-  check('[tr] a Gemini-only history: its source line, its one cause, nothing about Claude or Codex',
-    noteGem.leadCount === 2 && JSON.stringify(noteGem.sources) === JSON.stringify(['Gemini · Gemini API standart, 10 Eyl 2026'])
-      && JSON.stringify(noteGem.why) === JSON.stringify(['Gemini: kaydedilmeyen çağrılar'])
+  check('[tr] a Gemini-only history: its source line only, nothing about Claude or Codex',
+    noteGem.floorUi === 0 && JSON.stringify(noteGem.sources) === JSON.stringify(['Gemini · Gemini API standart, 10 Eyl 2026'])
       && !/Claude|Codex/.test(noteGem.text), noteGem);
 
-  // Kimi only: no cause, so no lead and no "why" at all.
+  // Kimi only.
   await js(`window.__probe.setHistoryPricesDirect({}, '2026-08-01', ['kimi'], { kimi: ['unpriced'] })`);
   await sleep(200);
   const noteKimi = await js(readNote);
   say('compact note, kimi only (tr): ' + JSON.stringify(noteKimi));
-  check('[tr] a Kimi-only history: its source line, the lead, and "Kimi: fiyat yayımlamıyor" behind why',
-    noteKimi.leadCount === 2 && noteKimi.whyHidden === false
-      && JSON.stringify(noteKimi.sources) === JSON.stringify(['Kimi · fiyat yayımlamıyor'])
-      && JSON.stringify(noteKimi.why) === JSON.stringify(['Kimi: fiyat yayımlamıyor']), noteKimi);
+  check('[tr] a Kimi-only history: "Kimi · fiyat yayımlamıyor" and nothing else',
+    noteKimi.floorUi === 0 && JSON.stringify(noteKimi.sources) === JSON.stringify(['Kimi · fiyat yayımlamıyor']), noteKimi);
 
-  // F3: Claude with no cause plus Kimi. The period reads "en az" because of
-  // Kimi alone, so the lead and the explanation must still be there.
+  // Claude with no cause plus Kimi.
   await js(`window.__probe.setHistoryPricesDirect({ claude: '2026-08-01' }, '2026-08-01', ['claude', 'kimi'], { kimi: ['unpriced'] })`);
   await sleep(200);
   const noteCK = await js(readNote);
   say('compact note, claude (no causes) + kimi (tr): ' + JSON.stringify(noteCK));
-  check('[tr] F3: Claude with no cause plus Kimi still shows the lead and says why',
-    noteCK.leadCount === 2 && noteCK.whyHidden === false
+  check('[tr] Claude plus Kimi: two source lines, and no lead or "why" from Kimi\'s cause',
+    noteCK.floorUi === 0
       && JSON.stringify(noteCK.sources) === JSON.stringify(['Claude Code · 1 Ağu 2026 fiyatları', 'Kimi · fiyat yayımlamıyor'])
-      && JSON.stringify(noteCK.why) === JSON.stringify(['Kimi: fiyat yayımlamıyor'])
       && noteCK.introSources === 'Yalnızca bu bilgisayardaki Claude Code ve Kimi kayıtlarından hesaplanır.', noteCK);
 
   // An older main: no per-tool data at all, so the legacy (Claude) date is used.
@@ -1802,16 +1311,14 @@ app.whenReady().then(async () => {
   await sleep(200);
   const legacyNote = await js(readNote);
   say('legacy note (tr): ' + JSON.stringify(legacyNote));
-  check('with no per-tool data (older main) the legacy Claude date and both Claude causes still show',
+  check('with no per-tool data (older main) the legacy Claude date still shows, and no causes',
     JSON.stringify(legacyNote.sources) === JSON.stringify(['Claude Code · 1 Ağu 2026 fiyatları'])
-      && legacyNote.why[0] === 'Claude Code: fiyatlanamayan kullanım ve süresi kaydedilmemiş önbellek yazmaları (1,25× ile)'
-      && !/Codex/.test(legacyNote.text)
+      && legacyNote.floorUi === 0 && !/Codex/.test(legacyNote.text)
       && legacyNote.introSources === 'Yalnızca yerel kayıtlardan hesaplanır.', legacyNote);
   await js(`window.__probe.setHistoryPricesDirect()`);
   await sleep(200);
 
-  // ADR-002 A3.21: the two-date note names tier uncertainty in the Codex clause,
-  // and still wraps whole in every format.
+  // The two-date note wraps whole in every format, beside the unread-records note.
   const readUsageNotes = `(async () => {
     const view = document.getElementById('settings-view');
     document.querySelector('.iconbtn--settings').click();
@@ -1839,9 +1346,9 @@ app.whenReady().then(async () => {
   })()`;
   const notesTr = await js(readUsageNotes);
   say('usage notes (tr): ' + JSON.stringify(notesTr));
-  check('[tr] the fixture\'s note has Codex\'s source line and its causes, whole',
+  check('[tr] the fixture\'s note has Codex\'s source line, whole, and no cause line',
     /Codex · 15 Ağu 2026 fiyatları/.test(notesTr.note || '')
-      && /Codex: fiyatlanamayan kullanım ve kaydedilmemiş önbellek yazmaları/.test(notesTr.note || '')
+      && !/Codex: /.test(notesTr.note || '')
       && notesTr.noteClipped === false && notesTr.noteTov !== 'ellipsis', notesTr);
   check('no incomplete note while no tool is incomplete', notesTr.incomplete === null, notesTr.incomplete);
 
@@ -1850,18 +1357,18 @@ app.whenReady().then(async () => {
   const incTr = await js(readUsageNotes);
   say('usage incomplete (tr): ' + JSON.stringify(incTr));
   check('[tr] an incomplete tool gets ONE note above the list, known ids only, named once',
-    incTr.incomplete === 'Codex için bazı yerel kayıtlar okunamadı; etkilenen dönemler bir alt sınırdır.'
+    incTr.incomplete === 'Codex için bazı yerel kayıtlar okunamadı; bu dönemlerde sayım eksik olabilir.'
       && incTr.incompleteCount === 1 && incTr.incompleteBeforeList === true
       && incTr.incompleteDrawn === true && incTr.incompleteClipped === false, incTr);
   await js(`window.__probe.setLocaleDirect('en', 'en-US')`);
   await sleep(300);
   const incEn = await js(readUsageNotes);
   say('usage incomplete (en-US): ' + JSON.stringify(incEn));
-  check('[en-US] the incomplete note and the tier clause read in English, whole',
-    incEn.incomplete === 'Some local records for Codex could not be read; affected periods are a lower bound.'
+  check('[en-US] the incomplete note and the source line read in English, whole',
+    incEn.incomplete === 'Some local records for Codex could not be read; these periods may be undercounted.'
       && incEn.incompleteClipped === false
       && /Codex · Aug 15, 2026 prices/.test(incEn.note || '')
-      && /Codex: usage that could not be priced and unrecorded cache writes/.test(incEn.note || '')
+      && !/Codex: /.test(incEn.note || '')
       && incEn.noteClipped === false, incEn);
   await js(`window.__probe.setLocaleDirect('en', 'en-GB')`);
   await sleep(300);
@@ -1923,14 +1430,15 @@ app.whenReady().then(async () => {
   say('history no periods, incomplete (tr): ' + JSON.stringify(histNone));
   check('no periods with a tool known incomplete: no "no records found", only the incomplete note',
     histNone.emptyText === null && histNone.amounts.length === 0
-      && histNone.incomplete === 'Codex için bazı yerel kayıtlar okunamadı; etkilenen dönemler bir alt sınırdır.', histNone);
+      && histNone.incomplete === 'Codex için bazı yerel kayıtlar okunamadı; bu dönemlerde sayım eksik olabilir.', histNone);
   await js(`window.__probe.setHistoryShapeDirect('restore')`);
   await sleep(250);
   const histBack = await js(readHistory);
   check('control: the fixture history is restored, with no incomplete note',
     histBack.incomplete === null && histBack.amounts.length === 3, histBack);
 
-  // Row: the causes-only cost block states the gap; "Token bilgisi yok" must not.
+  // Row: "Token bilgisi yok" must not state an unread gap as a fact about the
+  // tool. The cost block's cause line used to say it; now the row line does.
   const readMeta = `(() => {
     const row = ${q('codex')};
     const meta = row.querySelector('.row__meta');
@@ -1938,7 +1446,7 @@ app.whenReady().then(async () => {
     return {
       meta: meta ? meta.textContent : null,
       costShown: !!cost && !cost.hidden,
-      causes: cost ? [...cost.querySelectorAll('.cost__cause')].map((n) => n.textContent) : [],
+      floorUi: cost ? cost.querySelectorAll('.cost__cause-block, .cost__why, .cost__why-lead, .cost__causes, .cost__cause, .cost__caveat').length : 0,
     };
   })()`;
   await js(`window.__probe.setPendingDirect([], { codex: { tokens: null, weeklyTokens: null, burnRatePerHour: null } })`);
@@ -1952,9 +1460,9 @@ app.whenReady().then(async () => {
   await sleep(250);
   const metaInc = await js(readMeta);
   say('row meta, source incomplete (tr): ' + JSON.stringify(metaInc));
-  check('with sourceIncomplete the row drops "Token bilgisi yok" and the cost block states the gap',
-    !/Token bilgisi yok/.test(metaInc.meta || '') && metaInc.costShown === true
-      && metaInc.causes.length === 1 && metaInc.causes[0] === 'Okunamayan kayıtlar var', metaInc);
+  check('with sourceIncomplete the row says "sayılamadı" instead of "Token bilgisi yok", and no cause line is drawn',
+    !/Token bilgisi yok/.test(metaInc.meta || '') && /Haftalık: sayılamadı/.test(metaInc.meta || '')
+      && metaInc.costShown === false && metaInc.floorUi === 0, metaInc);
   await js(`window.__probe.restore()`);
   await sleep(250);
 
@@ -2267,9 +1775,9 @@ app.whenReady().then(async () => {
   // ---- English: the collapsed claim wraps, it is never cut -------------
   //
   // ADR-004 Amendment 2.3 as ruled: honesty copy is never truncated to fit. In
-  // English a floored summary cannot fit one line at 360px ("Would have cost
-  // at least $226.81 at published API prices" is wider than the line), and an
-  // ellipsis there cuts the claim itself. Reached the way main does it: the
+  // English the summary ("Would have cost $226.81 at published API prices")
+  // is close to the line width at 360px, and an ellipsis there would cut the
+  // claim. Reached the way main does it: the
   // language is persisted, then PREFERENCES is pushed.
   await js('window.__probe.setDeferPrefs(true)');
   await js(`window.usageNotch.setLanguage('en')`);
@@ -2303,15 +1811,19 @@ app.whenReady().then(async () => {
   say('english summary: ' + JSON.stringify(enSummary));
   check('the English panel is reached through the PREFERENCES push',
     enSummary.lang === 'en', enSummary.lang);
-  check('the floored English summary carries the counterfactual and the floor',
-    /^Would have cost at least \$/.test(enSummary.text) && /at published API prices$/.test(enSummary.text),
+  check('the English summary carries the counterfactual, and no floor word',
+    /^Would have cost \$/.test(enSummary.text) && /at published API prices$/.test(enSummary.text)
+      && !/at least/.test(enSummary.text),
     enSummary.text);
-  check('the floored English summary is not clipped',
+  check('the English summary is not clipped',
     enSummary.scrollW <= enSummary.clientW, enSummary);
-  check('and it is not ellipsized: it wraps onto a second line instead',
-    enSummary.textOverflow !== 'ellipsis' && enSummary.lines >= 2, enSummary);
-  check('control: under the old nowrap+ellipsis rule the same text WOULD clip',
-    enSummary.nowrapScrollW > enSummary.nowrapClientW, enSummary);
+  // Without the floor word the sentence fits one line at this width today.
+  // The rule is unchanged for a longer figure: wherever the one-line form
+  // would clip (the nowrap control), the summary must wrap instead.
+  check('and it is not ellipsized: it fits one line, or it wraps where one line would clip',
+    enSummary.textOverflow !== 'ellipsis'
+      && (enSummary.nowrapScrollW > enSummary.nowrapClientW ? enSummary.lines >= 2 : enSummary.lines === 1),
+    enSummary);
 
   // Back to Turkish, so the closing state is the one this suite always ended in.
   await js(`window.usageNotch.setLanguage('tr')`);

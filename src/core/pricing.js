@@ -49,6 +49,12 @@ const PRICES_AS_OF = '2026-06-24';
  * visible gap instead of a plausible guess (ADR-002 rule 2, amendment 2).
  */
 const PRICES = Object.freeze({
+  // Opus 5.5 reads cache at 0.05x its input rate, half the usual 0.1x
+  // ($0.20 standard). Writes use the standard multipliers. Fast mode is
+  // $8/$40 and the cache multipliers apply on top of it. Source:
+  // platform.claude.com/docs/en/about-claude/pricing, checked 2026-09-23.
+  'claude-opus-5-5|standard': { input: 4.00, output: 20.00, read: 0.05 },
+  'claude-opus-5-5|fast': { input: 8.00, output: 40.00, read: 0.05 },
   'claude-opus-5|standard': { input: 5.00, output: 25.00 },
   'claude-opus-5|fast': { input: 10.00, output: 50.00 },
   'claude-opus-4-8|standard': { input: 5.00, output: 25.00 },
@@ -57,7 +63,10 @@ const PRICES = Object.freeze({
   'claude-haiku-4-5|standard': { input: 1.00, output: 5.00 },
 });
 
-/** Multipliers against that model's INPUT price. */
+/**
+ * Multipliers against that model's INPUT price. A row may override `read`
+ * with its own, as Opus 5.5 does.
+ */
 const CACHE_MULTIPLIER = Object.freeze({
   read: 0.1,
   write5m: 1.25,
@@ -115,7 +124,7 @@ function speedOf(event) {
 
 /**
  * The price row for one (model, speed), or null when the table has none.
- * @returns {{key:string, model:string, speed:string, input:number, output:number}|null}
+ * @returns {{key:string, model:string, speed:string, input:number, output:number, read:number}|null}
  */
 function priceFor(model, speed) {
   const modelKey = modelKeyFor(model);
@@ -124,7 +133,8 @@ function priceFor(model, speed) {
   const key = `${modelKey}|${speedKey}`;
   const row = PRICES[key];
   if (!row) return null;
-  return { key, model: modelKey, speed: speedKey, input: row.input, output: row.output };
+  const read = typeof row.read === 'number' ? row.read : CACHE_MULTIPLIER.read;
+  return { key, model: modelKey, speed: speedKey, input: row.input, output: row.output, read };
 }
 
 /**
@@ -186,7 +196,7 @@ function costOfEvent(event, price, precomputedSplit) {
     output: perToken(event.output, price.output),
     cacheWrite5m: perToken(split.write5m, price.input * CACHE_MULTIPLIER.write5m),
     cacheWrite1h: perToken(split.write1h, price.input * CACHE_MULTIPLIER.write1h),
-    cacheRead: perToken(event.cacheRead, price.input * CACHE_MULTIPLIER.read),
+    cacheRead: perToken(event.cacheRead, price.input * (typeof price.read === 'number' ? price.read : CACHE_MULTIPLIER.read)),
   };
 }
 

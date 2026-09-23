@@ -55,7 +55,6 @@ import { el, on, replaceChildrenWith, setAttr, setText } from '../dom.js';
 import {
   ago,
   agoSpoken,
-  atLeast,
   burnRate,
   compact,
   mixWithin,
@@ -64,8 +63,7 @@ import {
   tokens,
 } from '../format.js';
 import { t } from '../i18n.js';
-import { allZero, hasTokenCount, marksFloor, weeklyTokenFloorCauses } from '../tokens.js';
-import { floorCauseClause } from '../floor-causes.js';
+import { allZero, hasTokenCount } from '../tokens.js';
 import { createCost, type CostHandle } from './cost.js';
 import { experimentalTag } from './experimental.js';
 import { createKeyBlock, type KeyBlockHandle } from './keys.js';
@@ -284,16 +282,13 @@ function weeklyTokenLabel(p: ProviderSnapshot, value: string): string {
 }
 
 /**
- * What the line prints for the week: the count, its window, and "en az" only
- * when MAIN says the count is a lower bound (`weeklyTokenFloorCauses`), and
- * never without printing one of those causes beside it (ADR-002 A3.16).
+ * What the line prints for the week: the count and its window, nothing else.
  *
- * Never derived here from `sourceIncomplete`, `unrecordedCalls` or
- * `unrecordedWriteEvents`, and never from a provider id: those signals are
- * individually incomplete, and the rule kept in a renderer is a rule the next
- * surface will not carry. The purely monetary floors do NOT reach this figure —
- * an unpriced model counted every token it saw — so this row can legitimately
- * read "en az $12,40" in the cost block under an EXACT token count.
+ * No "en az" and no cause in brackets, even when main marks the count as a
+ * lower bound (`weeklyTokenFloorCauses`): the owner ruled the floor marker out
+ * of the panel (2026-09-23), and a bracketed cause on every Codex row was the
+ * grey noise that ruling was about. The field is still accepted and sanitised;
+ * it is only not drawn.
  */
 function weeklyTokenText(p: ProviderSnapshot): string {
   const tk = p.weeklyTokens;
@@ -309,16 +304,7 @@ function weeklyTokenText(p: ProviderSnapshot): string {
   // Hiding the item instead would make the row indistinguishable from a
   // provider we never scanned, and would bring `row.noTokens` ("Token bilgisi
   // yok") back into reach on a row where we DO have the data.
-  const value = tokens(tk.billable);
-  const causes = weeklyTokenFloorCauses(p);
-  // "en az" only with a positive figure for the bound to qualify: a lower bound
-  // of zero says nothing, and "en az 0 token" is the no-figure-as-floor state
-  // this whole feature exists to prevent. The CAUSE is still shown either way,
-  // so a count that understates never looks exact (ADR-002 A3.16).
-  const figure = marksFloor(tk, causes) ? atLeast(value) : value;
-  const labelled = weeklyTokenLabel(p, figure);
-  if (causes.length === 0) return labelled;
-  return t('row.tokens.floorCause', { value: labelled, cause: floorCauseClause(causes[0]) });
+  return weeklyTokenLabel(p, tokens(tk.billable));
 }
 
 /**
@@ -368,10 +354,6 @@ function tokensTitle(p: ProviderSnapshot): string {
   const five = p.tokens;
   if (week && hasTokenCount(week)) lines.push(`${t('meter.window7d.label')} — ${classes(week)}`);
   if (five && hasTokenCount(five)) lines.push(`${t('meter.window5h.label')} — ${classes(five)}`);
-  // Every cause, not only the one the line has room for, so nothing is lost to
-  // brevity (ADR-004 A3 keeps the visible line short; this is the full set).
-  const causes = weeklyTokenFloorCauses(p);
-  if (causes.length > 1) lines.push(causes.map((cause) => floorCauseClause(cause)).join(' · '));
   return lines.join('\n');
 }
 
@@ -654,9 +636,13 @@ function buildLive(
       }
       // ADR-002 A3.19: when the cost reader KNOWS records could not be read,
       // "Token bilgisi yok" would state the gap as a fact about the tool. The
-      // cost block beneath says what happened, so the line stays silent.
-      if (metaChildren.length === 0 && !p.weeklyCost?.sourceIncomplete) {
-        metaChildren.push(el('span', {}, t('row.noTokens')));
+      // cost block used to say what happened with a cause line; with cause
+      // lines gone (2026-09-23) this line says it, in the words the zero-count
+      // case already uses, so the gap is never silent.
+      if (metaChildren.length === 0) {
+        metaChildren.push(
+          el('span', {}, p.weeklyCost?.sourceIncomplete ? t('row.tokens.uncounted') : t('row.noTokens')),
+        );
       }
     }
 

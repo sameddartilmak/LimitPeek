@@ -62,7 +62,9 @@ function applyLocale(prefs: Preferences | null): void {
   // Screen readers choose a voice from `lang`: an English panel under
   // lang="tr" is read with Turkish pronunciation.
   document.documentElement.setAttribute('lang', language());
-  document.title = t('header.title');
+  // The product name in every language: it is what the taskbar and a screen
+  // reader's window list call this panel, and the header prints the same.
+  document.title = 'Usage Notch';
 }
 
 export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {

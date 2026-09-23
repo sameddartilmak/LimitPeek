@@ -26,7 +26,6 @@
   "tokens.perHour": "{value} tokens/h",
   "tokens.sinceCapture": { "one": "+{value} token since then", "other": "+{value} tokens since then" },
   "time.asOf": "as of {time}",
-  "amount.atLeast": "at least {amount}",
   "absence.unknown": "unknown",
   "absence.notReported": "not reported",
   "absence.resetting": "resetting",

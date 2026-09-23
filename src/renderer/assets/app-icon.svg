@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Usage Notch app icon, SMALL variant. A copy of build/icon-small.svg, which
+    is the source of truth (it feeds the 16, 20 and 24 px ICO entries). The panel
+    header paints it at 16 CSS px: 16, 20 and 24 device px at 100, 125 and 150%
+    scaling, exactly the sizes this art is drawn for. Update both together.
+  -->
+  <defs>
+    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="260.4" y1="-27.5" x2="763.6" y2="1051.5">
+      <stop offset="0" stop-color="#212B2A"/>
+      <stop offset="0.7" stop-color="#121817"/>
+      <stop offset="1" stop-color="#121817"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="64" y="64" width="896" height="896" rx="232" ry="232" fill="url(#bg)"/>
+  <rect x="84" y="84" width="856" height="856" rx="212" ry="212"
+        fill="none" stroke="#EDF2F0" stroke-opacity="0.12" stroke-width="40"/>
+
+  <!-- r = 5px outer - 1px half-stroke = 4px = 256 units; circumference 1608.5 -->
+  <circle cx="512" cy="512" r="256" fill="none" stroke="#3B4845" stroke-width="128"/>
+  <circle cx="512" cy="512" r="256" fill="none" stroke="#3FB89E" stroke-width="128"
+          stroke-dasharray="611.4 1608.5" transform="rotate(-90 512 512)"/>
+  <circle cx="512" cy="512" r="80" fill="#C96442"/>
+</svg>

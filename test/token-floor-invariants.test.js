@@ -34,12 +34,10 @@ const history = require('../src/core/history');
  * On the cost side a known-unread range already has its own field
  * (`UsageHistory.incompleteProviders`) and its own note, and ADR-002 A3.20 rules
  * that the price notes do not grow a clause for it. The token side has no such
- * field, so there the gap must be nameable. `CAUSE_CLAUSE`
- * (src/renderer/src/floor-causes.ts) is an exhaustive
- * `Record<HistoryFloorCause, MessageKey>`, so a missing label is a compile
- * error — the risk is not a silent blank, it is main emitting the code on the
- * wrong side, where it would print a clause the ADR forbids. Nothing else
- * checks that direction.
+ * field, so there the gap must be nameable. The panel no longer prints any
+ * cause (the floor marker was removed, 2026-09-23), but the contract still
+ * carries them, and main emitting the code on the wrong side would still be a
+ * false statement in the payload. Nothing else checks that direction.
  */
 
 const HOUR = 60 * 60 * 1000;

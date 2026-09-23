@@ -24,15 +24,28 @@ function billableOf(ev) {
  *
  * Sorted by (ts, key) first so the surviving record is deterministic and does
  * not depend on directory iteration order.
+ *
+ * The survivor is the earliest record, but its OUTPUT is the largest any copy
+ * reports. Claude Code writes one line per content block of a response, all
+ * under the same requestId. The early lines carry the output count so far,
+ * and only the last carries the final count. Keeping the first line alone
+ * measured 1.74M output tokens where the week really had 4.24M (owner's data,
+ * 2026-09-23). Input and cache counts are the same on every line, and a
+ * replayed copy is identical, so for them the earliest line is already right.
  */
 function dedupe(events) {
   const sorted = events.slice().sort((a, b) => (a.ts - b.ts) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-  const seen = new Set();
+  const byKey = new Map();
   const out = [];
   for (const ev of sorted) {
-    if (seen.has(ev.key)) continue;
-    seen.add(ev.key);
-    out.push(ev);
+    const kept = byKey.get(ev.key);
+    if (kept === undefined) {
+      byKey.set(ev.key, out.length);
+      out.push(ev);
+    } else if (ev.output > out[kept].output) {
+      // A copy, never the caller's object: events are cached between scans.
+      out[kept] = { ...out[kept], output: ev.output };
+    }
   }
   return out;
 }

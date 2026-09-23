@@ -128,11 +128,35 @@ test.describe('the price table is a lookup, never a branch', () => {
     assert.equal(pricing.priceFor('claude-opus-4-8', 'standard').input, 5);
   });
 
+  test('opus 5.5 is its own row, not Opus 5, and reads cache at 0.05x', () => {
+    assert.equal(pricing.modelKeyFor('claude-opus-5-5'), 'claude-opus-5-5');
+    assert.equal(pricing.modelKeyFor('claude-opus-5-5-20260901'), 'claude-opus-5-5');
+    assert.equal(pricing.modelKeyFor('claude-opus-5'), 'claude-opus-5', 'Opus 5 is untouched');
+    const price = pricing.priceFor('claude-opus-5-5', 'standard');
+    assert.equal(price.input, 4);
+    assert.equal(price.output, 20);
+    // One million of each class, against the published per-MTok prices:
+    // input $4, output $20, 5m write $5, 1h write $8, cache read $0.20.
+    const cost = week([ev({
+      model: 'claude-opus-5-5', input: MTOK, output: MTOK, cacheRead: MTOK,
+      cacheWrite: 2 * MTOK, cw5: MTOK, cw1h: MTOK,
+    })]);
+    close(cost.totalUsd, 4 + 20 + 5 + 8 + 0.2, 'opus 5.5 total');
+    assert.deepEqual(cost.unpricedModels, []);
+    // Fast is $8/$40, with the same 0.05x read on top.
+    const fast = week([ev({ model: 'claude-opus-5-5', speed: 'fast', input: MTOK, output: MTOK, cacheRead: MTOK })]);
+    close(fast.totalUsd, 8 + 40 + 0.4, 'opus 5.5 fast total');
+    // Every other row keeps the standard 0.1x read.
+    close(week([ev({ model: 'claude-opus-5', cacheRead: MTOK })]).totalUsd, 0.5, 'opus 5 read');
+  });
+
   test('the price table contains exactly the sourced rows', () => {
     assert.deepEqual(Object.keys(pricing.PRICES).sort(), [
       'claude-haiku-4-5|standard',
       'claude-opus-4-7|standard',
       'claude-opus-4-8|standard',
+      'claude-opus-5-5|fast',
+      'claude-opus-5-5|standard',
       'claude-opus-5|fast',
       'claude-opus-5|standard',
       'claude-sonnet-5|standard',

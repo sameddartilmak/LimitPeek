@@ -148,8 +148,10 @@ test.describe('history with Gemini and Kimi (Toplam Kullanım)', () => {
     assert.deepEqual(Object.keys(out.pricesAsOfByProvider).sort(), ['codex', 'gemini'], 'Kimi has no price date');
     assert.equal(out.pricesAsOfByProvider.gemini, '2026-09-16');
     assert.deepEqual(out.usageProviders, ['codex', 'gemini', 'kimi']);
+    // Codex's cached read with 0 recorded writes is priced as an upper bound
+    // since 2026-09-23, not a floor, so Codex names no cause.
+    assert.equal(codex.isFloor, false);
     assert.deepEqual(out.floorCausesByProvider, {
-      codex: ['unrecorded-writes'],
       gemini: ['unpriced', 'unrecorded-calls'],
       kimi: ['unpriced'],
     });

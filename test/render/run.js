@@ -18,9 +18,10 @@
  *             keyboard path, focus surviving a row move, the optimistic
  *             reorder and its visible revert.
  *   cost.js   every honesty property of the cost block: the figure never
- *             appears without its framing sentence, caveats turn it into
- *             "en az", an all-unpriced week prints no figure at all, and a
- *             partial payload degrades instead of vanishing.
+ *             appears without its framing sentence, no floor marker or cause
+ *             line is drawn whatever main sends, an all-unpriced week prints
+ *             no figure at all, and a partial payload degrades instead of
+ *             vanishing.
  *
  * Each suite runs in its own Electron process because each needs a different
  * fixture — the panel suite drives mouse input at measured coordinates and
