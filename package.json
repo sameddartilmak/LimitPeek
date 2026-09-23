@@ -13,6 +13,7 @@
     "icon": "node scripts/make-icon.js",
     "scan": "node scripts/scan-once.js",
     "smoke": "electron scripts/smoke-ipc.js",
+    "audit:needed": "node scripts/audit-needed.js",
     "typecheck": "tsc -p src/renderer/tsconfig.json --noEmit",
     "dist:dir": "npm run typecheck && npm run build && node scripts/write-build-info.js && electron-builder --win --dir --publish never",
     "dist": "npm run typecheck && npm run build && node scripts/write-build-info.js && electron-builder --win nsis --publish never"
