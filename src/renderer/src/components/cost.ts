@@ -11,11 +11,11 @@
  *     a total. There is no code path that renders the amount alone.
  *   - the collapsed state carries the frame; the expanded state repeats it and
  *     adds the flat denial ("bu bir fatura değil").
- *   - the amount is a lower bound whenever anything was excluded from it, and
- *     it then reads "en az $X" rather than "$X". Both caveats — unpriced usage
- *     and the 1.25x cache-write fallback — can only push the true figure UP, so
- *     they collapse into one honest word in the number itself rather than into
- *     a footnote the user has to find.
+ *   - the amount is printed as it is, with no "en az" and no cause lines under
+ *     it. The owner ruled the floor marker out (2026-09-23): it was grey text
+ *     under every figure that the reader learned to skip. The producer still
+ *     sends the floor fields (contract.ts WeeklyCost); this block just does not
+ *     draw them.
  *
  * WHY THE BREAKDOWN IS NOT BEHIND THE DISCLOSURE
  * ----------------------------------------------
@@ -23,28 +23,16 @@
  * class per token, because there are 294 million of them. A single number
  * asserts; the composition explains. So the stacked bar and the two largest
  * classes are always visible, and only the table and the provenance are
- * behind the toggle. The causes of a floor are visible too, as one short line
- * each; their full sentences are behind their own "why" disclosure (ADR-002
- * A3.16), so "en az" is never on screen without a reason beside it.
+ * behind the toggle.
  *
  * The composition bar is deliberately NOT on the state ramp. The ramp means
  * "distance to a limit"; this is a share of a whole with no limit in it, and
  * borrowing the ramp would make a large cache-read share look like danger.
  */
 
-import type { CostByClass, ModelCost, WeeklyCost } from '../../../shared/contract.js';
+import type { CostByClass, WeeklyCost } from '../../../shared/contract.js';
 import { el, on, replaceChildrenWith, setAttr, setText } from '../dom.js';
-import {
-  atLeast,
-  dayRange,
-  modelName,
-  multiplier,
-  priceDate,
-  share,
-  tokens as tokenCount,
-  usd,
-  usdWithUnit,
-} from '../format.js';
+import { dayRange, priceDate, share, usd, usdWithUnit } from '../format.js';
 import { t, type MessageKey } from '../i18n.js';
 
 export interface CostHandle {
@@ -52,9 +40,8 @@ export interface CostHandle {
   /**
    * There is deliberately no `degraded` parameter (ADR-002 A3.15). The row's
    * status says whether the RATE-LIMIT capture is fresh; it says nothing about
-   * whether the token logs behind this figure were read. The only completeness
-   * signal this block honours is the cost source's own
-   * `WeeklyCost.sourceIncomplete`.
+   * whether the token logs behind this figure were read, so it never qualifies
+   * the figure here.
    */
   update(cost: WeeklyCost | null, providerName: string, pending?: boolean): void;
 }
@@ -79,40 +66,6 @@ const CLASS_LABEL: Record<DisplayKey, MessageKey> = {
 };
 
 const DISPLAY_KEYS: readonly DisplayKey[] = ['input', 'output', 'cacheWrite', 'cacheRead'];
-
-/** The long-context suffix Codex pricing appends to a tier it excluded
- *  (src/core/codex/pricing.js `speedOf`: `${tier}-long-context`). */
-const LONG_CONTEXT_SUFFIX = '-long-context';
-
-/**
- * `ModelCost.speed` as words. ONE mapping for both tools: Claude's speed
- * ('standard' | 'fast') and Codex's tier group label, which is the tier
- * ('standard' | 'fast' | another recorded tier), `unknown-tier`, or either of
- * those with `-long-context` (src/core/codex/pricing.js `speedOf`).
- *
- * A code this table does not know is NEVER printed raw: a producer string is
- * not copy, and "unknown-tier" beside a model name reads as a model variant.
- * It degrades to a neutral label that still says the price tier is what could
- * not be matched — which is the only thing an unpriced row's label claims.
- */
-function speedLabel(speed: string): string {
-  if (speed.endsWith(LONG_CONTEXT_SUFFIX) && speed.length > LONG_CONTEXT_SUFFIX.length) {
-    const tier = speed.slice(0, -LONG_CONTEXT_SUFFIX.length);
-    return t('cost.speed.longContext', { tier: tierLabel(tier) });
-  }
-  return tierLabel(speed);
-}
-
-function tierLabel(tier: string): string {
-  if (tier === 'standard') return t('cost.speed.standard');
-  if (tier === 'fast') return t('cost.speed.fast');
-  if (tier === 'unknown-tier') return t('cost.speed.unknownTier');
-  // ADR-003 A6 unpriced reason codes (contract `UnpricedReasonCode`).
-  if (tier === 'no-model') return t('cost.speed.noModel');
-  if (tier === 'no-published-price') return t('cost.speed.noPublishedPrice');
-  if (tier === 'other-model-alias') return t('cost.speed.otherModelAlias');
-  return t('cost.speed.other');
-}
 
 interface Slice {
   key: DisplayKey;
@@ -164,210 +117,17 @@ function noPriceTable(cost: WeeklyCost): boolean {
 
 /** True when every unpriced row recorded no model (Gemini 'no-model'). */
 function noModelOnly(cost: WeeklyCost): boolean {
-  const rows = unpricedRows(cost);
+  const rows = cost.byModel.filter((entry) => entry.usd === null);
   return rows.length > 0 && rows.every((row) => row.speed === 'no-model');
 }
 
-/** Model+speed rows the price table had no entry for. */
-function unpricedRows(cost: WeeklyCost): ModelCost[] {
-  return cost.byModel.filter((entry) => entry.usd === null);
-}
-
-/** How many unpriced (model, tier) lines the COLLAPSED list names before the
- *  rest collapse into one counted line. Three reads at a glance. */
-const MAX_UNPRICED_CAUSES = 3;
-
-/** How many unpriced entries the OPEN "why" names before a counted
- *  "… N more" line. Every entry is either named or counted, never dropped. */
-const MAX_UNPRICED_LISTED = 8;
-
-/** The cause kinds, in display order; also the `data-cause`/`data-caveat` values. */
-type CauseKind =
-  | 'unpriced'
-  | 'ttl'
-  | 'unrecorded-writes'
-  | 'assumed-tier'
-  | 'fast-requested'
-  | 'unrecorded-calls'
-  | 'long-prompt'
-  | 'tool-tokens'
-  | 'source-incomplete';
-
 /**
- * One reason the figure is not exact: its short line(s), with the count, and
- * ONE short explanation (ADR-004 A3.2) revealed by "why". Unpriced usage is
- * one group with a line per (model, tier) and a single explanation for all.
+ * True when some usage in the window could not be priced. `unpricedModels` is
+ * read as well as the rows so a payload whose rows were rejected at the
+ * boundary still counts as usage that happened.
  */
-interface CauseGroup {
-  kind: CauseKind;
-  /** Only for 'unpriced': why this group could not be priced. */
-  reason?: UnpricedReason;
-  lines: { text: string; more?: boolean }[];
-  explanation: string;
-}
-
-/**
- * The cause list (ADR-002 A3.16): one short line per reason the figure is not
- * exact. Every entry is one-way: an unpriced model adds cost that is missing,
- * a 1-hour write charged at 1.25x is undercharged, a write Codex recorded as 0
- * is missing, an event priced at Standard may have cost more, and events the
- * reader could not read are missing. None can make the true figure smaller.
- *
- * THE FLOOR IS DERIVED FROM THIS LIST, not from a parallel predicate. "en az"
- * is printed exactly when this returns at least one group, so a floor with no
- * visible cause is not a state the code can reach (A3.16), and a cause with no
- * floor is not one either.
- *
- * `sourceIncomplete` is the cost reader's own statement that it missed events
- * in the window (A3.15). The row's status is NOT read here: it describes the
- * limit capture, and the stale-limit caveat it used to drive was false for a
- * user who had simply not used the tool lately.
- *
- * `open` widens only the unpriced group: collapsed it names two entries and
- * counts the rest; open it names up to eight and counts the rest.
- */
-function causeGroups(cost: WeeklyCost, noFigure: boolean, open: boolean): CauseGroup[] {
-  const groups: CauseGroup[] = [];
-
-  // Named from byModel, not from `unpricedModels`: see unpricedItems(). One
-  // group per REASON, so each gets the explanation that is true for it: a
-  // model missing from the price list, tokens with no model, a tool that
-  // publishes no price, another model behind Kimi Code (ADR-003 A6).
-  const cap = open ? MAX_UNPRICED_LISTED : MAX_UNPRICED_CAUSES;
-  for (const { reason, items } of unpricedByReason(cost)) {
-    const shown = items.length > cap ? (open ? cap : cap - 1) : items.length;
-    const lines: CauseGroup['lines'] = items
-      .slice(0, shown)
-      .map((item) => ({ text: t('cost.cause.unpriced', { item }) }));
-    if (items.length > shown) {
-      lines.push({ text: t('cost.cause.unpricedMore', { count: items.length - shown }), more: true });
-    }
-    groups.push({ kind: 'unpriced', reason, lines, explanation: t(UNPRICED_EXPLANATION[reason]) });
-  }
-
-  // NOT the unrecorded-writes cause below: this one is Claude's missing 5m/1h
-  // split priced at the 1.25x floor, a claim that is false for Codex.
-  if (cost.fallbackWriteEvents > 0) {
-    groups.push({
-      kind: 'ttl',
-      lines: [{ text: t('cost.cause.ttl', { count: cost.fallbackWriteEvents }) }],
-      explanation: t('cost.caveat.ttl', { low: multiplier(1.25), high: multiplier(2) }),
-    });
-  }
-  if (cost.unrecordedWriteEvents > 0) {
-    groups.push({
-      kind: 'unrecorded-writes',
-      lines: [{ text: t('cost.cause.unrecordedWrites', { count: cost.unrecordedWriteEvents }) }],
-      explanation: t('cost.caveat.unrecordedWrites'),
-    });
-  }
-  // ADR-002 A3.17/A3.21: no recorded tier yet, priced at Standard as a floor.
-  if (cost.assumedTierEvents > 0) {
-    groups.push({
-      kind: 'assumed-tier',
-      lines: [{ text: t('cost.cause.assumedTier', { count: cost.assumedTierEvents }) }],
-      explanation: t('cost.caveat.assumedTier'),
-    });
-  }
-  // A3.18: Fast was REQUESTED, not proven billed; priced at Standard as a floor.
-  if (cost.fastRequestedEvents > 0) {
-    groups.push({
-      kind: 'fast-requested',
-      lines: [{ text: t('cost.cause.fastRequested', { count: cost.fastRequestedEvents }) }],
-      explanation: t('cost.caveat.fastRequested'),
-    });
-  }
-  // ADR-003 A6, Gemini: calls the CLI never records. A standing cause with no
-  // count, because what is missing is exactly what was never counted.
-  if (cost.unrecordedCalls) {
-    groups.push({
-      kind: 'unrecorded-calls',
-      lines: [{ text: t('cost.cause.unrecordedCalls') }],
-      explanation: t('cost.caveat.unrecordedCalls'),
-    });
-  }
-  // Gemini: prompts over 200K priced at the lower rate, as a floor.
-  if (cost.longPromptFloorEvents > 0) {
-    groups.push({
-      kind: 'long-prompt',
-      lines: [{ text: t('cost.cause.longPrompt', { count: cost.longPromptFloorEvents }) }],
-      explanation: t('cost.caveat.longPrompt'),
-    });
-  }
-  // Gemini: tool-use prompt tokens, whose price is not published.
-  if (cost.toolTokenEvents > 0) {
-    groups.push({
-      kind: 'tool-tokens',
-      lines: [{ text: t('cost.cause.toolTokens', { count: cost.toolTokenEvents }) }],
-      explanation: t('cost.caveat.toolTokens'),
-    });
-  }
-  // With no amount on screen, "the amount covers only…" describes a figure
-  // that is not there (A3.19): the no-figure line says no amount can be given.
-  if (cost.sourceIncomplete) {
-    groups.push({
-      kind: 'source-incomplete',
-      lines: [{ text: t('cost.cause.sourceIncomplete') }],
-      explanation: noFigure ? t('cost.caveat.degradedNoFigure') : t('cost.caveat.degraded'),
-    });
-  }
-  return groups;
-}
-
-/**
- * Unpriced usage as "model · tier · tokens". Named from byModel, because
- * `unpricedModels` is de-duplicated by model and DROPS the speed
- * (src/core/pricing.js:261): it would say "claude-opus-4-8 is unpriced" while
- * a priced standard-speed row for the same model sits in the table. ADR-002
- * amendment 2 added ModelCost.speed for exactly this contradiction. The bare
- * list is only a fallback for a payload whose rows were rejected.
- */
-type UnpricedReason = 'price-list' | 'no-model' | 'no-published-price' | 'other-model-alias';
-
-/** The short explanation for each unpriced reason. */
-const UNPRICED_EXPLANATION: Record<UnpricedReason, MessageKey> = {
-  'price-list': 'cost.caveat.unpriced',
-  'no-model': 'cost.caveat.unpricedNoModel',
-  'no-published-price': 'cost.caveat.unpricedNoPublishedPrice',
-  'other-model-alias': 'cost.caveat.unpricedOtherModelAlias',
-};
-
-function reasonOf(speed: string): UnpricedReason {
-  return speed === 'no-model' || speed === 'no-published-price' || speed === 'other-model-alias'
-    ? speed
-    : 'price-list';
-}
-
-/** Unpriced entries grouped by reason, in order of first appearance. */
-function unpricedByReason(cost: WeeklyCost): { reason: UnpricedReason; items: string[] }[] {
-  const rows = unpricedRows(cost);
-  if (rows.length === 0) {
-    const names = cost.unpricedModels.slice();
-    return names.length > 0 ? [{ reason: 'price-list', items: names }] : [];
-  }
-  const groups: { reason: UnpricedReason; items: string[] }[] = [];
-  for (const row of rows) {
-    const reason = reasonOf(row.speed);
-    const tokens = row.tokens ? ` · ${tokenCount(row.tokens.billable)}` : '';
-    const item = `${modelName(row.model)} · ${speedLabel(row.speed)}${tokens}`;
-    let group = groups.find((g) => g.reason === reason);
-    if (!group) {
-      group = { reason, items: [] };
-      groups.push(group);
-    }
-    group.items.push(item);
-  }
-  return groups;
-}
-
-function unpricedItems(cost: WeeklyCost): string[] {
-  const rows = unpricedRows(cost);
-  return rows.length > 0
-    ? rows.map((row) => {
-        const tokens = row.tokens ? ` · ${tokenCount(row.tokens.billable)}` : '';
-        return `${modelName(row.model)} · ${speedLabel(row.speed)}${tokens}`;
-      })
-    : cost.unpricedModels.slice();
+function hasUnpriced(cost: WeeklyCost): boolean {
+  return cost.byModel.some((entry) => entry.usd === null) || cost.unpricedModels.length > 0;
 }
 
 /**
@@ -405,37 +165,6 @@ export function createCost(providerId: string): CostHandle {
   const bar = el('div', { class: 'cost__bar', 'aria-hidden': 'true' });
   const caption = el('p', { class: 'cost__caption' });
 
-  // --- causes (ADR-002 A3.16, ADR-004 A3) ----------------------------------
-  // Always visible whenever the figure is a floor or absent: "en az" is in the
-  // collapsed summary, so its reasons must be too. The "why" toggle HEADS the
-  // list, so what it reveals (one shared lead, then one short muted line under
-  // each cause) always appears after the control, never above it.
-  const causesId = `cost-causes-${providerId}`;
-  const whyId = `cost-why-${providerId}`;
-  const whyLead = el('p', { class: 'cost__why-lead' });
-  whyLead.hidden = true;
-  const causes = el('ul', { class: 'cost__causes', id: causesId });
-  const whyBody = el('div', { class: 'cost__why-body', id: whyId }, whyLead, causes);
-  const whyChevron = el('span', { class: 'cost__chev', 'aria-hidden': 'true' });
-  const whyText = el('span', { class: 'cost__whytext' });
-  // The accessible name IS the visible text (label-in-name), and the cause
-  // list is its description, so a reader tabbing between rows hears which
-  // causes this "why" belongs to without a second, divergent label.
-  const whyToggle = el(
-    'button',
-    {
-      type: 'button',
-      class: 'cost__why',
-      'aria-expanded': 'false',
-      'aria-controls': whyId,
-      'aria-describedby': causesId,
-    },
-    whyChevron,
-    whyText,
-  ) as HTMLButtonElement;
-  const causeBlock = el('div', { class: 'cost__cause-block' }, whyToggle, whyBody);
-  causeBlock.hidden = true;
-
   // --- expanded ----------------------------------------------------------
   const detailLead = el('p', { class: 'cost__lead' });
   const detailDenial = el('p', { class: 'cost__denial' });
@@ -457,7 +186,7 @@ export function createCost(providerId: string): CostHandle {
   const pendingLine = el('p', { class: 'cost__pending' });
   pendingLine.hidden = true;
 
-  const root = el('div', { class: 'cost' }, pendingLine, toggle, bar, caption, causeBlock, detail);
+  const root = el('div', { class: 'cost' }, pendingLine, toggle, bar, caption, detail);
   root.hidden = true;
 
   let expanded = false;
@@ -469,21 +198,6 @@ export function createCost(providerId: string): CostHandle {
   on(toggle, 'click', () => {
     expanded = !expanded;
     applyExpanded();
-  });
-
-  // Its own state, independent of the breakdown: a user who only wants to
-  // know why the figure is a bound should not have to open the table too.
-  let whyExpanded = false;
-  /** The last rendered cost, so toggling "why" can re-render the list. */
-  let lastCauses: { cost: WeeklyCost; noFigure: boolean } | null = null;
-  function applyWhy(): void {
-    setAttr(whyToggle, 'aria-expanded', whyExpanded ? 'true' : 'false');
-    setAttr(causeBlock, 'data-why', whyExpanded ? 'true' : 'false');
-    if (lastCauses) renderCauses(lastCauses.cost, lastCauses.noFigure);
-  }
-  on(whyToggle, 'click', () => {
-    whyExpanded = !whyExpanded;
-    applyWhy();
   });
 
   function renderBar(slices: readonly Slice[]): void {
@@ -524,43 +238,6 @@ export function createCost(providerId: string): CostHandle {
     );
   }
 
-  /**
-   * The cause list and, when "why" is open, its explanations. Each cause stays
-   * its own statement, tied to its own line: usage MISSING from the total,
-   * usage IN it at too low a rate, writes never recorded, a tier not recorded
-   * or not proven, and records never read are different failures, and merging
-   * them would lose which is happening (ADR-004 A3: short, not merged).
-   *
-   * The shared lead carries the lower-bound claim once. With no figure there
-   * is no bound to state, so there is no lead: only the short lines.
-   */
-  function renderCauses(cost: WeeklyCost, noFigure: boolean): number {
-    const groups = causeGroups(cost, noFigure, whyExpanded);
-    replaceChildrenWith(
-      causes,
-      groups.map((group) => {
-        const item = el('li', { class: 'cost__group', 'data-cause': group.kind });
-        if (group.reason) setAttr(item, 'data-reason', group.reason);
-        for (const line of group.lines) {
-          item.appendChild(
-            el('span', { class: line.more ? 'cost__cause cost__cause--more' : 'cost__cause' }, line.text),
-          );
-        }
-        const explanation = el(
-          'span',
-          { class: 'cost__caveat', 'data-caveat': group.kind },
-          group.explanation,
-        );
-        explanation.hidden = !whyExpanded;
-        item.appendChild(explanation);
-        return item;
-      }),
-    );
-    setText(whyLead, t('cost.why.lead'));
-    whyLead.hidden = !whyExpanded || noFigure || groups.length === 0;
-    return groups.length;
-  }
-
   function update(
     cost: WeeklyCost | null,
     providerName: string,
@@ -575,7 +252,6 @@ export function createCost(providerId: string): CostHandle {
       setText(pendingLine, t('cost.pending'));
       bar.hidden = true;
       caption.hidden = true;
-      causeBlock.hidden = true;
       detail.hidden = true;
       root.hidden = false;
       return;
@@ -588,10 +264,6 @@ export function createCost(providerId: string): CostHandle {
     }
 
     const { slices, sum } = slicesOf(cost.byClass);
-    // Counted once, collapsed, for the floor decision below; the open state
-    // only names more of the same unpriced entries, never adds a cause.
-    const causeCount = causeGroups(cost, false, false).length;
-    const hasCaveat = causeCount > 0;
 
     /**
      * THE MOST IMPORTANT LINE IN THIS FILE.
@@ -617,33 +289,25 @@ export function createCost(providerId: string): CostHandle {
      */
     const hasFigure = cost.totalUsd > 0 || sum > 0;
 
-    // Nothing priced and nothing to warn about is not a $0 week, it is no
-    // week. But an all-unpriced week is SHOWN, never hidden: a hidden block is
+    // Nothing priced and nothing unpriced is not a $0 week, it is no week. But
+    // an all-unpriced week is SHOWN, never hidden: a hidden block is
     // indistinguishable from a provider with no usage, which is the same
     // no-data-versus-zero collision as the tray's ring.
-    if (!hasFigure && !hasCaveat) {
+    //
+    // A week with no figure and nothing unpriced — in practice records the
+    // reader could not open (sourceIncomplete) — used to show its cause line
+    // alone. With cause lines gone there is nothing true left to print here,
+    // so it is hidden; the row's token line already reads "sayılamadı" for
+    // that week (row.ts weeklyTokenText).
+    if (!hasFigure && !hasUnpriced(cost)) {
       root.hidden = true;
       return;
     }
     root.hidden = false;
     setAttr(root, 'data-unpriced', hasFigure ? null : 'true');
 
-    // No figure AND nothing unpriced: the causes are all there is to say (in
-    // practice sourceIncomplete: the reader missed records and priced none).
-    // Hiding the block would read as "no usage", and cost.unpricedSummary
-    // ("not in the price list") would be false, so the block is the cause
-    // list and its "why" alone: no toggle, no amount, no breakdown.
-    const causesOnly = !hasFigure && unpricedItems(cost).length === 0;
-    setAttr(root, 'data-causes-only', causesOnly ? 'true' : null);
-    toggle.hidden = causesOnly;
-
-    // A floor exactly when there is a visible cause for it (A3.16).
-    const floor = hasFigure && causeCount > 0;
-
     if (hasFigure) {
-      // The floor word is bound to the figure by atLeast(), so the English
-      // word order ("{amount} at published API prices") cannot separate them.
-      const amount = floor ? atLeast(usd(cost.totalUsd)) : usd(cost.totalUsd);
+      const amount = usd(cost.totalUsd);
       // Review F11: Gemini is priced at Gemini API STANDARD rates (ADR-003 A6
       // ruling), and the figure names that source where it is shown.
       setText(summary, t(gemini ? 'cost.summaryGemini' : 'cost.summary', { amount }));
@@ -656,13 +320,13 @@ export function createCost(providerId: string): CostHandle {
         'aria-label',
         t(gemini ? 'cost.toggleLabelGemini' : 'cost.toggleLabel', {
           provider: providerName,
-          amount: floor ? atLeast(named) : named,
+          amount: named,
         }),
       );
     } else {
       // No number anywhere in this branch — not zero, not a bound. The user is
-      // told that usage happened and that we could not price it, and the model
-      // list below carries the token counts that prove the first half.
+      // told that usage happened and that we could not price it, and the row's
+      // token line carries the count that proves the first half.
       // Review F2: the reason is chosen by what is true. A tool with no price
       // table has no list to be missing from; tokens with no model were never
       // priceable; only a model absent from a real list is "not in the list".
@@ -700,9 +364,7 @@ export function createCost(providerId: string): CostHandle {
     setText(
       detailLead,
       hasFigure
-        ? t('cost.detailLead', {
-            amount: floor ? atLeast(usdWithUnit(cost.totalUsd)) : usdWithUnit(cost.totalUsd),
-          })
+        ? t('cost.detailLead', { amount: usdWithUnit(cost.totalUsd) })
         : t('cost.detailLeadUnpriced'),
     );
     // The denial answers "is this money I owe?". With no amount on screen there
@@ -711,21 +373,6 @@ export function createCost(providerId: string): CostHandle {
     setText(detailDenial, t('cost.denial'));
 
     renderTable(slices);
-
-    // A cause list that empties closes its disclosure, so a later floor does
-    // not reappear already open with no click behind it.
-    if (causeCount === 0) whyExpanded = false;
-    lastCauses = { cost, noFigure: !hasFigure };
-    causeBlock.hidden = causeCount === 0;
-    setText(whyText, hasFigure ? t('cost.why.toggle') : t('cost.why.toggleUnpriced'));
-    applyWhy();
-    if (causesOnly) {
-      bar.hidden = true;
-      caption.hidden = true;
-      detail.hidden = true;
-      setAttr(root, 'data-expanded', 'false');
-      return;
-    }
 
     // ADR-002 rule 3 obliges the figure to say when its prices were current.
     // When main did not tell us, SAYING SO discharges that obligation; quietly

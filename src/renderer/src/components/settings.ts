@@ -48,11 +48,10 @@
  * is summarised by its NOTIONAL cost at published API prices, computed in main
  * (`src/core/history.js`) and sent resolved — the renderer does no arithmetic
  * on usage. It is framed exactly like the weekly cost block: never a bill, and
- * "en az $X" whenever the figure is a lower bound.
+ * printed as it is — no "en az", no cause lines (the owner's 2026-09-23 ruling).
  */
 
 import type {
-  HistoryFloorCause,
   LanguageChoice,
   PeriodModelCost,
   PeriodUsage,
@@ -65,12 +64,10 @@ import { enabledOf, type PanelState } from '../store.js';
 import { themeLabel } from '../theme.js';
 import { pendingUsageOf } from '../sanitize.js';
 import {
-  atLeast,
   compact,
   dayRange,
   lowerFirst,
   modelName,
-  multiplier,
   priceDateShort,
   tokens as tokenCount,
   usd,
@@ -78,15 +75,7 @@ import {
 import { language as currentLanguage, t, type MessageKey } from '../i18n.js';
 import { experimentalTag } from './experimental.js';
 import { keyFieldsOf, keyStateSentence, offersTokenPage } from '../keys.js';
-import {
-  hasTokenCount,
-  marksFloor,
-  modelTokens,
-  providersWithTokens,
-  tokenFloorCausesFor,
-  tokensFor,
-} from '../tokens.js';
-import { CAUSE_CLAUSE, floorCauseClause } from '../floor-causes.js';
+import { hasTokenCount, modelTokens, providersWithTokens, tokensFor } from '../tokens.js';
 import { providerMark } from './logo.js';
 
 /** The id the header's settings button points `aria-controls` at. */
@@ -132,7 +121,8 @@ export interface SettingsContext {
    */
   onRemoveKey(providerId: string): void;
   /**
-   * The user told us which plan they are on, or emptied the field to clear it.
+   * The user told us which plan they are on, or picked "Belirtilmedi" (the
+   * empty string) to clear it.
    * Persist-then-apply: the app writes through main and puts the control back
    * if main answers false, so the field can never hold a value that was not
    * stored (ADR-004's rule for theme and language, applied here).
@@ -240,44 +230,36 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
   // Never a character of the key, never its length, never a mask (K23).
   // --- the plan the user says they are on ---------------------------------
   //
-  // A NATIVE `<input list>` with a per-tool `<datalist>`, not a select and not
-  // a hand-rolled combobox. It has to do two things at once — offer the plans
-  // we know about and accept one we have never heard of — and the platform
-  // does exactly that, with keyboard handling, an accessible name and an
-  // announced suggestion list we would otherwise be reimplementing. This file
-  // already took that position for the theme radios; the same reasoning holds.
+  // A NATIVE `<select>` over the plans we know for this tool — a closed list,
+  // the owner's call (2026-09-23): the free-text field invited typos and made
+  // the row's label something nobody chose from. Native for the same reasons
+  // as the theme radios: keyboard handling, an accessible name and an
+  // announced option list come with it.
   //
-  // NOTHING IS PRESELECTED and no tool has a default. Offering "Max 20x" is
-  // help; filling it in is a guess with our name on it, and this value's whole
-  // justification is that it is the USER'S statement — `planLabel` is "from app
-  // settings only. Never inferred, never guessed".
+  // NOTHING IS PRESELECTED and no tool has a default: the first option is
+  // "Belirtilmedi", the empty value. Filling in "Max 20x" would be a guess
+  // with our name on it, and this value's whole justification is that it is
+  // the USER'S statement — `planLabel` is "from app settings only. Never
+  // inferred, never guessed".
+  //
+  // A tool we know no plans for (Kimi, Antigravity) gets NO control: a select
+  // holding only "Belirtilmedi" asks a question it cannot take an answer to.
+  // The one exception is a label already stored for such a tool — see
+  // updatePlan() — which must stay clearable.
   const planId = 'settings-plan-' + provider.id;
-  const planListId = 'settings-plan-list-' + provider.id;
-  const planLabelEl = el('label', { class: 'settings__plan-label', for: planId }, t('settings.plan.label'));
-  const planInput = el('input', {
-    type: 'text',
+  const planSelect = el('select', {
     id: planId,
-    class: 'settings__plan-input',
-    list: planListId,
-    autocomplete: 'off',
-    spellcheck: 'false',
-    maxlength: '24',
-    placeholder: t('settings.plan.placeholder'),
+    class: 'settings__plan-select',
     'aria-describedby': planId + '-hint',
-  }) as HTMLInputElement;
-  const planList = el('datalist', { id: planListId });
-  // The hint keeps the free-text path obviously open. Vendors rename plans, and
-  // a user whose plan is not in the list must not read the list as the app
-  // disagreeing with their bank statement.
-  const planHint = el('p', { class: 'settings__plan-hint', id: planId + '-hint' }, t('settings.plan.hint'));
+  }) as HTMLSelectElement;
   const planBlock = el(
     'div',
     { class: 'settings__plan' },
-    planLabelEl,
-    planInput,
-    planList,
-    planHint,
+    el('label', { class: 'settings__plan-label', for: planId }, t('settings.plan.label')),
+    planSelect,
+    el('p', { class: 'settings__plan-hint', id: planId + '-hint' }, t('settings.plan.hint')),
   );
+  planBlock.hidden = true;
 
   const keyState = el('p', { class: 'settings__key-state' });
   // The one state whose cause is OUR OWN CHOICE, not a fault the user can
@@ -353,32 +335,26 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
   on(keyToken, 'click', () => ctx.onOpenTokenPage(provider.id));
 
   /**
-   * Committed on blur and on Enter, not per keystroke: every keystroke would be
-   * a write to disk and a snapshot rebuild, and a half-typed plan is not a
-   * statement the user has made yet.
-   *
-   * What the user sees when main NORMALISES the value is the interesting half.
-   * Main trims, collapses whitespace, strips invisibles and caps at 24, so what
-   * is stored can differ from what was typed. The field is not corrected here —
-   * it is corrected by the SNAPSHOT: `update()` below writes `planLabel` back
-   * into the input whenever the field is not focused, so a moment after the
-   * write the field shows exactly what was stored. No message, no lecture, and
-   * no second copy of main's normalisation rules in the renderer to drift from
-   * the first. If main refuses outright, the app reverts and says so.
+   * Committed on `change`: one write per choice, the empty value clearing it.
+   * Main still sanitises what arrives (it cannot tell a select from a file
+   * someone edited by hand), and the control is put back from the SNAPSHOT —
+   * `update()` below selects `planLabel` again — so a refused write shows the
+   * stored value without a second copy of main's rules here. If main refuses
+   * outright, the app reverts and says so.
    */
   let planCommitted = provider.planLabel ?? '';
-  function commitPlan(): void {
-    const value = planInput.value;
+  on(planSelect, 'change', () => {
+    const value = planSelect.value;
     if (value === planCommitted) return;
     planCommitted = value;
     ctx.onPlanLabel(provider.id, value);
-  }
-  on(planInput, 'change', commitPlan);
-  on(planInput, 'keydown', (event) => {
-    if ((event as KeyboardEvent).key === 'Enter') {
-      event.preventDefault();
-      commitPlan();
-    }
+  });
+  // Snapshots that landed while the select was focused were not applied (see
+  // updatePlan); leaving it applies the latest, so a refused write still
+  // shows the stored value once the keyboard lets go.
+  let lastPlan: { next: ProviderSnapshot; state: PanelState } | null = null;
+  on(planSelect, 'blur', () => {
+    if (lastPlan) updatePlan(lastPlan.next, lastPlan.state);
   });
 
   // A real switch, not a styled div: role="switch" + aria-checked is what a
@@ -417,6 +393,45 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     ctx.onToggle(provider.id, control.getAttribute('aria-checked') !== 'true');
   });
 
+  /**
+   * The options, and the selection, from main's stored value.
+   *
+   * A stored label that is not one of this tool's plans — typed into the old
+   * free-text field, or a plan since renamed — is kept as an extra option
+   * after the known ones, so opening Settings never silently drops what the
+   * user said. It lasts only while it is the stored value: once they pick
+   * something else, the next snapshot rebuilds the list without it.
+   *
+   * Never rewritten while the select is focused: arrowing through a closed
+   * select commits each step, and a snapshot for an earlier step landing
+   * under the keyboard would pull the selection back.
+   */
+  function updatePlan(next: ProviderSnapshot, state: PanelState): void {
+    lastPlan = { next, state };
+    const stored = next.planLabel ?? '';
+    const known = planChoices(next.id);
+    const extra = stored !== '' && !known.includes(stored) ? stored : null;
+    const values = extra === null ? known : [...known, extra];
+    // No known plans and nothing stored: no control at all.
+    planBlock.hidden = values.length === 0;
+    // `setAttr`, not `dataset`: the DOM shim the node-level tests mount this
+    // component on implements attributes, and a component that needs `dataset`
+    // to render is a component those tests cannot reach.
+    const signature = JSON.stringify(values);
+    const focused = document.activeElement === planSelect;
+    if (!focused && signature !== planSelect.getAttribute('data-of')) {
+      setAttr(planSelect, 'data-of', signature);
+      replaceChildrenWith(planSelect, [
+        el('option', { value: '' }, t('settings.plan.placeholder')),
+        ...values.map((value) => el('option', { value }, value)),
+      ]);
+    }
+    if (!focused && planSelect.value !== stored) planSelect.value = stored;
+    if (!focused) planCommitted = stored;
+    setAttr(root, 'data-plan-reverted', state.planReverted === next.id ? 'true' : null);
+    setAttr(planSelect, 'aria-busy', state.planPending.includes(next.id) ? 'true' : null);
+  }
+
   function update(next: ProviderSnapshot, state: PanelState, isEnabled: boolean): void {
     setText(name, next.displayName);
     const metaText = metaFor(next, isEnabled);
@@ -441,30 +456,7 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     // ADR-003 A8: the key section. Hidden entirely for a provider that cannot
     // use a key, and for one with no key stored — the offer to ADD one lives
     // on the row, where the figure it would add would appear.
-    // The field follows main's truth whenever the user is not typing in it.
-    // That is what makes the normalisation visible without a message: a value
-    // main trimmed or capped comes back changed on the next snapshot, in the
-    // field the user just left. Never while focused — rewriting under a cursor
-    // is how a setting eats a word mid-sentence.
-    const storedPlan = next.planLabel ?? '';
-    if (document.activeElement !== planInput && planInput.value !== storedPlan) {
-      planInput.value = storedPlan;
-      planCommitted = storedPlan;
-    }
-    // The suggestions. Rebuilt per render so a language change re-renders them,
-    // and EMPTY for a tool we know no plans for — an empty datalist offers
-    // nothing, which is the honest state when we have nothing to offer.
-    const suggestions = planSuggestions(next.id);
-    // `setAttr`, not `dataset`: the DOM shim the node-level tests mount this
-    // component on implements attributes, and a component that needs `dataset`
-    // to render is a component those tests cannot reach.
-    const signature = JSON.stringify(suggestions);
-    if (signature !== planList.getAttribute('data-of')) {
-      setAttr(planList, 'data-of', signature);
-      replaceChildrenWith(planList, suggestions.map((value) => el('option', { value })));
-    }
-    setAttr(root, 'data-plan-reverted', state.planReverted === next.id ? 'true' : null);
-    setAttr(planInput, 'aria-busy', state.planPending.includes(next.id) ? 'true' : null);
+    updatePlan(next, state);
 
     const keys = keyFieldsOf(next);
     const hasKey = keys.keyCapable && keys.keyState !== 'none';
@@ -694,8 +686,8 @@ function createLanguageControl(ctx: SettingsContext): LanguageHandleLocal {
  * and the figures appear on expand. The per-model list is itself a bounded
  * scroller (`.usage__models` max-height + overflow), so a period with many
  * models scrolls WITHIN its disclosure instead of pushing the panel off screen.
- * Each model amount is framed exactly like the period amount — "en az" for a
- * floor, "fiyatlanamadı" for an unpriced model — never a bare "$0,00".
+ * Each model amount is framed exactly like the period amount — "fiyatlanamadı"
+ * for an unpriced model — never a bare "$0,00".
  */
 interface UsageHandleLocal {
   el: HTMLElement;
@@ -711,27 +703,23 @@ interface UsageHandleLocal {
  * The price note under Toplam Kullanım, composed per tool (ADR-003 A6), in the
  * cost block's shape (ADR-004 A3: nobody reads a wall of text).
  *
- * Always visible: one short lead (only when some tool has a floor cause) and
- * one compact line per tool in `usageProviders` with its price source and date:
+ * One compact line per tool in `usageProviders` with its price source and date:
  * "Claude Code · 1 Ağu 2026 fiyatları", "Gemini · Gemini API standart, 10 Eyl
- * 2026", "Kimi · fiyat yayımlamıyor". Behind "Neden en az?": one short line per
- * tool naming its causes, worded like the cost block's cause lines.
+ * 2026", "Kimi · fiyat yayımlamıyor". Nothing else: the "en az" lead and the
+ * per-tool causes behind "Neden en az?" went with the floor marker.
  *
  * A date is stated only for a table that priced something in these figures
  * (`pricesAsOfByProvider`); the legacy `pricesAsOf` (always Claude's) is used
  * only when main sends no per-tool data at all — an older main.
  */
 interface NoteModel {
-  lead: boolean;
   sources: { id: ProviderSnapshot['id']; text: string }[];
-  why: { id: ProviderSnapshot['id']; text: string }[];
   /** No tool at all: the single "date not reported" line. */
   empty: boolean;
 }
 
 function noteModel(history: UsageHistory | null, known: readonly ProviderSnapshot[]): NoteModel {
   const byDate = history?.pricesAsOfByProvider ?? {};
-  const causesBy = history?.floorCausesByProvider ?? {};
   let tools: ProviderSnapshot['id'][] = history?.usageProviders ?? [];
   let legacy = false;
   if (tools.length === 0) {
@@ -741,22 +729,17 @@ function noteModel(history: UsageHistory | null, known: readonly ProviderSnapsho
       legacy = true;
     }
   }
-  if (tools.length === 0) return { lead: false, sources: [], why: [], empty: true };
+  if (tools.length === 0) return { sources: [], empty: true };
 
   const nameOf = (id: ProviderSnapshot['id']): string =>
     known.find((p) => p.id === id)?.displayName || NOTE_TOOL_NAMES[id];
-  const ttl = { low: multiplier(1.25) };
 
   const sources: NoteModel['sources'] = [];
-  const why: NoteModel['why'] = [];
   for (const id of tools) {
     const tool = nameOf(id);
     const date = legacy ? history?.pricesAsOf : byDate[id];
     // Only Kimi has no price table (contract: never in pricesAsOfByProvider).
     const hasTable = !!date || id !== 'kimi';
-    const codes: HistoryFloorCause[] = legacy
-      ? ['unpriced', 'cache-write-ttl-fallback']
-      : (causesBy[id] ?? []).slice();
 
     sources.push({
       id,
@@ -770,37 +753,23 @@ function noteModel(history: UsageHistory | null, known: readonly ProviderSnapsho
             ? t('settings.usage.source.date', { tool, date: priceDateShort(date) })
             : t('settings.usage.source.dateMissing', { tool }),
     });
-
-    // Review F3: the lead and the "why" follow the UNFILTERED codes, so a
-    // period made "en az" by Kimi alone still says why. For a tool with no
-    // price table, "does not publish prices" replaces "unpriced usage".
-    if (codes.length > 0) {
-      const clauses = codes.map((code) =>
-        code === 'unpriced' && !hasTable
-          ? t('settings.usage.cause.noTable')
-          : code === 'cache-write-ttl-fallback'
-            ? t(CAUSE_CLAUSE[code], ttl)
-            : t(CAUSE_CLAUSE[code]),
-      );
-      why.push({ id, text: t('settings.usage.why.tool', { tool, causes: joinList(clauses) }) });
-    }
   }
-  return { lead: why.length > 0, sources, why, empty: false };
+  return { sources, empty: false };
 }
 
 /**
- * The plans we know each vendor sells, as SUGGESTIONS ONLY.
+ * The plans we know each vendor sells: the options of the plan select.
  *
- * Not a validation list and not a default: the field accepts anything, nothing
- * is preselected, and a tool with no entry here simply offers nothing. These go
- * stale every time a vendor renames a tier, which is exactly why the control is
- * an `<input list>` and not a `<select>` — a stale list must cost the user a
- * suggestion, never the ability to state the truth.
+ * Not a default: nothing is preselected, and a tool with no entry here gets no
+ * control. These go stale every time a vendor renames a tier; a stored label
+ * that has fallen off this list is still offered while it is stored (see
+ * updatePlan), so a stale list never silently rewrites what the user said.
+ * Main does not validate against this list — it only sanitises.
  *
  * Not translated: they are product names, and "Max 20x" is "Max 20x" in every
  * language. Translating a plan name would invent a plan.
  */
-const PLAN_SUGGESTIONS: Partial<Record<ProviderSnapshot['id'], readonly string[]>> = {
+const PLAN_CHOICES: Partial<Record<ProviderSnapshot['id'], readonly string[]>> = {
   claude: ['Pro', 'Max 5x', 'Max 20x'],
   codex: ['Plus', 'Pro', 'Business', 'Enterprise'],
   gemini: ['Free', 'Google AI Pro', 'Google AI Ultra'],
@@ -809,8 +778,8 @@ const PLAN_SUGGESTIONS: Partial<Record<ProviderSnapshot['id'], readonly string[]
   antigravity: [],
 };
 
-function planSuggestions(id: ProviderSnapshot['id']): readonly string[] {
-  return PLAN_SUGGESTIONS[id] ?? [];
+function planChoices(id: ProviderSnapshot['id']): readonly string[] {
+  return PLAN_CHOICES[id] ?? [];
 }
 
 /** Names for a tool the snapshot did not list (never expected; never a raw id). */
@@ -836,10 +805,10 @@ function joinList(items: readonly string[]): string {
 function amountText(period: PeriodUsage, pending: boolean): string {
   // While a tool is still being counted, an empty or zero period is not known
   // to be empty: that tool's usage in it has not been read. "—" would claim it.
-  // A figure that IS present stays unqualified — pending is not a floor ("en
-  // az"), it is incomplete, and the section's note says so.
+  // A figure that IS present stays unqualified — pending is incomplete, and
+  // the section's note says so.
   if (pending && (!period.hasUsage || period.costUsd <= 0)) return t('settings.amount.pending');
-  if (period.costUsd > 0) return period.isFloor ? atLeast(usd(period.costUsd)) : usd(period.costUsd);
+  if (period.costUsd > 0) return usd(period.costUsd);
   // Usage happened, but none of it could be priced: say so rather than print a
   // zero that reads as "free".
   if (period.hasUsage && period.unpricedModels.length > 0) return t('settings.amount.unpriced');
@@ -865,7 +834,7 @@ function isIncompleteAmount(period: PeriodUsage, pending: boolean): boolean {
  */
 function modelAmountText(model: PeriodModelCost): string {
   if (model.costUsd === null) return t('settings.amount.unpriced');
-  if (model.costUsd > 0) return model.isFloor ? atLeast(usd(model.costUsd)) : usd(model.costUsd);
+  if (model.costUsd > 0) return usd(model.costUsd);
   return '—';
 }
 
@@ -885,31 +854,18 @@ function tokensTitle(tk: NonNullable<ReturnType<typeof tokensFor>>): string {
 }
 
 /**
- * One model line's token count, and "en az" only when MAIN says that tool's
- * COUNT is a lower bound here (`tokenFloorCausesByProvider`).
- *
- * Never `model.isFloor`, which is a statement about DOLLARS. The two are
- * deliberately different claims and they appear on the same line: an unpriced
- * model, an assumed or Fast-requested tier and Claude's cache-write TTL
- * fallback each counted every token they saw and differ only in what they may
- * charge for it. So "en az $301,12" beside an exact "9,6M token" is not an
- * inconsistency — it is the point.
+ * One model line's token count, printed as it is.
  *
  * A count is shown even when `costUsd` is null: the tokens were used whether
  * or not a price exists for them, and blanking the count to match the price
  * would hide real usage.
  *
  * Empty string ONLY when no count arrived (null). A count of zero prints as
- * zero — it is a measurement — and it never takes "en az", because a lower
- * bound of zero qualifies nothing. The cause for a tool's floor is printed once
- * per tool on its subtotal line, directly below this list, rather than repeated
- * on every one of its model lines (ADR-004 A3.2).
+ * zero — it is a measurement.
  */
-function modelTokensText(model: PeriodModelCost, period: PeriodUsage): string {
+function modelTokensText(model: PeriodModelCost): string {
   const tk = modelTokens(model);
-  if (!tk) return '';
-  const value = tokenCount(tk.billable);
-  return marksFloor(tk, tokenFloorCausesFor(period, model.provider)) ? atLeast(value) : value;
+  return tk ? tokenCount(tk.billable) : '';
 }
 
 function createUsageSection(): UsageHandleLocal {
@@ -923,7 +879,7 @@ function createUsageSection(): UsageHandleLocal {
 
   // "yaklaşık maliyet" (approximate cost) is gone (ADR-004 A1.6): "approximate"
   // claims error in both directions beside figures whose only known error is
-  // one-directional, which is why they say "en az". ADR-002's framing instead:
+  // one-directional. ADR-002's framing instead:
   // what this usage WOULD HAVE COST at published API prices. The data source
   // is a separate, per-provider sentence, so a second provider's history does
   // not require rewriting the claim.
@@ -962,74 +918,30 @@ function createUsageSection(): UsageHandleLocal {
   const list = el('ul', { class: 'usage__list', role: 'list' });
   const empty = el('p', { class: 'usage__empty' }, '');
   // --- the price note (ADR-003 A6, ADR-004 A3) -----------------------------
-  // Persistent nodes, so the "why" disclosure keeps its state across pushes.
-  const noteLead = el('p', { class: 'usage__note-lead' }, '');
-  // A SECOND gloss, for the count. "En az" is one word doing two jobs on this
-  // screen — a bounded AMOUNT and a bounded COUNT — and the cost sentence ("the
-  // real cost may be higher") is not true of a token figure. Each is shown only
-  // when that kind of floor is actually on screen, so neither explains something
-  // the reader cannot see.
-  const noteLeadTokens = el('p', { class: 'usage__note-lead' }, '');
-  noteLeadTokens.hidden = true;
+  // One line per tool naming its price source and date.
   const noteSources = el('ul', { class: 'usage__sources' });
-  const noteWhyId = 'usage-why';
-  const noteWhyList = el('ul', { class: 'usage__why-list', id: noteWhyId });
-  noteWhyList.hidden = true;
-  const noteWhyChev = el('span', { class: 'cost__chev', 'aria-hidden': 'true' });
-  const noteWhyText = el('span', { class: 'cost__whytext' }, '');
-  // The cost block's toggle, reused: same class, same caret, same aria wiring.
-  const noteWhy = el(
-    'button',
-    { type: 'button', class: 'cost__why usage__why', 'aria-expanded': 'false', 'aria-controls': noteWhyId },
-    noteWhyChev,
-    noteWhyText,
-  ) as HTMLButtonElement;
-  const noteWhyBlock = el('div', { class: 'usage__why-block' }, noteWhy, noteWhyList);
-  const note = el('div', { class: 'usage__note' }, noteLead, noteLeadTokens, noteSources, noteWhyBlock);
-  let noteWhyOpen = false;
+  const note = el('div', { class: 'usage__note' }, noteSources);
 
   // Which per-period disclosures the user has opened. The list below is rebuilt
   // from scratch on every snapshot (every 15 s while the panel is open), so a
   // disclosure that kept its state only in its own DOM node snapped shut on the
   // next push, under the user's cursor. Keyed by grain + period key + start so
   // it survives the rebuild and a new week sliding in at the top (the rows'
-  // INDEX shifts then; the key does not). Same idea as `noteWhyOpen` above.
+  // INDEX shifts then; the key does not).
   const openPeriods = new Set<string>();
   const periodOpenKey = (period: PeriodUsage): string => `${grain}|${period.key}|${period.startsAt}`;
   // The toggles of the CURRENT list, by the same key, so focus can move to a
   // replacement without querying the DOM (the node-level test shim does not
   // implement selectors, and a component those tests cannot mount is untested).
   let toggleByKey = new Map<string, HTMLElement>();
-  function applyNoteWhy(): void {
-    noteWhyList.hidden = !noteWhyOpen;
-    setAttr(noteWhy, 'aria-expanded', noteWhyOpen ? 'true' : 'false');
-    setAttr(noteWhyBlock, 'data-why', noteWhyOpen ? 'true' : 'false');
-  }
-  on(noteWhy, 'click', () => {
-    noteWhyOpen = !noteWhyOpen;
-    applyNoteWhy();
-  });
-
   function renderNote(): void {
     const model = noteModel(current, known);
-    setText(noteLead, t('settings.usage.noteLead'));
-    noteLead.hidden = !model.lead;
-    setText(noteLeadTokens, t('settings.usage.noteLeadTokens'));
-    noteLeadTokens.hidden = !anyTokenFloorOnScreen();
     replaceChildrenWith(
       noteSources,
       model.empty
         ? [el('li', { class: 'usage__source' }, t('settings.usage.noteNoDate'))]
         : model.sources.map((s) => el('li', { class: 'usage__source', 'data-provider': s.id }, s.text)),
     );
-    replaceChildrenWith(
-      noteWhyList,
-      model.why.map((w) => el('li', { class: 'usage__why-line', 'data-provider': w.id }, w.text)),
-    );
-    setText(noteWhyText, t('cost.why.toggle'));
-    noteWhyBlock.hidden = model.why.length === 0;
-    if (model.why.length === 0) noteWhyOpen = false;
-    applyNoteWhy();
   }
   // ADR-002 A3.12. Above the list, not in the footnote: it changes what every
   // total below it means, and it must be read before them.
@@ -1051,21 +963,6 @@ function createUsageSection(): UsageHandleLocal {
     empty,
     note,
   );
-
-  /**
-   * Whether any period CURRENTLY LISTED marks a token count as a lower bound.
-   *
-   * Per grain, not per history: the note sits under the list the user is looking
-   * at, and a gloss for a bound that is only in the other grain's periods would
-   * explain something not on screen. Presence only — never a count, never a sum.
-   */
-  function anyTokenFloorOnScreen(): boolean {
-    return periodsFor().some((period) =>
-      providersWithTokens(period, current?.usageProviders ?? []).some((id) =>
-        tokenFloorCausesFor(period, id).length > 0,
-      ),
-    );
-  }
 
   function periodsFor(): PeriodUsage[] {
     if (!current) return [];
@@ -1102,7 +999,7 @@ function createUsageSection(): UsageHandleLocal {
     // The count sits BEFORE the money, in quieter ink: this section's headline
     // claim is the notional cost, and the count answers a different question
     // ("how many tokens did I use") that has a true answer of its own.
-    const tokensText = modelTokensText(model, period);
+    const tokensText = modelTokensText(model);
     const tokensCell = el('span', { class: 'usage__model-tokens u-num' }, tokensText);
     const modelTk = modelTokens(model);
     if (modelTk && hasTokenCount(modelTk)) setAttr(tokensCell, 'title', tokensTitle(modelTk));
@@ -1115,12 +1012,6 @@ function createUsageSection(): UsageHandleLocal {
       tokensCell,
       amount,
     ) as HTMLElement;
-    setAttr(
-      row,
-      'data-token-floor',
-      marksFloor(modelTokens(model), tokenFloorCausesFor(period, model.provider)) ? 'true' : null,
-    );
-    setAttr(row, 'data-floor', model.isFloor ? 'true' : null);
     setAttr(row, 'data-unpriced', model.costUsd === null ? 'true' : null);
     setAttr(row, 'data-provider', model.provider);
     setAttr(row, 'data-connected', provider?.connected ? 'true' : 'false');
@@ -1211,42 +1102,23 @@ function createUsageSection(): UsageHandleLocal {
   function renderTokenSubtotals(period: PeriodUsage): HTMLElement | null {
     const ids = providersWithTokens(period, current?.usageProviders ?? []);
     if (ids.length === 0) return null;
-    const lead = el('li', { class: 'usage__tokens-lead', role: 'presentation' }, t('settings.usage.tokens.lead'));
     const rows = ids.map((id) => {
       const tk = tokensFor(period, id);
       const provider = known.find((p) => p.id === id) ?? null;
       const toolName = provider?.displayName || NOTE_TOOL_NAMES[id];
-      const causes = tokenFloorCausesFor(period, id);
-      const floor = marksFloor(tk, causes);
       const value = tk ? tokenCount(tk.billable) : '';
       const row = el(
         'li',
         { class: 'usage__tokens-row', role: 'listitem' },
         el('span', { class: 'usage__tokens-tool' }, toolName),
-        el('span', { class: 'usage__tokens-count u-num' }, floor ? atLeast(value) : value),
+        el('span', { class: 'usage__tokens-count u-num' }, value),
       ) as HTMLElement;
-      // ADR-002 A3.16: the reason travels WITH the bound, on screen, once per
-      // tool. Codex's count is a floor on essentially every period (it records
-      // 0 cache writes), so an unexplained permanent "en az" is exactly what
-      // that rule forbids. Shown whenever causes exist, even where the figure
-      // itself took no "en az" — the count still understates and the reader is
-      // entitled to know why.
-      if (causes.length > 0) {
-        row.appendChild(
-          el(
-            'span',
-            { class: 'usage__tokens-cause' },
-            causes.map((cause) => floorCauseClause(cause)).join(' · '),
-          ),
-        );
-      }
       if (tk && hasTokenCount(tk)) setAttr(row, 'title', tokensTitle(tk));
       setAttr(row, 'data-provider', id);
       setAttr(row, 'data-connected', provider?.connected ? 'true' : 'false');
-      setAttr(row, 'data-token-floor', floor ? 'true' : null);
       return row;
     });
-    return el('ul', { class: 'usage__tokens', role: 'list' }, lead, ...rows) as HTMLElement;
+    return el('ul', { class: 'usage__tokens', role: 'list' }, ...rows) as HTMLElement;
   }
 
   function renderRow(period: PeriodUsage, maxCost: number, index: number): HTMLElement {
@@ -1266,7 +1138,6 @@ function createUsageSection(): UsageHandleLocal {
     setAttr(row, 'data-empty', period.hasUsage || pending || incomplete ? null : 'true');
     setAttr(row, 'data-incomplete', incomplete ? 'true' : null);
     setAttr(row, 'data-pending', pending && (!period.hasUsage || period.costUsd <= 0) ? 'true' : null);
-    setAttr(row, 'data-floor', period.isFloor ? 'true' : null);
     // Two independent things can hang under a period, and neither may gate the
     // other: the per-model split, and the per-tool token counts.
     //

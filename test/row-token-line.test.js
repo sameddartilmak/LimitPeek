@@ -9,9 +9,9 @@ const { installDom, mirrorRenderer, walk } = require('./helpers/fake-dom');
  *
  * WHY THIS FILE EXISTS
  * --------------------
- * The weekly-token change put FOUR independent presence rules on one line of
- * text — the 5-hour count, the weekly count, that count's window label, and its
- * cause list — each with its own null state, and every one of them decided in
+ * The weekly-token change put independent presence rules on one line of text —
+ * the 5-hour count, the weekly count and that count's window label — each with
+ * its own null state, and every one of them decided in
  * `row.ts`, which `npm test` did not load at all. Measured by mutation on the
  * predecessor of this design: breaking the A3.19 no-figure rule so an unread
  * week read "en az 0 token", relabelling the five-hour compatibility figure as
@@ -37,7 +37,6 @@ let restoreDom;
 let rowMod;
 let i18n;
 let fmt;
-let causesMod;
 
 test.before(async () => {
   restoreDom = installDom();
@@ -45,7 +44,6 @@ test.before(async () => {
   rowMod = await mirror.load('components', 'row.js');
   i18n = await mirror.load('i18n.js');
   fmt = await mirror.load('format.js');
-  causesMod = await mirror.load('floor-causes.js');
   i18n.setLocale('tr', 'tr-TR');
 });
 
@@ -110,7 +108,16 @@ function metaOf(over) {
 
 /** The weekly line as the component composes it, for exact-match expectations. */
 const labelled = (key, value) => i18n.t(key, { value });
-const withCause = (line, cause) => i18n.t('row.tokens.floorCause', { value: line, cause: causesMod.floorCauseClause(cause) });
+
+/**
+ * What the floor marker looked like on this line before the owner removed it
+ * (2026-09-23): "en az"/"at least" before the figure, or a cause in brackets
+ * after it. None of these may come back, whatever main sends.
+ */
+const FLOOR_MARKERS = [/\ben az\b/i, /\bat least\b/i, /~/, /\(/];
+const assertNoFloorMarker = (text) => {
+  for (const marker of FLOOR_MARKERS) assert.doesNotMatch(text, marker, text);
+};
 
 /* ------------------------------------------------- the window label's source */
 
@@ -213,6 +220,19 @@ test.describe('three states, three renderings: counted, unread, unscanned', () =
     assert.equal(text.includes(i18n.t('row.tokens.uncounted')), false, text);
   });
 
+  test('no count at all on a week the reader could not read says so on the line', () => {
+    // The cost block's "Okunamayan kayıtlar var" cause used to carry this gap,
+    // and the line stayed silent. With cause lines gone (2026-09-23) the line
+    // must say it, or the unread week has no statement anywhere on the row.
+    const text = metaOf({
+      weeklyTokens: null, weeklyTokensWindowAnchored: null, tokens: null,
+      weeklyCost: cost({ totalUsd: 0, sourceIncomplete: true }),
+    });
+    assert.equal(text, i18n.t('row.tokens.uncounted'));
+    const read = metaOf({ weeklyTokens: null, weeklyTokensWindowAnchored: null, tokens: null });
+    assert.equal(read, i18n.t('row.noTokens'), 'control: a fully read source still says "no token data"');
+  });
+
   test('a cache-read-only week keeps its figure — billable zero is not "no count"', () => {
     const tkCR = { ...ZERO, cacheRead: 9_000_000 };
     const text = metaOf({ weeklyTokens: tkCR, weeklyTokensWindowAnchored: false });
@@ -222,24 +242,23 @@ test.describe('three states, three renderings: counted, unread, unscanned', () =
 
 /* ------------------------------------------------------------------- "en az" */
 
-test.describe('"en az" is main\'s statement, and never appears without its cause (A3.16)', () => {
-  test('a cause with a positive figure prints the bound AND the cause', () => {
+test.describe('the count is printed as it is: no "en az" and no cause, whatever main sends', () => {
+  test('a count main marks as a lower bound prints exactly like one it does not', () => {
     const text = metaOf({
       weeklyTokens: tk(2_050_000),
       weeklyTokensWindowAnchored: false,
-      weeklyTokenFloorCauses: ['unread-range'],
+      weeklyTokenFloorCauses: ['unread-range', 'unrecorded-writes'],
     });
-    assert.equal(text, withCause(labelled('row.tokens.last7', fmt.atLeast(fmt.tokens(2_050_000))), 'unread-range'));
+    assert.equal(text, labelled('row.tokens.last7', fmt.tokens(2_050_000)));
+    assertNoFloorMarker(text);
   });
 
-  test('no causes means no bound and no cause clause', () => {
+  test('no causes: the same line', () => {
     const text = metaOf({ weeklyTokens: tk(2_050_000), weeklyTokensWindowAnchored: false, weeklyTokenFloorCauses: [] });
     assert.equal(text, labelled('row.tokens.last7', fmt.tokens(2_050_000)));
   });
 
-  test('a cost that is a floor does NOT make the COUNT one', () => {
-    // The pairing the contract calls the point: an unpriced model counted every
-    // token it saw, so the money can read "en az" over an exact count.
+  test('a cost floor adds nothing to the count either', () => {
     const text = metaOf({
       weeklyTokens: tk(2_050_000),
       weeklyTokensWindowAnchored: false,
@@ -249,23 +268,22 @@ test.describe('"en az" is main\'s statement, and never appears without its cause
     assert.equal(text, labelled('row.tokens.last7', fmt.tokens(2_050_000)));
   });
 
-  test('a malformed cause list adds no claim', () => {
+  test('a malformed cause list is still accepted without a claim', () => {
     for (const bad of [null, undefined, 'unread-range', 1, {}]) {
       const text = metaOf({ weeklyTokens: tk(2_050_000), weeklyTokensWindowAnchored: false, weeklyTokenFloorCauses: bad });
       assert.equal(text, labelled('row.tokens.last7', fmt.tokens(2_050_000)), JSON.stringify(bad));
     }
   });
 
-  test('a zero figure with a cause shows the cause but never a bound of zero', () => {
-    // "en az 0 token" is a lower bound on a figure that says nothing.
+  test('a counted zero with a cause is a plain zero', () => {
     const text = metaOf({
       weeklyTokens: { ...ZERO },
       weeklyTokensWindowAnchored: false,
       weeklyTokenFloorCauses: ['unread-range'],
       weeklyCost: cost({ sourceIncomplete: false }),
     });
-    assert.equal(text.includes(fmt.atLeast(fmt.tokens(0))), false, text);
-    assert.ok(text.includes(causesMod.floorCauseClause('unread-range')), text);
+    assert.equal(text, labelled('row.tokens.last7', fmt.tokens(0)));
+    assertNoFloorMarker(text);
   });
 });
 
@@ -315,14 +333,7 @@ test.describe('the five-hour figure is not deleted — it moves into the title, 
     assert.ok(title.includes(i18n.t('meter.window5h.label')), title);
   });
 
-  test('EVERY cause is carried in it, not only the one the visible line has room for', () => {
-    // The reachable multi-cause row: Gemini's unrecorded utility calls are
-    // unconditional, so a Gemini week inside a known-unread range has two. The
-    // visible line prints the first; losing the rest to brevity would leave a
-    // bound whose full reason is nowhere on screen (ADR-002 A3.16). This is also
-    // the only place a renderer that rebuilt the cause list from
-    // `weeklyCost.sourceIncomplete` instead of reading the field would differ
-    // from main: it would produce one cause where main sent two.
+  test('no cause is carried in it either — the floor marker left the tooltip too', () => {
     const title = titleOf({
       id: 'gemini',
       displayName: 'Gemini',
@@ -332,9 +343,8 @@ test.describe('the five-hour figure is not deleted — it moves into the title, 
       weeklyCost: cost({ sourceIncomplete: true }),
     });
     assert.ok(title, 'no token title at all');
-    for (const cause of ['unread-range', 'unrecorded-calls']) {
-      assert.ok(title.includes(causesMod.floorCauseClause(cause)), `${cause} missing from: ${title}`);
-    }
+    assert.equal(title.split('\n').length, 1, 'only the weekly breakdown line: ' + title);
+    assertNoFloorMarker(title.replace(/\([^)]*\)/g, ''));
   });
 });
 

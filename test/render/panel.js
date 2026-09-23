@@ -62,6 +62,96 @@ app.whenReady().then(async () => {
 
   const js = (code) => win.webContents.executeJavaScript(code, true);
 
+  // ---- the header carries the product: the app tile and "Usage Notch" -------
+  //
+  // The owner's call (2026-09-23): the header named a section ("Kullanım"); it
+  // now names the product, beside the Windows app tile. The tile is a local
+  // asset painted from CSS, so this also proves it LOADS under the CSP
+  // (img-src 'self') — a blocked image would leave an empty 16px box.
+  const brand = await js(`(async () => {
+    const h1 = document.querySelector('.hdr__title');
+    const logo = h1 && h1.querySelector('.hdr__logo');
+    const top = document.querySelector('.hdr__top');
+    const btn = document.querySelector('.hdr__actions .iconbtn');
+    const url = logo ? getComputedStyle(logo).backgroundImage : '';
+    const src = (url.match(/url\\("?([^")]+)"?\\)/) || [])[1] || '';
+    let loaded = false;
+    if (src) {
+      const img = new Image();
+      img.src = src;
+      try { await img.decode(); loaded = img.naturalWidth > 0; } catch { loaded = false; }
+    }
+    const lr = logo ? logo.getBoundingClientRect() : null;
+    const hr = h1 ? h1.getBoundingClientRect() : null;
+    return {
+      text: h1 ? h1.textContent : null,
+      tag: h1 ? h1.tagName : null,
+      docTitle: document.title,
+      logoHidden: logo ? logo.getAttribute('aria-hidden') : null,
+      src, loaded,
+      logoW: lr ? lr.width : 0, logoH: lr ? lr.height : 0,
+      logoMid: lr ? lr.top + lr.height / 2 : 0,
+      h1Mid: hr ? hr.top + hr.height / 2 : 0,
+      topH: top ? top.getBoundingClientRect().height : 0,
+      btnH: btn ? btn.getBoundingClientRect().height : 0,
+      transform: h1 ? getComputedStyle(h1).textTransform : null,
+    };
+  })()`);
+  say('header brand: ' + JSON.stringify(brand));
+  check('the header names the product, untranslated, and the window title matches',
+    brand.tag === 'H1' && brand.text === 'Usage Notch' && brand.docTitle === 'Usage Notch', brand);
+  check('the app tile is decorative, so the heading is read as the name alone',
+    brand.logoHidden === 'true', brand.logoHidden);
+  check('the tile is the local app-icon asset and it actually loads under the CSP',
+    /\/assets\/app-icon\.svg$/.test(brand.src) && brand.loaded === true, [brand.src, brand.loaded]);
+  check('the tile is 16 CSS px, the size its small art is drawn for, centred on the name',
+    Math.round(brand.logoW) === 16 && Math.round(brand.logoH) === 16
+      && Math.abs(brand.logoMid - brand.h1Mid) <= 1, brand);
+  check('the header row is no taller than its icon buttons: adding the tile grew nothing',
+    brand.topH > 0 && Math.round(brand.topH) === Math.round(brand.btnH), [brand.topH, brand.btnH]);
+  check('no uppercase transform on the name (Turkish i/İ)', brand.transform === 'none', brand.transform);
+
+  // ---- the plan is a closed list, and only where there is one --------------
+  const plans = await js(`(async () => {
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 150));
+    const out = {};
+    for (const li of document.querySelectorAll('#settings-view .settings__item')) {
+      const block = li.querySelector('.settings__plan');
+      const sel = block && block.querySelector('select');
+      const label = block && block.querySelector('label');
+      out[li.getAttribute('data-provider')] = {
+        drawn: !!block && block.getClientRects().length > 0,
+        tag: sel ? sel.tagName : null,
+        labelFor: label ? label.htmlFor === sel.id : false,
+        value: sel ? sel.value : null,
+        options: sel ? [...sel.options].map((o) => [o.value, o.textContent]) : [],
+        textInputs: li.querySelectorAll('input[type="text"], datalist').length,
+        clipped: sel ? sel.scrollWidth > sel.clientWidth + 0.5 : null,
+      };
+    }
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 150));
+    return out;
+  })()`);
+  say('plan controls: ' + JSON.stringify(plans));
+  check('Claude and Codex get a labelled <select> that starts at "Belirtilmedi"',
+    ['claude', 'codex'].every((id) => plans[id] && plans[id].drawn && plans[id].tag === 'SELECT'
+      && plans[id].labelFor && plans[id].clipped === false
+      && plans[id].options[0][0] === '' && plans[id].options[0][1] === 'Belirtilmedi'),
+    [plans.claude, plans.codex]);
+  // The fixture stores "Max 20x" for Claude and nothing for Codex.
+  check('the selection is the stored label, and nothing is chosen where none is stored',
+    plans.claude.value === 'Max 20x' && plans.codex.value === '', [plans.claude.value, plans.codex.value]);
+  check('the options are the known plans for that tool',
+    JSON.stringify(plans.claude.options.slice(1).map((o) => o[0])) === JSON.stringify(['Pro', 'Max 5x', 'Max 20x']),
+    plans.claude.options);
+  check('Kimi and Antigravity, with no known plans, draw no plan control',
+    plans.kimi && plans.kimi.drawn === false && plans.antigravity && plans.antigravity.drawn === false,
+    [plans.kimi, plans.antigravity]);
+  check('no free-text field or datalist is left anywhere in the tool list',
+    Object.values(plans).every((p) => p.textInputs === 0), plans);
+
   /**
    * A real contrast calculator, in the page.
    *
@@ -1618,10 +1708,14 @@ app.whenReady().then(async () => {
         };
       })(),
       note: note ? { text: note.textContent, scrollW: note.scrollWidth, clientW: note.clientWidth,
-                     ws: getComputedStyle(note).whiteSpace, tov: getComputedStyle(note).textOverflow } : null,
-      // The two glosses of "en az": one about the amount, one about the count.
+                     ws: getComputedStyle(note).whiteSpace, tov: getComputedStyle(note).textOverflow,
+                     sources: [...note.querySelectorAll('.usage__source')].map((n) => n.textContent) } : null,
+      // The removed glosses of "en az" and the "why" toggle (owner, 2026-09-23).
       leads: [...view.querySelectorAll('.usage__note-lead')]
         .filter((n) => !n.hidden).map((n) => n.textContent),
+      whys: view.querySelectorAll('.usage__why, .cost__why').length,
+      // Every visible word in the section, for the floor-marker scan.
+      sectionText: view.querySelector('.usage').innerText,
     };
     view.querySelector('.acc__trigger[data-acc="models"]').click();
     await new Promise((r) => setTimeout(r, 60));
@@ -1661,20 +1755,14 @@ app.whenReady().then(async () => {
     check(`[${lang}] cacheRead is stated as its own class in the count's title, never folded in`,
       u.rows.every((r) => r.tokensTitle && new RegExp(tr ? 'Önbellek okuma' : 'Cache read').test(r.tokensTitle)),
       u.rows.map((r) => r.tokensTitle));
-    // The fixture is built for exactly this: Codex's COUNT is a floor (it
-    // records 0 cache writes), Claude's DOLLARS are a floor (unpriced usage),
-    // and neither claim leaks into the other.
-    check(`[${lang}] the token floor is Codex's alone and does not follow the dollar floor`,
-      u.rows.filter((r) => r.provider === 'codex').every((r) => r.tokenFloor === 'true')
-        && u.rows.filter((r) => r.provider === 'claude').every((r) => r.tokenFloor === null),
-      u.rows.map((r) => [r.provider, r.tokenFloor]));
-    check(`[${lang}] a Claude line can read "${atLeastWord}" on the money beside an EXACT count`,
-      u.rows.some((r) => r.provider === 'claude' && r.amount.includes(atLeastWord)
-        && !r.tokens.includes(atLeastWord)),
-      u.rows.map((r) => [r.provider, r.amount, r.tokens]));
-    check(`[${lang}] a Codex line marks the COUNT as a lower bound`,
-      u.rows.some((r) => r.provider === 'codex' && r.tokens.includes(atLeastWord)),
-      u.rows.map((r) => [r.provider, r.tokens]));
+    // The fixture still sends both kinds of floor — Codex's COUNT (it records 0
+    // cache writes) and Claude's DOLLARS (unpriced usage). The owner removed the
+    // floor marker (2026-09-23), so neither may show: no "${atLeastWord}", no
+    // hook for a quieter style.
+    check(`[${lang}] no model line marks a floor, on the money or on the count`,
+      u.rows.every((r) => r.tokenFloor === null
+        && !r.amount.includes(atLeastWord) && !(r.tokens || '').includes(atLeastWord)),
+      u.rows.map((r) => [r.provider, r.tokenFloor, r.amount, r.tokens]));
     check(`[${lang}] no model line is clipped by the extra column`,
       u.rows.every((r) => r.clipped === false), u.rows.map((r) => [r.name, r.clipped]));
     // The subtotal is main's own figure. The fixture's Claude subtotal
@@ -1693,46 +1781,30 @@ app.whenReady().then(async () => {
         && /10[.,]5\s*M/.test(u.subtotal.rows.find((r) => r.provider === 'claude').count)
         && !/10[.,]4\s*M/.test(u.subtotal.rows.find((r) => r.provider === 'claude').count),
       u.subtotal);
-    check(`[${lang}] the subtotal lead states that tool counts are never added together`,
-      u.subtotal !== null && new RegExp(tr ? 'toplanmaz' : 'never added', 'i').test(u.subtotal.lead),
-      u.subtotal && u.subtotal.lead);
-    // The cache-read exclusion, as VISIBLE text. It used to exist only in a
-    // `title`, so on this surface it may never have been readable at all.
-    check(`[${lang}] and that the counts are billable only, with cache reads excluded`,
-      u.subtotal !== null
-        && new RegExp(tr ? 'faturalanan' : 'billable', 'i').test(u.subtotal.lead)
-        && new RegExp(tr ? 'önbellek okuma hariç' : 'cache reads excluded', 'i').test(u.subtotal.lead),
-      u.subtotal && u.subtotal.lead);
-    check(`[${lang}] a bounded subtotal never stands bare: its reason is on screen (A3.16)`,
-      u.subtotal !== null
-        && /\S/.test(u.subtotal.rows.find((r) => r.provider === 'codex').cause || '')
-        && u.subtotal.rows.find((r) => r.provider === 'claude').cause === null,
-      u.subtotal && u.subtotal.rows.map((r) => [r.provider, r.cause]));
-    check(`[${lang}] the reason wraps rather than being cut — a cause cut to fit is a cause dropped`,
-      u.subtotal !== null && u.subtotal.rows.every((r) => r.causeClipped !== true),
-      u.subtotal && u.subtotal.rows.map((r) => [r.provider, r.causeClipped]));
-    check(`[${lang}] "en az" is glossed for the COUNT as well as the cost, and each names its quantity`,
-      u.leads.length === 2
-        && u.leads.some((l) => new RegExp(tr ? 'maliyet' : 'cost', 'i').test(l))
-        && u.leads.some((l) => new RegExp(tr ? 'sayı' : 'count', 'i').test(l)),
-      u.leads);
-    check(`[${lang}] the subtotal lead names the span, so the row's figure and this one can be told apart`,
-      u.subtotal !== null && new RegExp(tr ? 'takvim haftası|Pzt' : 'calendar week|Mon').test(u.subtotal.lead),
-      u.subtotal && u.subtotal.lead);
-    check(`[${lang}] only Codex's subtotal is a lower bound`,
-      u.subtotal !== null
-        && u.subtotal.rows.find((r) => r.provider === 'codex').count.includes(atLeastWord)
-        && !u.subtotal.rows.find((r) => r.provider === 'claude').count.includes(atLeastWord),
+    check(`[${lang}] the grey lead line above the subtotals is gone`,
+      u.subtotal !== null && u.subtotal.lead === '', u.subtotal && u.subtotal.lead);
+    // What the lead said about cache reads is not lost: each count's title
+    // still names them as their own class, outside the billable total.
+    check(`[${lang}] each subtotal's title still states cache reads apart from the billable count`,
+      u.subtotal !== null && u.subtotal.rows.every((r) => r.title
+        && new RegExp(tr ? 'faturalanan toplama dahil değil' : 'not included in the billable total').test(r.title)),
+      u.subtotal && u.subtotal.rows.map((r) => r.title));
+    check(`[${lang}] no subtotal carries "${atLeastWord}", a cause line or a floor hook`,
+      u.subtotal !== null && u.subtotal.rows.every((r) => !r.count.includes(atLeastWord)
+        && r.cause === null && r.floor === null),
       u.subtotal);
+    check(`[${lang}] no "en az" gloss and no "why" toggle under Toplam Kullanım`,
+      u.leads.length === 0 && u.whys === 0
+        && !new RegExp(atLeastWord + '|~', 'i').test(u.sectionText),
+      { leads: u.leads, whys: u.whys });
 
     check(`[${lang}] the two-date price note is whole: it wraps, it is never cut`,
       u.note !== null && u.note.scrollW <= u.note.clientW && u.note.tov !== 'ellipsis'
         && u.note.ws !== 'nowrap' && /Codex/.test(u.note.text) && /Claude Code/.test(u.note.text)
-        // ADR-003 A6 / ADR-004 A3: one source line per tool; causes behind "why".
+        // ADR-003 A6: one source line per tool, and nothing else.
+        && u.note.sources.length === 2
         && (tr ? /Claude Code · .* fiyatları/.test(u.note.text) && /Codex · .* fiyatları/.test(u.note.text)
-                 && /Codex: fiyatlanamayan kullanım ve kaydedilmemiş önbellek yazmaları/.test(u.note.text)
-               : /Claude Code · .* prices/.test(u.note.text) && /Codex · .* prices/.test(u.note.text)
-                 && /Codex: usage that could not be priced and unrecorded cache writes/.test(u.note.text)),
+               : /Claude Code · .* prices/.test(u.note.text) && /Codex · .* prices/.test(u.note.text)),
       u.note);
   };
   usageChecks(await js(usageRead), 'en');

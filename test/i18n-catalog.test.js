@@ -349,44 +349,14 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     { file: 'renderer.json', key: 'header.spoken.stale', en: [/\bnot current\b/i], tr: [/güncel değil/] },
     { file: 'renderer.json', key: 'quota.degraded', en: [/\bnot current\b/i], tr: [/güncel değil/] },
     // the cost block's degraded caveat is driven by WeeklyCost.sourceIncomplete,
-    // not by limit freshness: records could not be read, so the amount is a
-    // lower bound (ADR-002 A3.15-16)
-    // ADR-004 A3: the "Neden en az?" disclosure is ONE shared lead sentence that
-    // carries the lower-bound claim, plus one short line per cause. Each short
-    // line must still name its cause unambiguously.
-    { file: 'renderer.json', key: 'cost.why.lead', en: [/\blower bound\b/i, /\bmay be higher\b/], tr: [/alt sınır/, /daha yüksek olabilir/] },
-    { file: 'renderer.json', key: 'cost.caveat.degraded', en: [/\bcould(n'?t| not) be read\b/], tr: [/okunamadı/] },
-    { file: 'renderer.json', key: 'cost.caveat.unpriced', en: [/\bnot included in the total\b/], tr: [/toplama katılmadı/] },
-    { file: 'renderer.json', key: 'cost.caveat.ttl', en: [/No write duration recorded|\bduration\b/, /\{low\}/, /\{high\}/], tr: [/kaydedilmemiş/, /\{low\}/, /\{high\}/] },
-    // the short cause lines each name their cause, and the "why" toggles ask
-    // about the claim without softening it (ADR-002 A3.15-16)
-    { file: 'renderer.json', key: 'cost.cause.unpriced', en: [/^Could not be priced\b/, /\{item\}/], tr: [/^Fiyatlanamadı:/, /\{item\}/] },
-    { file: 'renderer.json', key: 'cost.cause.unpricedMore', en: [/^Could not be priced\b/, /\{count\}/], tr: [/^Fiyatlanamadı:/, /\{count\}/] },
-    { file: 'renderer.json', key: 'cost.cause.ttl', en: [/\bwithout a recorded TTL\b/, /\{count\}/], tr: [/kaydedilmemiş/, /\{count\}/] },
-    { file: 'renderer.json', key: 'cost.cause.unrecordedWrites', en: [/^Unrecorded cache writes\b/, /\{count\}/], tr: [/^Kaydedilmemiş önbellek yazması:/, /\{count\}/] },
-    { file: 'renderer.json', key: 'cost.cause.sourceIncomplete', en: [/\bcould not be read\b/], tr: [/okunamayan/i] },
-    { file: 'renderer.json', key: 'cost.why.toggle', en: [/\bat least\b/i, /\?$/], tr: [/\ben az\b/i, /\?$/] },
-    { file: 'renderer.json', key: 'cost.why.toggleUnpriced', en: [/\bno amount\b/i, /\?$/], tr: [/tutar yok/i, /\?$/] },
-    // ADR-002 A3.17-21. Unreadable records with NO figure (A3.19): says why there
-    // is no amount (and, by the guard below, never calls a missing amount a floor).
-    { file: 'renderer.json', key: 'cost.caveat.degradedNoFigure', en: [/\bcould not be read\b/, /\bno amount can be given\b/], tr: [/okunamadı/, /tutar verilemiyor/] },
-    // a history amount cell whose records could not be read (guarded below: no figure)
+    // ADR-002 A3.20: a history amount cell whose records could not be read (guarded below: no figure)
     { file: 'renderer.json', key: 'settings.amount.incomplete', en: [/\bcould not be read\b/], tr: [/okunamadı/] },
-    // a tier Codex did not record is priced at Standard, the cheapest it can send: a floor
-    { file: 'renderer.json', key: 'cost.cause.assumedTier', en: [/\bStandard\b/, /\{count\}/], tr: [/Standart/, /\{count\}/] },
-    { file: 'renderer.json', key: 'cost.caveat.assumedTier', en: [/\bStandard\b/, /\bNo tier was recorded\b/], tr: [/Standart/, /kaydı yoktu/] },
-    // Fast requested but not shown applied: priced at Standard, the real cost may be higher
-    { file: 'renderer.json', key: 'cost.cause.fastRequested', en: [/\bFast\b/, /\brequested\b/, /\bStandard\b/, /\{count\}/], tr: [/Fast/, /istendi/, /Standart/, /\{count\}/] },
-    { file: 'renderer.json', key: 'cost.caveat.fastRequested', en: [/\bFast\b/, /\bStandard\b/, /\bhigher\b/], tr: [/Fast/, /Standart/, /daha yüksek/] },
     // unreadable records in the history: affected periods are a floor
     { file: 'renderer.json', key: 'settings.usage.incomplete', en: [/\{tools\}/, /\bcould not be read\b/, /\blower bound\b/i], tr: [/\{tools\}/, /okunamadı/, /alt sınır/] },
     // cache reads are outside the billable total
     { file: 'renderer.json', key: 'row.tokens.cacheRead', en: [/\bnot included in the billable total\b/i], tr: [/dahil değil/] },
     // decoded, undocumented source
     { file: 'renderer.json', key: 'quota.derived', en: [/\bnot a documented interface\b/i], tr: [/belgelenmiş bir arayüz değil/i] },
-    // cache writes Codex did not record on a model that bills them are missing
-    // from the total (the lower-bound claim itself lives in cost.why.lead, ADR-004 A3)
-    { file: 'renderer.json', key: 'cost.caveat.unrecordedWrites', en: [/\bdidn'?t record|\bdid not record/, /\b(aren'?t|are not) in the total\b/], tr: [/kaydetmedi/, /toplamda yok/] },
     // usage history is computed locally, from local files only (A2.2, Codex merge)
     // `sources` is the no-tool fallback; the tool list is composed into
     // `sourcesTools` (guarded below: neither hard-codes a tool name)
@@ -397,46 +367,20 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     { file: 'renderer.json', key: 'cost.unpricedToggleLabelNoTable', en: [/\bdoes not publish\b/, /\bno amount\b/], tr: [/yayımlamıyor/, /tutar yok/] },
     { file: 'renderer.json', key: 'cost.unpricedSummaryNoModel', en: [/\bNo model was recorded\b/i], tr: [/Model kaydı olmadığı/i] },
     { file: 'renderer.json', key: 'cost.unpricedToggleLabelNoModel', en: [/\bNo model was recorded\b/i], tr: [/Model kaydı olmadığı/i] },
-    { file: 'renderer.json', key: 'settings.usage.cause.noTable', en: [/\bdoes not publish\b/], tr: [/yayımlamıyor/] },
     // Gemini is priced at its API's standard rates, and says so
     { file: 'renderer.json', key: 'cost.summaryGemini', en: [/\bwould have cost\b/i, /\bGemini API standard\b/], tr: [/tutardı/, /Gemini API standart/] },
     { file: 'renderer.json', key: 'cost.toggleLabelGemini', en: [/\bwould have cost\b/i, /\bGemini API standard\b/, /\bnot a bill\b/], tr: [/tutardı/, /Gemini API standart/, /fatura değil/] },
     { file: 'renderer.json', key: 'cost.pricesAsOfGemini', en: [/\bGemini API standard\b/, /\{date\}/], tr: [/Gemini API standart/, /\{date\}/] },
-    // The composed per-tool price note (ADR-003 A6): one lead that carries the
-    // lower-bound claim, one source line per tool, and one "why" line per tool
-    // built from short cause phrases. Every cause phrase names its cause.
-    { file: 'renderer.json', key: 'settings.usage.noteLead', en: [/\bat least\b/i, /\blower bound\b/, /\bmay be higher\b/], tr: [/\ben az\b/i, /alt sınır/, /daha yüksek olabilir/] },
+    // The composed per-tool price note (ADR-003 A6): one source line per tool.
     { file: 'renderer.json', key: 'settings.usage.source.date', en: [/\{tool\}/, /\{date\}/], tr: [/\{tool\}/, /\{date\}/] },
     { file: 'renderer.json', key: 'settings.usage.source.dateMissing', en: [/\{tool\}/, /\bnot reported\b/], tr: [/\{tool\}/, /bildirilmedi/] },
     { file: 'renderer.json', key: 'settings.usage.source.gemini', en: [/Gemini API/, /\bstandard\b/, /\{date\}/], tr: [/Gemini API/, /standart/, /\{date\}/] },
     { file: 'renderer.json', key: 'settings.usage.source.geminiNoDate', en: [/Gemini API/, /\bstandard\b/], tr: [/Gemini API/, /standart/] },
     { file: 'renderer.json', key: 'settings.usage.source.none', en: [/\{tool\}/, /\bdoes not publish\b/], tr: [/\{tool\}/, /yayımlamıyor/] },
-    { file: 'renderer.json', key: 'settings.usage.why.tool', en: [/\{tool\}/, /\{causes\}/], tr: [/\{tool\}/, /\{causes\}/] },
-    { file: 'renderer.json', key: 'settings.usage.cause.unpriced', en: [/\bcould not be priced\b/], tr: [/fiyatlanamayan/] },
-    { file: 'renderer.json', key: 'settings.usage.cause.ttl', en: [/\bno recorded duration\b/, /\{low\}/], tr: [/süresi kaydedilmemiş/, /\{low\}/] },
-    { file: 'renderer.json', key: 'settings.usage.cause.unrecordedWrites', en: [/\bunrecorded cache writes\b/], tr: [/kaydedilmemiş önbellek yazmaları/] },
-    { file: 'renderer.json', key: 'settings.usage.cause.assumedTier', en: [/\bno recorded tier\b/, /\bStandard\b/], tr: [/katmanı kaydedilmemiş/, /Standart/] },
-    { file: 'renderer.json', key: 'settings.usage.cause.fastRequested', en: [/\bFast requested\b/, /\bStandard\b/], tr: [/Fast istenen/, /Standart/] },
-    { file: 'renderer.json', key: 'settings.usage.cause.unrecordedCalls', en: [/\bunrecorded calls\b/], tr: [/kaydedilmeyen çağrılar/] },
-    { file: 'renderer.json', key: 'settings.usage.cause.longPrompt', en: [/\blong prompts\b/, /200K/], tr: [/uzun istemler/, /200K/] },
-    { file: 'renderer.json', key: 'settings.usage.cause.toolTokens', en: [/\btool tokens\b/], tr: [/araç tokenları/] },
     // experimental local-file providers (ADR-003 A6): the log format is unverified
     { file: 'renderer.json', key: 'provider.experimental', en: [/\bexperimental\b/], tr: [/deneysel/] },
     { file: 'renderer.json', key: 'provider.experimentalDetail', en: [/\bnot (yet )?(been )?verified\b/, /\breal install\b/], tr: [/doğrulanmadı/, /gerçek bir kurulum/] },
-    // Gemini floor causes
-    { file: 'renderer.json', key: 'cost.cause.unrecordedCalls', en: [/\bUnrecorded calls\b/], tr: [/Kaydedilmeyen çağrılar/] },
-    { file: 'renderer.json', key: 'cost.caveat.unrecordedCalls', en: [/\bdoesn'?t record|\bdoes not record/, /\b(aren'?t|are not) in the total\b/], tr: [/kaydetmez/, /toplamda yok/] },
-    { file: 'renderer.json', key: 'cost.cause.longPrompt', en: [/\bLong prompts?\b/, /200K/, /\{count\}/], tr: [/Uzun istem/, /200K/, /\{count\}/] },
-    { file: 'renderer.json', key: 'cost.caveat.longPrompt', en: [/\bcharged more\b/, /\blower rate\b/], tr: [/daha yüksek/, /düşük fiyattan/] },
-    { file: 'renderer.json', key: 'cost.cause.toolTokens', en: [/\bTool tokens\b/, /\{count\}/], tr: [/Araç tokenları/, /\{count\}/] },
-    { file: 'renderer.json', key: 'cost.caveat.toolTokens', en: [/\b(isn'?t|is not|not) published\b/, /\bnot included in the total\b/], tr: [/yayımlanmıyor/, /toplama katılmadı/] },
-    // unpriced reason labels: each says WHY there is no price
-    { file: 'renderer.json', key: 'cost.speed.noModel', en: [/\bno model\b/], tr: [/model kaydı yok/] },
-    { file: 'renderer.json', key: 'cost.speed.noPublishedPrice', en: [/\bno published price\b/], tr: [/fiyat yayımlanmıyor/] },
-    { file: 'renderer.json', key: 'cost.speed.otherModelAlias', en: [/\bother model\b/, /Kimi Code/], tr: [/başka model/, /Kimi Code/] },
-    { file: 'renderer.json', key: 'cost.caveat.unpricedNoModel', en: [/\bNo model\b/, /\bcould not be priced\b/], tr: [/Model kaydı/i, /fiyatlanamadı/] },
-    { file: 'renderer.json', key: 'cost.caveat.unpricedNoPublishedPrice', en: [/\bdoes not publish\b/], tr: [/yayımlamıyor/] },
-    { file: 'renderer.json', key: 'cost.caveat.unpricedOtherModelAlias', en: [/Kimi Code/, /\bprice is unknown\b/], tr: [/Kimi Code/, /fiyatı bilinmiyor/] },
+    // a tool that publishes no price says so where the price date would be
     { file: 'renderer.json', key: 'cost.pricesNotPublished', en: [/\{provider\}/, /\bdoes not publish\b/], tr: [/\{provider\}/, /yayımlamıyor/] },
     // an absent tool is "not found", never "not supported"
     { file: 'main.json', key: 'provider.gemini.notFound', en: [/Gemini CLI/, /\bnot found\b/], tr: [/Gemini CLI/, /bulunamadı/] },
@@ -457,41 +401,14 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // counted", NEVER "at least 0 tokens" — a no-figure state presented as a
     // measured floor of zero.
     { file: 'renderer.json', key: 'row.tokens.uncounted', en: [/\bcould not be counted\b/i], tr: [/sayılamadı/] },
-    // Per-tool token counts in Toplam Kullanım, and the claim that makes the
-    // missing total honest rather than an omission.
-    // FOUR claims on one lead, and every one of them is about how to read the
-    // counts directly below it: what is counted (billable, cache reads out),
-    // that the figures are per tool and never added, and which span they cover.
-    //
-    // The cache-read exclusion is here because it had NO VISIBLE HOME: it was
-    // rendered only inside `tokensTitle()`, i.e. only in a `title` attribute, on
-    // both the row and this panel. A pinned claim reaching the user through a
-    // hover affordance alone is a pin passing on something nobody can read —
-    // the same failure as a dead guard — and on the panel surface it is not even
-    // established that Chromium paints a tooltip at all. The titles stay as
-    // belt-and-braces; this line is the channel.
     // The plan label is the USER'S OWN STATEMENT — nothing local reports a plan
-    // and no vendor tells us. The hint is what stops the control reading as
-    // something we verified: it says the value is their note, that they may type
-    // their own, and that we cannot read it from the tool. Drop any of those and
-    // a suggestion list starts to look like knowledge.
-    { file: 'renderer.json', key: 'settings.plan.hint', en: [/\byour own\b/i, /\btype your own\b/i, /\bcannot read it\b/i], tr: [/[Kk]endi notunuz/, /kendiniz yaz/, /okuyamıyoruz/] },
-    // Never a default and never a guess: the empty state says 'not stated',
+    // and no vendor tells us. The hint is what stops the select reading as
+    // something we verified: it says the value is their note and that we cannot
+    // read it from the tool. Short on purpose (owner, 2026-09-23).
+    { file: 'renderer.json', key: 'settings.plan.hint', en: [/\byour own\b/i, /\bcannot read it\b/i], tr: [/[Kk]endi notunuz/, /okuyamıyoruz/] },
+    // Never a default and never a guess: the empty option says 'not set',
     // which is a fact about us, not a prompt that something is missing.
-    { file: 'renderer.json', key: 'settings.plan.placeholder', en: [/\bnot stated\b/i], tr: [/[Bb]elirtilmedi/] },
-    { file: 'renderer.json', key: 'settings.usage.tokens.lead', en: [/\bbillable\b/i, /\bcache reads? excluded\b/i, /\bper tool\b/i, /\bnever added\b/i, /\bMon\b|\bcalendar week\b/i], tr: [/faturalanan/, /önbellek okuma hariç/, /[Aa]raç başına/, /toplanmaz/, /takvim haftası|Pzt/] },
-    // ADR-002 A3.16: a floor is never shown without a visible cause, so the row
-    // has a shape that carries one beside the figure.
-    { file: 'renderer.json', key: 'row.tokens.floorCause', en: [/\{value\}/, /\{cause\}/], tr: [/\{value\}/, /\{cause\}/] },
-    // "En az" does two jobs on the usage screen — a bounded AMOUNT and a bounded
-    // COUNT — and the cost sentence is not true of a count. Each gloss names the
-    // quantity it is about.
-    { file: 'renderer.json', key: 'settings.usage.noteLead', en: [/\bat least\b/i, /\bcost\b/i], tr: [/[Ee]n az/, /maliyet/] },
-    { file: 'renderer.json', key: 'settings.usage.noteLeadTokens', en: [/\bat least\b/i, /\bcount\b/i, /\bhigher\b/i], tr: [/[Ee]n az/, /sayı/, /yüksek/] },
-    // The one TOKEN-side-only cause: a known-unread range. On the cost side
-    // A3.20 rules the price notes do not grow a clause for it, so this string
-    // must name the unread records without claiming anything about price.
-    { file: 'renderer.json', key: 'settings.usage.cause.unreadRange', en: [/\bcould not be read\b/i], tr: [/okunamayan/] },
+    { file: 'renderer.json', key: 'settings.plan.placeholder', en: [/\bnot set\b/i], tr: [/[Bb]elirtilmedi/] },
     { file: 'renderer.json', key: 'cost.pending', en: [/\bcalculating\b/i, /\blocal\b/i], tr: [/hesaplanıyor/, /yerel/] },
     { file: 'renderer.json', key: 'settings.usage.pending', en: [/\{tools\}/, /\bincomplete\b/i], tr: [/\{tools\}/, /eksik/] },
     { file: 'renderer.json', key: 'settings.amount.pending', en: [/\bcalculating\b/i], tr: [/hesaplanıyor/] },
@@ -594,32 +511,32 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     assert.deepEqual(failures, []);
   });
 
-  test('no cost cause line or "why" toggle hedges or reassures (ADR-002 A3.15-16)', () => {
-    // A cause line states WHY the figure is a floor or missing. An estimate
-    // word turns a one-sided floor into a two-sided guess; a minimiser or a
-    // reassurance talks the reader out of the claim the line exists to make.
-    const SOFTENING = /yaklaşık|approximate|\broughly\b|\babout\b|\bonly\b|\bjust\b|\bmerely\b|\bminor\b|\bsmall\b|\bnegligible\b|\bslight(ly)?\b|worry|\bno problem\b|sadece|yalnızca|\bkücük\b|küçük|önemsiz|ihmal edilebilir|endişe|merak etme|sorun değil|\bbiraz\b/i;
-    let seen = 0;
+  test('the floor marker\'s copy is gone from both catalogs (owner, 2026-09-23)', () => {
+    // The owner removed "en az", the "Neden en az?" disclosure and every cause
+    // line from the panel. A key left behind is copy a later change could wire
+    // back in without anyone deciding to; its absence is the decision.
+    const REMOVED = /^(cost\.(cause|why|caveat|speed)\.|settings\.usage\.(cause\.|why\.|noteLead)|settings\.usage\.tokens\.lead$|row\.tokens\.floorCause$)/;
     for (const lang of LANGS) {
-      const entries = catalogs[lang]['renderer.json'] || {};
-      for (const [key, entry] of Object.entries(entries)) {
-        if (!/^cost\.(cause|why)\./.test(key)) continue;
-        seen += 1;
+      const renderer = Object.keys(catalogs[lang]['renderer.json'] || {});
+      assert.deepEqual(renderer.filter((key) => REMOVED.test(key)), [], `${lang}: floor copy is back`);
+      assert.equal(has(catalogs[lang]['common.json'] || {}, 'amount.atLeast'), false, `${lang}: amount.atLeast is back`);
+    }
+    // No renderer string prints the floor word or asks why. The one sentence
+    // that still says "alt sınır"/"lower bound" is the unread-records note
+    // (settings.usage.incomplete), which states a fact about missing records
+    // rather than marking a figure.
+    for (const lang of LANGS) {
+      for (const [key, entry] of Object.entries(catalogs[lang]['renderer.json'] || {})) {
         for (const text of variants(entry)) {
-          assert.doesNotMatch(text, SOFTENING, `${lang} "${key}" softens its claim: ${text}`);
+          assert.doesNotMatch(text, /\ben az\b|\bat least\b|Neden en az|Why at least/i, `${lang} "${key}": ${text}`);
         }
       }
     }
-    // Thirteen cause/why keys per language today (unpriced, unpricedMore, ttl,
-    // unrecordedWrites, sourceIncomplete, assumedTier, fastRequested,
-    // unrecordedCalls, longPrompt, toolTokens, the two toggles and the lead). A
-    // renamed key would silently leave the guard; more keys are fine.
-    assert.ok(seen >= 26, `the thirteen cause/why keys exist in both languages (saw ${seen})`);
   });
 
   test('every short cost caveat line is short and does not hedge or reassure (ADR-004 A3)', () => {
-    // Nobody reads long "why at least?" paragraphs: one short line per cause.
-    // Measured 2026-09-17: longest is 95 characters (tr cost.caveat.fastRequested).
+    // One-line summaries stay one line. The cause and caveat lines this used to
+    // cover were removed with the floor marker (owner, 2026-09-23).
     const MAX_CHARS = 100;
     // The cause-line list minus "only"/"yalnızca"/"sadece": in a caveat such as
     // "covers only what was read" it sharpens the incompleteness, not softens it.
@@ -628,11 +545,9 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     for (const lang of LANGS) {
       const entries = catalogs[lang]['renderer.json'] || {};
       for (const [key, entry] of Object.entries(entries)) {
-        // Short lines: the cost caveats, the unpriced reason labels and the
-        // per-tool cause phrases of the composed price note.
-        // Plus the one-line cost summaries for a tool with no price table, no
+        // The one-line cost summaries for a tool with no price table, no
         // recorded model, or Gemini's standard rates.
-        if (!/^(cost\.caveat\.|cost\.speed\.|settings\.usage\.cause\.|cost\.unpricedSummaryNo(Table|Model)$|cost\.(summary|pricesAsOf)Gemini$)/.test(key)) continue;
+        if (!/^(cost\.unpricedSummaryNo(Table|Model)$|cost\.(summary|pricesAsOf)Gemini$)/.test(key)) continue;
         seen += 1;
         for (const text of variants(entry)) {
           assert.ok(text.length <= MAX_CHARS, `${lang} "${key}" is ${text.length} characters (max ${MAX_CHARS}): ${text}`);
@@ -640,12 +555,8 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
         }
       }
     }
-    // Per language: 13 cost.caveat keys (ttl, unrecordedWrites, degraded,
-    // degradedNoFigure, unpriced, assumedTier, fastRequested, unrecordedCalls,
-    // longPrompt, toolTokens, unpricedNoModel, unpricedNoPublishedPrice,
-    // unpricedOtherModelAlias), 9 settings.usage.cause keys, 8 cost.speed keys
-    // and 4 one-line summaries — 34 per language, measured 2026-09-17.
-    assert.ok(seen >= 68, `the short-line keys exist in both languages (saw ${seen})`);
+    // Per language: the 4 one-line summaries, measured 2026-09-23.
+    assert.ok(seen >= 8, `the short-line keys exist in both languages (saw ${seen})`);
   });
 
   test('the unreadable history amount shows no figure: no dash, no zero, no currency (ADR-002 A3.19)', () => {
@@ -658,51 +569,13 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     }
   });
 
-  test('an amount that cannot be given is never called a floor (ADR-002 A3.19)', () => {
-    for (const lang of LANGS) {
-      const entries = catalogs[lang]['renderer.json'] || {};
-      assert.ok(has(entries, 'cost.caveat.degradedNoFigure'), `${lang}: cost.caveat.degradedNoFigure exists`);
-      for (const text of variants(entries['cost.caveat.degradedNoFigure'])) {
-        assert.doesNotMatch(text, /alt sınır|lower bound|\ben az\b|\bat least\b/i, `${lang}: no amount is not a lower bound: ${text}`);
-      }
-    }
-  });
-
-  test('a requested Fast tier is never claimed as applied, nor priced as Fast (ADR-002 A3.18)', () => {
-    // Affirmative forms only: "does not show that Fast was applied" and "if
-    // Fast was applied" are the honest conditional and stay allowed.
-    const CLAIMS_APPLIED = {
-      en: /(^|[.;:]\s*)Fast (was|is|has been) (actually )?applied\b|\bpriced at Fast\b|\bFast was used\b|\bat Fast prices?\b/i,
-      tr: /(^|[.;:]\s*)Fast( gerçekten)? uygulandı(?!ğ|ys)|Fast fiyat(ın)?dan|Fast olarak (fiyatlandı|hesaplandı)/i,
-    };
-    for (const lang of LANGS) {
-      const entries = catalogs[lang]['renderer.json'] || {};
-      for (const key of ['cost.cause.fastRequested', 'cost.caveat.fastRequested']) {
-        assert.ok(has(entries, key), `${lang}: ${key} exists`);
-        for (const text of variants(entries[key])) {
-          assert.doesNotMatch(text, CLAIMS_APPLIED[lang], `${lang} "${key}" claims Fast was applied: ${text}`);
-        }
-      }
-    }
-  });
-
-  test('the composed price note is tool-neutral: the tool is a placeholder, never hard-coded in a cause (ADR-003 A6)', () => {
-    // A cause phrase is reused under whichever tool it applies to; a tool name
-    // inside it would put one tool's cause under another's heading.
-    const TOOL_NAME = /Claude|Codex|Gemini|Kimi|Antigravity|\{tool\}|\{provider\}/i;
-    const causeKeys = (lang) => Object.keys(catalogs[lang]['renderer.json'] || {})
-      .filter((key) => key.startsWith('settings.usage.cause.')).sort();
-    assert.deepEqual(causeKeys('en'), causeKeys('tr'), 'both languages have the same cause phrases');
-    assert.ok(causeKeys('en').length >= 9, `the nine cause phrases exist (saw ${causeKeys('en').length})`);
+  test('the per-tool price source line names the tool by placeholder only (ADR-003 A6)', () => {
     for (const lang of LANGS) {
       const entries = catalogs[lang]['renderer.json'];
-      assert.deepEqual(placeholders(entries['settings.usage.why.tool']), ['causes', 'tool'], `${lang}: why.tool names the tool by placeholder`);
-      for (const text of variants(entries['settings.usage.why.tool'])) {
-        assert.doesNotMatch(text, /Claude|Codex|Gemini|Kimi|Antigravity/, `${lang}: why.tool hard-codes a tool`);
-      }
-      for (const key of causeKeys(lang)) {
+      for (const key of ['settings.usage.source.date', 'settings.usage.source.dateMissing', 'settings.usage.source.none']) {
+        assert.deepEqual(placeholders(entries[key]).includes('tool'), true, `${lang}: ${key} names the tool by placeholder`);
         for (const text of variants(entries[key])) {
-          assert.doesNotMatch(text, TOOL_NAME, `${lang} "${key}" names a tool: ${text}`);
+          assert.doesNotMatch(text, /Claude|Codex|Kimi|Antigravity/, `${lang}: ${key} hard-codes a tool`);
         }
       }
     }
@@ -723,7 +596,7 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
   test('a tool that publishes no price is never said to be missing from a price list (review HIGH: false Kimi reason)', () => {
     for (const lang of LANGS) {
       const entries = catalogs[lang]['renderer.json'] || {};
-      for (const key of ['cost.unpricedSummaryNoTable', 'cost.unpricedToggleLabelNoTable', 'settings.usage.cause.noTable']) {
+      for (const key of ['cost.unpricedSummaryNoTable', 'cost.unpricedToggleLabelNoTable', 'settings.usage.source.none']) {
         assert.ok(has(entries, key), `${lang}: ${key} exists`);
         for (const text of variants(entries[key])) {
           assert.doesNotMatch(text, /price list|fiyat listesi/i, `${lang} "${key}" blames a price list that does not exist: ${text}`);
@@ -900,13 +773,6 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     }
   });
 
-  test('the floor word is bound to its amount, not left to sentence order', () => {
-    // `atLeast()` attaches the bound to the figure, so no sentence can place
-    // "{amount}" away from it. The catalog entry must therefore be the bound
-    // and the amount and nothing else.
-    assert.equal(catalogs.tr['common.json']['amount.atLeast'], 'en az {amount}');
-    assert.equal(catalogs.en['common.json']['amount.atLeast'], 'at least {amount}');
-  });
 });
 
 /* ------------------------------------------------------ t() and formatting */
@@ -1117,9 +983,9 @@ test.describe('formatting follows the locale main resolved', () => {
     });
   });
 
-  test('the floor word stays attached to its amount in both languages', () => {
-    assert.equal(f.atLeast(f.usd(12.4)), 'en az $12,40');
-    inLocale('en', 'en-US', () => assert.equal(f.atLeast(f.usd(12.4)), 'at least $12.40'));
+  test('there is no formatter left that prints the floor word', () => {
+    // atLeast() was removed with the floor marker (owner, 2026-09-23).
+    assert.equal('atLeast' in f, false);
   });
 
   test('lowerFirst uses the resolved language, so English "I" never becomes "ı" (A1.7)', () => {
@@ -1342,7 +1208,7 @@ test.describe('every literal t() call passes exactly the placeholders its entry 
     const files = sourceFiles(path.join(ROOT, 'src', 'renderer', 'src'), '.ts');
     const { problems } = check(files, ['common.json', 'renderer.json'], {
       minimum: 220,
-      mustInclude: ['components/cost.ts cost.caveat.ttl', 'format.ts amount.atLeast'],
+      mustInclude: ['components/cost.ts cost.pending', 'format.ts cost.model.unknown'],
     });
     assert.deepEqual(problems, []);
   });

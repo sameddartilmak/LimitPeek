@@ -35,7 +35,6 @@ let settingsMod;
 let storeMod;
 let i18n;
 let fmt;
-let causesMod;
 
 test.before(async () => {
   restoreDom = installDom();
@@ -44,7 +43,6 @@ test.before(async () => {
   storeMod = await mirror.load('store.js');
   i18n = await mirror.load('i18n.js');
   fmt = await mirror.load('format.js');
-  causesMod = await mirror.load('floor-causes.js');
   i18n.setLocale('tr', 'tr-TR');
 });
 
@@ -199,9 +197,13 @@ test.describe('one row per tool, and no row that is a total', () => {
     assert.equal(s.rows.some((r) => r.count === fmt.tokens(4000)), false, 'a merged total appeared');
   });
 
-  test('the lead says the figures are never added together', () => {
+  test('the grey lead line above the counts is gone (owner, 2026-09-23)', () => {
+    // It read "Araç başına faturalanan token, önbellek okuma hariç; toplanmaz ·
+    // takvim haftası, Pzt–Paz" under every period. The per-row title still
+    // carries the four classes, cache reads named on their own.
     const s = subtotalsOf(history());
-    assert.equal(s.lead, i18n.t('settings.usage.tokens.lead'));
+    assert.equal(s.lead, null);
+    assert.equal(s.rows.length, 2, 'the counts themselves stay');
   });
 
   test('an empty period grows no subtotal block at all', () => {
@@ -214,38 +216,40 @@ test.describe('one row per tool, and no row that is a total', () => {
 
 /* ------------------------------------------------------------ floors and causes */
 
-test.describe('a subtotal floor is per tool, and never without its cause (A3.16)', () => {
-  test("one tool's bound does not mark another's", () => {
+/**
+ * The floor marker was removed from the panel (owner, 2026-09-23): no "en az",
+ * no cause under the count, no quieter ink for a bounded count. Main still
+ * sends `tokenFloorCausesByProvider`; none of it may reach the screen.
+ */
+const FLOOR_MARKERS = [/\ben az\b/i, /\bat least\b/i, /~/];
+
+test.describe('a subtotal is printed as it is, whatever floor causes main sends', () => {
+  test('a tool main marks as a lower bound reads exactly like one it does not', () => {
     const s = subtotalsOf(history({
       months: [period({ tokenFloorCausesByProvider: { codex: ['unrecorded-writes'] } })],
     }));
     const codex = s.rows.find((r) => r.provider === 'codex');
     const claude = s.rows.find((r) => r.provider === 'claude');
-    assert.equal(codex.count, fmt.atLeast(fmt.tokens(2_050_000)));
-    assert.equal(codex.floor, 'true');
+    assert.equal(codex.count, fmt.tokens(2_050_000));
     assert.equal(claude.count, fmt.tokens(10_480_000));
-    assert.equal(claude.floor, null);
+    for (const r of s.rows) {
+      for (const marker of FLOOR_MARKERS) assert.doesNotMatch(r.count, marker, r.count);
+      assert.equal(r.cause, null, `${r.provider} grew a cause line`);
+      assert.equal(r.floor, null, `${r.provider} carries a floor hook`);
+    }
   });
 
-  test('the cause is printed beside the bound, once per tool', () => {
-    const s = subtotalsOf(history({
-      months: [period({ tokenFloorCausesByProvider: { codex: ['unrecorded-writes'] } })],
-    }));
-    const codex = s.rows.find((r) => r.provider === 'codex');
-    assert.equal(codex.cause, causesMod.floorCauseClause('unrecorded-writes'));
-  });
-
-  test('a period whose DOLLARS are a floor does not thereby bound any count', () => {
+  test('a period whose DOLLARS are a floor adds nothing to any count', () => {
     const s = subtotalsOf(history({
       months: [period({ isFloor: true, unpricedModels: ['claude-opus-4-8'], tokenFloorCausesByProvider: {} })],
     }));
     for (const r of s.rows) {
-      assert.equal(r.floor, null, `${r.provider} took a bound from the money`);
-      assert.equal(r.count.includes(fmt.atLeast('')), false, r.count);
+      assert.equal(r.floor, null, r.provider);
+      for (const marker of FLOOR_MARKERS) assert.doesNotMatch(r.count, marker, r.count);
     }
   });
 
-  test('a zero count with a cause shows the cause but takes no bound of zero', () => {
+  test('a zero count with a cause is a plain zero, with no cause beside it', () => {
     const s = subtotalsOf(history({
       usageProviders: ['codex'],
       months: [period({
@@ -256,11 +260,10 @@ test.describe('a subtotal floor is per tool, and never without its cause (A3.16)
     }));
     const codex = s.rows.find((r) => r.provider === 'codex');
     assert.equal(codex.count, fmt.tokens(0), 'a measured zero prints as zero');
-    assert.equal(codex.floor, null, 'a lower bound of zero qualifies nothing');
-    assert.equal(codex.cause, causesMod.floorCauseClause('unread-range'), 'the reader is still told why');
+    assert.equal(codex.cause, null);
   });
 
-  test('a malformed cause map adds no claim', () => {
+  test('a malformed cause map is still accepted without a claim', () => {
     for (const bad of [null, undefined, 'codex', 7, { codex: 'unrecorded-writes' }]) {
       const s = subtotalsOf(history({ months: [period({ tokenFloorCausesByProvider: bad })] }));
       for (const r of s.rows) assert.equal(r.floor, null, JSON.stringify(bad) + ' / ' + r.provider);

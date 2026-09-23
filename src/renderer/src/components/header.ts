@@ -1,5 +1,5 @@
 /**
- * Header: the title, the freshness marker, and the panel controls.
+ * Header: the brand, the freshness marker, and the panel controls.
  *
  * THE LEAD READOUT IS GONE
  * ------------------------
@@ -257,10 +257,20 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
   }) as HTMLButtonElement;
   closeButton.appendChild(closeIcon());
 
+  // The product, not a section name: the app's own tile beside its name, the
+  // same pairing as the key-entry window's bar. The name is not translated
+  // (it is a product name), and the tile is decorative — the h1's accessible
+  // name is the words alone. Painted from CSS (panel.css .hdr__logo) like the
+  // provider marks, so no markup is built from an asset.
   const top = el(
     'div',
     { class: 'hdr__top' },
-    el('h1', { class: 'hdr__title' }, t('header.title')),
+    el(
+      'h1',
+      { class: 'hdr__title' },
+      el('span', { class: 'hdr__logo', 'aria-hidden': 'true' }),
+      'Usage Notch',
+    ),
     el('span', { class: 'hdr__spacer' }),
     fresh,
     el('div', { class: 'hdr__actions' }, settingsButton, pinButton, closeButton),

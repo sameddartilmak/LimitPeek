@@ -151,14 +151,18 @@ function read(hist, histOver) {
     modelRows: nodes.filter((n) => hasClass(n, 'usage__model')).length,
     amounts: nodes.filter((n) => hasClass(n, 'usage__amount')).map((n) => n.textContent),
     counts: rows.map((r) => [r.getAttribute('data-provider'), textIn(r, 'usage__tokens-count')]),
-    // The glosses of "en az". One is about the amount, one about the count.
+    // The removed glosses of "en az" and the "why" toggle (owner, 2026-09-23).
     leads: nodes
       .filter((n) => hasClass(n, 'usage__note-lead') && n.hidden !== true)
       .map((n) => n.textContent),
+    whys: nodes.filter((n) => hasClass(n, 'usage__why') || hasClass(n, 'cost__why')).length,
     lead: (() => {
       const n = nodes.find((x) => hasClass(x, 'usage__tokens-lead'));
       return n ? n.textContent : null;
     })(),
+    rowTitles: rows.map((r) => r.getAttribute('title')),
+    // Every visible text in the section, for the marker scan.
+    text: nodes.filter((n) => n.hidden !== true).map((n) => n.textContent).join('\n'),
   };
 }
 
@@ -196,53 +200,41 @@ test.describe('a period with counts shows them even when its model list is unusa
     assert.equal(out.toggles, 0);
   });
 
-  test('the COUNT gloss appears only when a token floor is actually on screen', () => {
-    // "En az" does two jobs on this screen — a bounded amount and a bounded
-    // count — and the cost sentence ("the real cost may be higher") is not true
-    // of a token figure. The second gloss is therefore conditional: without it
-    // the pair would be a standing wall of text, and asserting "two leads"
-    // unconditionally would let that regress unnoticed.
-    // Neither kind of floor: neither gloss. An explanation with nothing on
-    // screen to explain is the wall of text the owner objected to.
-    const none = read(history());
-    assert.deepEqual(none.leads, []);
-
-    // A COST floor alone brings the cost sentence only.
-    const costOnly = read(history(), { floorCausesByProvider: { codex: ['unpriced'] } });
-    assert.equal(costOnly.leads.length, 1);
-    assert.match(costOnly.leads[0], /maliyet/, 'the cost gloss is about the amount');
-
-    // A TOKEN floor alone brings the count sentence only — the two are
-    // independent claims and neither may stand in for the other.
-    const tokenOnly = read(history({ tokenFloorCausesByProvider: { codex: ['unrecorded-writes'] } }));
-    assert.equal(tokenOnly.leads.length, 1);
-    assert.match(tokenOnly.leads[0], /sayı/, 'the count gloss is about the count');
-
-    const both = read(
-      history({ tokenFloorCausesByProvider: { codex: ['unrecorded-writes'] } }),
-      { floorCausesByProvider: { codex: ['unpriced'] } },
-    );
-    assert.equal(both.leads.length, 2);
+  test('no "en az" gloss, "why" toggle or floor word appears, whatever floors main sends', () => {
+    // The owner removed the floor marker (2026-09-23). Every combination the
+    // old glosses keyed on — neither floor, a cost floor, a token floor, both —
+    // must now read the same way: the figures, and no sentence about bounds.
+    const cases = [
+      read(history()),
+      read(history(), { floorCausesByProvider: { codex: ['unpriced'] } }),
+      read(history({ tokenFloorCausesByProvider: { codex: ['unrecorded-writes'] } })),
+      read(
+        history({ isFloor: true, tokenFloorCausesByProvider: { codex: ['unrecorded-writes'] } }),
+        { floorCausesByProvider: { codex: ['unpriced'] } },
+      ),
+    ];
+    for (const out of cases) {
+      assert.deepEqual(out.leads, []);
+      assert.equal(out.whys, 0, 'a "Neden en az?" toggle came back');
+      assert.doesNotMatch(out.text, /\ben az\b/i);
+      assert.doesNotMatch(out.text, /alt sınır/);
+      assert.doesNotMatch(out.text, /~/);
+    }
   });
 
-  test('the cache-read exclusion is VISIBLE text, not only a title attribute', () => {
-    // The defect this pins: `row.tokens.cacheRead` carries the claim that the
-    // headline figure excludes cache reads — ~98% of raw volume — and it was
-    // rendered ONLY inside `tokensTitle()`, i.e. only into a `title`, on both
-    // the row and this panel. A hover affordance is not a channel: on the panel
-    // surface it is not even established that Chromium paints a tooltip, and a
-    // catalog pin that passes on a string nobody can read is a dead guard.
-    //
-    // So this reads the RENDERED TEXT of the lead that sits directly above every
-    // count, and it deliberately does not look at any attribute.
+  test('the grey lead line is gone; the cache-read split stays in each row title', () => {
+    // The lead ("faturalanan token, önbellek okuma hariç; toplanmaz · takvim
+    // haftası") was removed at the owner's request. What it stated about cache
+    // reads is not lost: each count's title names cache reads as their own
+    // class, marked as outside the billable total.
     const out = read(history());
-    assert.ok(out.lead, 'the subtotal list grew no lead line');
-    assert.match(out.lead, /faturalanan/, 'the counts are not said to be billable-only');
-    assert.match(out.lead, /önbellek okuma hariç/, 'the cache-read exclusion is not stated visibly');
-    // And the other three claims on the same line survive the addition.
-    assert.match(out.lead, /[Aa]raç başına/);
-    assert.match(out.lead, /toplanmaz/);
-    assert.match(out.lead, /takvim haftası|Pzt/);
+    assert.equal(out.lead, null, 'the lead line is back');
+    assert.equal(out.rowTitles.length, 2);
+    for (const title of out.rowTitles) {
+      assert.ok(title, 'a count lost its class breakdown');
+      assert.match(title, /Önbellek okuma/);
+      assert.match(title, /faturalanan toplama dahil değil/);
+    }
   });
 
   test('a tool absent from usageProviders still has its count shown, not dropped', () => {
@@ -262,67 +254,131 @@ test.describe('a period with counts shows them even when its model list is unusa
  *
  * The value is the USER'S OWN STATEMENT: nothing local reports a plan and no
  * vendor tells us, so the whole feature rests on not dressing that statement up
- * as something we verified. The rules that keeps are structural, which is why
- * they are asserted here rather than left to review:
+ * as something we verified. Since 2026-09-23 it is a CLOSED list (the owner's
+ * call), and the rules that keep it honest are structural:
  *
- *   - nothing is preselected and no tool has a default. A filled-in "Max 20x"
- *     is a guess with our name on it.
- *   - the field accepts free text, so a plan we have never heard of is still
- *     sayable. Suggestions go stale every time a vendor renames a tier.
- *   - it follows main's stored value whenever the user is not typing, which is
- *     how normalisation (trim, collapse, cap at 24) becomes visible without a
- *     message — and how a refused write puts the old value back.
+ *   - nothing is preselected and no tool has a default: the first option is
+ *     "Belirtilmedi", the empty value. A filled-in "Max 20x" is a guess with
+ *     our name on it.
+ *   - a tool we know no plans for gets no control at all.
+ *   - a stored label that is not in the list (typed into the old free-text
+ *     field) is still offered while it is stored, so it is never silently
+ *     dropped.
+ *   - it commits on `change` through the same IPC (`onPlanLabel`).
  */
-test.describe('the plan control offers help without making a claim', () => {
-  const itemOf = (hist, providers) => {
-    const handle = mount(hist, providers);
+test.describe('the plan control is a closed list that makes no claim', () => {
+  const PLAN_PROVIDERS = [
+    prov('claude', 'Claude Code'),
+    prov('codex', 'Codex'),
+    prov('kimi', 'Kimi'),
+    prov('antigravity', 'Antigravity'),
+  ];
+
+  const itemsOf = (providers = PLAN_PROVIDERS, ctxOver = {}) => {
+    const handle = settingsMod.createSettings({
+      onToggle() {}, onTheme() {}, onBack() {}, onLanguage() {}, onGrain() {},
+      onAddKey() {}, onOpenTokenPage() {}, onRemoveKey() {}, onPlanLabel() {},
+      ...ctxOver,
+    });
+    const store = new storeMod.Store();
+    store.set({
+      hasData: true,
+      snapshot: { generatedAt: new Date(NOW).toISOString(), providers, usageHistory: history(), pendingUsage: [] },
+    });
+    handle.render(store.get(), providers);
     return walk(handle.el).filter((n) => hasClass(n, 'settings__item'));
   };
 
   const planIn = (item) => {
-    const input = walk(item).find((n) => hasClass(n, 'settings__plan-input'));
-    const list = walk(item).find((n) => n.tagName === 'DATALIST');
+    const block = walk(item).find((n) => hasClass(n, 'settings__plan'));
+    const select = walk(item).find((n) => hasClass(n, 'settings__plan-select'));
+    const options = select ? walk(select).filter((n) => n.tagName === 'OPTION') : [];
     return {
-      input,
-      list,
-      options: list ? walk(list).filter((n) => n.tagName === 'OPTION').map((o) => o.getAttribute('value')) : [],
+      block,
+      select,
+      shown: !!block && block.hidden !== true,
+      values: options.map((o) => o.getAttribute('value')),
+      labels: options.map((o) => o.textContent),
     };
   };
+  const byId = (items, id) => items.find((n) => n.getAttribute('data-provider') === id);
 
-  test('every tool gets a control, not Claude alone', () => {
-    const items = itemOf(history());
-    assert.equal(items.length, PROVIDERS.length);
-    for (const item of items) assert.ok(planIn(item).input, 'a tool has no plan control');
+  test('it is a <select>, and the free-text field and its datalist are gone', () => {
+    const item = byId(itemsOf(), 'claude');
+    const { select } = planIn(item);
+    assert.ok(select, 'no plan control');
+    assert.equal(select.tagName, 'SELECT');
+    assert.equal(walk(item).some((n) => n.tagName === 'DATALIST'), false);
+    assert.equal(walk(item).some((n) => n.tagName === 'INPUT' && n.getAttribute('type') === 'text'), false);
+  });
+
+  test('the first option is "Belirtilmedi" with the empty value, then the known plans', () => {
+    const { values, labels } = planIn(byId(itemsOf(), 'claude'));
+    assert.equal(values[0], '');
+    assert.equal(labels[0], i18n.t('settings.plan.placeholder'));
+    assert.deepEqual(values.slice(1), ['Pro', 'Max 5x', 'Max 20x']);
+    assert.deepEqual(labels.slice(1), values.slice(1), 'a plan name is shown as itself');
   });
 
   test('nothing is preselected, for any tool', () => {
-    for (const item of itemOf(history())) {
-      const { input } = planIn(item);
-      assert.equal(input.value ?? '', '', 'a plan was filled in for the user');
-      assert.equal(input.getAttribute('value'), null);
+    for (const item of itemsOf()) {
+      const { select, shown } = planIn(item);
+      if (!shown) continue;
+      assert.equal(select.value, '', 'a plan was chosen for the user');
     }
   });
 
-  test('it is a free-text field with suggestions, never a closed list', () => {
-    const { input, list, options } = planIn(itemOf(history())[0]);
-    assert.equal(input.tagName, 'INPUT', 'a <select> would deny a plan we have not heard of');
-    assert.ok(list, 'no datalist to suggest from');
-    assert.equal(input.getAttribute('list'), list.getAttribute('id'));
-    assert.ok(options.length > 0, 'Claude has known plans and should suggest them');
+  test('a tool with no known plans gets no control at all', () => {
+    const items = itemsOf();
+    assert.equal(planIn(byId(items, 'claude')).shown, true);
+    assert.equal(planIn(byId(items, 'codex')).shown, true);
+    assert.equal(planIn(byId(items, 'kimi')).shown, false, 'Kimi shows a plan control');
+    assert.equal(planIn(byId(items, 'antigravity')).shown, false, 'Antigravity shows a plan control');
   });
 
-  test('a stored label is shown back, and the cap main enforces is declared', () => {
-    const withPlan = PROVIDERS.map((p) => (p.id === 'claude' ? { ...p, planLabel: 'Max 20x' } : p));
-    const { input } = planIn(itemOf(history(), withPlan)[0]);
-    assert.equal(input.value, 'Max 20x');
-    assert.equal(input.getAttribute('maxlength'), '24');
+  test('a stored label from the list is selected', () => {
+    const providers = PLAN_PROVIDERS.map((p) => (p.id === 'claude' ? { ...p, planLabel: 'Max 20x' } : p));
+    const { select, values } = planIn(byId(itemsOf(providers), 'claude'));
+    assert.equal(select.value, 'Max 20x');
+    assert.deepEqual(values, ['', 'Pro', 'Max 5x', 'Max 20x'], 'no extra option for a known plan');
   });
 
-  test('the hint keeps the free-text path open and says we cannot read it', () => {
-    const item = itemOf(history())[0];
+  test('a stored label NOT in the list is kept as an extra option, not dropped', () => {
+    const providers = PLAN_PROVIDERS.map((p) => (p.id === 'claude' ? { ...p, planLabel: 'Team Premium' } : p));
+    const { select, values } = planIn(byId(itemsOf(providers), 'claude'));
+    assert.equal(select.value, 'Team Premium');
+    assert.deepEqual(values, ['', 'Pro', 'Max 5x', 'Max 20x', 'Team Premium']);
+  });
+
+  test('a label stored for a tool with no known plans keeps the control, so it can be cleared', () => {
+    const providers = PLAN_PROVIDERS.map((p) => (p.id === 'kimi' ? { ...p, planLabel: 'Andante' } : p));
+    const { shown, select, values } = planIn(byId(itemsOf(providers), 'kimi'));
+    assert.equal(shown, true);
+    assert.equal(select.value, 'Andante');
+    assert.deepEqual(values, ['', 'Andante']);
+  });
+
+  test('a change commits the chosen value through onPlanLabel, once', () => {
+    const calls = [];
+    const item = byId(itemsOf(PLAN_PROVIDERS, { onPlanLabel: (id, label) => calls.push([id, label]) }), 'codex');
+    const { select } = planIn(item);
+    select.value = 'Pro';
+    select.dispatch('change');
+    select.dispatch('change');
+    assert.deepEqual(calls, [['codex', 'Pro']], 'the same value was written twice');
+    select.value = '';
+    select.dispatch('change');
+    assert.deepEqual(calls, [['codex', 'Pro'], ['codex', '']], '"Belirtilmedi" must clear the label');
+  });
+
+  test('the hint is short and still says the plan cannot be read from the tool', () => {
+    const item = byId(itemsOf(), 'claude');
     const hint = walk(item).find((n) => hasClass(n, 'settings__plan-hint'));
     assert.ok(hint, 'no hint');
-    assert.match(hint.textContent, /kendiniz yaz/i, 'the free-text path is not stated');
     assert.match(hint.textContent, /okuyamıyoruz/i, 'it does not say the plan cannot be read from the tool');
+    assert.doesNotMatch(hint.textContent, /kendiniz yaz/i, 'the hint still offers free text');
+    assert.ok(hint.textContent.length <= 60, hint.textContent);
+    const { select } = planIn(item);
+    assert.equal(select.getAttribute('aria-describedby'), hint.getAttribute('id'));
   });
 });

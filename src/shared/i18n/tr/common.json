@@ -26,7 +26,6 @@
   "tokens.perHour": "{value} token/sa",
   "tokens.sinceCapture": { "other": "o zamandan beri +{value} token" },
   "time.asOf": "{time} itibarıyla",
-  "amount.atLeast": "en az {amount}",
   "absence.unknown": "bilinmiyor",
   "absence.notReported": "bildirilmiyor",
   "absence.resetting": "yenileniyor",

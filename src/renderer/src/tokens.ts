@@ -35,31 +35,11 @@
  */
 
 import type {
-  HistoryFloorCause,
   PeriodModelCost,
   PeriodUsage,
   ProviderSnapshot,
   TokenBreakdown,
 } from '../../shared/contract.js';
-
-/**
- * Whether there is a BILLABLE figure to print — the quantity every caller
- * actually renders.
- *
- * This is deliberately a different question from `hasTokenCount`, and the
- * difference was a defect: the guard used to test "any class non-zero" while
- * every caller printed `billable`, so a breakdown whose only non-zero class was
- * `cacheRead` (a fully cached Gemini turn; a Codex delta with cached input and
- * no output) passed the guard and rendered "en az 0 token" — a no-figure state
- * dressed as a measured floor, which is the exact thing this feature exists to
- * prevent. Test the quantity you print.
- *
- * A zero is still PRINTED (see the header): what this gates is the "en az"
- * marker, because a lower bound of zero qualifies nothing.
- */
-export function hasBillableCount(tk: TokenBreakdown | null | undefined): boolean {
-  return !!tk && tk.billable > 0;
-}
 
 /**
  * Whether the class breakdown is worth attaching at all — any class non-zero.
@@ -95,47 +75,6 @@ export function allZero(tk: TokenBreakdown | null | undefined): boolean {
 }
 
 /**
- * Why THIS ROW's weekly count is a lower bound — empty when it is not one.
- *
- * Causes, not a boolean, because ADR-002 A3.16 forbids showing a floor without
- * a visible reason, and there is a real state with no cost cause to borrow: a
- * Gemini week where nothing could be priced marks the token floor (its utility
- * calls went unrecorded regardless) while `unrecordedCalls`, a COST cause,
- * stays false.
- *
- * Read only from this field. The renderer must not re-derive it from
- * `weeklyCost.sourceIncomplete`, `unrecordedCalls` or `unrecordedWriteEvents`,
- * and must not special-case a provider by id: those signals are individually
- * incomplete, and provider-specific honesty knowledge kept in the renderer is
- * knowledge the next surface will not carry.
- */
-export function weeklyTokenFloorCauses(provider: ProviderSnapshot): HistoryFloorCause[] {
-  const causes = provider.weeklyTokenFloorCauses;
-  return Array.isArray(causes) ? causes : [];
-}
-
-/**
- * Why one tool's count is a lower bound in THIS period — empty when it is not.
- *
- * Never `PeriodUsage.isFloor` and never a model's own `isFloor`: both are
- * statements about DOLLARS, and the monetary causes (an unpriced model, an
- * assumed or Fast tier, Claude's cache-write TTL fallback) counted every token
- * they saw. A period can read "en az $301,12" beside an exact count, and one
- * tool's dollars being a floor never marks another tool's tokens.
- */
-export function tokenFloorCausesFor(
-  period: PeriodUsage,
-  id: ProviderSnapshot['id'],
-): HistoryFloorCause[] {
-  const byProvider = period.tokenFloorCausesByProvider;
-  if (byProvider && typeof byProvider === 'object') {
-    const causes = byProvider[id];
-    if (Array.isArray(causes)) return causes;
-  }
-  return [];
-}
-
-/**
  * One model entry's own count, or null when none arrived.
  *
  * `null` and an all-zero breakdown are different states here too: null is "no
@@ -143,20 +82,6 @@ export function tokenFloorCausesFor(
  */
 export function modelTokens(model: PeriodModelCost): TokenBreakdown | null {
   return model.tokens ?? null;
-}
-
-/**
- * Whether "en az" may be printed on a figure: main says the count is a lower
- * bound AND there is a positive figure for that bound to qualify.
- *
- * "en az 0 token" is banned in both directions it can arise — an entirely zero
- * count (the contract already empties the causes for that one) and a count whose
- * only non-zero class is `cacheRead`, which the contract does NOT exempt because
- * it is not entirely zero. The causes are still shown when they exist, so the
- * fact that the count understates is never lost — only the vacuous bound is.
- */
-export function marksFloor(tk: TokenBreakdown | null, causes: readonly HistoryFloorCause[]): boolean {
-  return causes.length > 0 && hasBillableCount(tk);
 }
 
 /** One tool's own count in a period, or null when it has none here. */
