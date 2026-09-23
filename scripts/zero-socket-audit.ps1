@@ -238,6 +238,26 @@ Say "out=$OutDir"
 
 # --- HKCU\Run: read the exact value, restore it whatever happens -------------
 
+# A run that is KILLED (session ended, window closed, Ctrl+C at the wrong moment)
+# never reaches its finally block, so the app's rewrite of this value survives
+# it. The next run would then read that rewritten value as "before" and restore
+# it faithfully -- which is exactly how the owner's login item ended up pointing
+# at dist\win-unpacked on 2026-09-23. So the backup is persisted to a marker
+# BEFORE the app is launched and removed only after the restore; finding one at
+# start means an earlier run died holding the original, and it is put back first.
+$RUN_MARKER = Join-Path $env:TEMP 'usage-notch-audit-run-key.json'
+if (Test-Path -LiteralPath $RUN_MARKER) {
+  $pending = Get-Content -LiteralPath $RUN_MARKER -Raw | ConvertFrom-Json
+  if ($pending.existed) {
+    Set-ItemProperty -LiteralPath $RUN_KEY -Name $RUN_VALUE -Value $pending.value -Type String
+    Say ("HKCU\Run: an earlier run was interrupted before restoring; put back its original: " + $pending.value)
+  } else {
+    Remove-ItemProperty -LiteralPath $RUN_KEY -Name $RUN_VALUE -ErrorAction SilentlyContinue
+    Say "HKCU\Run: an earlier run was interrupted before restoring; removed the value it had added."
+  }
+  Remove-Item -LiteralPath $RUN_MARKER -Force
+}
+
 $runBefore = $null
 $runExisted = $false
 try {
@@ -247,6 +267,10 @@ try {
 } catch {
   Say "HKCU\Run has no Usage Notch value; it will be removed again after the run if the app adds one."
 }
+if ($runExisted -and $runBefore -like '*\dist\win-unpacked\*') {
+  Say "WARNING: the HKCU\Run value already points at a dist\win-unpacked build. That is an audit leftover, not the owner's installed app; it will be restored as found, so fix it by relaunching the installed app afterwards."
+}
+@{ existed = $runExisted; value = $runBefore } | ConvertTo-Json | Set-Content -LiteralPath $RUN_MARKER -Encoding UTF8
 
 $dnsServers = @(Get-DnsClientServerAddress -ErrorAction SilentlyContinue |
   ForEach-Object { $_.ServerAddresses } | Where-Object { $_ } | Sort-Object -Unique)
@@ -425,6 +449,9 @@ finally {
     Remove-ItemProperty -LiteralPath $RUN_KEY -Name $RUN_VALUE -ErrorAction SilentlyContinue
     Say "HKCU\Run left with no Usage Notch value, as before the run."
   }
+  # Restored: the marker has done its job. Removed LAST, so a failure above
+  # leaves it in place for the next run to recover from.
+  Remove-Item -LiteralPath $RUN_MARKER -Force -ErrorAction SilentlyContinue
 }
 
 # --- parse -------------------------------------------------------------------
