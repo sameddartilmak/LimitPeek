@@ -15,15 +15,22 @@
  *     not as a length, not as a mask (K23). The error line is chosen from a
  *     fixed set of codes main returns, so a message cannot leak a value even
  *     if main's own words changed.
- *   - there is no getter. The preload exposes `submit`, `cancel`, `entryInfo`
- *     and `openTokenPage`, and nothing that reads a stored key back (K3).
+ *   - there is no getter. The preload exposes `entryInfo`, `consent`,
+ *     `submit`, `cancel` and `openTokenPage`, and nothing that reads a stored
+ *     key back (K3).
  *   - declining is free: Esc and Cancel both close the window and change
  *     nothing at all.
  *
- * The consent text is the point of the page, not decoration. It states what is
- * sent, to which single host, how often, what is kept, what the encryption
- * does and does NOT protect against, how to make a least-privilege key, and
- * that removing the local copy is not revocation.
+ * TWO STEPS IN ONE WINDOW (Amendment 9)
+ * -------------------------------------
+ * The first screen is the consent. It is the point of the page, not
+ * decoration: what is sent, to which single host, how often, what is kept,
+ * what the encryption does and does NOT protect against, and that removing the
+ * local copy is not revocation. There are no fields yet. Only Continue, which
+ * main accepts from this window alone, replaces the consent with the
+ * least-privilege instruction and the two fields. Cancel has focus on the first
+ * screen, as it did in the native box it replaced, so Enter never consents by
+ * accident.
  */
 
 import { el, on, setAttr, setText } from './dom.js';
@@ -56,6 +63,8 @@ interface EntryInfo {
 
 interface EntryApi {
   entryInfo(): EntryInfo | null;
+  /** The consent screen's Continue. No argument; main fixed the provider. */
+  consent(): Promise<{ ok: boolean; code?: string }> | { ok: boolean; code?: string };
   /**
    * Hands the typed values to main, write-only. The token is the first
    * argument (A8's `submit(key)`); the username follows it, because main
@@ -94,9 +103,13 @@ function main(): void {
   const root = document.getElementById('key-entry');
   if (!root) return;
 
+  // The window has no Windows title bar. This strip stands in for it: the
+  // window can be dragged by it, and Windows draws its own close button over
+  // its right end.
+  const bar = el('header', { class: 'entry__bar' }, el('span', { class: 'entry__bar-name' }, 'Usage Notch'));
   const heading = el('h1', { class: 'entry__title' }, t('keyEntry.title'));
 
-  // --- what this costs the user, before any field ------------------------
+  // --- step 1: what this costs the user, before any field ----------------
   const facts = el(
     'div',
     { class: 'entry__facts' },
@@ -115,7 +128,20 @@ function main(): void {
     para('keyEntry.removeNote'),
   );
 
-  // --- how to create a least-privilege key, with the way to do it -------
+  const consentError = el('p', { class: 'entry__error', role: 'alert' });
+  consentError.hidden = true;
+  const decline = el('button', { type: 'button', class: 'entry__cancel' }, t('keyEntry.cancel')) as HTMLButtonElement;
+  const proceed = el('button', { type: 'button', class: 'entry__primary' }, t('keyEntry.continue')) as HTMLButtonElement;
+  const consentStep = el(
+    'section',
+    { class: 'entry__step entry__step--consent' },
+    facts,
+    consentError,
+    el('div', { class: 'entry__actions' }, decline, proceed),
+    el('p', { class: 'entry__hint entry__esc' }, t('keyEntry.escHint')),
+  );
+
+  // --- step 2: how to create a least-privilege key, with the way to do it -
   // The instruction and the button are one step, so the user does not have to
   // hold the instruction in their head while hunting for the page.
   const createHint = el('p', { class: 'entry__create-text', id: 'entry-create' }, t('keyEntry.leastPrivilege'));
@@ -247,14 +273,54 @@ function main(): void {
     }
   });
 
+  const formStep = el('section', { class: 'entry__step entry__step--form' }, create, form);
+
+  let consenting = false;
+  async function tryConsent(): Promise<void> {
+    if (consenting) return;
+    consentError.hidden = true;
+    if (!bridge || typeof bridge.consent !== 'function') {
+      setText(consentError, t('keyEntry.error.unknown'));
+      consentError.hidden = false;
+      return;
+    }
+    consenting = true;
+    setAttr(proceed, 'aria-busy', 'true');
+    proceed.disabled = true;
+    try {
+      const result = await bridge.consent();
+      if (result && result.ok === true) {
+        // The consent has been read and given. It is replaced, not kept above
+        // the fields: the window stays short, and the facts were the step before.
+        consentStep.replaceWith(formStep);
+        // Focus moves to the first field: this step exists to be typed into.
+        userInput.focus();
+        return;
+      }
+      const code = result && typeof result.code === 'string' ? result.code : '';
+      setText(consentError, t(ERROR_TEXT[code] ?? 'keyEntry.error.unknown'));
+      consentError.hidden = false;
+    } catch {
+      setText(consentError, t('keyEntry.error.unknown'));
+      consentError.hidden = false;
+    } finally {
+      consenting = false;
+      setAttr(proceed, 'aria-busy', null);
+      proceed.disabled = false;
+    }
+  }
+  on(proceed, 'click', () => { void tryConsent(); });
+  on(decline, 'click', () => bridge?.cancel?.());
+
+  // Outside the centred column, so it spans the window edge to edge.
+  root.before(bar);
   root.appendChild(heading);
-  root.appendChild(facts);
-  root.appendChild(create);
-  root.appendChild(form);
+  root.appendChild(consentStep);
   setAttr(root, 'aria-busy', null);
 
-  // Focus starts in the first field: this window exists to be typed into.
-  userInput.focus();
+  // Cancel has focus, as it had in the native box this replaced: Enter on
+  // arrival declines, and consent always takes a deliberate choice.
+  decline.focus();
 }
 
 main();

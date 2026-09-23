@@ -15,6 +15,30 @@ body {
   line-height: 1.5;
 }
 
+/* Stands in for the hidden Windows title bar. Windows draws its own close
+ * button over the right end (titleBarOverlay in entry-window.js, same height
+ * and colour), so the right padding leaves that area free. `env()` gives the
+ * width Windows leaves for the page, and falls back to the full width. Sticky,
+ * so long text scrolls under the strip instead of under the close button. */
+.entry__bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 calc(100vw - env(titlebar-area-width, 100vw) + var(--s-4)) 0 var(--s-4);
+  /* No bottom border: Windows paints the caption area in a flat colour, so a
+   * border here would stop short under the close button. */
+  background: var(--ink-900);
+  color: var(--ink-400);
+  font-size: var(--fs-meta);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.entry__step { display: flex; flex-direction: column; gap: var(--s-3); }
+
 .entry {
   display: flex;
   flex-direction: column;

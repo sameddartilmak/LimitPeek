@@ -584,11 +584,9 @@ function bootstrap() {
     // through the same listener every other update goes through.
     onChange: () => { if (collector) collector.rebuild(); },
     getLocale: () => preferences(),
-    // The consent dialog is raised from the Copilot row, over the panel.
-    parentWindow: () => (panel && panel.win && !panel.win.isDestroyed() ? panel.win : null),
     // Same contract as the setup dialogs: an unpinned panel closes shortly
-    // after the pointer leaves it, and the pointer HAS to leave it to answer a
-    // native dialog — which would tear the dialog's parent out from under it.
+    // after the pointer leaves it, and the pointer HAS to leave it to reach the
+    // key window. The user should come back to the row they started from.
     beforePrompt: () => openPinned(),
   });
   keys.load();

@@ -73,7 +73,61 @@ app.whenReady().then(async () => {
   await sleep(500);
   const js = (c) => win.webContents.executeJavaScript(c, true);
 
-  // ---- the page renders, in the language main resolved -------------------
+  // ---- step 1: the consent screen (Amendment 9) --------------------------
+  const consent = await js(`(() => {
+    const root = document.getElementById('key-entry');
+    const bar = document.querySelector('.entry__bar');
+    const clipped = (n) => n.scrollWidth > n.clientWidth + 0.5;
+    return {
+      title: (root.querySelector('.entry__title') || {}).textContent,
+      facts: [...root.querySelectorAll('.entry__facts p')].map((p) => p.textContent),
+      fields: root.querySelectorAll('input').length,
+      buttons: [...root.querySelectorAll('button')].map((b) => b.textContent),
+      cancelFocused: document.activeElement === root.querySelector('.entry__cancel'),
+      barDrag: bar ? getComputedStyle(bar).webkitAppRegion || getComputedStyle(bar).getPropertyValue('-webkit-app-region') : null,
+      barOutsideColumn: !!bar && !root.contains(bar),
+      clipped: [...root.querySelectorAll('p, label, button')].filter(clipped).map((n) => n.className),
+    };
+  })()`);
+  say('consent shape (tr): ' + JSON.stringify(consent));
+  check('the window opens on the consent screen: the facts and two buttons, no field yet',
+    consent.fields === 0 && consent.buttons.join('|') === 'Vazgeç|Devam et' && consent.title === 'GitHub Copilot API anahtarı',
+    consent);
+  check('Cancel has focus on arrival, so Enter never consents by accident',
+    consent.cancelFocused === true, consent);
+  check('the title strip spans the window and drags it',
+    consent.barOutsideColumn === true && consent.barDrag === 'drag', consent);
+  check('nothing on the consent screen is clipped', consent.clipped.length === 0, consent.clipped);
+  const cancelBeforeConsent = await js(`(async () => {
+    const before = window.__entryProbe.calls().cancel;
+    document.querySelector('.entry__cancel').click();
+    await new Promise((r) => setTimeout(r, 30));
+    return window.__entryProbe.calls().cancel - before;
+  })()`);
+  check('Cancel on the consent screen cancels', cancelBeforeConsent === 1, cancelBeforeConsent);
+
+  // A refused consent keeps the screen and prints a fixed sentence.
+  const refusedConsent = await js(`(async () => {
+    window.__entryProbe.setConsentAnswer({ ok: false, code: 'expired' });
+    document.querySelector('.entry__primary').click();
+    await new Promise((r) => setTimeout(r, 60));
+    const e = document.querySelector('.entry__error');
+    const out = { text: e && !e.hidden ? e.textContent : null, fields: document.querySelectorAll('input').length };
+    window.__entryProbe.setConsentAnswer({ ok: true });
+    return out;
+  })()`);
+  check('a refused Continue stays on the consent screen and says why',
+    refusedConsent.fields === 0 && refusedConsent.text === 'Pencere zaman aşımına uğradı. Yeniden açıp tekrar deneyin.', refusedConsent);
+
+  const afterConsent = await js(`(async () => {
+    document.querySelector('.entry__primary').click();
+    await new Promise((r) => setTimeout(r, 60));
+    return { consents: window.__entryProbe.calls().consent, facts: document.querySelectorAll('.entry__facts').length };
+  })()`);
+  check('Continue asks main once and replaces the consent with the form',
+    afterConsent.consents === 2 && afterConsent.facts === 0, afterConsent);
+
+  // ---- step 2: the form, in the language main resolved ------------------
   const shape = await js(`(() => {
     const root = document.getElementById('key-entry');
     const facts = [...root.querySelectorAll('.entry__facts p')].map((p) => p.textContent);
@@ -121,18 +175,18 @@ app.whenReady().then(async () => {
   check('the page loads in the language main resolved, with its title',
     shape.lang === 'tr' && shape.title === 'GitHub Copilot API anahtarı', [shape.lang, shape.title]);
   check('the consent text comes before the fields and covers every required fact',
-    shape.factCount >= 8
-      && shape.facts.some((f) => /tamamen isteğe bağlı/.test(f) && /hiçbir şey değişmez/.test(f))
-      && shape.facts.some((f) => /api\.github\.com/.test(f) && /tek bir istek/.test(f))
-      && shape.facts.some((f) => /15 dakikada bir/.test(f))
-      && shape.facts.some((f) => /yalnızca sayılar tutulur/.test(f))
-      && shape.facts.some((f) => /şifrelenip saklanır/.test(f) && /çalışan programlara karşı korumaz/.test(f))
-      && shape.facts.some((f) => /kendi ödediğiniz Copilot planlarında/.test(f))
-      && shape.facts.some((f) => /GitHub’da iptal etmeniz gerekir/.test(f))
+    consent.facts.length >= 8
+      && consent.facts.some((f) => /tamamen isteğe bağlı/.test(f) && /hiçbir şey değişmez/.test(f))
+      && consent.facts.some((f) => /api\.github\.com/.test(f) && /tek bir istek/.test(f))
+      && consent.facts.some((f) => /15 dakikada bir/.test(f))
+      && consent.facts.some((f) => /yalnızca sayılar tutulur/.test(f))
+      && consent.facts.some((f) => /şifrelenip saklanır/.test(f) && /çalışan programlara karşı korumaz/.test(f))
+      && consent.facts.some((f) => /kendi ödediğiniz Copilot planlarında/.test(f))
+      && consent.facts.some((f) => /GitHub’da iptal etmeniz gerekir/.test(f))
       // F-B: the proxy limit is stated BEFORE the user goes and creates a
       // token that could never return a number on their network.
-      && shape.facts.some((f) => /vekil sunucusunu kullanmaz/.test(f) && /gösterilemez/.test(f)),
-    shape.facts);
+      && consent.facts.some((f) => /vekil sunucusunu kullanmaz/.test(f) && /gösterilemez/.test(f)),
+    consent.facts);
   check('the least-privilege instruction names the fine-grained token, Plan: read and a short expiry',
     /fine-grained/.test(shape.createText || '') && /Plan: read/.test(shape.createText || '')
       && /son kullanma/.test(shape.createText || ''), shape.createText);
@@ -297,13 +351,20 @@ app.whenReady().then(async () => {
   // it over: resolved once, before the window loads.
   await win.loadFile(path.join(ROOT, 'src/renderer/key-entry.html'), { query: { lang: 'en' } });
   await sleep(500);
-  const en = await js(`(() => {
+  const en = await js(`(async () => {
     const root = document.getElementById('key-entry');
     const clipped = (n) => n.scrollWidth > n.clientWidth + 0.5;
+    const facts = [...root.querySelectorAll('.entry__facts p')].map((p) => p.textContent);
+    const factsClipped = [...root.querySelectorAll('p, label, button')].filter(clipped).map((n) => n.className);
+    const proceed = (root.querySelector('.entry__primary') || {}).textContent;
+    root.querySelector('.entry__primary').click();
+    await new Promise((r) => setTimeout(r, 60));
     return {
       lang: document.documentElement.getAttribute('lang'),
       title: (root.querySelector('.entry__title') || {}).textContent,
-      facts: [...root.querySelectorAll('.entry__facts p')].map((p) => p.textContent),
+      facts,
+      factsClipped,
+      proceed,
       create: (root.querySelector('.entry__secondary') || {}).textContent,
       save: (root.querySelector('.entry__primary') || {}).textContent,
       cancel: (root.querySelector('.entry__cancel') || {}).textContent,
@@ -321,7 +382,8 @@ app.whenReady().then(async () => {
       && en.facts.some((f) => /not protect it from programs running as this user/.test(f))
       && en.facts.some((f) => /revoke the key at GitHub/.test(f))
       && en.facts.some((f) => /does not use a system proxy/.test(f))
-      && en.clipped.length === 0,
+      && en.proceed === 'Continue'
+      && en.clipped.length === 0 && en.factsClipped.length === 0,
     en);
 
   say(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}  (${lines.filter((l) => l.startsWith('PASS')).length} pass)`);

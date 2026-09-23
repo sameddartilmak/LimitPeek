@@ -406,9 +406,9 @@ test('the key-entry window’s channels are mirrored exactly, and are not on the
   const expected = {};
   for (const m of block.matchAll(/^\s*([A-Z_]+):\s*'([^']+)'/gm)) expected[m[1]] = m[2];
   assert.deepEqual(IPC_KEY_ENTRY, expected);
-  // Four channels, all under the same prefix, and none of them in `IPC` — the
+  // Five channels, all under the same prefix, and none of them in `IPC` — the
   // panel's bridge must not be able to reach the entry window's surface.
-  assert.equal(Object.keys(expected).length, 4);
+  assert.equal(Object.keys(expected).length, 5);
   for (const channel of Object.values(expected)) {
     assert.ok(channel.startsWith('keys:'), channel);
     assert.equal(Object.values(IPC).includes(channel), false, `${channel} is also a panel channel`);

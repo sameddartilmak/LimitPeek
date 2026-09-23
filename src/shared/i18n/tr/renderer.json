@@ -317,6 +317,7 @@
   "keyEntry.keyHint": "Yazdığınız değer hiçbir ekranda gösterilmez ve günlüklere yazılmaz.",
   "keyEntry.save": "Kaydet",
   "keyEntry.cancel": "Vazgeç",
+  "keyEntry.continue": "Devam et",
   "keyEntry.escHint": "Esc vazgeçer.",
   "keyEntry.error.empty": "Kullanıcı adı ve anahtar gerekli.",
   "keyEntry.error.usernameShape": "Kullanıcı adı yalnızca harf, rakam ve tire içerebilir; en çok 39 karakter.",

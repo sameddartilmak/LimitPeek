@@ -533,13 +533,6 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     { file: 'renderer.json', key: 'app.keyRemoveFailed', en: [/\bcould not be deleted\b/i, /\brevoke the token at GitHub\b/i], tr: [/silinemedi/, /GitHub'dan iptal/] },
     { file: 'renderer.json', key: 'keyEntry.leastPrivilege', en: [/fine-grained/i, /Plan: read/], tr: [/fine-grained/i, /Plan: read/] },
     { file: 'renderer.json', key: 'keyEntry.keyHint', en: [/\bnever shown\b/i, /\bnever written to logs\b/i], tr: [/gösterilmez/, /günlüklere yazılmaz/] },
-    // Main's dialog carries the same facts as the page (guarded below too).
-    { file: 'main.json', key: 'dialog.keys.consent.message', en: [/\boptional\b/i, /\bnothing changes\b/i], tr: [/isteğe bağlı/, /hiçbir şey değişmez/] },
-    { file: 'main.json', key: 'dialog.keys.consent.what', en: [/\ba single request\b/i, /\bOnly numbers are kept\b/i], tr: [/tek bir istek/, /yalnızca sayılar tutulur/] },
-    { file: 'main.json', key: 'dialog.keys.consent.host', en: [/api\.github\.com/, /15 minutes/, /\bNo other address\b/i, /Windows DNS/], tr: [/api\.github\.com/, /15 dakikada bir/, /Başka hiçbir adrese/, /Windows'un kendi DNS/] },
-    { file: 'main.json', key: 'dialog.keys.consent.storage', en: [/\bencrypted for this Windows user\b/i, /\bnot protect it from programs running as this user\b/], tr: [/şifrelenip saklanır/, /çalışan programlara karşı korumaz/] },
-    { file: 'main.json', key: 'dialog.keys.consent.selfPaid', en: [/\bpay for yourself\b/i, /\bnot returned\b/i], tr: [/kendi ödediğiniz/, /gelmez/] },
-    { file: 'main.json', key: 'dialog.keys.consent.remove', en: [/\bonly the copy on this computer\b/i, /\brevoke the key at GitHub\b/i], tr: [/yalnızca bu bilgisayardaki kopyayı siler/, /GitHub’da iptal etmeniz gerekir/] },
     // The row's figures are COUNTS of credits GitHub reported, never a share of
     // an allowance (guarded below: no percentage, limit or quota word).
     { file: 'renderer.json', key: 'key.credits.used', en: [/\{credits\}/, /\bthis month\b/i], tr: [/\{credits\}/, /^Bu ay/] },
@@ -766,23 +759,22 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     assert.ok(checked >= 2, `the app-level no-network claim exists in both languages (saw ${checked})`);
   });
 
-  test("the key consent dialog and the entry page agree on host, storage and removal (ADR-003 A8)", () => {
-    // Two surfaces, one set of facts. If they drift, one of them is lying.
+  test("the key consent screen states host, DNS, storage and removal (ADR-003 A8, A9)", () => {
+    // Amendment 9 dropped the native box that repeated these facts. The page's
+    // consent screen is now the ONLY place they are stated, so each is pinned.
     const FACTS = {
       host: { en: /api\.github\.com/, tr: /api\.github\.com/ },
       // Naming the host is not enough: reaching it resolves the name first, and
-      // that leaves this process. Both surfaces say so, or the quieter one is
-      // the one the user believes.
+      // that leaves this process.
       dns: { en: /Windows DNS/, tr: /Windows'un kendi DNS/ },
       storage: { en: /\bnot protect it from programs running as this user\b/, tr: /çalışan programlara karşı korumaz/ },
       removal: { en: /\brevoke the key at GitHub\b/i, tr: /GitHub’da iptal etmeniz gerekir/ },
     };
-    // The page states the host in `keyEntry.what`; the dialog in `.host`.
     const SURFACES = {
-      host: [['renderer.json', 'keyEntry.what'], ['main.json', 'dialog.keys.consent.host']],
-      dns: [['renderer.json', 'keyEntry.what'], ['main.json', 'dialog.keys.consent.host']],
-      storage: [['renderer.json', 'keyEntry.storage'], ['main.json', 'dialog.keys.consent.storage']],
-      removal: [['renderer.json', 'keyEntry.removeNote'], ['main.json', 'dialog.keys.consent.remove']],
+      host: [['renderer.json', 'keyEntry.what']],
+      dns: [['renderer.json', 'keyEntry.what']],
+      storage: [['renderer.json', 'keyEntry.storage']],
+      removal: [['renderer.json', 'keyEntry.removeNote']],
     };
     for (const lang of LANGS) {
       for (const [fact, places] of Object.entries(SURFACES)) {
@@ -804,7 +796,7 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // or "connects to" is false as measured, while "requested" is true. This
     // pins the DISTINCTION, so a future edit cannot quietly restore the
     // stronger verb.
-    const SURFACES = [['renderer.json', 'keyEntry.what'], ['main.json', 'dialog.keys.consent.host']];
+    const SURFACES = [['renderer.json', 'keyEntry.what']];
     const OVERCLAIM = /no other address is contacted|connects to no other address|contacts no other address|Başka hiçbir adrese bağlan/i;
     const CLAIM = { en: /no other address is requested|requests no other address/i, tr: /Başka hiçbir adrese istek yap/i };
     let seen = 0;
@@ -819,7 +811,7 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
         }
       }
     }
-    assert.equal(seen, 4, `both surfaces in both languages (saw ${seen})`);
+    assert.equal(seen, 2, `the consent screen in both languages (saw ${seen})`);
   });
 
   test('no credit or key-state line claims a percentage, limit or quota (ADR-003 A5 K21)', () => {

@@ -88,7 +88,6 @@ function service(options = {}) {
     onChange: () => changes.push(1),
     getLocale: () => ({ resolvedLanguage: 'tr', formatLocale: 'tr-TR' }),
     entryPage: options.entryPage || null,
-    t: (key) => key,
   });
   svc.changes = changes;
   return svc;
@@ -528,14 +527,14 @@ test('the IPC surface answers {ok} and nothing else, and only to the panel (K3)'
   const panelEvent = { sender: 'panel' };
   svc.registerIpc(ipcMain, (event) => event === panelEvent);
 
-  electron.dialogAnswers.length = 0;
-  electron.dialogAnswers.push(0);
-  const entry = await ipcMain.invoke(IPC.KEY_ENTRY, panelEvent, 'copilot');
-  assert.deepEqual(entry, { ok: false });
-  // From anything that is not our panel: refused without even a dialog.
-  const before = electron.dialogCalls.length;
+  // From anything that is not our panel: refused, and no window opens.
+  const before = electron.windows.length;
   assert.deepEqual(await ipcMain.invoke(IPC.KEY_ENTRY, { sender: 'stranger' }, 'copilot'), { ok: false });
-  assert.equal(electron.dialogCalls.length, before);
+  assert.equal(electron.windows.length, before);
+  // From the panel, the key window opens: the answer is {ok} and nothing more.
+  const entry = await ipcMain.invoke(IPC.KEY_ENTRY, panelEvent, 'copilot');
+  assert.deepEqual(entry, { ok: true });
+  assert.equal(electron.windows.length, before + 1);
   assert.deepEqual(await ipcMain.invoke(IPC.KEY_ENTRY, panelEvent, 'gemini'), { ok: false });
   assert.deepEqual(await ipcMain.invoke(IPC.KEY_TOKEN_PAGE, { sender: 'stranger' }), { ok: false });
   assert.deepEqual(await ipcMain.invoke(IPC.KEY_REMOVE, { sender: 'stranger' }, 'copilot'), { ok: false });
@@ -551,6 +550,9 @@ test('the IPC surface answers {ok} and nothing else, and only to the panel (K3)'
   // The entry window's channels refuse a panel sender outright.
   assert.deepEqual(await ipcMain.invoke(IPC_KEY_ENTRY.SUBMIT, panelEvent, KEY, USERNAME), { ok: false, code: 'rejected' });
   assert.equal(ipcMain.send(IPC_KEY_ENTRY.ENTRY_INFO, { sender: 'panel', returnValue: undefined }), null);
+  // Nor can the panel press Continue for the user (Amendment 9).
+  assert.deepEqual(await ipcMain.invoke(IPC_KEY_ENTRY.CONSENT, panelEvent), { ok: false, code: 'rejected' });
+  svc.entry.destroy('test-teardown');
   svc.stop();
 });
 
@@ -561,11 +563,14 @@ test('declining consent through the real IPC path writes no file and starts noth
   const panelEvent = { sender: 'panel' };
   svc.registerIpc(ipcMain, (event) => event === panelEvent);
 
-  electron.dialogAnswers.push(0);
-  assert.deepEqual(await ipcMain.invoke(IPC.KEY_ENTRY, panelEvent, 'copilot'), { ok: false });
-  assert.equal(electron.dialogCalls.length, 1);
+  assert.deepEqual(await ipcMain.invoke(IPC.KEY_ENTRY, panelEvent, 'copilot'), { ok: true });
+  const win = electron.windows[electron.windows.length - 1];
+  // Cancel on the consent screen, sent by the key window itself.
+  ipcMain.send(IPC_KEY_ENTRY.CANCEL, { sender: win.webContents, senderFrame: win.webContents.mainFrame });
+  assert.equal(win.isDestroyed(), true);
+  assert.equal(electron.dialogCalls.length, 0, 'no OS message box any more');
   assert.equal(fs.existsSync(path.join(root, 'UsageNotch', 'secrets')), false, 'no directory, let alone a file');
-  assert.equal(electron.createdSessions.length, 0, 'no session of any kind');
+  assert.ok(electron.createdSessions.every((s) => !s.partition.startsWith('persist:')), 'only in-memory sessions');
   assert.equal(svc.polling, false, 'no timer');
   assert.equal(svc.snapshotInput(NOW).copilot.keyState, 'none');
   svc.stop();

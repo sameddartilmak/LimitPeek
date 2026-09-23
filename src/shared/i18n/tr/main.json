@@ -60,13 +60,5 @@
   "dialog.agy.promise": "Önce zaman damgalı bir yedek alınır. Köprü yalnızca kalan kota oranını ve sıfırlanma zamanını okur; hiçbir metin, dosya yolu, e-posta veya kimlik bilgisi kaydetmez ve hiçbir ağ bağlantısı açmaz.",
   "dialog.agyInstall.title": "Antigravity CLI kurulsun mu?",
   "dialog.agyInstall.message": "Antigravity CLI (agy) indirilip kurulsun mu?",
-  "dialog.agyInstall.detail": "Bu adım, Antigravity'nin resmi kurulum betiğini (install.ps1) antigravity.google adresinden indirip PowerShell ile çalıştırır: tek seferlik bir indirme, yalnızca şimdi ve sizin onayınızla. Anahtar kaydetmediğiniz sürece uygulama kendiliğinden hiçbir ağ isteği yapmaz; kayıtlı bir Copilot anahtarı varsa yalnızca api.github.com'a, en sık 15 dakikada bir ve yalnızca o satır açıkken istek yapılır. Kurulumdan sonra durum satırı köprüsü eklenir; köprü yalnızca kalan kota oranını ve sıfırlanma zamanını okur.",
-  "dialog.keys.consent.title": "GitHub Copilot API anahtarı",
-  "dialog.keys.consent.confirm": "Devam et",
-  "dialog.keys.consent.message": "Bu isteğe bağlı adım, bu ayki Copilot AI kredilerinizi gösterebilmek için bir API anahtarı ister. Vazgeçerseniz hiçbir şey değişmez.",
-  "dialog.keys.consent.what": "Anahtar verilirse uygulama tek bir istek yapar: bu ayki Copilot AI kredilerinizi okur. Yanıttan yalnızca sayılar tutulur.",
-  "dialog.keys.consent.host": "Tek hedef api.github.com; en sık 15 dakikada bir. Başka hiçbir adrese istek yapılmaz; bu adın çözümü Windows'un kendi DNS ayarlarıyla yapılır.",
-  "dialog.keys.consent.storage": "Anahtar bu bilgisayarda, bu Windows kullanıcısına özel olarak şifrelenip saklanır. Bu, diğer kullanıcı hesaplarına ve dosyanın kopyalanmasına karşı korur; bu kullanıcı olarak çalışan programlara karşı korumaz.",
-  "dialog.keys.consent.selfPaid": "Yalnızca kendi ödediğiniz Copilot planlarında çalışır; kurumun ödediği planlarda bu sayılar gelmez.",
-  "dialog.keys.consent.remove": "Anahtarı Ayarlar’dan kaldırabilirsiniz; bu yalnızca bu bilgisayardaki kopyayı siler. Anahtarı ayrıca GitHub’da iptal etmeniz gerekir."
+  "dialog.agyInstall.detail": "Bu adım, Antigravity'nin resmi kurulum betiğini (install.ps1) antigravity.google adresinden indirip PowerShell ile çalıştırır: tek seferlik bir indirme, yalnızca şimdi ve sizin onayınızla. Anahtar kaydetmediğiniz sürece uygulama kendiliğinden hiçbir ağ isteği yapmaz; kayıtlı bir Copilot anahtarı varsa yalnızca api.github.com'a, en sık 15 dakikada bir ve yalnızca o satır açıkken istek yapılır. Kurulumdan sonra durum satırı köprüsü eklenir; köprü yalnızca kalan kota oranını ve sıfırlanma zamanını okur."
 }
