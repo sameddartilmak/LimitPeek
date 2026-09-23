@@ -611,6 +611,14 @@
 .row--passive .row__body { gap: 2px; }
 .row--passive .row__meta { font-size: var(--fs-micro); }
 
+/* A passive row that is nonetheless CONNECTED: today only Copilot with a key
+ * whose credits were read (ADR-003 A8). It is passive because GitHub reports no
+ * five-hour or weekly window, not because nothing is known, so it takes the
+ * connected identity — full-size mark in colour, full-ink name — and keeps only
+ * the passive geometry. The key block below the name carries its reading. */
+.row--passive[data-connected="true"] .mark { width: 24px; height: 24px; }
+.row--passive[data-connected="true"] .row__name { color: var(--ink-100); font-weight: 500; }
+
 /* ------------------------------------------------------ state: loading */
 /* Skeleton occupies the FINAL geometry so nothing reflows when data lands. */
 .sk {

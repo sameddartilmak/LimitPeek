@@ -63,6 +63,7 @@ import {
   tokens,
 } from '../format.js';
 import { t } from '../i18n.js';
+import { keyIsSource } from '../keys.js';
 import { allZero, hasTokenCount } from '../tokens.js';
 import { createCost, type CostHandle } from './cost.js';
 import { experimentalTag } from './experimental.js';
@@ -428,16 +429,23 @@ function buildPassive(
   const name = el('span', { class: 'row__name' }, p.displayName);
   const experimental = experimentalTag(p);
   const detailId = `setup-detail-${p.id}`;
+  // A stored key is this row's source (ADR-003 A8): main drops the setup offer
+  // then, and the key block below the name carries the row — the month's
+  // credits, or the one fixed sentence for the key's state. "Not connected
+  // yet" beside either would contradict it, so the line is not drawn at all.
+  const keyed = !p.setupAction && keyIsSource(p);
   const detailText = p.setupAction?.detail || t('row.notConnected');
-  const detail = el(
-    'span',
-    { class: 'row__meta-detail', id: detailId, title: detailText },
-    detailText,
-  );
+  const detail = keyed
+    ? null
+    : el(
+        'span',
+        { class: 'row__meta-detail', id: detailId, title: detailText },
+        detailText,
+      );
 
   replaceChildrenWith(body, [
     el('div', { class: 'row__line' }, name, experimental),
-    el('div', { class: 'row__meta' }, detail),
+    detail ? el('div', { class: 'row__meta' }, detail) : null,
   ]);
 
   refs.name = name;
