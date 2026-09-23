@@ -229,6 +229,14 @@ app.whenReady().then(async () => {
       'li.row[data-provider="' + id + '"] .win')];
     const read = (b) => {
       const rail = b.querySelector('.rail');
+      const resolved = (name) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(' + name + ')';   // not a template: this code is injected INTO one
+      document.body.appendChild(probe);
+      const v = getComputedStyle(probe).color;
+      probe.remove();
+      return v;
+    };
       const pct = b.querySelector('.win__pct');
       const cs = getComputedStyle(pct);
       return {
@@ -239,6 +247,26 @@ app.whenReady().then(async () => {
         pctSize: cs.fontSize,
         pctWeight: cs.fontWeight,
         pctColor: cs.color,
+        // The no-step fallback, read from the live palette rather than copied
+        // into this file as a literal.
+        inkFallback: resolved('--ink-400'),
+        // The step's own anchor, resolved through the SAME color-mix as the
+        // bar with the mix at zero. Comparable as a string, which a plain
+        // var(--watch) would not be: a mix in a non-sRGB space serialises as
+        // an oklab() value and an untouched custom property as an rgb() one.
+        anchor: (() => {
+          const step = b.dataset.state;
+          if (!step) return null;
+          const next = { calm: '--watch', watch: '--ember', ember: '--spent', spent: null }[step];
+          if (!next) return null;
+          const probe = document.createElement('span');
+          probe.style.backgroundColor =
+            'color-mix(in oklab, var(--' + step + '), var(' + next + ') 0%)';
+          document.body.appendChild(probe);
+          const v = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return v;
+        })(),
         hasRail: !!rail,
         railH: rail ? Math.round(rail.getBoundingClientRect().height) : null,
         fill: rail ? getComputedStyle(rail.querySelector('.rail__fill')).backgroundColor : null,
@@ -283,9 +311,25 @@ app.whenReady().then(async () => {
   check('the state ramp is derived per window, not once per row',
     wins.claude[0].state === 'watch' && wins.claude[1].state === 'calm',
     wins.claude.map(b => b.state));
+  // The RULE, not two literals. This used to pin rgb(224,168,69) and
+  // rgb(63,184,158); the second was already stale the moment `calm` moved.
+  // Then it pinned an `rgb(` prefix, which a color-mix in a non-sRGB space does
+  // not produce — that is what failed the last run, while the ramp itself was
+  // working. So it now asserts the two things that actually matter, in a form
+  // that survives both a palette change and a serialisation change.
   check('and the two bars therefore resolve to different ramp colours',
-    wins.claude[0].fill === 'rgb(224, 168, 69)' && wins.claude[1].fill === 'rgb(63, 184, 158)',
-    wins.claude.map(b => b.fill));
+    wins.claude[0].fill !== wins.claude[1].fill
+      && !!wins.claude[0].fill && !!wins.claude[1].fill
+      && wins.claude[0].fill !== wins.claude[0].inkFallback
+      && wins.claude[1].fill !== wins.claude[1].inkFallback,
+    wins.claude.map(b => [b.state, b.fill]));
+  // And the ramp is actually INTERPOLATING, not sitting on its anchors. 62 is
+  // 8% into watch and 24 is 40% into calm, so neither bar may equal the mix-0
+  // colour of its own step. Without this, `--mix` could stop reaching the
+  // element and every check above would still pass.
+  check('each bar is mixed past its own anchor, so --mix is reaching the element',
+    wins.claude.every((b) => b.anchor && b.fill !== b.anchor),
+    wins.claude.map(b => [b.state, b.fill, b.anchor]));
   check('the figure takes the same ramp colour as its own bar',
     wins.claude[0].pctColor === wins.claude[0].fill && wins.claude[1].pctColor === wins.claude[1].fill,
     wins.claude.map(b => [b.pctColor, b.fill]));
@@ -310,6 +354,14 @@ app.whenReady().then(async () => {
   await sleep(160);
   const unknown = await js(`(() => {
     const row = document.querySelector('li.row[data-provider="claude"]');
+    const resolved = (name) => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(' + name + ')';   // not a template: this code is injected INTO one
+      document.body.appendChild(probe);
+      const v = getComputedStyle(probe).color;
+      probe.remove();
+      return v;
+    };
     const blocks = [...row.querySelectorAll('.win')];
     const weekly = blocks[1];
     return {
@@ -318,6 +370,8 @@ app.whenReady().then(async () => {
       pct: weekly.querySelector('.win__pct').textContent,
       none: weekly.querySelector('.win__pct').classList.contains('win__pct--none'),
       pctColor: getComputedStyle(weekly.querySelector('.win__pct')).color,
+      inkFallback: resolved('--ink-400'),
+      rampColours: ['--calm', '--watch', '--ember', '--spent'].map(resolved),
       rails: weekly.querySelectorAll('.rail').length,
       meters: weekly.querySelectorAll('[role="meter"]').length,
       state: weekly.dataset.state || null,
@@ -333,9 +387,13 @@ app.whenReady().then(async () => {
   check('it names the window and says it cannot say',
     unknown.label === 'Haftalık pencere' && unknown.pct === 'bilinmiyor', unknown);
   check('it draws NO bar and NO meter role', unknown.rails === 0 && unknown.meters === 0, unknown);
+  // Again the rule: no step, therefore no ramp colour — asserted against the
+  // resolved fallback ink rather than against a literal that moves with the
+  // palette.
   check('it takes no state-ramp colour, because "unknown" is not a level',
-    unknown.state === null && unknown.pctColor === 'rgb(107, 122, 119)',
-    [unknown.state, unknown.pctColor]);
+    unknown.state === null && unknown.pctColor === unknown.inkFallback
+      && unknown.rampColours.every((c) => c !== unknown.pctColor),
+    [unknown.state, unknown.pctColor, unknown.inkFallback]);
   check('the reset instant survives: when it rolls over is knowable even when the share is not',
     /kald/.test(unknown.reset || ''), unknown.reset);
   check('a screen reader hears the gap stated, not silence',
@@ -1533,10 +1591,37 @@ app.whenReady().then(async () => {
           name: (r.querySelector('.usage__model-name') || {}).textContent || '',
           title: (r.querySelector('.usage__model-name') || { getAttribute: () => null }).getAttribute('title'),
           rowH: Math.round(r.getBoundingClientRect().height),
+          tokens: (() => { const n = r.querySelector('.usage__model-tokens'); return n && !n.hidden ? n.textContent : null; })(),
+          tokensTitle: (r.querySelector('.usage__model-tokens') || { getAttribute: () => null }).getAttribute('title'),
+          tokenFloor: r.getAttribute('data-token-floor'),
+          amount: (r.querySelector('.usage__model-amount') || {}).textContent || '',
+          clipped: r.scrollWidth > r.clientWidth + 0.5,
         };
       }),
+      // The per-tool subtotals under the model list. Deliberately read as a
+      // LIST: if a total row ever appears here, the row count catches it.
+      subtotal: (() => {
+        const block = view.querySelectorAll('.usage__row')[0].querySelector('.usage__tokens');
+        if (!block) return null;
+        return {
+          hidden: block.hidden,
+          lead: (block.querySelector('.usage__tokens-lead') || {}).textContent || '',
+          rows: [...block.querySelectorAll('.usage__tokens-row')].map((r) => ({
+            provider: r.getAttribute('data-provider'),
+            tool: (r.querySelector('.usage__tokens-tool') || {}).textContent || '',
+            count: (r.querySelector('.usage__tokens-count') || {}).textContent || '',
+            floor: r.getAttribute('data-token-floor'),
+            title: r.getAttribute('title'),
+            cause: (() => { const n = r.querySelector('.usage__tokens-cause'); return n ? n.textContent : null; })(),
+            causeClipped: (() => { const n = r.querySelector('.usage__tokens-cause'); return n ? n.scrollWidth > n.clientWidth + 0.5 : null; })(),
+          })),
+        };
+      })(),
       note: note ? { text: note.textContent, scrollW: note.scrollWidth, clientW: note.clientWidth,
                      ws: getComputedStyle(note).whiteSpace, tov: getComputedStyle(note).textOverflow } : null,
+      // The two glosses of "en az": one about the amount, one about the count.
+      leads: [...view.querySelectorAll('.usage__note-lead')]
+        .filter((n) => !n.hidden).map((n) => n.textContent),
     };
     view.querySelector('.acc__trigger[data-acc="models"]').click();
     await new Promise((r) => setTimeout(r, 60));
@@ -1565,6 +1650,81 @@ app.whenReady().then(async () => {
       u.rows.some((r) => r.provider === 'codex' && r.name.endsWith(unresolved) && r.title === unresolved)
         && !u.rows.some((r) => /(^|: )unknown$/.test(r.name) || r.title === 'unknown'),
       u.rows.map((r) => [r.name, r.title]));
+    // ---- the owner's ask: how many tokens, per model and per tool ----------
+    const atLeastWord = tr ? 'en az' : 'at least';
+    check(`[${lang}] every model line carries its own absolute count beside the money`,
+      u.rows.every((r) => r.tokens !== null && /\d/.test(r.tokens)), u.rows.map((r) => [r.name, r.tokens]));
+    check(`[${lang}] an UNPRICED model still shows its count — the tokens were used either way`,
+      u.rows.some((r) => new RegExp(tr ? 'fiyatlanamadı' : 'could not be priced', 'i').test(r.amount)
+        && r.tokens !== null && /\d/.test(r.tokens)),
+      u.rows.map((r) => [r.name, r.amount, r.tokens]));
+    check(`[${lang}] cacheRead is stated as its own class in the count's title, never folded in`,
+      u.rows.every((r) => r.tokensTitle && new RegExp(tr ? 'Önbellek okuma' : 'Cache read').test(r.tokensTitle)),
+      u.rows.map((r) => r.tokensTitle));
+    // The fixture is built for exactly this: Codex's COUNT is a floor (it
+    // records 0 cache writes), Claude's DOLLARS are a floor (unpriced usage),
+    // and neither claim leaks into the other.
+    check(`[${lang}] the token floor is Codex's alone and does not follow the dollar floor`,
+      u.rows.filter((r) => r.provider === 'codex').every((r) => r.tokenFloor === 'true')
+        && u.rows.filter((r) => r.provider === 'claude').every((r) => r.tokenFloor === null),
+      u.rows.map((r) => [r.provider, r.tokenFloor]));
+    check(`[${lang}] a Claude line can read "${atLeastWord}" on the money beside an EXACT count`,
+      u.rows.some((r) => r.provider === 'claude' && r.amount.includes(atLeastWord)
+        && !r.tokens.includes(atLeastWord)),
+      u.rows.map((r) => [r.provider, r.amount, r.tokens]));
+    check(`[${lang}] a Codex line marks the COUNT as a lower bound`,
+      u.rows.some((r) => r.provider === 'codex' && r.tokens.includes(atLeastWord)),
+      u.rows.map((r) => [r.provider, r.tokens]));
+    check(`[${lang}] no model line is clipped by the extra column`,
+      u.rows.every((r) => r.clipped === false), u.rows.map((r) => [r.name, r.clipped]));
+    // The subtotal is main's own figure. The fixture's Claude subtotal
+    // (10.48M) is deliberately NOT the sum of the Claude rows shown
+    // (9.6M + 0.82M = 10.42M), because `byModel` is capped at 24 entries and a
+    // sum over what is displayed can silently fall short.
+    check(`[${lang}] there is one token subtotal per tool, and NO merged total row`,
+      u.subtotal !== null && u.subtotal.rows.length === 2
+        && u.subtotal.rows.map((r) => r.provider).sort().join() === 'claude,codex',
+      u.subtotal);
+    check(`[${lang}] the subtotal is read from the per-tool map, not added up from the rows`,
+      u.subtotal !== null
+        // The map value is 10.48M; folding the displayed rows gives 10.42M.
+        // Both assertions matter: the first says we read the map, the second
+        // fails loudly if anyone ever folds the rows instead.
+        && /10[.,]5\s*M/.test(u.subtotal.rows.find((r) => r.provider === 'claude').count)
+        && !/10[.,]4\s*M/.test(u.subtotal.rows.find((r) => r.provider === 'claude').count),
+      u.subtotal);
+    check(`[${lang}] the subtotal lead states that tool counts are never added together`,
+      u.subtotal !== null && new RegExp(tr ? 'toplanmaz' : 'never added', 'i').test(u.subtotal.lead),
+      u.subtotal && u.subtotal.lead);
+    // The cache-read exclusion, as VISIBLE text. It used to exist only in a
+    // `title`, so on this surface it may never have been readable at all.
+    check(`[${lang}] and that the counts are billable only, with cache reads excluded`,
+      u.subtotal !== null
+        && new RegExp(tr ? 'faturalanan' : 'billable', 'i').test(u.subtotal.lead)
+        && new RegExp(tr ? 'önbellek okuma hariç' : 'cache reads excluded', 'i').test(u.subtotal.lead),
+      u.subtotal && u.subtotal.lead);
+    check(`[${lang}] a bounded subtotal never stands bare: its reason is on screen (A3.16)`,
+      u.subtotal !== null
+        && /\S/.test(u.subtotal.rows.find((r) => r.provider === 'codex').cause || '')
+        && u.subtotal.rows.find((r) => r.provider === 'claude').cause === null,
+      u.subtotal && u.subtotal.rows.map((r) => [r.provider, r.cause]));
+    check(`[${lang}] the reason wraps rather than being cut — a cause cut to fit is a cause dropped`,
+      u.subtotal !== null && u.subtotal.rows.every((r) => r.causeClipped !== true),
+      u.subtotal && u.subtotal.rows.map((r) => [r.provider, r.causeClipped]));
+    check(`[${lang}] "en az" is glossed for the COUNT as well as the cost, and each names its quantity`,
+      u.leads.length === 2
+        && u.leads.some((l) => new RegExp(tr ? 'maliyet' : 'cost', 'i').test(l))
+        && u.leads.some((l) => new RegExp(tr ? 'sayı' : 'count', 'i').test(l)),
+      u.leads);
+    check(`[${lang}] the subtotal lead names the span, so the row's figure and this one can be told apart`,
+      u.subtotal !== null && new RegExp(tr ? 'takvim haftası|Pzt' : 'calendar week|Mon').test(u.subtotal.lead),
+      u.subtotal && u.subtotal.lead);
+    check(`[${lang}] only Codex's subtotal is a lower bound`,
+      u.subtotal !== null
+        && u.subtotal.rows.find((r) => r.provider === 'codex').count.includes(atLeastWord)
+        && !u.subtotal.rows.find((r) => r.provider === 'claude').count.includes(atLeastWord),
+      u.subtotal);
+
     check(`[${lang}] the two-date price note is whole: it wraps, it is never cut`,
       u.note !== null && u.note.scrollW <= u.note.clientW && u.note.tov !== 'ellipsis'
         && u.note.ws !== 'nowrap' && /Codex/.test(u.note.text) && /Claude Code/.test(u.note.text)

@@ -15,6 +15,7 @@ const { isRolloutRelPath } = require('./codex/usage');
 const { historyStartMs } = require('./history');
 const { buildSnapshot, loadingSnapshot } = require('./snapshot');
 const { sanitizeOrder } = require('./order');
+const { sanitizePlanLabels, withPlanLabel } = require('./plan-labels');
 const { sanitizeEnabled } = require('./enabled');
 const { LocalUsageChannel } = require('./usage-channel');
 const { sameEvents } = require('./same-events');
@@ -186,7 +187,10 @@ class Collector extends EventEmitter {
     /** Last IDE reading, for callers that must not re-open the database. */
     this.antigravityIde = null;
     this.workerPath = options.workerPath || path.join(__dirname, 'scan', 'worker.js');
-    this.planLabel = options.planLabel || null;
+    /** Plan names the user typed, per tool. Main owns and persists them; held
+     *  here only so every emitted snapshot already carries them. Never read by
+     *  any figure (`src/core/plan-labels.js`). */
+    this.planLabels = sanitizePlanLabels(options.planLabels);
     /** User's drag order. Owned and persisted by main; held here so that every
      *  snapshot this object emits is already ordered. */
     this.order = sanitizeOrder(options.order);
@@ -222,6 +226,15 @@ class Collector extends EventEmitter {
     this._sweep = null;
     this._throttle = null;
     this._lastScanAt = 0;
+    /**
+     * The optional-key state, read on demand from main's key service (ADR-003
+     * Amendment 8). A FUNCTION, not a value: the service updates it from a poll
+     * and from IPC, and a snapshot must carry what is true at the moment it is
+     * built. Injected rather than imported because it lives in `src/main` — this
+     * file imports nothing from electron (ADR-001 Decision 2), and the key
+     * service necessarily does.
+     */
+    this.keysInput = typeof options.keysInput === 'function' ? options.keysInput : () => null;
     /** A watcher event arrived while the panel was closed. */
     this._missedChange = false;
     this._watchers = [];
@@ -248,7 +261,7 @@ class Collector extends EventEmitter {
     if (this._claudeSettled) {
       this.rebuild();
     } else {
-      this.snapshot = loadingSnapshot(Date.now(), this.order, this.enabled, this._pendingUsage());
+      this.snapshot = loadingSnapshot(Date.now(), this.order, this.enabled, this._pendingUsage(), this.keysInput(), this.planLabels);
       this.emit('snapshot', this.snapshot);
     }
     this._startWatchers();
@@ -336,9 +349,17 @@ class Collector extends EventEmitter {
     return { ...this.enabled };
   }
 
-  setPlanLabel(label) {
-    this.planLabel = typeof label === 'string' && label ? label : null;
+  /**
+   * One tool's plan label, validated and persisted by main; applied here so the
+   * next snapshot carries it. Clearing it removes the key, so the row goes back
+   * to saying nothing rather than showing an empty label.
+   *
+   * @returns {object} the map actually applied, after validation
+   */
+  setPlanLabel(id, label) {
+    this.planLabels = withPlanLabel(this.planLabels, id, label);
     this.rebuild();
+    return { ...this.planLabels };
   }
 
   /**
@@ -352,7 +373,7 @@ class Collector extends EventEmitter {
       // Claude's first scan is still running on an empty store: say LOADING,
       // not "no usage" (ADR-002 A3.14). Covers every rebuild path — panel open,
       // order/enablement changes, a Codex result.
-      this.snapshot = loadingSnapshot(now, this.order, this.enabled, this._pendingUsage());
+      this.snapshot = loadingSnapshot(now, this.order, this.enabled, this._pendingUsage(), this.keysInput(), this.planLabels);
       this.emit('snapshot', this.snapshot);
       return this.snapshot;
     }
@@ -397,9 +418,10 @@ class Collector extends EventEmitter {
       scanOk: this.scanOk,
       scanGoodAtMs: this.scanGoodAtMs,
       scanUnreadRange: this.scanUnreadRange,
-      planLabel: this.planLabel,
+      planLabels: this.planLabels,
       order: this.order,
       enabled: this.enabled,
+      keys: this.keysInput(),
     });
     this.emit('snapshot', this.snapshot);
     return this.snapshot;

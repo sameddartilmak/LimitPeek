@@ -239,14 +239,27 @@
   text-overflow: ellipsis;
 }
 
+/* The plan the user told us they are on. Subdued on purpose: the tool's NAME is
+ * the identity and this is a qualifier beside it, so it takes the micro size and
+ * the meta ink rather than competing for the line.
+ *
+ * It YIELDS BEFORE THE NAME. The backend caps the label at 24 characters, and at
+ * that length on a 360px panel it would otherwise push a long tool name into its
+ * ellipsis — the identity losing characters to an annotation. `flex: 0 1 auto`
+ * plus a max-width means the plan is what shortens when the line runs out, and
+ * it is the safe thing to shorten: it is a label, not a claim, and the full text
+ * is one line down in Settings where the user set it. */
 .row__plan {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  max-width: 40%;
   font-size: var(--fs-micro);
   color: var(--ink-400);
   padding: 1px var(--s-1);
   border: 1px solid var(--ink-700);
   border-radius: 4px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .row__gap { flex: 1 1 auto; }
@@ -277,6 +290,14 @@
   font-size: var(--fs-meta);
   color: var(--ink-400);
   min-width: 0;
+  /* Each item on this line now NAMES ITS WINDOW ("Kota haftası: 6,2M token",
+   * "5 saat: 240 B token/sa"), because the count is the week's and the rate
+   * beside it is the five-hour window's. Those labels are the claim, and the
+   * per-span ellipsis below would cut the number or the label off the end of
+   * whichever item ran out of room — a claim cut to fit is a claim dropped
+   * (ADR-004 A2.3). So the line takes a second row before anything is cut. */
+  flex-wrap: wrap;
+  row-gap: 0;
 }
 .row__meta > span {
   white-space: nowrap;
@@ -287,9 +308,20 @@
  * now prints its own countdown under its own bar, so a single one here would
  * have been the third figure describing the five-hour window and none
  * describing the weekly one. */
-.row__meta > span + span::before {
-  content: "\00B7";
-  margin-right: var(--s-2);
+/* The separator is a TRAILING one, on every item but the last.
+ *
+ * It used to be `span + span::before`, a LEADING dot on each item after the
+ * first. That broke when this line started wrapping: a pseudo-element cannot
+ * know it is first on a line, so a wrapped second line opened with a stray
+ * dot. A trailing separator has no such state — it belongs to the item it
+ * follows, exactly like a comma, so a break after it leaves it correctly at the
+ * end of the line above and never at the start of the next.
+ *
+ * The text stream gets its own separator: a real space is inserted between the
+ * items in row.ts, because pseudo-element content is invisible to `textContent`
+ * and to anything reading this line as a string. */
+.row__meta > span:not(:last-child)::after {
+  content: " ·";
   color: var(--ink-600);
 }
 
@@ -376,9 +408,28 @@
 
 /* Per-window state ramp. Scoped to the block, so the weekly bar is never
  * coloured by the five-hour window's pressure. */
-.win[data-state="calm"]  { --state: var(--calm); }
-.win[data-state="watch"] { --state: var(--watch); }
-.win[data-state="ember"] { --state: var(--ember); }
+/* THE RAMP IS CONTINUOUS, AND IT IS THE SAME RAMP.
+ *
+ * Each step still OWNS its anchor colour at its own threshold — every contrast
+ * ratio measured in tokens.css is a property of those four values and none of
+ * them moved. What changed is the space between them: the fill mixes toward the
+ * NEXT anchor by `--mix`, the reading's position inside its step, so the colour
+ * moves with every percent instead of holding flat across a whole band. Below
+ * 60% that band was the entire calm range, which is where most readings live
+ * and why the bar looked static.
+ *
+ * Mixed in OKLAB, not sRGB: a straight sRGB blend between two saturated hues
+ * dips through a muddy, darker midpoint, and the midpoint is exactly where most
+ * readings sit. OKLAB keeps the path perceptually even, which is also what keeps
+ * LUMINANCE moving monotonically along the ramp — the property that makes this
+ * legible as a ramp to a reader who cannot separate the hues. Colour is never
+ * the only signal here anyway: the percentage is printed beside the bar.
+ *
+ * `spent` has no next anchor, so it does not mix. A row with no step at all
+ * takes the fallback ink and no ramp colour: "we cannot say" is not a level. */
+.win[data-state="calm"]  { --state: color-mix(in oklab, var(--calm),  var(--watch) calc(var(--mix, 0) * 100%)); }
+.win[data-state="watch"] { --state: color-mix(in oklab, var(--watch), var(--ember) calc(var(--mix, 0) * 100%)); }
+.win[data-state="ember"] { --state: color-mix(in oklab, var(--ember), var(--spent) calc(var(--mix, 0) * 100%)); }
 .win[data-state="spent"] { --state: var(--spent); }
 
 /* ------------------------------------------------------------------ bar */
@@ -465,10 +516,36 @@
 /* The row's headline state, from the five-hour window: the one main draws the
  * tray icon from. Every block overrides it with its own, so this is a
  * fallback and a hook, never the colour of a bar that has its own. */
-.row[data-state="calm"]  { --state: var(--calm); }
-.row[data-state="watch"] { --state: var(--watch); }
-.row[data-state="ember"] { --state: var(--ember); }
+/* The row-level ramp, same rule — see the note above the .win block. */
+.row[data-state="calm"]  { --state: color-mix(in oklab, var(--calm),  var(--watch) calc(var(--mix, 0) * 100%)); }
+.row[data-state="watch"] { --state: color-mix(in oklab, var(--watch), var(--ember) calc(var(--mix, 0) * 100%)); }
+.row[data-state="ember"] { --state: color-mix(in oklab, var(--ember), var(--spent) calc(var(--mix, 0) * 100%)); }
 .row[data-state="spent"] { --state: var(--spent); }
+
+/* UNCERTAIN READINGS DESATURATE — they do not hold the neutral.
+ *
+ * Colour may only say what the number says, and these states say it with less
+ * confidence in words already: "about", "as of 13:09", a frayed fill. A
+ * saturated red beside "about" is the colour contradicting the sentence.
+ *
+ * Holding the neutral instead was the other option and it is worse: it would
+ * paint an uncertain 90% exactly like a calm 10%, which understates. Pulling
+ * the ramp colour toward the meta ink keeps the POSITION and withdraws the
+ * CONFIDENCE, which is the honest half-measure — and it matters more now that
+ * the sub-60 band moves, because that band used to be flat and could not
+ * overstate by drifting.
+ *
+ * `error` is not here: it already drains to a flat ink below, which is the
+ * strongest form of the same idea. */
+.rail__fill--estimated,
+.row[data-status="stale"] .rail__fill,
+.row[data-status="stale"] .rail__band {
+  background: color-mix(in oklab, var(--state, var(--calm)), var(--ink-400) 45%);
+}
+.win__pct[data-estimated="true"],
+.row[data-status="stale"] .win__pct {
+  color: color-mix(in oklab, var(--state, var(--ink-100)), var(--ink-400) 45%);
+}
 
 /* --------------------------------------------------------- state: stale */
 /* Last good value survives, dimmed, and the block says when it was true.
@@ -882,6 +959,68 @@
   color: var(--ink-500);
 }
 
+/* ----------------------------------------------------------- optional key */
+/* ADR-003 A8 (Phase B): the row's key block. Calm and last, because it is an
+ * EXTRA: the offer to add a key must never read as something missing, and the
+ * figure it unlocks is three counts and a time.
+ *
+ * There is deliberately NO bar, NO ring and NO state-ramp hook here. GitHub's
+ * AI-credit reply carries no allowance, so a percentage would need an invented
+ * denominator — the same fabrication ADR-001 forbids for an unpublished limit.
+ * Nothing about the key itself is styled, because nothing about it is rendered
+ * (K23): no mask, no length, no last-four. */
+
+.key {
+  margin-top: var(--s-1);
+  padding-top: var(--s-1);
+  border-top: 1px dashed var(--ink-700);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-micro);
+  color: var(--ink-300);
+}
+.key[hidden] { display: none !important; }
+.key p { margin: 0; overflow-wrap: break-word; }
+
+/* The offer. A quiet, text-weight control: an outlined or filled button here
+ * would compete with the row's own reading for attention. */
+.key__add,
+.key__token {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dashed var(--ink-600);
+  background: transparent;
+  color: var(--ink-400);
+  font: inherit;
+  font-size: var(--fs-micro);
+  text-align: left;
+  cursor: pointer;
+}
+.key__add:hover,
+.key__token:hover { color: var(--ink-100); }
+.key__add[hidden],
+.key__token[hidden] { display: none !important; }
+
+.key__figure {
+  color: var(--ink-100);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+/* A reading main KEPT through an error state (ADR-001 stale-but-true): still a
+ * real measurement, so it stays legible, but it is dimmed to the meta ink so it
+ * cannot be mistaken for a current one. Its age line and the state sentence
+ * below it are what say so in words. */
+.key[data-stale="true"] .key__figure { color: var(--ink-300); }
+.key[data-stale="true"] .key__split,
+.key[data-stale="true"] .key__asof { color: var(--ink-500); }
+.key__split { font-variant-numeric: tabular-nums lining-nums; }
+.key__asof { color: var(--ink-500); }
+.key__figure[hidden],
+.key__split[hidden],
+.key__asof[hidden],
+.key__state[hidden] { display: none !important; }
+
 /* ------------------------------------------------- per-model quota detail */
 /* One figure per model family, behind a disclosure. It borrows the cost
  * block's chrome deliberately — same toggle, same caret, same detail panel —
@@ -970,9 +1109,12 @@
   color: var(--state, var(--ink-200));
   font-variant-numeric: tabular-nums lining-nums;
 }
-.quota__head[data-state="calm"]  { --state: var(--calm); }
-.quota__head[data-state="watch"] { --state: var(--watch); }
-.quota__head[data-state="ember"] { --state: var(--ember); }
+/* Same continuous ramp as the bars above — a per-model figure and the bar it
+ * sits under are two readings of one kind, and one gliding while the other
+ * stepped would read as two different scales. */
+.quota__head[data-state="calm"]  { --state: color-mix(in oklab, var(--calm),  var(--watch) calc(var(--mix, 0) * 100%)); }
+.quota__head[data-state="watch"] { --state: color-mix(in oklab, var(--watch), var(--ember) calc(var(--mix, 0) * 100%)); }
+.quota__head[data-state="ember"] { --state: color-mix(in oklab, var(--ember), var(--spent) calc(var(--mix, 0) * 100%)); }
 .quota__head[data-state="spent"] { --state: var(--spent); }
 
 /* Names only. No numeric column exists here, so none can be filled in. */

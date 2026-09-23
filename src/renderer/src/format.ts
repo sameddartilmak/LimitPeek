@@ -398,6 +398,41 @@ export function stateFor(usedPercentage: number): StateStep {
   return 'calm';
 }
 
+/**
+ * How far the reading sits INTO its ramp step, 0 at the step's own anchor and 1
+ * at the next one. The bar mixes between the two anchor colours by this much,
+ * so the colour moves with every percent instead of only at three thresholds.
+ *
+ * WHY CONTINUOUS, AND WHY THIS SHAPE. The owner asked for the bar to change as
+ * usage rises; it already did, but only at 60/85/100, so the whole 0-59 band —
+ * where most readings live — was one flat colour. Adding more steps would have
+ * meant inventing thresholds, and a step is a verdict: it says something
+ * happens HERE. Interpolating between the anchors we already have says only
+ * what the number says, which is the entire licence colour has in this panel.
+ *
+ * The anchors do not move. Every measured contrast ratio in tokens.css is a
+ * property of a step's own colour, and each is still hit exactly at its
+ * threshold; the interpolation only fills the gaps between them.
+ *
+ * From the ROUNDED value, like `stateFor`, so the colour can never disagree
+ * with the printed figure — at 59.6 the panel prints %60 and this must already
+ * be reading the watch segment, not the last hair of calm.
+ *
+ * `spent` returns 0: it is the last anchor and there is nothing beyond it to
+ * mix toward. A reading over 100 stays exactly `spent`.
+ */
+export function mixWithin(usedPercentage: number): number {
+  const shown = Math.round(usedPercentage);
+  if (shown >= STATE_THRESHOLDS.spent) return 0;
+  if (shown >= STATE_THRESHOLDS.ember) {
+    return (shown - STATE_THRESHOLDS.ember) / (STATE_THRESHOLDS.spent - STATE_THRESHOLDS.ember);
+  }
+  if (shown >= STATE_THRESHOLDS.watch) {
+    return (shown - STATE_THRESHOLDS.watch) / (STATE_THRESHOLDS.ember - STATE_THRESHOLDS.watch);
+  }
+  return clamp01(shown / STATE_THRESHOLDS.watch);
+}
+
 export function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return value < 0 ? 0 : value > 1 ? 1 : value;

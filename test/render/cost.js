@@ -40,6 +40,107 @@ app.whenReady().then(async () => {
 
   const q = (id) => `document.querySelector('li.row[data-provider="${id}"]')`;
 
+  // ---- the row's token figure is the WEEK's, and every figure names its window ----
+  //
+  // The owner's ask: the panel row showed the FIVE-HOUR count, which is not the
+  // number anyone means by "how many tokens have I used". It now shows the
+  // week's. The five-hour figure is not deleted — it moves into the tooltip,
+  // labelled — and the burn rate beside it is still a five-hour rate, so it
+  // says so on the visible line. Two numbers describing two different windows
+  // with only one of them labelled is the misreading this whole change exists
+  // to remove.
+  const readRowTokens = (id) => `(() => {
+    const row = ${q(id)};
+    const meta = row.querySelector('.row__meta');
+    const spans = meta ? [...meta.querySelectorAll(':scope > span')] : [];
+    return {
+      meta: meta ? meta.textContent : null,
+      spans: spans.map((s) => ({
+        text: s.textContent,
+        title: s.getAttribute('title'),
+        clipped: s.scrollWidth > s.clientWidth + 0.5,
+      })),
+      lines: meta ? Math.round(meta.getBoundingClientRect().height / parseFloat(getComputedStyle(meta).lineHeight)) : 0,
+    };
+  })()`;
+  const claudeTokens = await js(readRowTokens('claude'));
+  say('row tokens (tr): ' + JSON.stringify(claudeTokens));
+  check('[tr] the row prints the WEEKLY count, not the five-hour one',
+    // The fixture's week is 5x its 5h window, so the two are never confusable.
+    // Digits + a tolerant unit: tr renders 6.18M as "6,2 Mn" and en as "6.2M",
+    // and hand-writing either is how a live check turns into a brittle one.
+    /6[.,]2\s*M/.test(claudeTokens.meta || '') && !/1[.,]2\s*M/.test(claudeTokens.meta || ''),
+    claudeTokens.meta);
+  check('[tr] the count names its own window, and the fixture week is an anchored quota week',
+    /Kota haftası: /.test(claudeTokens.meta || ''), claudeTokens.meta);
+  check('[tr] the burn rate names the five-hour window it is actually measured over',
+    /5 saat: .*token\/sa/.test(claudeTokens.meta || ''), claudeTokens.meta);
+  check('[tr] the five-hour breakdown is kept, in the tooltip, with both windows labelled',
+    claudeTokens.spans.some((s) => s.title
+      && /Haftalık pencere/.test(s.title) && /5 saatlik pencere/.test(s.title)
+      && /Önbellek okuma/.test(s.title)),
+    claudeTokens.spans.map((s) => s.title));
+  // The labels are the claim, so the line WRAPS before anything is cut
+  // (ADR-004 A2.3). Two lines is acceptable; an ellipsized label is not.
+  check('[tr] nothing on the meta line is ellipsized away, and it takes at most two lines',
+    claudeTokens.spans.every((s) => s.clipped === false) && claudeTokens.lines <= 2,
+    [claudeTokens.lines, claudeTokens.spans.map((s) => [s.text, s.clipped])]);
+
+  // A MEASURED ZERO WEEK. The defect this pins: an all-zero breakdown is our own
+  // successful reading of a week with no usage, and reading it as "absent" made
+  // the row say "could not be counted" about a week we had counted. It prints
+  // the measurement, and it takes NO "en az" — a lower bound of zero qualifies
+  // nothing.
+  const ZERO_TK = '{ input: 0, output: 0, cacheWrite: 0, cacheRead: 0, billable: 0 }';
+  await js(`window.__probe.setPendingDirect([], { codex: { weeklyTokens: ${ZERO_TK}, weeklyTokenFloorCauses: ['unrecorded-writes'], weeklyCost: null } })`);
+  await sleep(220);
+  const zeroWeek = await js(readRowTokens('codex'));
+  say('row tokens, measured zero week (tr): ' + JSON.stringify(zeroWeek));
+  check('[tr] a counted zero week prints the measurement, not "sayılamadı"',
+    /0 token/.test(zeroWeek.meta || '') && !/sayılamadı/.test(zeroWeek.meta || ''), zeroWeek.meta);
+  check('[tr] and it never prints "en az 0", whatever causes main sent',
+    !/en az 0/.test(zeroWeek.meta || ''), zeroWeek.meta);
+  check('[tr] the cause is still shown, because the count still understates',
+    /kaydedilmemiş/.test(zeroWeek.meta || ''), zeroWeek.meta);
+  check('[tr] "Token bilgisi yok" is unreachable while we have the data',
+    !/Token bilgisi yok/.test(zeroWeek.meta || ''), zeroWeek.meta);
+
+  // The ONE state that reads "could not be counted": a zero count on a week the
+  // reader KNOWS it could not read (ADR-002 A3.19) — recognised by
+  // sourceIncomplete, never by the zero alone.
+  await js(`window.__probe.setPendingDirect([], { codex: { weeklyTokens: ${ZERO_TK}, weeklyTokenFloorCauses: [] } })`);
+  await js(`window.__probe.setCostDirect('codex', 'incompleteNoFigure')`);
+  await sleep(250);
+  const uncounted = await js(readRowTokens('codex'));
+  say('row tokens, unread week (tr): ' + JSON.stringify(uncounted));
+  check('[tr] an unread week reads "sayılamadı", never "en az 0 token"',
+    /Haftalık: sayılamadı/.test(uncounted.meta || '')
+      && !/en az 0/.test(uncounted.meta || '') && !/0 token/.test(uncounted.meta || ''),
+    uncounted.meta);
+
+  // A floor COUNT is marked from the CAUSES alone, and the cause is visible with
+  // it — a bare "en az" is what ADR-002 A3.16 forbids.
+  await js(`window.__probe.restore()`);
+  await js(`window.__probe.setPendingDirect([], { codex: { weeklyTokenFloorCauses: ['unrecorded-writes'] } })`);
+  await sleep(220);
+  const floored = await js(readRowTokens('codex'));
+  say('row tokens, floor count (tr): ' + JSON.stringify(floored));
+  check('[tr] a weekly count main marks as a lower bound prints "en az"',
+    /en az .*token/.test(floored.meta || ''), floored.meta);
+  check('[tr] and never bare: the reason is on the line with it (A3.16)',
+    /kaydedilmemiş önbellek yazmaları/.test(floored.meta || ''), floored.meta);
+
+  // No causes, no marker — an exact count is not hedged.
+  await js(`window.__probe.setPendingDirect([], { codex: { weeklyTokenFloorCauses: [] } })`);
+  await sleep(220);
+  const exact = await js(readRowTokens('codex'));
+  check('[tr] a count with no causes is printed exactly, with no "en az" and no parenthetical',
+    !/en az/.test(exact.meta || '') && !/\(/.test(exact.meta || '') && /token/.test(exact.meta || ''),
+    exact.meta);
+  await js(`window.__probe.setPendingDirect([])`);
+  await js(`window.__probe.restore()`);
+  await sleep(250);
+
   // ---- no white frame around the panel on open --------------------------
   //
   // User report: "when it opens there is a white frame around it". Measured on
@@ -53,8 +154,43 @@ app.whenReady().then(async () => {
   // precisely the condition of a real open. So the first check proves the
   // condition is reproduced — without it the outline check would pass
   // vacuously — and the second proves the root no longer draws in it.
+  // As OPENED: the root holds focus because app.ts focused it (app.ts:698).
+  // Measured before anything below touches modality, so this stays a statement
+  // about the open path.
+  const opened = await js(`(() => {
+    const root = document.querySelector('.panel');
+    return { open: root.getAttribute('data-open'), focused: document.activeElement === root };
+  })()`);
+  say('root on open: ' + JSON.stringify(opened));
+  check('the panel opened and took focus, as app.ts does on every open',
+    opened.open === 'true' && opened.focused === true, opened);
+
+  // DETERMINISM, and why this is not a relaxation.
+  //
+  // `:focus-visible` is MODALITY-dependent: the same programmatic `.focus()`
+  // matches or does not match depending on what Chromium last saw as input. This
+  // check used to rely on the suite having driven no pointer input yet, which
+  // made its outcome depend on how much unrelated script had run before it —
+  // every probe call here goes through `executeJavaScript(code, true)`, i.e.
+  // flagged as a user gesture. It passed, then failed on a later run with no
+  // change to any outline or focus rule, which is the signature of an
+  // order-dependent check rather than a regression.
+  //
+  // So the modality is now ESTABLISHED rather than assumed: a real Tab keypress
+  // puts Chromium in keyboard modality, and the programmatic focus that follows
+  // is then keyboard-origin — exactly the condition a real tray-click open
+  // produces, where the click lands outside the document and Chromium sees no
+  // pointer interaction in it. The assertion itself is unchanged and still
+  // strict: if `:focus-visible` does NOT match after this, the outline check
+  // below is vacuous and both must fail.
+  win.focus();
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+  await sleep(150);
+
   const ring = await js(`(() => {
     const root = document.querySelector('.panel');
+    root.focus();
     const cs = getComputedStyle(root);
     return {
       open: root.getAttribute('data-open'),
@@ -65,11 +201,9 @@ app.whenReady().then(async () => {
       border: cs.borderTopWidth,
     };
   })()`);
-  say('root ring on open: ' + JSON.stringify(ring));
-  check('the panel opened and took focus, as app.ts does on every open',
-    ring.open === 'true' && ring.focused === true, ring);
+  say('root ring, keyboard modality: ' + JSON.stringify(ring));
   check('the condition that painted the white frame is reproduced here',
-    ring.visibleMatch === true, ring);
+    ring.focused === true && ring.visibleMatch === true, ring);
   check('and in it the dialog root draws no outline at all',
     ring.outlineStyle === 'none', ring);
   // Measured as a RATIO, not in pixels. This window renders at a non-1 scale
@@ -81,8 +215,10 @@ app.whenReady().then(async () => {
     parseFloat(ring.border) > 0, ring.border);
 
   // The accessibility half. The fix must be scoped to the root: a real control
-  // focused in the SAME state must still show the ring, or keyboard users lose
-  // sight of where they are.
+  // focused in the SAME state — the keyboard modality established above — must
+  // still show the ring, or keyboard users lose sight of where they are. This is
+  // the half that makes the white-frame fix a scoping decision rather than a
+  // blanket `outline: none`, so it may never be softened.
   const ctl = await js(`(() => {
     const b = [...document.querySelectorAll('.foot button')].pop();
     b.focus();
@@ -95,6 +231,7 @@ app.whenReady().then(async () => {
       outlineWidth: cs.outlineWidth,
     };
   })()`);
+  await js(`document.querySelector('.panel').focus()`);
   say('control ring: ' + JSON.stringify(ctl));
   check('a real control focused in the same state still shows the ring',
     ctl.focused === true && ctl.visibleMatch === true && ctl.outlineStyle === 'solid'
@@ -266,6 +403,40 @@ app.whenReady().then(async () => {
     /kota haftası/.test(detail.claude.prov[0]) && /sürüyor/.test(detail.claude.prov[0]),
     detail.claude.prov[0]);
   check('the anchored label is NOT "son 7 gün"', !/Son 7 gün/.test(detail.claude.prov[0]), detail.claude.prov[0]);
+
+  // ---- the two windows on ONE row must not contradict each other ----------
+  //
+  // The row's token line names its window from `weeklyTokensWindowAnchored`
+  // and the cost block names the same window from `weeklyCost.windowAnchored`.
+  // Main derives both from one window object, so they always agree — but they
+  // are two fields read by two components, and a row that says "kota haftası"
+  // above "Son 7 gün" is a self-contradiction the user sees before we do. This
+  // is also the check the old fixture could not make: it gave the Gemini row an
+  // anchored cost, a state main cannot produce for a tool that publishes no
+  // weekly reset, so the contradiction was baked into the fixture itself.
+  const windowAgreement = await js(`(() => {
+    const out = {};
+    for (const id of ['claude', 'codex', 'gemini']) {
+      const row = document.querySelector('li.row[data-provider="' + id + '"]');
+      if (!row) continue;
+      const meta = row.querySelector('.row__meta');
+      const prov = row.querySelector('.cost .cost__prov span');
+      out[id] = { meta: meta ? meta.textContent : null, prov: prov ? prov.textContent : null };
+    }
+    return out;
+  })()`);
+  say('window agreement: ' + JSON.stringify(windowAgreement));
+  for (const [id, seen] of Object.entries(windowAgreement)) {
+    if (!seen.prov || !seen.meta) continue;
+    const costQuota = /kota haftası/i.test(seen.prov);
+    const rowQuota = /Kota haftası:/.test(seen.meta);
+    const rowTrailing = /Son 7 gün:/.test(seen.meta);
+    // Only assert when the row actually states a window (a "sayılamadı" or
+    // five-hour line states none, and claims nothing to contradict).
+    if (!rowQuota && !rowTrailing) continue;
+    check(`[${id}] the token line and the cost block name the SAME weekly window`,
+      costQuota === rowQuota, [seen.meta, seen.prov]);
+  }
   check('the price list date is shown, as a calendar date',
     detail.claude.prov[1] === 'Fiyatlar 24 Haziran 2026 tarihli listeye göre', detail.claude.prov[1]);
   check('no caveats means no cause list and no "why" disclosure',
@@ -435,7 +606,7 @@ app.whenReady().then(async () => {
     codexTr.unpriced.length === 4 && !codexTr.unpriced.some((u) => RAW_CODES.test(u)), codexTr.unpriced);
   check('an unresolved model is named as unresolved, never as a model called "unknown"',
     codexTr.unpriced.some((u) => /^model belirlenemedi · katman belirlenemedi · /.test(u))
-      && !codexTr.unpriced.some((u) => /^unknown/.test(u)), codexTr.unpriced);
+      && !codexTr.unpriced.some((u) => /^unknown\b/.test(u)), codexTr.unpriced);
   check('the full sentences were actually drawn when measured (why is open)',
     codexTr.unrecordedDrawn === true, codexTr.unrecordedDrawn);
   check('open, all four unpriced entries are named (no more than eight), then the unrecorded-writes line',
@@ -466,7 +637,7 @@ app.whenReady().then(async () => {
   check('[en] tier labels are English and no raw code is printed',
     codexEn.unpriced.some((u) => /· tier not determinable, long context \(over 272K\) ·/.test(u))
       && codexEn.unpriced.some((u) => /^model not determinable · tier not determinable · /.test(u))
-      && !codexEn.unpriced.some((u) => RAW_CODES.test(u) || /^unknown/.test(u)), codexEn.unpriced);
+      && !codexEn.unpriced.some((u) => RAW_CODES.test(u) || /^unknown\b/.test(u)), codexEn.unpriced);
   check('[en] the causes are English and plural-aware',
     codexEn.causes.length === 5 && /^Could not be priced: gpt-5\.6-sol · tier not determinable · /.test(codexEn.causes[0])
       && codexEn.causes[4] === 'Unrecorded cache writes: 38 records', codexEn.causes);
@@ -971,6 +1142,403 @@ app.whenReady().then(async () => {
   await js(`window.__probe.restore()`);
   await sleep(300);
 
+  // ---- ADR-003 A8 (Phase B): the optional API key --------------------------
+  //
+  // Copilot is the only key-capable provider. Everything here is about STATE
+  // and numbers: the checks below also prove what is NOT rendered — no key, no
+  // length, no mask (K23), and no percentage, bar or ring for a figure whose
+  // reply carries no allowance (A6.3).
+  const KEY_FIXTURE = 'github_pat_TESTONLYxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+  const readKeyRow = (id) => `(() => {
+    const row = ${q(id)};
+    const block = row.querySelector('.key');
+    const clip = (n) => n.scrollWidth > n.clientWidth + 0.5;
+    const linesOf = (n) => Math.round(n.getBoundingClientRect().height / parseFloat(getComputedStyle(n).lineHeight));
+    const vis = (sel) => { const n = block ? block.querySelector(sel) : null; return n && !n.hidden ? n : null; };
+    const add = vis('.key__add');
+    const token = vis('.key__token');
+    const figure = vis('.key__figure');
+    const split = vis('.key__split');
+    const asof = vis('.key__asof');
+    const state = vis('.key__state');
+    const shown = [figure, split, asof, state].filter(Boolean);
+    return {
+      present: !!block && !block.hidden,
+      stateAttr: block ? block.getAttribute('data-key-state') : null,
+      add: add ? { text: add.textContent, tag: add.tagName, title: add.getAttribute('title'),
+                   aria: add.getAttribute('aria-label'), tabbable: add.tabIndex >= 0 && !add.disabled } : null,
+      token: token ? { text: token.textContent, tag: token.tagName, tabbable: token.tabIndex >= 0 } : null,
+      figure: figure ? figure.textContent : null,
+      split: split ? split.textContent : null,
+      asof: asof ? asof.textContent : null,
+      state: state ? state.textContent : null,
+      lines: shown.map(linesOf),
+      clipped: shown.map(clip),
+      // Anything that could read as a gauge: a percent sign, a rail, a fill, a
+      // progress role, or an element whose width is driven by a --w variable.
+      percent: /%/.test(block ? block.textContent : ''),
+      gauge: block
+        ? [...block.querySelectorAll('*')].filter((n) =>
+            /bar|rail|fill|ring|gauge|progress/i.test(n.className || '')
+            || n.getAttribute('role') === 'progressbar' || n.getAttribute('role') === 'meter'
+            || n.style.getPropertyValue('--w') !== '').length
+        : -1,
+      text: row.textContent,
+    };
+  })()`;
+
+  // 1. no key stored: one calm offer, nothing else.
+  const keyNone = await js(readKeyRow('copilot'));
+  say('key none (tr): ' + JSON.stringify(keyNone));
+  check('[tr] a key-capable provider with no key offers to add one, calmly and optionally',
+    keyNone.present === true && keyNone.stateAttr === 'none'
+      && keyNone.add && keyNone.add.tag === 'BUTTON' && keyNone.add.tabbable === true
+      && keyNone.add.text === 'Daha fazla ayrıntı için API anahtarı ekle'
+      && /İsteğe bağlı/.test(keyNone.add.title || '')
+      && /isteğe bağlı API anahtarı ekle/.test(keyNone.add.aria || ''), keyNone.add);
+  check('[tr] with no key there is no figure, no state sentence and no token-page action',
+    keyNone.figure === null && keyNone.split === null && keyNone.state === null
+      && keyNone.token === null, keyNone);
+  check('a provider that cannot use a key has no key block at all',
+    (await js(`(() => { const b = ${q('claude')}.querySelector('.key'); return b === null || b.hidden; })()`)) === true);
+
+  check('pressing the offer asks main to open the entry window, with the provider id only',
+    (await js(`(async () => {
+      ${q('copilot')}.querySelector('.key__add').click();
+      await new Promise((r) => setTimeout(r, 80));
+      return JSON.stringify(window.__probe.keyCalls());
+    })()`)) === JSON.stringify({ requestKeyEntry: ['copilot'], removeKey: [], openTokenPage: [] }));
+
+  // 2. a key stored, with a reading: three counts and a time. No gauge.
+  const CREDITS = `{ keyState: 'stored', keyStoredAt: '2026-09-20T09:15:00.000Z', creditUsage: {
+    grossCredits: 1234, includedCredits: 900, billedCredits: 334,
+    periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-09-30T23:59:59.000Z',
+    fetchedAt: new Date(Date.now() - 12 * 60000).toISOString() } }`;
+  await js(`window.__probe.setKeyDirect('copilot', ${CREDITS})`);
+  await sleep(250);
+  const keyFigure = await js(readKeyRow('copilot'));
+  say('key figure (tr): ' + JSON.stringify(keyFigure));
+  check('[tr] a stored key with a reading shows the credits used, the included part and the billed part',
+    keyFigure.figure === 'Bu ay 1.234 AI kredisi kullanıldı'
+      && keyFigure.split === 'Plan kapsamında 900 · faturalanan 334', [keyFigure.figure, keyFigure.split]);
+  check('[tr] and the instant the reading was true, with no state sentence beside it',
+    /itibarıyla/.test(keyFigure.asof || '') && keyFigure.state === null && keyFigure.add === null,
+    [keyFigure.asof, keyFigure.state]);
+  check('[tr] NO percentage and NO bar, ring or progress element anywhere in the block',
+    keyFigure.percent === false && keyFigure.gauge === 0, [keyFigure.percent, keyFigure.gauge]);
+  check('[tr] the key figure lines are at most 2 lines and never clipped',
+    keyFigure.lines.every((n) => n >= 1 && n <= 2) && keyFigure.clipped.every((v) => v === false),
+    [keyFigure.lines, keyFigure.clipped]);
+
+  // 3. every other state: one short fixed sentence, and the token page only
+  //    where a new key is the fix.
+  const STATES = [
+    ['stored', 'Anahtar kayıtlı; kredi sayıları henüz okunmadı.', false],
+    ['key-rejected', 'Anahtar kabul edilmedi. Ayarlar’dan kaldırıp yenisini ekleyebilirsiniz.', true],
+    ['key-lacks-permission', 'Anahtarda Plan: read yetkisi yok.', true],
+    ['rate-limited', 'GitHub şu an istek sınırı uyguluyor; sayılar sonra okunacak.', false],
+    ['not-available', 'Kendi ödediğiniz bir Copilot planına ait kullanım bulunamadı.', false],
+    ['unreachable', 'api.github.com adresine ulaşılamadı. Usage Notch sistem vekil sunucusu kullanmaz.', false],
+    ['unreadable', 'Kayıtlı anahtar okunamadı. Kaldırıp yeniden ekleyebilirsiniz.', false],
+    ['secure-storage-unavailable', 'Windows şifreli depolama kullanılamıyor; anahtar okunamadı.', false],
+  ];
+  for (const [state, expected, offersToken] of STATES) {
+    await js(`window.__probe.setKeyDirect('copilot', { keyState: ${JSON.stringify(state)}, creditUsage: null })`);
+    await sleep(160);
+    const seen = await js(readKeyRow('copilot'));
+    check(`[tr] ${state}: its own short sentence, with no figure and no percentage`,
+      seen.state === expected && seen.figure === null && seen.percent === false
+        && seen.lines.every((n) => n <= 2) && seen.clipped.every((v) => v === false),
+      [seen.state, seen.lines]);
+    check(`[tr] ${state}: the token-page action is ${offersToken ? 'offered' : 'not offered'}`,
+      (seen.token !== null) === offersToken
+        && (!offersToken || (seen.token.tag === 'BUTTON' && seen.token.tabbable === true
+          && seen.token.text === 'GitHub’da anahtar oluştur')),
+      seen.token);
+  }
+
+  // A reading main KEPT through an error state (ADR-001 stale-but-true, Phase B
+  // ruling): shown, dimmed, with its age AND the error sentence — never as a
+  // current figure.
+  await js(`window.__probe.setKeyDirect('copilot', { keyState: 'unreachable', keyStoredAt: '2026-09-20T09:15:00.000Z', creditUsage: {
+    grossCredits: 1234, includedCredits: 900, billedCredits: 334,
+    periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-09-30T23:59:59.000Z',
+    fetchedAt: new Date(Date.now() - 3 * 3600000).toISOString() } })`);
+  await sleep(220);
+  const kept = await js(`(() => {
+    const block = ${q('copilot')}.querySelector('.key');
+    const figure = block.querySelector('.key__figure');
+    const state = block.querySelector('.key__state');
+    const asof = block.querySelector('.key__asof');
+    return {
+      stale: block.getAttribute('data-stale'),
+      figure: figure && !figure.hidden ? figure.textContent : null,
+      figureColour: getComputedStyle(figure).color,
+      inkFigure: (() => { const s = document.createElement('span'); s.style.color = 'var(--ink-100)'; block.appendChild(s); const v = getComputedStyle(s).color; s.remove(); return v; })(),
+      asof: asof && !asof.hidden ? asof.textContent : null,
+      state: state && !state.hidden ? state.textContent : null,
+      percent: /%/.test(block.textContent),
+    };
+  })()`);
+  say('kept reading through an error (tr): ' + JSON.stringify(kept));
+  check('[tr] a kept reading is still shown, with its age and the error sentence together',
+    kept.figure === 'Bu ay 1.234 AI kredisi kullanıldı'
+      && /itibarıyla/.test(kept.asof || '')
+      && kept.state === 'api.github.com adresine ulaşılamadı. Usage Notch sistem vekil sunucusu kullanmaz.'
+      && kept.percent === false, kept);
+  check('[tr] and it is dimmed, so it cannot be read as the current figure',
+    kept.stale === 'true' && kept.figureColour !== kept.inkFigure, [kept.stale, kept.figureColour, kept.inkFigure]);
+
+  // 'unreadable' comes with keyStoredAt null (backend): no copy may depend on a
+  // stored-at date, on the row or in Settings.
+  await js(`window.__probe.setKeyDirect('copilot', { keyState: 'unreadable', keyStoredAt: null, creditUsage: null })`);
+  await sleep(220);
+  const unreadable = await js(`(async () => {
+    const block = ${q('copilot')}.querySelector('.key');
+    const rowState = (() => { const n = block.querySelector('.key__state'); return n && !n.hidden ? n.textContent : null; })();
+    const view = document.getElementById('settings-view');
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 150));
+    const item = view.querySelector('.settings__item[data-provider="copilot"]');
+    const key = item.querySelector('.settings__key');
+    const out = {
+      rowState,
+      rowFigure: (() => { const n = block.querySelector('.key__figure'); return n && !n.hidden ? n.textContent : null; })(),
+      settingsHidden: key.hidden,
+      storedHidden: key.querySelector('.settings__key-stored').hidden,
+      settingsState: (() => { const n = key.querySelector('.settings__key-state'); return n && !n.hidden ? n.textContent : null; })(),
+      settingsText: key.textContent,
+      removeShown: !key.querySelector('.settings__key-remove').hidden,
+    };
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    return out;
+  })()`);
+  say('unreadable, no stored-at (tr): ' + JSON.stringify(unreadable));
+  check('[tr] an unreadable key says so without depending on a stored-at date',
+    unreadable.rowState === 'Kayıtlı anahtar okunamadı. Kaldırıp yeniden ekleyebilirsiniz.'
+      && unreadable.rowFigure === null
+      && unreadable.settingsHidden === false && unreadable.storedHidden === true
+      && unreadable.settingsState === unreadable.rowState
+      && !/tarihinde|Invalid|NaN|undefined|null/.test(unreadable.settingsText)
+      && unreadable.removeShown === true, unreadable);
+
+  // 'unreachable' is the one state with a cause the user cannot clear, because
+  // the cause is ours: the app never uses a system proxy. The row carries the
+  // short true line; Settings carries the full cause, ABOVE the Remove button,
+  // and it must not be dressed as a warning the user can act on.
+  await js(`window.__probe.setKeyDirect('copilot', { keyState: 'unreachable', keyStoredAt: '2026-09-20T09:15:00.000Z', creditUsage: null })`);
+  await sleep(220);
+  const proxied = await js(`(async () => {
+    const block = ${q('copilot')}.querySelector('.key');
+    const rowSentence = block.querySelector('.key__state');
+    const view = document.getElementById('settings-view');
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 150));
+    const item = view.querySelector('.settings__item[data-provider="copilot"]');
+    const key = item.querySelector('.settings__key');
+    const cause = key.querySelector('.settings__key-cause');
+    const style = getComputedStyle(cause);
+    const stateStyle = getComputedStyle(key.querySelector('.settings__key-state'));
+    const out = {
+      rowState: rowSentence && !rowSentence.hidden ? rowSentence.textContent : null,
+      rowTitle: rowSentence ? rowSentence.getAttribute('title') : null,
+      rowToken: (() => { const n = block.querySelector('.key__token'); return n && !n.hidden; })(),
+      causeShown: !!cause && !cause.hidden,
+      causeText: cause ? cause.textContent : null,
+      // Same ink as every other line in the block: a stated limit, not an alert.
+      calm: !!cause && style.color === stateStyle.color
+        && style.borderLeftWidth === '0px' && style.borderTopWidth === '0px',
+      // The cause sits before the action it is meant to stop.
+      beforeRemove: !!cause && (cause.compareDocumentPosition(key.querySelector('.settings__key-remove'))
+        & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+      causeWhole: !!cause && cause.scrollHeight <= cause.clientHeight + 0.5,
+    };
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    return out;
+  })()`);
+  say('unreachable, proxied (tr): ' + JSON.stringify(proxied));
+  // Claim-based here too, for the same reason as the cause line below: the ROW
+  // line's job is ATTRIBUTION — the host, that it was not reached, and that WE
+  // are named as the reason, because a proxied network reaches api.github.com
+  // fine and an unattributed failure points at the user's network or at GitHub.
+  check('[tr] unreachable names our own cause on the row and offers no key to re-create',
+    /api\.github\.com/.test(proxied.rowState || '')
+      && /ulaşılamadı/.test(proxied.rowState || '')
+      && /Usage Notch/.test(proxied.rowState || '')
+      && /vekil/i.test(proxied.rowState || '')
+      && proxied.rowToken === false
+      && /vekil/.test(proxied.rowTitle || ''), proxied);
+  // The CLAIMS, not the phrasings. This check has now been broken twice by
+  // wording that stayed true — first "sistem vekil sunucusunu kullanmaz", then
+  // "hiç gelmez" for "gösterilemez" — so it asserts the four things the line has
+  // to say and tolerates how it says them: who is responsible, that the figure
+  // never arrives on such a network, that removing the key changes nothing, and
+  // that the rest of the row is read locally.
+  check('[tr] Settings carries the full cause, calmly, above the Remove button and not truncated',
+    proxied.causeShown === true
+      && /vekil sunucusu(nu)?[^.;]*kullanmaz/.test(proxied.causeText || '')
+      && /(hiç gelmez|gösterilemez|ulaşılamaz)/.test(proxied.causeText || '')
+      && /kaldırmak[^.;]*değiştirmez/.test(proxied.causeText || '')
+      && /yerel dosyalardan okunur/.test(proxied.causeText || '')
+      && proxied.calm === true && proxied.beforeRemove === true
+      && proxied.causeWhole === true, proxied);
+
+  await js(`window.__probe.setKeyDirect('copilot', { keyState: 'key-rejected', keyStoredAt: '2026-09-20T09:15:00.000Z', creditUsage: null })`);
+  await sleep(200);
+  check('the token-page action reaches main with the provider id only',
+    (await js(`(async () => {
+      ${q('copilot')}.querySelector('.key__token').click();
+      await new Promise((r) => setTimeout(r, 80));
+      return JSON.stringify(window.__probe.keyCalls().openTokenPage);
+    })()`)) === JSON.stringify(['copilot']));
+
+  // 4. nothing about the secret itself is rendered (K23). A main process that
+  //    sends a key field anyway must not put it on screen: sanitize drops
+  //    every field the contract does not declare, and this proves it.
+  await js(`window.__probe.setKeyDirect('copilot', { keyState: 'stored', apiKey: ${JSON.stringify(KEY_FIXTURE)}, token: ${JSON.stringify(KEY_FIXTURE)} })`);
+  await sleep(200);
+  const leak = await js(`(() => {
+    const needles = [];
+    const secret = ${JSON.stringify(KEY_FIXTURE)};
+    const page = document.body.innerText || '';
+    const attrs = [...document.querySelectorAll('*')].flatMap((n) => [...n.attributes].map((a) => a.name + '=' + a.value)).join(String.fromCharCode(10));
+    for (let i = 0; i + 4 <= secret.length; i += 1) {
+      const piece = secret.slice(i, i + 4);
+      if (!needles.includes(piece)) needles.push(piece);
+    }
+    const hay = page + String.fromCharCode(10) + attrs;
+    return {
+      needles: needles.length,
+      leaked: needles.filter((n) => hay.includes(n)).slice(0, 5),
+      // The snapshot the renderer holds must not carry the field either.
+      onRow: Object.keys(window.__probe.providers ? {} : {}).length,
+    };
+  })()`);
+  say('key leak probe: ' + JSON.stringify(leak));
+  check('no 4-character piece of a key ever appears in the panel, even when main sends one',
+    leak.needles > 20 && leak.leaked.length === 0, leak);
+  check('and no rendered text names a key length or a mask',
+    !/•|\u2022|\*{3,}|\bkarakter\b|\bcharacters\b/.test(await js(`${q('copilot')}.querySelector('.key').textContent`)));
+
+  // 5. Settings: the state, the stored date, and removing the local copy.
+  const readKeySettings = `(async () => {
+    const view = document.getElementById('settings-view');
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 150));
+    const item = view.querySelector('.settings__item[data-provider="copilot"]');
+    const block = item.querySelector('.settings__key');
+    const vis = (sel) => { const n = block.querySelector(sel); return n && !n.hidden ? n : null; };
+    const out = {
+      hidden: block.hidden,
+      stored: (vis('.settings__key-stored') || {}).textContent || null,
+      state: (vis('.settings__key-state') || {}).textContent || null,
+      remove: (vis('.settings__key-remove') || {}).textContent || null,
+      removeExpanded: block.querySelector('.settings__key-remove').getAttribute('aria-expanded'),
+      token: (vis('.settings__key-token') || {}).textContent || null,
+      confirmHidden: block.querySelector('.settings__key-confirm').hidden,
+      claudeHasKeyBlock: (() => {
+        const c = view.querySelector('.settings__item[data-provider="claude"] .settings__key');
+        return !!c && !c.hidden;
+      })(),
+      text: block.textContent,
+    };
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    return out;
+  })()`;
+  await js(`window.__probe.setKeyDirect('copilot', { keyState: 'stored', keyStoredAt: '2026-09-20T09:15:00.000Z', creditUsage: null })`);
+  await sleep(200);
+  const keySettings = await js(readKeySettings);
+  say('key settings (tr): ' + JSON.stringify(keySettings));
+  check('[tr] Settings shows the key state and the day it was stored, and a way to remove it',
+    keySettings.hidden === false
+      && keySettings.stored === 'Anahtar 20 Eyl 2026 tarihinde bu bilgisayara kaydedildi.'
+      && keySettings.state === 'Anahtar kayıtlı; kredi sayıları henüz okunmadı.'
+      && keySettings.remove === 'Anahtarı kaldır' && keySettings.confirmHidden === true
+      && keySettings.removeExpanded === 'false', keySettings);
+  check('[tr] Settings names no key, no length and no mask, and offers no token page with a working key',
+    !/•|\*{3,}|karakter/.test(keySettings.text) && keySettings.token === null, keySettings.text);
+  check('a provider that cannot use a key has no key section in Settings',
+    keySettings.claudeHasKeyBlock === false, keySettings.claudeHasKeyBlock);
+
+  const removeFlow = await js(`(async () => {
+    const view = document.getElementById('settings-view');
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 150));
+    const item = view.querySelector('.settings__item[data-provider="copilot"]');
+    const remove = item.querySelector('.settings__key-remove');
+    const confirm = item.querySelector('.settings__key-confirm');
+    remove.click();
+    await new Promise((r) => setTimeout(r, 60));
+    const asked = {
+      confirmShown: !confirm.hidden,
+      expanded: remove.getAttribute('aria-expanded'),
+      confirmText: confirm.querySelector('.settings__key-confirm-text').textContent,
+      focusOnYes: document.activeElement === item.querySelector('.settings__key-confirm-yes'),
+      callsBefore: window.__probe.keyCalls().removeKey.length,
+    };
+    // Backing out of the confirm must not remove anything.
+    item.querySelector('.settings__key-confirm-no').click();
+    await new Promise((r) => setTimeout(r, 60));
+    asked.afterCancel = { hidden: confirm.hidden, calls: window.__probe.keyCalls().removeKey.length };
+    remove.click();
+    await new Promise((r) => setTimeout(r, 60));
+    item.querySelector('.settings__key-confirm-yes').click();
+    await new Promise((r) => setTimeout(r, 120));
+    asked.afterYes = { hidden: confirm.hidden, calls: window.__probe.keyCalls().removeKey.slice() };
+    document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 120));
+    return asked;
+  })()`);
+  say('key remove flow: ' + JSON.stringify(removeFlow));
+  check('[tr] removing asks first, and says the local copy is not a revocation',
+    removeFlow.confirmShown === true && removeFlow.expanded === 'true'
+      && /Yalnızca bu bilgisayardaki kopya silinir/.test(removeFlow.confirmText)
+      && /GitHub’da iptal edilene kadar geçerli kalır/.test(removeFlow.confirmText)
+      && removeFlow.focusOnYes === true && removeFlow.callsBefore === 0, removeFlow);
+  check('backing out removes nothing; confirming removes the local copy once',
+    removeFlow.afterCancel.hidden === true && removeFlow.afterCancel.calls === 0
+      && removeFlow.afterYes.hidden === true
+      && JSON.stringify(removeFlow.afterYes.calls) === JSON.stringify(['copilot']), removeFlow);
+
+  // 6. The same states in English, in both English formats: nothing clipped.
+  await js(`window.__probe.setKeyDirect('copilot', ${CREDITS})`);
+  for (const locale of ['en-US', 'en-GB']) {
+    await js(`window.__probe.setLocaleDirect('en', '${locale}')`);
+    await sleep(300);
+    const en = await js(readKeyRow('copilot'));
+    say(`key figure (${locale}): ` + JSON.stringify(en));
+    check(`[${locale}] the credit figure reads in English, with no percentage and no gauge`,
+      /^1,234 AI credits used this month$/.test(en.figure || '')
+        && en.split === '900 included · 334 billed'
+        && en.percent === false && en.gauge === 0
+        && en.lines.every((n) => n <= 2) && en.clipped.every((v) => v === false), en);
+    await js(`window.__probe.setKeyDirect('copilot', { keyState: 'key-rejected', creditUsage: null })`);
+    await sleep(200);
+    const enState = await js(readKeyRow('copilot'));
+    check(`[${locale}] a rejected key reads in English and offers the token page`,
+      enState.state === 'The key was not accepted. You can remove it in Settings and add a new one.'
+        && enState.token && enState.token.text === 'Create the key on GitHub'
+        && enState.lines.every((n) => n <= 2) && enState.clipped.every((v) => v === false), enState);
+    const enNone = await js(`(async () => {
+      window.__probe.setKeyDirect('copilot', { keyState: 'none', creditUsage: null, keyStoredAt: null });
+      await new Promise((r) => setTimeout(r, 200));
+      const b = ${q('copilot')}.querySelector('.key');
+      const add = b.querySelector('.key__add');
+      return { add: add && !add.hidden ? add.textContent : null,
+               token: (() => { const t = b.querySelector('.key__token'); return t && !t.hidden ? t.textContent : null; })() };
+    })()`);
+    check(`[${locale}] the offer reads in English, and no token page is offered with no key`,
+      enNone.add === 'Add API key for more detail' && enNone.token === null, enNone);
+    await js(`window.__probe.setKeyDirect('copilot', ${CREDITS})`);
+    await sleep(160);
+  }
+  await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
+  await js(`window.__probe.setKeyDirect('copilot', { keyState: 'none', keyStoredAt: null, creditUsage: null })`);
+  await sleep(300);
+
   // ---- pending: a tool whose first usage scan has not answered -----------
   //
   // ADR-002 A3.12. Codex's scan runs in a worker, so its first snapshot carries
@@ -1013,7 +1581,7 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 120));
     return out;
   })()`;
-  await js(`window.__probe.setPendingDirect(['codex'], { codex: { tokens: null, weeklyCost: null, burnRatePerHour: null } })`);
+  await js(`window.__probe.setPendingDirect(['codex'], { codex: { tokens: null, weeklyTokens: null, weeklyCost: null, burnRatePerHour: null } })`);
   await sleep(250);
   const pend = await js(readPending);
   say('pending (tr): ' + JSON.stringify(pend));
@@ -1139,7 +1707,10 @@ app.whenReady().then(async () => {
   const noteAll = await js(readNote);
   say('compact note, four tools (tr): ' + JSON.stringify(noteAll));
   check('[tr] always visible: one lead and one short source line per tool, in order',
-    noteAll.leadCount === 1
+    // TWO leads: the cost gloss and the count gloss. They are different claims
+    // about different quantities, and each appears only when a floor of that
+    // kind is on screen — see the count-gloss checks below.
+    noteAll.leadCount === 2
       && noteAll.lead === '“En az” alt sınır demektir; gerçek maliyet daha yüksek olabilir.'
       && JSON.stringify(noteAll.sources) === JSON.stringify([
         'Claude Code · 1 Ağu 2026 fiyatları',
@@ -1200,7 +1771,7 @@ app.whenReady().then(async () => {
   const noteGem = await js(readNote);
   say('compact note, gemini only (tr): ' + JSON.stringify(noteGem));
   check('[tr] a Gemini-only history: its source line, its one cause, nothing about Claude or Codex',
-    noteGem.leadCount === 1 && JSON.stringify(noteGem.sources) === JSON.stringify(['Gemini · Gemini API standart, 10 Eyl 2026'])
+    noteGem.leadCount === 2 && JSON.stringify(noteGem.sources) === JSON.stringify(['Gemini · Gemini API standart, 10 Eyl 2026'])
       && JSON.stringify(noteGem.why) === JSON.stringify(['Gemini: kaydedilmeyen çağrılar'])
       && !/Claude|Codex/.test(noteGem.text), noteGem);
 
@@ -1210,7 +1781,7 @@ app.whenReady().then(async () => {
   const noteKimi = await js(readNote);
   say('compact note, kimi only (tr): ' + JSON.stringify(noteKimi));
   check('[tr] a Kimi-only history: its source line, the lead, and "Kimi: fiyat yayımlamıyor" behind why',
-    noteKimi.leadCount === 1 && noteKimi.whyHidden === false
+    noteKimi.leadCount === 2 && noteKimi.whyHidden === false
       && JSON.stringify(noteKimi.sources) === JSON.stringify(['Kimi · fiyat yayımlamıyor'])
       && JSON.stringify(noteKimi.why) === JSON.stringify(['Kimi: fiyat yayımlamıyor']), noteKimi);
 
@@ -1221,7 +1792,7 @@ app.whenReady().then(async () => {
   const noteCK = await js(readNote);
   say('compact note, claude (no causes) + kimi (tr): ' + JSON.stringify(noteCK));
   check('[tr] F3: Claude with no cause plus Kimi still shows the lead and says why',
-    noteCK.leadCount === 1 && noteCK.whyHidden === false
+    noteCK.leadCount === 2 && noteCK.whyHidden === false
       && JSON.stringify(noteCK.sources) === JSON.stringify(['Claude Code · 1 Ağu 2026 fiyatları', 'Kimi · fiyat yayımlamıyor'])
       && JSON.stringify(noteCK.why) === JSON.stringify(['Kimi: fiyat yayımlamıyor'])
       && noteCK.introSources === 'Yalnızca bu bilgisayardaki Claude Code ve Kimi kayıtlarından hesaplanır.', noteCK);
@@ -1370,7 +1941,7 @@ app.whenReady().then(async () => {
       causes: cost ? [...cost.querySelectorAll('.cost__cause')].map((n) => n.textContent) : [],
     };
   })()`;
-  await js(`window.__probe.setPendingDirect([], { codex: { tokens: null, burnRatePerHour: null } })`);
+  await js(`window.__probe.setPendingDirect([], { codex: { tokens: null, weeklyTokens: null, burnRatePerHour: null } })`);
   await js(`window.__probe.setCostDirect('codex', 'codexUnrecordedOnly')`);
   await sleep(250);
   const metaControl = await js(readMeta);

@@ -402,7 +402,9 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
 .tile--claude { --accent: #C96442; }
 .tile--codex { --accent: #10A37F; }
 .tile--antigravity { --accent: #E8B84B; }
-.tile--claude, .tile--codex, .tile--antigravity {
+.tile--gemini { --accent: #4386F5; }
+.tile--kimi { --accent: #2B6BE8; }
+.tile--claude, .tile--codex, .tile--antigravity, .tile--gemini, .tile--kimi {
   background: color-mix(in srgb, var(--accent) var(--accent-tint, 16%), var(--ink-800, #171D1C));
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
@@ -789,18 +791,16 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
   background: linear-gradient(180deg, rgba(237, 242, 240, .03), rgba(237, 242, 240, .01));
   box-shadow: inset 0 0 0 1px var(--line);
 }
-.tool--off { grid-template-areas: "tile name status"; background: transparent; }
 .tool__tile { grid-area: tile; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; border: 1px solid var(--line-2); background: #171D1C; }
 .tool__tile img { width: 22px; height: 22px; }
-.tool--off .tool__tile img { filter: grayscale(1); opacity: .55; }
-.tool--off .tool__tile img.mark--mono { filter: grayscale(1) invert(1); }
 .tool__name { grid-area: name; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
-.tool--off .tool__name { color: var(--muted); font-weight: 500; }
 .status {
   grid-area: status; display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px; border-radius: 999px;
   box-shadow: inset 0 0 0 1px var(--line-2); color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap;
 }
 .status--on { color: var(--text-2); background: rgba(63, 184, 158, .08); box-shadow: inset 0 0 0 1px rgba(63, 184, 158, .3); }
+.status--exp { color: var(--text-2); }
+.status--exp .status__dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--accent); }
 .status__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .tool__need { grid-area: need; font-size: 14px; line-height: 1.5; color: var(--muted); }
 .fine { max-width: 46em; font-size: 13px; line-height: 1.6; color: var(--faint); }

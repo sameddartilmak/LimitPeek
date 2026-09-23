@@ -92,6 +92,26 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     isPending: (id) => pendingUsageOf(store.get().snapshot).includes(id),
     onRetry: (providerId) => void runRefresh(providerId),
     onSetup: (providerId) => beginSetup(providerId),
+    // ADR-003 A8 (Phase B). All three are write-only asks: main owns the
+    // window, the local store and the URL. The renderer never holds a key and
+    // never builds a URL, so there is nothing to get wrong here.
+    onAddKey: (providerId) => void bridge.requestKeyEntry(providerId),
+    // The ONE of the three whose answer matters, so it is the one that is read.
+    // The confirm step promises "only the local copy is deleted", and until now
+    // the boolean saying whether that happened was dropped on the floor: a
+    // failed delete left a DPAPI credential on disk behind a dialog the user had
+    // just been shown, with nothing said. `callKeyChannel` never rejects — it
+    // returns false for a refusal and for a main that cannot do it — so one
+    // branch covers both. Revocation is named because it is the only remedy that
+    // works whether or not the file went, which is the same reason the
+    // uninstaller's message carries it.
+    onPlanLabel: (providerId, label) => void applyPlanLabel(providerId, label),
+    onRemoveKey: (providerId) => {
+      void bridge.removeKey(providerId).then((ok) => {
+        if (!ok) store.set({ notice: t('app.keyRemoveFailed') });
+      });
+    },
+    onOpenTokenPage: (providerId) => void bridge.openTokenPage(providerId),
     onRefresh: () => void runRefresh(null),
     onPinToggle: () => {
       // Main owns pinned mode and answers by pushing a new anchor — mode:'pin'
@@ -307,6 +327,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    * solves for the drag.
    */
   const enabledRequests = new Map<string, { enabled: boolean; at: number }>();
+  /** The newest plan-label write per tool, so an older reply cannot revert it. */
+  const planRequests = new Map<string, number>();
 
   function withoutId(ids: readonly string[], id: string): readonly string[] {
     return ids.filter((entry) => entry !== id);
@@ -323,6 +345,46 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    * back on main's value), flags the row so the revert is visible, and says so
    * in words. A silent snap-back reads as the app dropping the interaction.
    */
+  /**
+   * The plan the user says they are on. PERSIST THEN APPLY, and put the control
+   * back if main wrote nothing.
+   *
+   * Mirrors applyEnabled: a per-provider request stamp so a second edit of the
+   * SAME field owns the outcome from then on, a pending flag while the write is
+   * in flight, and on refusal a revert flag held briefly so the change is SEEN
+   * plus a notice that says what happened. The difference from applyEnabled is
+   * that there is no optimistic override to undo — the field holds what the user
+   * typed, and `settings.ts` re-reads it from the next snapshot, so a refusal
+   * puts the stored value back rather than a value this function remembers.
+   */
+  async function applyPlanLabel(providerId: string, label: string): Promise<void> {
+    const at = Date.now();
+    planRequests.set(providerId, at);
+    const state = store.get();
+    store.set({
+      planPending: state.planPending.includes(providerId)
+        ? state.planPending
+        : [...state.planPending, providerId],
+      notice: null,
+      planReverted: null,
+    });
+
+    const ok = await bridge.setPlanLabel(providerId, label);
+
+    if (planRequests.get(providerId) !== at) return;
+    planRequests.delete(providerId);
+    store.set({ planPending: withoutId(store.get().planPending, providerId) });
+    if (ok) return;
+
+    store.set({
+      planReverted: providerId,
+      notice: t('app.planNotSaved', { name: nameOf(providerId) }),
+    });
+    window.setTimeout(() => {
+      if (store.get().planReverted === providerId) store.set({ planReverted: null });
+    }, 1_600);
+  }
+
   async function applyEnabled(providerId: string, enabled: boolean): Promise<void> {
     const at = Date.now();
     enabledRequests.set(providerId, { enabled, at });

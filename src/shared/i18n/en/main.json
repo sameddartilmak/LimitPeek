@@ -60,5 +60,13 @@
   "dialog.agy.promise": "A timestamped backup is taken first. The bridge reads only the remaining quota fraction and the reset time; it records no text, file paths, email addresses or credentials, and opens no network connection.",
   "dialog.agyInstall.title": "Install Antigravity CLI?",
   "dialog.agyInstall.message": "Download and install Antigravity CLI (agy)?",
-  "dialog.agyInstall.detail": "This step downloads Antigravity's official install script (install.ps1) from antigravity.google and runs it with PowerShell. This is the app's only network access, and it happens only now, with your consent. After the install, the status line bridge is added; the bridge reads only the remaining quota fraction and the reset time."
+  "dialog.agyInstall.detail": "This step downloads Antigravity's official install script (install.ps1) from antigravity.google and runs it with PowerShell: a one-off download, only now and with your consent. Unless you store a key, the app makes no network requests of its own; with a Copilot key stored it requests api.github.com only, at most once every 15 minutes, and only while that row is enabled. After the install, the status line bridge is added; the bridge reads only the remaining quota fraction and the reset time.",
+  "dialog.keys.consent.title": "GitHub Copilot API key",
+  "dialog.keys.consent.confirm": "Continue",
+  "dialog.keys.consent.message": "This optional step asks for an API key so the panel can show this month’s Copilot AI credits. If you decline, nothing changes.",
+  "dialog.keys.consent.what": "With a key, the app makes a single request: it reads this month’s Copilot AI credits. Only numbers are kept from the reply.",
+  "dialog.keys.consent.host": "The single destination is api.github.com, at most once every 15 minutes. No other address is requested; resolving that name uses your Windows DNS settings.",
+  "dialog.keys.consent.storage": "The key is stored on this computer, encrypted for this Windows user. That protects it from other user accounts and from copies of the file; it does not protect it from programs running as this user.",
+  "dialog.keys.consent.selfPaid": "It works only for Copilot plans you pay for yourself; for plans paid by an organisation these numbers are not returned.",
+  "dialog.keys.consent.remove": "You can remove the key in Settings; that deletes only the copy on this computer. You also need to revoke the key at GitHub."
 }

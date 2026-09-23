@@ -25,6 +25,7 @@ const { usageNotchApiMethods } = require('../test/helpers/contract-api');
 const {
   osLocale, createSetLanguageHandler, createLocaleResolver, createApplyLanguage, createPreferences,
 } = require('../src/main/language-ipc');
+const { createSetPlanLabelHandler } = require('../src/main/plan-label-ipc');
 const { createRefreshHandler } = require('../src/main/refresh-ipc');
 const settingsStore = require('../src/main/settings');
 const security = require('../src/main/security');
@@ -99,6 +100,7 @@ app.whenReady().then(async () => {
   // to a throwaway directory, never the user's settings file.
   const langDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'usage-notch-smoke-lang-'));
   const langSettings = settingsStore.load(langDir);
+  const planApplies = [];
   // The same factories index.js builds its resolver, apply and preferences()
   // from, so the smoke runs that code rather than a re-typed copy of it.
   const resolveLocale = createLocaleResolver({
@@ -134,6 +136,16 @@ app.whenReady().then(async () => {
     // collector — the step that reaches the panel.
     apply: applyLanguage,
     push: () => { languagePushes += 1; panel.send(IPC.PREFERENCES, currentPrefs()); },
+    log: { warn: (m) => say(`warn: ${m}`) },
+  }));
+  // The plan label runs the REAL handler from plan-label-ipc.js, against the
+  // smoke's own temp settings dir, so the validation the panel depends on is
+  // exercised in a real Electron process rather than in a copy of it.
+  ipcMain.handle(IPC.SET_PLAN_LABEL, createSetPlanLabelHandler({
+    fromPanel: ours,
+    getSettings: () => langSettings,
+    save: (next) => settingsStore.save(langDir, next),
+    apply: (id, label) => { planApplies.push(`${id}=${label}`); },
     log: { warn: (m) => say(`warn: ${m}`) },
   }));
   ipcMain.handle(IPC.SET_THEME, (_event, value) => {
@@ -255,6 +267,36 @@ app.whenReady().then(async () => {
   check('a theme outside the three literals is rejected and changes nothing',
     badTheme === false && theme === 'light', `ok=${badTheme} theme=${theme}`);
   await ev('window.usageNotch.setTheme("system")');
+
+  // ---- plan label ---------------------------------------------------------
+  // The REAL SET_PLAN_LABEL handler, over the real preload, in a real Electron
+  // process. The renderer reverts its control on {ok:false}, so every rejection
+  // has to leave the stored map untouched, not merely answer false.
+  const planned = await ev('window.usageNotch.setPlanLabel("claude", "  Max 20x  ").then(function (r) { return r.ok; })');
+  check('setPlanLabel() accepts free text and trims it',
+    planned === true && langSettings.planLabels.claude === 'Max 20x',
+    `ok=${planned} stored=${JSON.stringify(langSettings.planLabels)}`);
+  check('the accepted label is applied after the write', planApplies.includes('claude=  Max 20x  '));
+
+  const capped = await ev(`window.usageNotch.setPlanLabel("codex", "${'v'.repeat(90)}").then(function (r) { return r.ok; })`);
+  check('a very long label is capped at 24 characters, not stored whole',
+    capped === true && langSettings.planLabels.codex === 'v'.repeat(24),
+    `ok=${capped} len=${(langSettings.planLabels.codex || '').length}`);
+
+  const badId = await ev('window.usageNotch.setPlanLabel("notATool", "Enterprise").then(function (r) { return r.ok; })');
+  check('an unknown provider id is rejected and stores nothing',
+    badId === false && langSettings.planLabels.notATool === undefined,
+    `ok=${badId} stored=${JSON.stringify(langSettings.planLabels)}`);
+
+  const cleared = await ev('window.usageNotch.setPlanLabel("claude", "   ").then(function (r) { return r.ok; })');
+  check('a blank label clears the setting rather than storing an empty string',
+    cleared === true && !Object.prototype.hasOwnProperty.call(langSettings.planLabels, 'claude'),
+    `ok=${cleared} stored=${JSON.stringify(langSettings.planLabels)}`);
+
+  const persisted = settingsStore.load(langDir).planLabels;
+  check('what the channel wrote is what the next launch reads',
+    persisted.codex === 'v'.repeat(24) && persisted.claude === undefined,
+    JSON.stringify(persisted));
 
   // ---- hidden means hidden --------------------------------------------------
   // Since c388115 the OS window is composited ONCE in create() and never hidden

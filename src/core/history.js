@@ -22,6 +22,29 @@
  * a `PeriodUsage` carries `costUsd` and a per-class `byClass`, never a single
  * summed token count.
  *
+ * WHAT TOKEN FIGURES IT DOES EMIT, AND WHY THEY ARE NOT THAT
+ * ----------------------------------------------------------
+ * "How many tokens did I use" is a real question with a true answer, and the
+ * ban is on ONE specific answer: a single scalar that folds the four classes —
+ * and, worse, the four tools — into one. So the counts are emitted only in the
+ * two shapes that keep every distinction the scalar destroys:
+ *   `PeriodUsage.tokensByProvider`  one TokenBreakdown per tool with usage,
+ *   `PeriodModelCost.tokens`        one per (tool, model) entry,
+ * both of them per-class, both with `billable` excluding cacheRead. There is
+ * still no period-level number, and producing one by adding these up is the
+ * banned operation, not a gap — `test/token-merge-scan.test.js` scans the
+ * source for anyone attempting it.
+ *
+ * `tokenFloorCausesByProvider` says which of those counts is a lower bound and
+ * WHY, per tool (A3.16: never a floor without a visible cause). It is NARROWER
+ * than `isFloor`: a count is only ever a floor because the recorder did not
+ * record something (Gemini's utility calls, Codex's cache writes) or the reader
+ * knows it could not read something. What a figure may be CHARGED at never
+ * enters it. `tokenFloorCauses()` is that rule, and the panel row calls the
+ * same function over its own window. Each figure is folded from the SAME pricer rows
+ * that produced the dollars beside it (`sumRowTokens`), so a count and a cost
+ * on one line can never be describing different events.
+ *
  * WHAT A "PERIOD" IS
  * ------------------
  * Buckets are aligned to the LOCAL calendar, because the user reads them as
@@ -40,8 +63,9 @@
  * Each period also carries a `byModel` list: the same period, split by the
  * event's recorded `model` id, each entry priced through `pricing.js` exactly
  * the way the period total is. The honesty rule is IDENTICAL and
- * non-negotiable — an entry carries a `costUsd` (never a merged token count),
- * is a `isFloor` lower bound exactly when its own usage was excluded or hit the
+ * non-negotiable — an entry carries a `costUsd` and a per-class `tokens`
+ * breakdown (never a merged token count), is a `isFloor` lower bound exactly
+ * when its own usage was excluded or hit the
  * 1.25x cache-write floor, and a model with no published price carries
  * `costUsd: null` (the renderer says "fiyatlanamadı", never "$0,00"). Grouping
  * is by the RAW recorded model id, matching how `pricing.js` groups, so the
@@ -56,9 +80,11 @@
  * sums of the two priced figures, `isFloor` is true when either side is a
  * floor, `hasUsage` when either side has usage, and `byModel` holds both
  * sides' entries, each tagged with its `provider`, in one order. No token count
- * is ever summed across the two tools. Codex events are the per-turn deltas
- * from `codex/usage.js` (cumulative-total deltas; reasoning is a subset of
- * output and is never added twice).
+ * is ever summed across the two tools: `tokensByProvider` keys them BY tool for
+ * exactly that reason, and a Claude count and a Codex count never meet in one
+ * number. Codex events are the per-turn deltas from `codex/usage.js`
+ * (cumulative-total deltas; reasoning is a subset of output and is never added
+ * twice).
  *
  * GEMINI CLI AND KIMI CODE (ADR-003 A6)
  * -------------------------------------
@@ -97,6 +123,12 @@ const INCOMPLETE_ORDER = ['claude', 'codex', 'gemini', 'kimi'];
  * Stable: the renderer maps each to catalog text.
  */
 const FLOOR_CAUSE_ORDER = [
+  // TOKEN-side only (see `tokenFloorCauses`): a range the reader KNOWS it could
+  // not read. Deliberately never emitted into the COST-side
+  // `floorCausesByProvider`, where the gap already has its own field
+  // (`UsageHistory.incompleteProviders`) and its own note, and where ADR-002
+  // A3.20 rules that the price notes do not grow a clause for it.
+  'unread-range',
   'unpriced', // some usage has no price (unknown model, unpriced tier, no model, Kimi)
   'cache-write-ttl-fallback', // Claude: TTL split missing, writes priced at 1.25x
   'unrecorded-writes', // Codex: 0 recorded cache writes on a write-priced model (A3.3/A3.9)
@@ -106,6 +138,63 @@ const FLOOR_CAUSE_ORDER = [
   'long-prompt', // Gemini: prompt over 200k priced at the <=200k rate
   'tool-tokens', // Gemini: tool-use prompt tokens not priced
 ];
+
+/**
+ * Did this breakdown count ANYTHING? Any class, not just `billable` — a week of
+ * nothing but cache reads is a real measurement, and `billable` excludes them.
+ *
+ * The gate on every token floor: with no amount there is nothing for a cause to
+ * qualify, so a zero count is never "en az 0". The same reasoning
+ * `emptyWeeklyCost` already applies on the cost side.
+ */
+function hasAnyTokens(t) {
+  return Boolean(t) && (t.input > 0 || t.output > 0 || t.cacheWrite > 0 || t.cacheRead > 0);
+}
+
+/**
+ * Why one tool's token COUNT is a lower bound, as `HistoryFloorCause` codes in
+ * `FLOOR_CAUSE_ORDER`. Empty array = the count is exact.
+ *
+ * THE ONE DEFINITION OF THE RULE, for both producers. The panel row
+ * (`snapshot.js`) and a history period (this module) compute over different
+ * windows — an anchored-or-trailing quota week versus a local calendar week —
+ * but the rule that turns facts into causes is identical, and two copies of it
+ * would drift with nothing asserting they agree. So each caller keeps its OWN
+ * window arithmetic, reduces it to the booleans below, and calls this.
+ *
+ * Every cause is SOURCE BEHAVIOUR: the recorder did not record something, or
+ * the reader could not read something. The MONETARY causes are deliberately
+ * absent and no caller may pass one in — an unpriced model, a Codex tier
+ * assumed Standard or Fast-requested, and Claude's cache-write TTL fallback
+ * each count every token they saw and differ only in what they may charge. That
+ * is why this is narrower than `PeriodUsage.isFloor`.
+ *
+ * @param {string} providerId
+ * @param {{hasCount: boolean, sourceIncomplete?: boolean, unrecordedWrites?: boolean}} facts
+ *   hasCount           the count is not entirely zero (see `hasAnyTokens`)
+ *   sourceIncomplete   a known-unread range overlaps this caller's window
+ *   unrecordedWrites   Codex only: a turn recorded 0 cache writes although it
+ *                      read cache or sent a cacheable prompt (A3.3/A3.9),
+ *                      decided with no price lookup
+ * @returns {string[]} fresh array, safe for the caller to keep
+ */
+function tokenFloorCauses(providerId, facts) {
+  const f = facts || {};
+  // No amount, no bound. A zero count with `sourceIncomplete` is the A3.19
+  // "could not be counted" state, which is NOT a floor and carries its own
+  // sentence; the caller reads that from `WeeklyCost.sourceIncomplete`.
+  if (f.hasCount !== true) return [];
+  const hit = new Set();
+  if (f.sourceIncomplete === true) hit.add('unread-range');
+  // Unconditional while Gemini CLI has a count (ADR-003 A6): its utility calls
+  // and failed streams are NEVER recorded, so tokens are missing whether or not
+  // the recorded ones could be priced. Never derived from
+  // `WeeklyCost.unrecordedCalls`, which is a cost cause and goes false when
+  // nothing in the window priced.
+  if (providerId === 'gemini') hit.add('unrecorded-calls');
+  if (providerId === 'codex' && f.unrecordedWrites === true) hit.add('unrecorded-writes');
+  return FLOOR_CAUSE_ORDER.filter((c) => hit.has(c));
+}
 
 /** Local midnight of the day containing `ms`. */
 function startOfDayMs(ms) {
@@ -172,6 +261,40 @@ function round(x) {
 }
 
 /**
+ * One `TokenBreakdown` over a set of `ModelCost` rows FROM ONE TOOL.
+ *
+ * Every pricer already accumulates each (model, speed/tier) group's four raw
+ * counts while it prices it — including for a group it cannot price, where
+ * "tokens accumulate, dollars do not" (`pricing.js`, `codex/pricing.js`). So
+ * folding those rows up is not a second, parallel accounting of the corpus: it
+ * is the SAME pass that produced the dollars, read one level higher. That is
+ * what makes a period's token figure and its cost figure incapable of
+ * describing different events.
+ *
+ * `billable` is RE-DERIVED from the summed classes rather than added up from
+ * the rows, so the `input + output + cacheWrite` identity holds exactly at
+ * every level and cannot drift by a row that carried a stale one. cacheRead
+ * stays out of it: ~98% of raw volume at 0.1x (ADR-001), reported on its own.
+ *
+ * CALLER'S OBLIGATION: rows from two different tools must never be passed in
+ * together. Dollars are comparable across tools and are summed; token counts
+ * are not and never are.
+ */
+function sumRowTokens(rows) {
+  const t = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, billable: 0 };
+  for (const row of rows || []) {
+    const rt = row && row.tokens;
+    if (!rt) continue;
+    t.input += rt.input;
+    t.output += rt.output;
+    t.cacheWrite += rt.cacheWrite;
+    t.cacheRead += rt.cacheRead;
+  }
+  t.billable = t.input + t.output + t.cacheWrite;
+  return t;
+}
+
+/**
  * Largest priced cost first; unpriced entries last; ties by provider then id,
  * so the order does not depend on which file (or which tool) was read first.
  */
@@ -201,15 +324,20 @@ function compareModelEntries(a, b) {
  *            TTL split was missing (priced at the 1.25x floor) or part of its
  *            usage was at an unpriced speed and excluded. Every cause pushes
  *            the true figure up, exactly as at the period level.
+ *   tokens   the four raw counts of the SAME slice `costUsd` was priced from,
+ *            summed across the model's speeds — never a single merged total,
+ *            and `billable` excludes cacheRead (ADR-001). Present even when
+ *            `costUsd` is null: an unpriced model still used tokens; what it
+ *            lacks is a published price, not usage.
  *
- * Deliberately NO token total per entry: cost only, same as `PeriodUsage`.
  * Largest priced cost first; unpriced models last, then by id, so the order
  * does not depend on which file was read first.
  *
  * @param {Array}  events         deduped usage events
  * @param {number} startMs        inclusive period start
  * @param {number} endExclusiveMs exclusive period end
- * @returns {Array<{provider:'claude', model:string, costUsd:number|null, isFloor:boolean}>}
+ * @returns {Array<{provider:'claude', model:string, costUsd:number|null,
+ *                  isFloor:boolean, tokens:object}>}
  */
 function byModelUsageFrom(events, startMs, endExclusiveMs) {
   // One pass: partition the in-window events by raw model id. `pricing.js`
@@ -241,6 +369,9 @@ function byModelUsageFrom(events, startMs, endExclusiveMs) {
       // excluded it and the renderer must not print it as $0,00.
       costUsd: hasPricedRow ? cost.totalUsd : null,
       isFloor: cost.fallbackWriteEvents > 0 || hasUnpricedRow,
+      // The whole slice, priced rows and unpriced ones alike — these events are
+      // exactly the ones `costUsd` was computed over.
+      tokens: sumRowTokens(cost.byModel),
     });
   }
 
@@ -265,10 +396,18 @@ function byModelUsageFrom(events, startMs, endExclusiveMs) {
  *            or requested Fast and priced at Standard (A3.17-18). Every cause
  *            pushes the true figure up.
  *
+ *   tokens   the model's four raw counts across its tiers, from the very rows
+ *            that produced `costUsd` — so the pair cannot describe different
+ *            turns. Present on an unpriced model too. NOTE for the caller: a
+ *            Codex `cacheWrite` count is a LOWER BOUND wherever
+ *            `writeFloorByModel` is non-zero (A3.3/A3.9 — Codex records 0
+ *            writes on every record), which makes `billable` one as well.
+ *
  * @param {{cost: object|null, writeFloorByModel: Map<string, number>,
  *          tierFloorByModel?: Map<string, number>}} detail
  *        `codexPricing.codexCostDetail` result for the period
- * @returns {Array<{provider:'codex', model:string, costUsd:number|null, isFloor:boolean}>}
+ * @returns {Array<{provider:'codex', model:string, costUsd:number|null,
+ *                  isFloor:boolean, tokens:object}>}
  */
 function codexByModelFrom(detail) {
   const cost = detail && detail.cost;
@@ -277,9 +416,12 @@ function codexByModelFrom(detail) {
   for (const row of cost.byModel) {
     let entry = byModel.get(row.model);
     if (!entry) {
-      entry = { provider: 'codex', model: row.model, priced: 0, anyPriced: false, anyUnpriced: false };
+      entry = { provider: 'codex', model: row.model, priced: 0, anyPriced: false, anyUnpriced: false, rows: [] };
       byModel.set(row.model, entry);
     }
+    // Every row of this model, whatever its tier and whether or not it could be
+    // priced: the tokens were used either way.
+    entry.rows.push(row);
     if (row.usd === null) {
       entry.anyUnpriced = true;
     } else {
@@ -295,6 +437,7 @@ function codexByModelFrom(detail) {
     costUsd: e.anyPriced ? round(e.priced) : null,
     isFloor: (e.anyPriced && e.anyUnpriced) || (floors.get(e.model) || 0) > 0
       || (tierFloors.get(e.model) || 0) > 0,
+    tokens: sumRowTokens(e.rows),
   }));
 }
 
@@ -305,13 +448,19 @@ function codexByModelFrom(detail) {
  *   isFloor  Gemini: true for every priced entry, since utility calls and failed
  *            streams are never recorded, whatever the model. Kimi: false (a null
  *            figure has no bound to be lower than).
+ *   tokens   the model's four raw counts, from the rows the cost was built
+ *            from. This is the one place a Kimi entry carries a real figure:
+ *            it has no price, but it has usage. Gemini's counts are a LOWER
+ *            BOUND for the same reason its cost is — the unrecorded calls are
+ *            missing from the count too, not merely from the price.
  */
 function localByModelFrom(provider, cost) {
   if (!cost) return [];
   const byModel = new Map();
   for (const row of cost.byModel) {
     let e = byModel.get(row.model);
-    if (!e) { e = { priced: 0, anyPriced: false }; byModel.set(row.model, e); }
+    if (!e) { e = { priced: 0, anyPriced: false, rows: [] }; byModel.set(row.model, e); }
+    e.rows.push(row);
     if (row.usd !== null) { e.anyPriced = true; e.priced += row.usd; }
   }
   return [...byModel].map(([model, e]) => ({
@@ -319,6 +468,7 @@ function localByModelFrom(provider, cost) {
     model,
     costUsd: e.anyPriced ? round(e.priced) : null,
     isFloor: provider === 'gemini' && e.anyPriced,
+    tokens: sumRowTokens(e.rows),
   }));
 }
 
@@ -363,6 +513,14 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
       ...base,
       costUsd: 0,
       byClass: emptyByClass(),
+      // No tool has usage here, so no tool has an entry. Always an object: the
+      // renderer reads a map, never a null it has to guard.
+      tokensByProvider: {},
+      // No count exists, so no count can be a lower bound. That this period
+      // overlaps a known-unread range is said by `isFloor` just below and by
+      // `UsageHistory.incompleteProviders` (A3.20), which is where that note
+      // belongs — a token figure that does not exist is not "en az".
+      tokenFloorCausesByProvider: {},
       byModel: [],
       // Nothing was READ here; if usage is known to be unread, $0 is a floor.
       isFloor: incomplete.size > 0,
@@ -426,6 +584,42 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
       + (gmCost ? gmCost.byClass[k] : 0));
   }
 
+  // ...and here is the same rule from the other side: one entry PER TOOL, so a
+  // subtotal can be shown without ever existing as one merged number. A tool
+  // appears only when it has usage in the period, which is exactly when its
+  // pricer returned a cost at all. Each entry folds only that tool's own rows
+  // (`sumRowTokens`), so nothing here can add Claude's cacheRead to Codex's.
+  const tokensByProvider = {};
+  for (const [provider, c] of [['claude', cost], ['codex', cxCost], ['gemini', gmCost], ['kimi', kmCost]]) {
+    if (c) tokensByProvider[provider] = sumRowTokens(c.byModel);
+  }
+
+  /**
+   * WHY each of those counts is a lower bound, per tool — not a bare flag,
+   * because ADR-002 A3.16 forbids showing a floor without a visible cause, and
+   * a token floor cannot always borrow one from the cost side (a Gemini period
+   * with nothing priced sets the token floor while `unrecordedCalls` is false).
+   *
+   * The rule itself lives in `tokenFloorCauses`, shared with the panel row, so
+   * the two producers cannot drift. This side contributes only its own window
+   * arithmetic: which tools a known-unread range overlaps THIS period, and
+   * whether a Codex turn in it recorded no cache writes.
+   *
+   * Keyed only for tools with a count here, and only when the count is not
+   * entirely zero: an absent or zero figure has no bound to be lower than.
+   */
+  const tokenFloorCausesByProvider = {};
+  for (const id of INCOMPLETE_ORDER) {
+    const counted = tokensByProvider[id];
+    if (!counted) continue;
+    const causes = tokenFloorCauses(id, {
+      hasCount: hasAnyTokens(counted),
+      sourceIncomplete: incomplete.has(id),
+      unrecordedWrites: cxDetail.unrecordedWriteTokens === true,
+    });
+    if (causes.length > 0) tokenFloorCausesByProvider[id] = causes;
+  }
+
   const byModel = [
     ...(cost ? byModelUsageFrom(events, startMs, endExclusiveMs) : []),
     ...codexByModelFrom(cxDetail),
@@ -447,6 +641,11 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
     ...base,
     costUsd: round((cost ? cost.totalUsd : 0) + (cxCost ? cxCost.totalUsd : 0) + (gmCost ? gmCost.totalUsd : 0)),
     byClass,
+    // Uncapped on purpose, unlike `byModel`: this is what a per-tool subtotal
+    // must be read from, because adding up a list truncated at MAX_LIST would
+    // silently understate it.
+    tokensByProvider,
+    tokenFloorCausesByProvider,
     // Bounded lists (security F4): the renderer shows at most MAX_LIST entries.
     byModel: byModel.slice(0, MAX_LIST),
     isFloor,
@@ -651,6 +850,9 @@ module.exports = {
   weekKey,
   monthKey,
   emptyByClass,
+  sumRowTokens,
+  tokenFloorCauses,
+  hasAnyTokens,
   DEFAULT_MAX_WEEKS,
   DEFAULT_MAX_MONTHS,
 };

@@ -210,6 +210,32 @@ function classifyCodexEvent(ev) {
   return { longContext, writeFloor, hasWrite };
 }
 
+/**
+ * Whether this turn's RECORDED cache-write count understates the writes that
+ * really happened — i.e. whether its cacheWrite TOKEN COUNT is a lower bound.
+ *
+ * Deliberately PRICE-FREE, and that is the whole difference from
+ * `classifyCodexEvent().writeFloor`. That flag asks "may we charge for the
+ * missing writes?", so it is gated on the model|tier having a published
+ * cache-write row. This one asks "are writes missing from the COUNT?", and the
+ * answer does not depend on whether anyone publishes a price for them: Codex's
+ * recorder writes 0 cache writes on EVERY record (A3.3, broadened by A3.9), so
+ * a turn that read cache — or sent an uncached prompt at or above OpenAI's
+ * minimum cacheable size — almost certainly wrote cache that was never
+ * recorded. Over-marking here is never false; under-marking is (A3.9).
+ *
+ * `writeFloor` is OR-ed in for folded buckets only: the flag is decided per raw
+ * turn BEFORE folding (A3.12), so a bucket whose other turns did record writes
+ * can carry a true flag against a summed `cacheWrite` above zero.
+ *
+ * Nothing here feeds `WeeklyCost.unrecordedWriteEvents`, which stays a COST
+ * cause with its own count and its own dollar wording.
+ */
+function unrecordedWriteTokensOf(ev) {
+  if (ev.writeFloor === true) return true;
+  return ev.cacheWrite === 0 && (ev.cachedInput > 0 || ev.inputUncached >= MIN_CACHEABLE_PROMPT);
+}
+
 /** Per-1M-token rate applied to a token count. */
 function cost1M(tokens, rate) {
   return (tokens * rate) / 1e6;
@@ -240,6 +266,10 @@ function speedOf(ev, longContext) {
  * assumed Standard or requested Fast (A3.17-18); `tierFloorByModel` is their
  * sum per model id. Each makes the figure a floor.
  *
+ * `unrecordedWriteTokens` is the TOKEN-side floor: true when ANY in-window turn's
+ * recorded cache writes understate the real ones, decided with no price lookup so
+ * unpriced turns set it too. It never touches `unrecordedWriteEvents`.
+ *
  * @returns {{cost: object|null, writeFloorEvents: number, writeFloorByModel: Map<string, number>,
  *   assumedTierEvents: number, fastRequestedEvents: number, tierFloorByModel: Map<string, number>}}
  */
@@ -255,11 +285,22 @@ function codexCostDetail(events, startMs, endMs, anchored) {
   let fastRequestedEvents = 0;
   /** Per model: priced events carrying a tier floor cause (A3.17-18). */
   const tierFloorByModel = new Map();
+  /**
+   * Any in-window turn whose recorded writes understate the real ones — the
+   * TOKEN floor, decided without a price lookup and therefore set by unpriced
+   * turns too. `writeFloorEvents` below is the COST counterpart and is
+   * deliberately left alone.
+   */
+  let unrecordedWriteTokens = false;
 
   for (const ev of events || []) {
     if (!ev || !Number.isFinite(ev.ts)) continue;
     if (ev.ts < startMs || ev.ts >= endMs) continue;
     seenAny = true;
+
+    // Decided ABOVE the price guard: a turn whose model or tier has no
+    // published row still had its writes dropped by the recorder.
+    if (!unrecordedWriteTokens && unrecordedWriteTokensOf(ev)) unrecordedWriteTokens = true;
 
     // A folded 15-minute bucket stands for `count` turns; a raw event for one.
     const n = Number.isSafeInteger(ev.count) && ev.count > 0 ? ev.count : 1;
@@ -318,7 +359,10 @@ function codexCostDetail(events, startMs, endMs, anchored) {
   }
 
   if (!seenAny) {
-    return { cost: null, writeFloorEvents: 0, writeFloorByModel, assumedTierEvents: 0, fastRequestedEvents: 0, tierFloorByModel };
+    return {
+      cost: null, writeFloorEvents: 0, writeFloorByModel, assumedTierEvents: 0, fastRequestedEvents: 0,
+      tierFloorByModel, unrecordedWriteTokens: false,
+    };
   }
 
   const byModel = [...groups.values()].map((g) => ({
@@ -378,6 +422,8 @@ function codexCostDetail(events, startMs, endMs, anchored) {
     assumedTierEvents,
     fastRequestedEvents,
     tierFloorByModel,
+    // The TOKEN floor (see `unrecordedWriteTokensOf`), never the cost one.
+    unrecordedWriteTokens,
   };
 }
 
@@ -403,6 +449,7 @@ module.exports = {
   LONG_CONTEXT_MODELS,
   MIN_CACHEABLE_PROMPT,
   classifyCodexEvent,
+  unrecordedWriteTokensOf,
   SPEED_UNKNOWN_TIER,
   LONG_CONTEXT_SUFFIX,
 };

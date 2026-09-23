@@ -1,6 +1,6 @@
 {
   "name": "usage-notch",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Windows tray monitor for AI coding tool usage limits.",
   "main": "src/main/index.js",
@@ -14,8 +14,8 @@
     "scan": "node scripts/scan-once.js",
     "smoke": "electron scripts/smoke-ipc.js",
     "typecheck": "tsc -p src/renderer/tsconfig.json --noEmit",
-    "dist:dir": "npm run build && electron-builder --win --dir --publish never",
-    "dist": "npm run build && electron-builder --win nsis --publish never"
+    "dist:dir": "npm run typecheck && npm run build && node scripts/write-build-info.js && electron-builder --win --dir --publish never",
+    "dist": "npm run typecheck && npm run build && node scripts/write-build-info.js && electron-builder --win nsis --publish never"
   },
   "devDependencies": {
     "electron": "44.2.0",
@@ -35,6 +35,7 @@
       "src/core/**",
       "src/shared/**",
       "src/renderer/index.html",
+      "src/renderer/key-entry.html",
       "src/renderer/dist/**",
       "src/renderer/styles/**",
       "src/renderer/assets/**",

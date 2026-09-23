@@ -229,8 +229,8 @@ test.describe('modelQuotas is untrusted text from a foreign process', () => {
     // a test file is one editor away from being silently deleted, and the test
     // would then pass by asserting the absence of something never present.
     const RLO = '‮';
-    const NUL = ' ';
-    const ZWSP = '​';
+    const NUL = '\u0000';
+    const ZWSP = '\u200b';
     const q = quotasOf({
       groups: [{ ...GROUP_A, members: ['Cla' + RLO + 'ude Opus' + NUL + ' 4.6', 'Nor' + ZWSP + 'mal'] }],
     });

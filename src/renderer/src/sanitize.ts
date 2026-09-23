@@ -18,7 +18,9 @@ import type {
   LanguageChoice,
   Preferences,
   CostByClass,
+  CreditUsage,
   FigureSource,
+  KeyState,
   HistoryFloorCause,
   ModelCost,
   ModelQuotaDetail,
@@ -49,6 +51,52 @@ const CONTROL_CHARS = new RegExp(
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const NEUTRAL_ACCENT = '#6B7A77';
 
+/**
+ * ADR-003 A8 (Phase B): the key states the renderer has copy for. An unknown
+ * code is NOT printed as itself (K19) and not guessed at either: it degrades to
+ * 'none', the state that renders nothing, so no screen can show a code no
+ * catalog has a sentence for.
+ */
+const KEY_STATE_CODES = new Set<KeyState>([
+  'none',
+  'stored',
+  'key-rejected',
+  'key-lacks-permission',
+  'rate-limited',
+  'not-available',
+  'unreachable',
+  'unreadable',
+  'secure-storage-unavailable',
+]);
+
+/**
+ * The AI-credit reading (ADR-003 A8). Three non-negative finite counts and
+ * three instants, or null: a partial reading is not a reading, because the
+ * renderer states the three counts together. There is deliberately no
+ * allowance field to accept — GitHub's reply has none (A6.3), so nothing here
+ * could ever become the denominator of a percentage.
+ */
+function creditUsage(raw: unknown): CreditUsage | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const source = raw as Record<string, unknown>;
+  const gross = nonNegative(source.grossCredits);
+  const included = nonNegative(source.includedCredits);
+  const billed = nonNegative(source.billedCredits);
+  const periodStart = isoInstant(source.periodStart);
+  const periodEnd = isoInstant(source.periodEnd);
+  const fetchedAt = isoInstant(source.fetchedAt);
+  if (gross === null || included === null || billed === null) return null;
+  if (periodStart === null || periodEnd === null || fetchedAt === null) return null;
+  return {
+    grossCredits: gross,
+    includedCredits: included,
+    billedCredits: billed,
+    periodStart,
+    periodEnd,
+    fetchedAt,
+  };
+}
+
 /** ADR-003 A6: the history floor-cause codes the renderer has copy for. */
 const HISTORY_FLOOR_CAUSES = new Set<HistoryFloorCause>([
   'unpriced',
@@ -59,6 +107,27 @@ const HISTORY_FLOOR_CAUSES = new Set<HistoryFloorCause>([
   'unrecorded-calls',
   'long-prompt',
   'tool-tokens',
+]);
+
+/**
+ * The causes a TOKEN count may carry — a different, strictly smaller set.
+ *
+ * `'unread-range'` is token-side ONLY: on the cost side a known-unread range has
+ * its own field and note, and ADR-002 A3.20 rules the price notes do not grow a
+ * clause for it, so letting it through the cost allowlist would put a cause on
+ * screen that ruling excludes. And the MONETARY causes are excluded here for the
+ * mirror-image reason: an unpriced model, an assumed or Fast-requested tier and
+ * Claude's cache-write TTL fallback each counted every token they saw, so
+ * offering one as the reason a COUNT is short would be a false explanation —
+ * worse than none, because A3.16 exists to make the reason trustworthy.
+ *
+ * Two allowlists rather than one filtered at the call site: the boundary is
+ * where a wrong code must die, and each field has its own legal vocabulary.
+ */
+const TOKEN_FLOOR_CAUSES = new Set<HistoryFloorCause>([
+  'unread-range',
+  'unrecorded-calls',
+  'unrecorded-writes',
 ]);
 
 const PROVIDER_IDS = new Set<ProviderSnapshot['id']>([
@@ -560,8 +629,14 @@ const MAX_PERIOD_MODELS = 24;
  * the contract precisely: `nonNegative` yields `null` for a missing, negative
  * or non-finite value, and null is the "could not be priced" signal the
  * renderer prints as "fiyatlanamadı" — never coerced to 0, which would read as
- * free. There is no token field to carry: the contract defines none, so none
- * can cross this boundary — the same honesty invariant as the period itself.
+ * free.
+ *
+ * `tokens` is NULL when no count arrived, and a zero count is a real zero.
+ * Those are two different states and the boundary type can now express both,
+ * which is the whole reason this stopped minting an all-zero datum main can
+ * never legitimately send. An entry with no count keeps its cost line — a true
+ * figure a missing count must not delete — and simply carries no count beside
+ * it; an entry whose count IS zero prints zero.
  */
 function periodModelCost(raw: unknown): PeriodModelCost | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -576,7 +651,44 @@ function periodModelCost(raw: unknown): PeriodModelCost | null {
     model,
     costUsd: nonNegative(source.costUsd),
     isFloor: source.isFloor === true,
+    tokens: tokenBreakdown(source.tokens),
   };
+}
+
+/**
+ * WHY THE TOKEN FLOOR ARRIVES AS CAUSES AND IS NEVER A RULE HERE
+ * --------------------------------------------------------------
+ * Whether a token COUNT is a lower bound is a narrower question than whether
+ * `costUsd` is: the monetary causes — unpriced model, assumed or Fast tier,
+ * Claude's cache-write TTL fallback — counted every token they saw and differ
+ * only in what they may CHARGE for it. Only events missing from the count
+ * itself make the count a floor.
+ *
+ * Deciding that needs per-provider knowledge (Gemini's unrecorded utility
+ * calls, Codex's unrecorded cache writes) that main holds and the renderer must
+ * not: the next surface to show a token count would not carry the rule with it,
+ * and nothing would fail when it forgot. And it arrives as CAUSES rather than a
+ * boolean because ADR-002 A3.16 forbids printing a floor with no visible
+ * reason, and there is a real state with no cost cause to borrow — a Gemini
+ * week where nothing could be priced sets the token floor while
+ * `unrecordedCalls` stays false. So main states the causes and this validator
+ * only carries them, for both fields that hold them:
+ *
+ *   `ProviderSnapshot.weeklyTokenFloorCauses`      — the row's weekly count
+ *   `PeriodUsage.tokenFloorCausesByProvider`       — per tool, this period
+ *
+ * Known codes only, each once, in the producer's order; anything else is
+ * dropped rather than printed. An empty list is "not a floor", which is the
+ * state that adds no claim and is what an older main degrades to.
+ */
+function floorCauseList(raw: unknown): HistoryFloorCause[] {
+  const codes: HistoryFloorCause[] = [];
+  for (const code of Array.isArray(raw) ? raw : []) {
+    if (!TOKEN_FLOOR_CAUSES.has(code as HistoryFloorCause)) continue;
+    if (codes.includes(code as HistoryFloorCause)) continue;
+    codes.push(code as HistoryFloorCause);
+  }
+  return codes;
 }
 
 /**
@@ -589,8 +701,15 @@ function periodModelCost(raw: unknown): PeriodModelCost | null {
  *
  * `costUsd` is coerced to a non-negative number and never to a bill: the
  * renderer frames it. `byClass` falls back to zeros (the composition simply
- * hides). There is deliberately no token-total field to carry — the contract
- * does not define one, so none can cross this boundary.
+ * hides).
+ *
+ * `tokensByProvider` (contract :520-554) is carried as what it is: a map from
+ * tool to that tool's own count, one entry per tool, never merged. There is
+ * still deliberately NO single merged token total crossing this boundary — the
+ * contract defines none, so none can be sanitised into existence, and an
+ * unreadable entry is DROPPED rather than zeroed, because `{}` (no entry for
+ * this tool) is the contract's own empty state and reads as "nothing to show",
+ * while a zero would read as "this tool used nothing".
  */
 function periodUsage(raw: unknown): PeriodUsage | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -610,6 +729,33 @@ function periodUsage(raw: unknown): PeriodUsage | null {
     .filter((entry): entry is PeriodModelCost => entry !== null)
     .slice(0, MAX_PERIOD_MODELS);
 
+  // One entry per known tool, each validated on its own. An unknown key is
+  // dropped (it names no row the panel can label) and so is an unreadable
+  // breakdown; nothing here is ever added to anything else.
+  const tokensByProvider: PeriodUsage['tokensByProvider'] = {};
+  const rawTokens = source.tokensByProvider;
+  if (rawTokens && typeof rawTokens === 'object') {
+    for (const [id, raw] of Object.entries(rawTokens as Record<string, unknown>)) {
+      if (!PROVIDER_IDS.has(id as ProviderSnapshot['id'])) continue;
+      const breakdown = tokenBreakdown(raw);
+      if (breakdown !== null) tokensByProvider[id as ProviderSnapshot['id']] = breakdown;
+    }
+  }
+
+  // Which tools' COUNTS are lower bounds here, AND WHY — main's statement,
+  // carried, not re-derived. Never `isFloor`, which is about dollars. A tool
+  // with an empty cause list is not listed at all: a floor with no reason is
+  // the bare hedge ADR-002 A3.16 forbids, so it must not be representable here.
+  const tokenFloorCausesByProvider: PeriodUsage['tokenFloorCausesByProvider'] = {};
+  const floorRaw = source.tokenFloorCausesByProvider;
+  if (floorRaw && typeof floorRaw === 'object' && !Array.isArray(floorRaw)) {
+    for (const [id, list] of Object.entries(floorRaw as Record<string, unknown>)) {
+      if (!PROVIDER_IDS.has(id as ProviderSnapshot['id'])) continue;
+      const causes = floorCauseList(list);
+      if (causes.length > 0) tokenFloorCausesByProvider[id as ProviderSnapshot['id']] = causes;
+    }
+  }
+
   return {
     key: text(source.key, 32) ?? startsAt,
     startsAt,
@@ -622,6 +768,8 @@ function periodUsage(raw: unknown): PeriodUsage | null {
       cacheWrite1h: 0,
       cacheRead: 0,
     },
+    tokensByProvider,
+    tokenFloorCausesByProvider,
     byModel,
     isFloor: source.isFloor === true,
     unpricedModels,
@@ -742,6 +890,15 @@ function provider(raw: unknown): ProviderSnapshot | null {
     // ADR-003 A6.4: only a literal true carries the marker. Absent (an older
     // main) is false: the flag is a static registry fact main always sends.
     experimental: source.experimental === true,
+    // ADR-003 A8 (Phase B). keyCapable false is the state that renders nothing,
+    // so a main process that predates these fields degrades to "no key option"
+    // rather than to an offer for a provider that cannot use one.
+    keyCapable: source.keyCapable === true,
+    keyState: KEY_STATE_CODES.has(source.keyState as KeyState)
+      ? (source.keyState as KeyState)
+      : 'none',
+    keyStoredAt: isoInstant(source.keyStoredAt),
+    creditUsage: creditUsage(source.creditUsage),
     // Absent means a main process that predates the field. Default TRUE, not
     // false: an unteachable producer must degrade to the previous behaviour
     // (every provider visible) rather than to a silently empty panel, which
@@ -753,6 +910,28 @@ function provider(raw: unknown): ProviderSnapshot | null {
     fiveHour: windowUsage(source.fiveHour),
     sevenDay: windowUsage(source.sevenDay),
     tokens: tokenBreakdown(source.tokens),
+    // The row's headline count, anchored to exactly the window `sevenDay`
+    // describes. Validated independently of `tokens` and never derived from
+    // it: main states that the two are null together, but a producer that
+    // breaks that invariant must lose the field it got wrong, not have the
+    // other one re-labelled into a window it does not describe.
+    weeklyTokens: tokenBreakdown(source.weeklyTokens),
+    // Which window that count describes, from the row's own field. NOT derived
+    // here or downstream from `sevenDay.resetsAt` — that would be usage
+    // arithmetic on the renderer's side of the boundary, and it would couple two
+    // rules that agree only by coincidence (see row.ts) — and not from
+    // `weeklyCost.windowAnchored`, which is absent on a quiet week, exactly when
+    // a zero count still has to name its window. Only a real boolean passes;
+    // anything else is "no window to name".
+    weeklyTokensWindowAnchored:
+      typeof source.weeklyTokensWindowAnchored === 'boolean'
+        ? source.weeklyTokensWindowAnchored
+        : null,
+    // Main's statement about the COUNT and its reasons, never re-derived here.
+    // An empty list is "not a floor" — no claim added — which is what an older
+    // main degrades to. A cause is required because a floor with no visible
+    // reason is the bare hedge ADR-002 A3.16 forbids.
+    weeklyTokenFloorCauses: floorCauseList(source.weeklyTokenFloorCauses),
     burnRatePerHour: nonNegative(source.burnRatePerHour),
     byModel,
     modelQuotas: modelQuotas(source.modelQuotas),

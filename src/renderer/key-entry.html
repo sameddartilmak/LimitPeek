@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      The panel's CSP, unchanged, on a window that handles a secret: no remote
+      anything, and `connect-src 'none'` so THIS page can never reach the
+      network. The one request the key enables is made by main, on its own
+      dedicated session with an exact allowlist (ADR-003 A5); nothing here
+      fetches, and `form-action 'none'` means the form cannot post anywhere
+      either — it is read by script and handed to the preload.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" href="data:," />
+    <title>Usage Notch</title>
+    <link rel="stylesheet" href="./styles/tokens.css" />
+    <link rel="stylesheet" href="./styles/key-entry.css" />
+  </head>
+  <body>
+    <main id="key-entry" class="entry" aria-busy="true"></main>
+    <script type="module" src="./dist/renderer/src/key-entry.js"></script>
+  </body>
+</html>

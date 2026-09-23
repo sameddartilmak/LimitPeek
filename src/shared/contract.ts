@@ -388,10 +388,11 @@ export interface WeeklyCost {
 /**
  * One model's notional cost inside a period.
  *
- * The SAME honesty rule as `PeriodUsage`, one level down: cost only, never a
- * merged token count — the shape has nowhere to put one on purpose. Frame it
- * exactly as the period figure: never a bill, "en az" whenever `isFloor`, and
- * a null `costUsd` reads "fiyatlanamadı", never "$0,00".
+ * The SAME honesty rule as `PeriodUsage`, one level down: a cost plus a
+ * per-class token BREAKDOWN, never a single merged token count — the shape has
+ * nowhere to put one on purpose. Frame it exactly as the period figure: never a
+ * bill, "en az" whenever `isFloor`, and a null `costUsd` reads "fiyatlanamadı",
+ * never "$0,00".
  */
 export interface PeriodModelCost {
   /**
@@ -431,6 +432,49 @@ export interface PeriodModelCost {
    * exactly as at the period level.
    */
   isFloor: boolean;
+  /**
+   * Absolute tokens of this entry — this tool, this model, this period. Always
+   * present: an entry exists only because usage produced it, so there is always
+   * something to count, including when `costUsd` is null (an unpriced model has
+   * tokens; what it has no published price for is dollars). Never null, and a
+   * genuine zero in a class simply means no tokens of that class.
+   *
+   * It is the SAME event set `costUsd` was computed from: the same deduped
+   * corpus, the same half-open period `[startsAt, next period)`, and the same
+   * grouping by RAW recorded model id — so the two figures on one line can never
+   * be describing different usage. One asymmetry, by construction: when part of
+   * a model's usage could not be priced (a speed or tier with no published row),
+   * `costUsd` covers only the priced part and `isFloor` is true, while `tokens`
+   * covers ALL of the model's usage in the period. That is the honest pairing —
+   * the tokens were used whether or not a price exists for them — and it is why
+   * a null `costUsd` still carries a non-zero count.
+   *
+   * `billable` (input + output + cacheWrite) EXCLUDES `cacheRead`, which is
+   * ~98% of raw volume and bills at 0.1x, so folding it in yields a figure
+   * dominated by the cheapest class that says nothing; `cacheRead` stands on
+   * its own in the same breakdown. Per-tool accounting: these counts are NEVER
+   * summed across tools, unlike dollars (see `PeriodUsage.tokensByProvider`).
+   * Summing them WITHIN one tool's entries is legitimate — the entries of a
+   * tool partition that tool's period tokens — but the list is capped at 24
+   * entries, so a sum over what is shown can fall short of the tool's own
+   * subtotal; read `tokensByProvider` for the subtotal instead of adding up
+   * rows.
+   *
+   * When this COUNT is a lower bound is a narrower question than when `isFloor`
+   * (a statement about `costUsd`) is true. Do not re-derive it: the period's
+   * `tokenFloorCausesByProvider` answers it per tool, and applies to this entry
+   * through its `provider` unchanged.
+   *
+   * NULLABLE, although main always sends it. The type has to be able to express
+   * every state this boundary can be in, and "the count did not arrive" is one
+   * of them: the sanitiser sees whatever an older or broken main sent, and a
+   * non-nullable type forces it to mint an all-zero breakdown instead — a datum
+   * main can never legitimately produce, reading as a measured zero. Null says
+   * "absent"; zero says "measured zero". PRODUCER INVARIANT, tested rather than
+   * typed: every entry `src/core/history.js` emits carries a count, because an
+   * entry only exists where usage produced it.
+   */
+  tokens: TokenBreakdown | null;
 }
 
 /**
@@ -445,6 +489,13 @@ export interface PeriodModelCost {
  * both; the renderer does no arithmetic on them. Frame `costUsd` exactly as
  * `WeeklyCost.totalUsd` is framed: never a bill, always "what this would have
  * cost at published API rates", and prefixed "en az" whenever `isFloor`.
+ *
+ * Absolute token counts ARE carried, because "how many tokens did I use" is a
+ * real question with a true answer — but only in the two shapes that stay
+ * honest: per tool and per class (`tokensByProvider`), and per tool, model and
+ * class (`PeriodModelCost.tokens`). There is still no single number for the
+ * period, and adding those breakdowns up to make one is the banned operation,
+ * not an omission to be filled in.
  */
 export interface PeriodUsage {
   /** Stable identity, derived from the LOCAL period start: a week is keyed by
@@ -466,6 +517,84 @@ export interface PeriodUsage {
   /** Per-class USD split (same classes as `CostByClass`). Shown separately;
    *  never summed back into one token figure. */
   byClass: CostByClass;
+  /**
+   * Absolute tokens in this period, KEYED BY TOOL: one `TokenBreakdown` per
+   * tool that has usage here, and no entry at all for a tool that does not.
+   * Always an object, `{}` for an empty period.
+   *
+   * Keyed by tool and not merged, because dollars and tokens do not obey the
+   * same arithmetic. Two tools' dollars are comparable — both are USD at
+   * published rates — so `costUsd` and `byClass` add them. Two tools' token
+   * counts are not: each vendor counts and bills its classes its own way, and
+   * `cacheRead` (~98% of raw volume, billed at 0.1x, excluded from `billable`)
+   * sits in a different proportion in each. So a period-level "tokens used"
+   * total across tools is banned and is deliberately absent here. This map is
+   * the shape that makes a per-tool subtotal renderable WITHOUT creating one:
+   * show the entries side by side, labelled by tool, never added. Summing the
+   * values of this map — in the renderer, in a test fixture, or anywhere else —
+   * produces exactly the figure ADR-001 forbids.
+   *
+   * Within one tool the figure is a true total: it covers every event of that
+   * tool in the half-open period `[startsAt, next period)`, from the same
+   * deduped corpus the period's cost is priced over, so it equals the sum of
+   * that tool's `byModel` entries' `tokens` — except that `byModel` is capped at
+   * 24 entries, which is precisely why this subtotal is given rather than left
+   * to be added up.
+   *
+   * Like every other figure here an entry can be a LOWER BOUND, but for
+   * NARROWER reasons than `costUsd` is. Do NOT derive that from `isFloor`,
+   * which is a statement about dollars: read `tokenFloorCausesByProvider`,
+   * which answers the question per tool, WITH its causes, and is resolved in
+   * main.
+   */
+  tokensByProvider: Partial<Record<ProviderSnapshot['id'], TokenBreakdown>>;
+  /**
+   * WHY each tool's `tokensByProvider` entry in this period is a LOWER BOUND —
+   * tokens missing from the COUNT — as `HistoryFloorCause` codes in the order
+   * that type lists them. A tool is a floor exactly when it has at least one
+   * cause; a tool with an exact count has NO KEY here. Always an object, `{}`
+   * when every count in the period is exact.
+   *
+   * Causes and not a bare flag, because ADR-002 A3.16 forbids showing a floor
+   * without at least one visible cause line, and a token floor cannot always
+   * borrow one from the cost side: a Gemini period where nothing could be priced
+   * is a token floor while `floorCausesByProvider.gemini` carries no
+   * 'unrecorded-calls' at all. Deliberately the same shape as the cost side's
+   * `UsageHistory.floorCausesByProvider`, so one renderer routine can compose
+   * either note.
+   *
+   * It exists so the "en az" rule lives in data rather than in one renderer's
+   * memory, and `src/core/history.js tokenFloorCauses()` is that rule — the
+   * panel row's `ProviderSnapshot.weeklyTokenFloorCauses` calls the same
+   * function over its own window, so the two can never disagree about a tool.
+   *
+   * `isFloor` answers the MONEY question and is deliberately WIDER: a period can
+   * be `isFloor: true` with every token count exact, and a tool's count is never
+   * marked because a DIFFERENT tool's dollars are a floor. The monetary causes —
+   * an unpriced model, a Codex tier assumed Standard or Fast-requested, Claude's
+   * cache-write TTL fallback — never appear here: each counts every token it saw
+   * and differs only in what it may charge.
+   *
+   * The codes a tool can carry:
+   *   'unread-range'       any tool: a known-unread range overlaps this period,
+   *                        so events are missing from the count (A3.20). Note
+   *                        this code is TOKEN-side only — see
+   *                        `HistoryFloorCause`.
+   *   'unrecorded-calls'   Gemini CLI, unconditional while it has a count:
+   *                        utility calls and failed streams are never recorded.
+   *   'unrecorded-writes'  Codex: a turn recorded 0 cache writes although it read
+   *                        cache or sent a prompt at or above the minimum
+   *                        cacheable size (A3.3/A3.9), so `cacheWrite` and
+   *                        `billable` are understated. Decided from the record
+   *                        with no price lookup, so an unpriced turn sets it too.
+   *
+   * Always a SUBSET of `tokensByProvider`'s keys, and a tool whose count is
+   * entirely ZERO is never keyed: with no amount there is nothing for "en az" to
+   * qualify. That a period overlaps a known-unread range is still said by
+   * `isFloor` and by `UsageHistory.incompleteProviders`, which is where the "we
+   * could not read this range" note belongs (A3.20).
+   */
+  tokenFloorCausesByProvider: Partial<Record<ProviderSnapshot['id'], HistoryFloorCause[]>>;
   /**
    * The period split by recorded model id, largest priced cost first and
    * unpriced models last. Cost only — never a merged token total, same honesty
@@ -502,6 +631,9 @@ export interface PeriodUsage {
  * renderer maps each to catalog text, so a price note can be composed for ANY
  * set of tools instead of a sentence hard-coded per combination.
  *
+ *   'unread-range'              TOKEN floors only: a range of usage the reader KNOWS
+ *                               it could not read overlaps the window, so events are
+ *                               missing from the COUNT (ADR-002 A3.15/A3.20)
  *   'unpriced'                  some usage has no price (unknown model, a tier with
  *                               no row, tokens without a model, every Kimi model)
  *   'cache-write-ttl-fallback'  Claude: TTL split missing, writes priced at 1.25x
@@ -512,10 +644,26 @@ export interface PeriodUsage {
  *   'long-prompt'               Gemini: prompt over 200k priced at the <=200k rate
  *   'tool-tokens'               Gemini: tool-use prompt tokens not priced
  *
- * A known-unread range is deliberately NOT a code here: it has its own field,
- * `UsageHistory.incompleteProviders`, and its own note (ADR-002 A3.20).
+ * ONE code is TOKEN-side only and never appears in `floorCausesByProvider`:
+ * 'unread-range'. On the COST side a known-unread range already has its own
+ * field (`UsageHistory.incompleteProviders`) and its own note, and ADR-002 A3.20
+ * rules that the price notes do not grow a clause for it — that ruling stands.
+ * But a TOKEN floor has no such field to lean on, and A3.16 forbids showing a
+ * floor without a visible cause, so on that side the gap must be nameable.
+ * Read it from `weeklyTokenFloorCauses` / `tokenFloorCausesByProvider` only.
+ *
+ * Two codes carry a slightly WIDER meaning on the token side than the cost
+ * side's counters do, because a price qualifier that matters to dollars does not
+ * matter to a count:
+ *   'unrecorded-writes'  cost: 0 recorded writes on a WRITE-PRICED model.
+ *                        tokens: 0 recorded writes at all — whether a write
+ *                        price exists decides what may be CHARGED for the
+ *                        missing writes, not whether they are missing.
+ *   'unrecorded-calls'   cost: set only when something in the window priced.
+ *                        tokens: unconditional while Gemini CLI has a count.
  */
 export type HistoryFloorCause =
+  | 'unread-range'
   | 'unpriced'
   | 'cache-write-ttl-fallback'
   | 'unrecorded-writes'
@@ -662,6 +810,74 @@ export interface ModelQuotaDetail {
   capturedAt: string;
 }
 
+/**
+ * The state of the OPTIONAL, user-supplied API key for a provider (ADR-003
+ * Amendment 8; the conditions are Amendment 5's K1-K25).
+ *
+ * Fixed codes, never provider text (K19). GitHub's own wording can name an
+ * organisation, a repository or an account, so nothing from a reply, a header,
+ * a URL or an `err.message` reaches this field — the renderer prints its own
+ * sentence per code.
+ *
+ *  'none'                      no key stored; the row is exactly as it was
+ *  'stored'                    a key is stored and nothing has refused it
+ *  'key-rejected'              the provider refused the key (401). Polling STOPS
+ *                              until the user replaces or removes it
+ *  'key-lacks-permission'      authenticated, but not allowed to read the plan
+ *  'rate-limited'              the provider asked us to come back later
+ *  'not-available'             the provider has no such figure for this account
+ *                              (including a reply we could not fully validate:
+ *                              all-or-nothing, so no figure rather than a
+ *                              partial one)
+ *  'unreachable'              the request did not complete (timeout, transport,
+ *                              a redirect, an oversized body, a 5xx)
+ *  'unreadable'                a key IS stored and the local copy cannot be
+ *                              read or decrypted — another Windows account, a
+ *                              machine change, a truncated file
+ *  'secure-storage-unavailable' Windows DPAPI is not available, so nothing was
+ *                              stored. There is no plaintext fallback, by veto.
+ */
+export type KeyState =
+  | 'none'
+  | 'stored'
+  | 'key-rejected'
+  | 'key-lacks-permission'
+  | 'rate-limited'
+  | 'not-available'
+  | 'unreachable'
+  | 'unreadable'
+  | 'secure-storage-unavailable';
+
+/**
+ * What a stored Copilot key buys: AI credits consumed in the current calendar
+ * month (ADR-003 Amendment 6 decision 3).
+ *
+ * THERE IS NO PERCENTAGE AND NO ALLOWANCE, and there never will be one in this
+ * shape. GitHub's reply carries no allowance (A6.3), so a percentage would need
+ * a denominator we invented — the exact fabrication ADR-001 Decision 1 rejects
+ * for token math, and it would be worse here because it would look authoritative
+ * beside a real figure. The row prints three counts and the time they were read.
+ *
+ * All three numbers are finite and non-negative, and they are either ALL present
+ * or the whole object is null: a sum over a reply we only partly understood is a
+ * number with no meaning that looks exactly like a real one.
+ *
+ * `grossCredits` is everything consumed, `includedCredits` the part the plan
+ * covered and `billedCredits` the overage that will be charged. Self-paid plans
+ * only; the consent screen says so.
+ */
+export interface CreditUsage {
+  grossCredits: number;
+  includedCredits: number;
+  billedCredits: number;
+  /** ISO instant the billing period starts (UTC month for Copilot). */
+  periodStart: string;
+  /** ISO instant it ends — exclusive. Past it, the figure is dropped. */
+  periodEnd: string;
+  /** ISO instant this reading was taken. The row shows its age. */
+  fetchedAt: string;
+}
+
 export interface ProviderSnapshot {
   id: 'claude' | 'codex' | 'gemini' | 'copilot' | 'antigravity' | 'kimi';
   displayName: string;
@@ -677,6 +893,34 @@ export interface ProviderSnapshot {
    */
   experimental: boolean;
   /**
+   * An optional, user-supplied API key would add something defensible to this
+   * row (ADR-003 Amendment 8).
+   *
+   * TRUE FOR 'copilot' AND NOTHING ELSE. Amendment 6 rules a Gemini key out (an
+   * API key exposes no quota and is a different pool from the Google-login CLI,
+   * so the figure would be a false statement) and holds Kimi (an undocumented
+   * endpoint, reached with a full spend key). A row with `keyCapable: false`
+   * must offer no key affordance at all — the offer itself is a claim that a
+   * key would help.
+   *
+   * Main always sends it, on every row, including the loading skeleton.
+   */
+  keyCapable: boolean;
+  /** See `KeyState`. 'none' on every row that is not key-capable. */
+  keyState: KeyState;
+  /**
+   * ISO instant the local copy of the key was stored, from the local record —
+   * never from the provider. Null whenever no key is stored, and null while
+   * `keyState` is 'unreadable' (the envelope may be the unreadable part).
+   */
+  keyStoredAt: string | null;
+  /**
+   * The figure the key buys, or null. Null covers every honest absence: no key,
+   * a key that has not been read yet, a reply that could not be fully
+   * validated, and a reading whose billing period has since ended.
+   */
+  creditUsage: CreditUsage | null;
+  /**
    * The user has ADDED this provider to the main panel. Distinct from
    * `connected`: adding is the user's choice to see the row at all, connecting
    * is whether we have data for it. An added-but-unconnected provider shows in
@@ -686,12 +930,194 @@ export interface ProviderSnapshot {
   enabled: boolean;
   connected: boolean;
   status: RowStatus;
-  /** e.g. "Max 20x", or null when not known. Never guessed. */
+  /**
+   * The plan the user TOLD US they are on for this tool, e.g. "Max 20x", shown
+   * beside the tool name. Null when they have not said — and null then renders
+   * as NOTHING: no "bilinmiyor", no placeholder, no dash. An absent fact is
+   * absent, not a labelled gap.
+   *
+   * IT IS NOT A READING, AND IT IS NEVER GUESSED. The plan appears nowhere in
+   * anything this app reads: Claude Code's transcripts carry no plan,
+   * subscription, tier or account field, and the one file that does carry a tier
+   * is `~/.claude/.credentials.json`, which ADR-001 security F1 forbids opening
+   * at all. Codex's rollout and Antigravity's payload each state a plan we
+   * deliberately do NOT read, for the same reason. So there are two honest
+   * options — the user tells us, or the row says nothing — and this field is the
+   * first one. Its only source is app settings (`src/main/settings.js`
+   * `planLabels`, validated by `src/core/plan-labels.js`). Inferring it from
+   * usage volume would be a guess printed as a fact.
+   *
+   * IT MUST NEVER TOUCH A NUMBER. No quota, no denominator, no price, no cost,
+   * no floor and no limit may read it — there is no `if (plan === 'Max 20x')`
+   * anywhere and there must never be one. It is an unverified string a person
+   * typed and never spell-checked; the moment a figure depends on it, that
+   * string becomes an input to arithmetic we present as measured. ADR-001
+   * rejected a token-derived percentage for want of a trustworthy denominator,
+   * and a self-reported plan name is not one. Its whole life cycle is: settings
+   * -> snapshot -> displayed.
+   *
+   * PER TOOL. One person is on Claude Max 20x and perhaps a Codex plan at the
+   * same time, so every row carries its own, and a row with no stated plan shows
+   * nothing while its neighbour shows one.
+   *
+   * UNTRUSTED TEXT. Trimmed, whitespace-collapsed and capped at 24 characters by
+   * main before it reaches here, and sanitised again by the renderer on the way
+   * to the DOM. Two checks on one value is not redundancy: one keeps the
+   * settings file sane, the other keeps the DOM sane, and neither may assume the
+   * other ran. The cap is a layout constraint as much as a safety one — the
+   * label sits inline in a fixed-width row header.
+   */
   planLabel: string | null;
   fiveHour: WindowUsage | null;
   sevenDay: WindowUsage | null;
   /** Absolute tokens inside the 5h window, from local transcripts. */
   tokens: TokenBreakdown | null;
+  /**
+   * Absolute tokens inside the WEEK, from local records — the row's headline
+   * token figure, with `tokens` (5 hours) kept for the detail beside it.
+   *
+   * The window is EXACTLY the one `sevenDay` describes and `weeklyCost` is
+   * priced over: `[sevenDay.resetsAt - 7d, resetsAt)` while that reset is still
+   * ahead of us, a trailing 7 days otherwise (`WeeklyCost.windowAnchored` says
+   * which, per provider). That identity is the point — the figure is read
+   * beside the 7-day percentage, so a window even slightly different would be
+   * a false pairing: "this many tokens against that much of your weekly quota"
+   * would be describing two different weeks. Half-open on both ends, like every
+   * other window here: a record on the reset instant belongs to the NEW week.
+   *
+   * `billable` (input + output + cacheWrite) deliberately EXCLUDES `cacheRead`,
+   * which is ~98% of raw volume and bills at 0.1x; `cacheRead` is reported in
+   * the same breakdown as its own number. A single merged "tokens used this
+   * week" total is banned (ADR-001) and there is nowhere in this shape to put
+   * one: token counts are NEVER summed across tools, so no row's figure may be
+   * added to another's.
+   *
+   * NULL MEANS "WE HAVE NOT LOOKED", AND NOTHING ELSE — uniformly, on every
+   * provider. It is present, POSSIBLY ALL-ZERO, whenever that provider's local
+   * corpus was scanned; it is null only when there is no corpus at all
+   * (Antigravity and every passive row) or the scan has not produced its first
+   * result yet (`Snapshot.pendingUsage`).
+   *
+   * So a measured zero is present and reads as a measurement: a user who did not
+   * touch a tool all week is told they used nothing, never that we could not
+   * count. Treating an all-zero breakdown as absent is the bug this rule exists
+   * to prevent — it misreports our own successful reading, which is the same
+   * class of error as inventing a number, committed by the guard meant to stop
+   * it. "Sayılamadı" belongs to exactly one state, and it is not this one:
+   * `weeklyCost.sourceIncomplete` true WITH a zero count (ADR-002 A3.19).
+   *
+   * `tokens` (5 hours) does NOT follow this rule and was deliberately left as
+   * shipped: on the local-log rows it nulls a zero window. So the two fields can
+   * legitimately disagree — a row can carry `weeklyTokens` with `tokens: null`
+   * (a quiet five hours inside a busy week). Do not infer either from the other.
+   *
+   * This is an absolute measurement and is never divided by anything: it feeds
+   * no percentage and no meter (ADR-001 Decision 1).
+   *
+   * DO NOT expect it to equal the newest week in "Toplam Kullanım"
+   * (`PeriodUsage.tokensByProvider`), and do not file that as a bug. They
+   * measure different spans on purpose: this one is the QUOTA week — anchored
+   * to the provider's own reset, or a trailing 7 days — while a history period
+   * is a LOCAL CALENDAR week, Monday 00:00 to Monday 00:00, because that is how
+   * the user reads "2–8 Eylül". A secondary, much smaller difference: this
+   * figure counts `cacheWrite` as the record states it, while the history
+   * figure is folded from the pricer's rows, which resolve writes as
+   * `max(total, cw5 + cw1h)` — that differed on 3 of 20,674 reference records
+   * and is invisible behind the window difference anyway.
+   */
+  weeklyTokens: TokenBreakdown | null;
+  /**
+   * Which window `weeklyTokens` covers: `true` anchored to this provider's own
+   * weekly reset, `[resetsAt - 7d, resetsAt)`; `false` a trailing 7 days ending
+   * now. Null exactly when `weeklyTokens` is null — with no figure there is no
+   * window to describe.
+   *
+   * It exists because every figure on this row must name its OWN window. An
+   * unlabelled number inherits its neighbour's label, and the neighbour here is
+   * a FIVE-HOUR figure — so a bare "0 token" would read as "nothing in the last
+   * five hours" in exactly the state where the user is already wondering whether
+   * we read anything at all.
+   *
+   * READABLE WHEN `weeklyCost` IS NULL, which is the whole point. A quiet week —
+   * or the first minutes after a weekly reset, when the anchored window opens at
+   * roughly now — produces a present, all-zero `weeklyTokens` and NO cost block
+   * at all, because nothing priced. `WeeklyCost.windowAnchored` says the same
+   * thing about the same window and is the right field to read WHEN a cost block
+   * exists, but it vanishes precisely when the label matters most. When both are
+   * present they always agree: main derives them from one window object.
+   *
+   * TAKE THE LABEL FROM HERE, NEVER FROM `sevenDay.resetsAt`. Measured, not
+   * assumed: `resetsAt != null` and `weeklyTokensWindowAnchored === true`
+   * currently coincide on every reachable state, so the derivation would happen
+   * to be right today. It is still wrong to write, for two reasons.
+   *
+   * First, the coincidence is not a contract. `sevenDay.resetsAt` is nulled when
+   * its window has ROLLED OVER, and that is a rule about whether a PERCENTAGE may
+   * be displayed (ADR-001 Amendment 2, state 3) — not a statement about the token
+   * window. Main's decision not to anchor to a reset already behind us is a
+   * separate rule with a separate reason (anchoring to a closed window would
+   * exclude everything spent since). Two independent rules that agree today; if
+   * either moves, or a provider path resolves one without the other, a derived
+   * label silently inverts and nothing fails.
+   *
+   * Second, deriving a window from a reset instant is usage arithmetic in the
+   * renderer, which this contract exists to prevent: main resolves windows, the
+   * renderer renders them.
+   *
+   * Gemini CLI and Kimi Code are always `false` once scanned: neither publishes
+   * a weekly reset to us, so their window can only ever be trailing.
+   */
+  weeklyTokensWindowAnchored: boolean | null;
+  /**
+   * WHY `weeklyTokens` is a LOWER BOUND — tokens missing from the COUNT — as
+   * `HistoryFloorCause` codes in the order that type lists them. EMPTY ARRAY
+   * means the count is exact; main always sends an array, never null.
+   *
+   * Causes and not a bare boolean, because ADR-002 A3.16 forbids showing a floor
+   * without at least one visible cause, and this row cannot always borrow one
+   * from its own cost block: a Gemini week where nothing could be priced is a
+   * token floor while `weeklyCost.unrecordedCalls` is false. Same shape as
+   * `PeriodUsage.tokenFloorCausesByProvider`, one level up.
+   *
+   * Resolved in main so that no surface carries the rule: the tray tooltip, a
+   * second panel and any future reader get the same answer from the same field,
+   * and a surface that forgets to ask cannot quietly print a floor as exact. The
+   * rule is `src/core/history.js tokenFloorCauses()`, and the history side calls
+   * the SAME function over its own window, so a row and its period can never
+   * disagree about a tool.
+   *
+   * The codes this row can carry:
+   *   'unread-range'       the reader KNOWS it could not read part of this window
+   *                        (`weeklyCost.sourceIncomplete`, A3.15), so events are
+   *                        missing from the count. TOKEN-side only — see
+   *                        `HistoryFloorCause`.
+   *   'unrecorded-calls'   Gemini CLI, unconditional while it has a count: its
+   *                        utility calls and failed streams are NEVER recorded.
+   *                        Do NOT derive this from `weeklyCost.unrecordedCalls`,
+   *                        a COST cause that goes false when nothing priced.
+   *   'unrecorded-writes'  Codex: a turn recorded 0 cache writes although it read
+   *                        cache or sent a prompt at or above OpenAI's minimum
+   *                        cacheable size, so `cacheWrite` and therefore
+   *                        `billable` are understated (A3.3/A3.9). Decided from
+   *                        the RECORD with no price lookup: whether a write price
+   *                        exists decides what may be CHARGED for the missing
+   *                        writes, not whether they are missing. Over-marking is
+   *                        never false here.
+   *
+   * The purely MONETARY floor causes never appear, because each counts every
+   * token it saw and differs only in what it may charge: an unpriced model, a
+   * Codex tier assumed Standard or Fast-requested (A3.17-18), and Claude's
+   * cache-write TTL fallback (which resolves writes as `max(total, cw5 + cw1h)`
+   * and so cannot lose a write token). A row can therefore show an exact token
+   * count beside a cost marked "en az".
+   *
+   * Always EMPTY when `weeklyTokens` is null, and also when the count is
+   * entirely ZERO: with no amount there is nothing for "en az" to qualify. A
+   * zero count whose `weeklyCost.sourceIncomplete` is true is the A3.19 "could
+   * not be counted" state — read that from `sourceIncomplete`, not from here,
+   * and never render it as "en az 0 token".
+   */
+  weeklyTokenFloorCauses: HistoryFloorCause[];
   /** Billable tokens per hour over the active window. */
   burnRatePerHour: number | null;
   /** Per-model split inside the window, largest first. */
@@ -858,6 +1284,69 @@ export const IPC = {
    * the new language only when the push arrives. Returns { ok: boolean }.
    */
   SET_LANGUAGE: 'prefs:set-language',
+  SET_PLAN_LABEL: 'prefs:set-plan-label',
+  /**
+   * renderer -> main invoke(providerId). Asks main to START the optional-key
+   * flow for a key-capable provider: a NATIVE consent dialog raised in main,
+   * and only if it is confirmed, a short-lived entry window of its own (ADR-003
+   * Amendment 5 K1/K2). Returns `{ok}` — whether main accepted the request,
+   * never anything about a key.
+   *
+   * `{ok:false}` is the normal answer to a decline, to a second call while a
+   * flow is open, and to a provider that is not key-capable. One flow at a
+   * time: fifty calls in one tick raise exactly one dialog.
+   */
+  KEY_ENTRY: 'keys:request-entry',
+  /**
+   * renderer -> main invoke(providerId). Deletes the LOCAL copy of the key,
+   * cancels its timers, aborts anything in flight, closes the keyed session's
+   * connections and drops the cached figure (K20). Returns `{ok}`.
+   *
+   * It is NOT revocation: only the user can revoke a token at the vendor, and
+   * the copy is all this app can remove. The copy says so.
+   */
+  KEY_REMOVE: 'keys:remove',
+  /**
+   * renderer -> main invoke(providerId). Opens the provider's token-creation
+   * page in the DEFAULT BROWSER, for the 'key-rejected' /
+   * 'key-lacks-permission' states where a new key is the fix. Returns `{ok}`.
+   *
+   * The argument only SELECTS a hard-coded branch; main holds the URL as a
+   * literal and no argument, provider reply or stored value ever reaches it. A
+   * call naming a provider that is not key-capable is refused.
+   */
+  KEY_TOKEN_PAGE: 'keys:open-token-page',
+} as const;
+
+/**
+ * The key-entry window's OWN channels. Not part of `UsageNotchApi`: they are
+ * exposed by a different preload, to a different window, on its own session
+ * (ADR-003 Amendment 8).
+ *
+ * `usageNotchKeyEntry` exposes exactly four methods and NO GETTER (K3):
+ *
+ *   entryInfo(): { provider, language, formatLocale? } | null   (synchronous)
+ *   submit(key, username): Promise<{ ok, code? }>
+ *   cancel(): void
+ *   openTokenPage(): Promise<{ ok }>                            (no argument)
+ *
+ * `submit` is Amendment 8's `submit(key)` with the username as a second
+ * argument: the page collects both, main validates both, and one call carrying
+ * the pair means main never holds half of it. Main accepts it only from the
+ * entry window's main frame, against a one-shot pending entry created at
+ * consent with the provider fixed and a five-minute expiry (K4).
+ *
+ * `code` is from a closed set, chosen so a message can never carry a value:
+ * 'wrong-token-type' (another GitHub credential: ghp_/gho_/ghu_/ghs_/ghr_),
+ * 'wrong-provider' (another vendor's key), 'invalid', 'invalid-username',
+ * 'secure-storage-unavailable', 'busy', 'no-entry', 'expired', 'rejected',
+ * 'store-failed'.
+ */
+export const IPC_KEY_ENTRY = {
+  SUBMIT: 'keys:submit',
+  CANCEL: 'keys:cancel',
+  ENTRY_INFO: 'keys:entry-info',
+  ENTRY_TOKEN_PAGE: 'keys:entry-token-page',
 } as const;
 
 /**
@@ -985,6 +1474,36 @@ export interface UsageNotchApi {
   setTheme(theme: ThemeChoice): Promise<{ ok: boolean }>;
   /** Persist the language choice. See IPC.SET_LANGUAGE. */
   setLanguage(language: LanguageChoice): Promise<{ ok: boolean }>;
+  /**
+   * Persist the plan the user says they are on for ONE tool, or clear it. See
+   * IPC.SET_PLAN_LABEL and `ProviderSnapshot.planLabel`.
+   *
+   * `label` is free text — the control offers known plans through a `datalist`
+   * but accepts anything typed — so main validates rather than trusting it: a
+   * known provider id, a plain string, trimmed, whitespace-collapsed and capped
+   * at 24 characters. An empty or blank label means CLEAR, which removes the
+   * setting rather than storing `''`; the row then shows nothing at all.
+   *
+   * NOT OPTIMISTIC. `{ ok: false }` means main wrote NOTHING — a bad id, a
+   * non-string, or a settings file that could not be persisted — and the
+   * renderer must revert the control to the value it had. Persist first, apply
+   * second: a label that only lives in the DOM is a setting the user will lose
+   * without being told. `{ ok: true }` is followed by a snapshot carrying the
+   * new `planLabel`, which is what the row renders from.
+   */
+  setPlanLabel(providerId: string, label: string): Promise<{ ok: boolean }>;
+  /**
+   * Start the optional-key flow for a key-capable provider. See IPC.KEY_ENTRY.
+   *
+   * Write-only, like every key channel: the answer is whether main accepted the
+   * request. There is NO method on this interface that returns a key, a masked
+   * key or its length, and there never may be (K3).
+   */
+  requestKeyEntry(providerId: string): Promise<{ ok: boolean }>;
+  /** Delete the local copy of a provider's key. See IPC.KEY_REMOVE. */
+  removeKey(providerId: string): Promise<{ ok: boolean }>;
+  /** Open the provider's token page in the default browser. See IPC.KEY_TOKEN_PAGE. */
+  openTokenPage(providerId: string): Promise<{ ok: boolean }>;
   /** Tell main the panel opened, so it can raise its refresh cadence. */
   panelOpened(): void;
   close(): void;

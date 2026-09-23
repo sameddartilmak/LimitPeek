@@ -34,6 +34,24 @@ const IPC = {
   PREFERENCES: 'prefs:changed',
   SET_THEME: 'prefs:set-theme',
   SET_LANGUAGE: 'prefs:set-language',
+  SET_PLAN_LABEL: 'prefs:set-plan-label',
+  KEY_ENTRY: 'keys:request-entry',
+  KEY_REMOVE: 'keys:remove',
+  KEY_TOKEN_PAGE: 'keys:open-token-page',
+};
+
+/**
+ * The key-entry window's own channels (ADR-003 Amendment 8). A different
+ * preload, a different window, its own session — so they are deliberately NOT
+ * in `IPC`, which is the panel's surface: nothing the panel is given may reach
+ * `keys:submit`, and `contract.ts` documents the four methods the entry
+ * window's preload exposes.
+ */
+const IPC_KEY_ENTRY = {
+  SUBMIT: 'keys:submit',
+  CANCEL: 'keys:cancel',
+  ENTRY_INFO: 'keys:entry-info',
+  ENTRY_TOKEN_PAGE: 'keys:entry-token-page',
 };
 
 /**
@@ -58,4 +76,4 @@ const IPC_EXT = {
   INITIAL_PREFERENCES: 'prefs:initial',
 };
 
-module.exports = { IPC, IPC_EXT, STATE_THRESHOLDS };
+module.exports = { IPC, IPC_EXT, IPC_KEY_ENTRY, STATE_THRESHOLDS };

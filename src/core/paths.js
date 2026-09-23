@@ -8,7 +8,9 @@ const path = require('node:path');
  * Deliberately absent: `~/.claude/.credentials.json`. That file holds
  * `claudeAiOauth.accessToken` / `refreshToken`. Per ADR-001 (security F1,
  * CRITICAL veto) it is never opened, read, bound or referenced anywhere in
- * this codebase. `planLabel` comes from app settings or stays null.
+ * this codebase. `planLabel` comes from app settings — one label per tool, in
+ * `settings.planLabels` — or the row stays silent; never from a credential or a
+ * plan field any tool records (`src/core/plan-labels.js`).
  *
  * The same veto covers Antigravity: `~/.gemini/` holds the CLI's own auth
  * material, and the only file named here under it is `settings.json`, of which
@@ -116,6 +118,46 @@ function antigravityQuotaFile() {
   return path.join(rateLimitsDir(), 'antigravity-quota.json');
 }
 
+/**
+ * Where an optional, user-supplied API key is stored (ADR-003 Amendment 5,
+ * K8/K11/K12): `%LOCALAPPDATA%\UsageNotch\secrets`, one file per provider.
+ *
+ * NOT the app's userData, and that is the point rather than a detail. userData
+ * holds `settings.json`, which is small, hand-editable, copied into bug reports
+ * and rewritten whenever a preference changes; nothing key-related may touch
+ * it. This directory holds only DPAPI ciphertext, it is created lazily the
+ * first time a key is stored, and the uninstaller deletes it whole
+ * (`build/installer.nsh`).
+ *
+ * The directory is subject to the ADR-003 Amendment 3 path rules like every
+ * other path this app opens: refused before any open if it — or a link along it
+ * — is a UNC, device or non-local path. That check lives with the store
+ * (`src/main/keys/secret-store.js`), which is the only module that opens it.
+ */
+function secretsDir() {
+  return path.join(rateLimitsDir(), 'secrets');
+}
+
+/**
+ * The record for one provider. `provider` is never a user string: callers pass
+ * an id that came out of the hard-coded key-capable registry, so no traversal
+ * component can reach this join.
+ */
+function secretFile(provider) {
+  return path.join(secretsDir(), `${provider}.json`);
+}
+
+/**
+ * The polling schedule for one provider: when the last request was STARTED and
+ * when the next one may be (ADR-003 A5 K16). Beside the secret rather than in
+ * settings.json for two reasons — the 15-minute floor has to be deleted with
+ * the key it belongs to, and the existence of a schedule file is itself a hint
+ * that a key exists, which settings.json must not carry. Holds no secret.
+ */
+function secretStateFile(provider) {
+  return path.join(secretsDir(), `${provider}.state.json`);
+}
+
 module.exports = {
   claudeHome,
   claudeProjectsDir,
@@ -130,4 +172,7 @@ module.exports = {
   rateLimitsDir,
   rateLimitsFile,
   antigravityQuotaFile,
+  secretsDir,
+  secretFile,
+  secretStateFile,
 };

@@ -444,13 +444,138 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // pending state (ADR-002 A3.12): the totals are still being computed —
     // incomplete, which is neither zero nor a floor
     { file: 'renderer.json', key: 'row.tokens.pending', en: [/\bcalculating\b/i], tr: [/hesaplanıyor/] },
+    // The row's token figure is the WEEK's and every form of it names its own
+    // window. An unlabelled count under two meters is read as whichever one the
+    // eye came from, and the burn rate beside it is a five-hour figure — so the
+    // five-hour label is pinned too, on both the count and the rate.
+    { file: 'renderer.json', key: 'row.tokens.quotaWeek', en: [/\{value\}/, /\bquota week\b/i], tr: [/\{value\}/, /kota haftası/i] },
+    { file: 'renderer.json', key: 'row.tokens.last7', en: [/\{value\}/, /\b7 days\b/i], tr: [/\{value\}/, /7 gün/] },
+    { file: 'renderer.json', key: 'row.tokens.weekly', en: [/\{value\}/, /\bweek/i], tr: [/\{value\}/, /[Hh]aftalık/] },
+    { file: 'renderer.json', key: 'row.tokens.fiveHour', en: [/\{value\}/, /\b5 hours?\b/i], tr: [/\{value\}/, /5 saat/] },
+    { file: 'renderer.json', key: 'row.burn.fiveHour', en: [/\{rate\}/, /\b5 hours?\b/i], tr: [/\{rate\}/, /5 saat/] },
+    // ADR-002 A3.19: a week whose records could not be read is "could not be
+    // counted", NEVER "at least 0 tokens" — a no-figure state presented as a
+    // measured floor of zero.
+    { file: 'renderer.json', key: 'row.tokens.uncounted', en: [/\bcould not be counted\b/i], tr: [/sayılamadı/] },
+    // Per-tool token counts in Toplam Kullanım, and the claim that makes the
+    // missing total honest rather than an omission.
+    // FOUR claims on one lead, and every one of them is about how to read the
+    // counts directly below it: what is counted (billable, cache reads out),
+    // that the figures are per tool and never added, and which span they cover.
+    //
+    // The cache-read exclusion is here because it had NO VISIBLE HOME: it was
+    // rendered only inside `tokensTitle()`, i.e. only in a `title` attribute, on
+    // both the row and this panel. A pinned claim reaching the user through a
+    // hover affordance alone is a pin passing on something nobody can read —
+    // the same failure as a dead guard — and on the panel surface it is not even
+    // established that Chromium paints a tooltip at all. The titles stay as
+    // belt-and-braces; this line is the channel.
+    // The plan label is the USER'S OWN STATEMENT — nothing local reports a plan
+    // and no vendor tells us. The hint is what stops the control reading as
+    // something we verified: it says the value is their note, that they may type
+    // their own, and that we cannot read it from the tool. Drop any of those and
+    // a suggestion list starts to look like knowledge.
+    { file: 'renderer.json', key: 'settings.plan.hint', en: [/\byour own\b/i, /\btype your own\b/i, /\bcannot read it\b/i], tr: [/[Kk]endi notunuz/, /kendiniz yaz/, /okuyamıyoruz/] },
+    // Never a default and never a guess: the empty state says 'not stated',
+    // which is a fact about us, not a prompt that something is missing.
+    { file: 'renderer.json', key: 'settings.plan.placeholder', en: [/\bnot stated\b/i], tr: [/[Bb]elirtilmedi/] },
+    { file: 'renderer.json', key: 'settings.usage.tokens.lead', en: [/\bbillable\b/i, /\bcache reads? excluded\b/i, /\bper tool\b/i, /\bnever added\b/i, /\bMon\b|\bcalendar week\b/i], tr: [/faturalanan/, /önbellek okuma hariç/, /[Aa]raç başına/, /toplanmaz/, /takvim haftası|Pzt/] },
+    // ADR-002 A3.16: a floor is never shown without a visible cause, so the row
+    // has a shape that carries one beside the figure.
+    { file: 'renderer.json', key: 'row.tokens.floorCause', en: [/\{value\}/, /\{cause\}/], tr: [/\{value\}/, /\{cause\}/] },
+    // "En az" does two jobs on the usage screen — a bounded AMOUNT and a bounded
+    // COUNT — and the cost sentence is not true of a count. Each gloss names the
+    // quantity it is about.
+    { file: 'renderer.json', key: 'settings.usage.noteLead', en: [/\bat least\b/i, /\bcost\b/i], tr: [/[Ee]n az/, /maliyet/] },
+    { file: 'renderer.json', key: 'settings.usage.noteLeadTokens', en: [/\bat least\b/i, /\bcount\b/i, /\bhigher\b/i], tr: [/[Ee]n az/, /sayı/, /yüksek/] },
+    // The one TOKEN-side-only cause: a known-unread range. On the cost side
+    // A3.20 rules the price notes do not grow a clause for it, so this string
+    // must name the unread records without claiming anything about price.
+    { file: 'renderer.json', key: 'settings.usage.cause.unreadRange', en: [/\bcould not be read\b/i], tr: [/okunamayan/] },
     { file: 'renderer.json', key: 'cost.pending', en: [/\bcalculating\b/i, /\blocal\b/i], tr: [/hesaplanıyor/, /yerel/] },
     { file: 'renderer.json', key: 'settings.usage.pending', en: [/\{tools\}/, /\bincomplete\b/i], tr: [/\{tools\}/, /eksik/] },
     { file: 'renderer.json', key: 'settings.amount.pending', en: [/\bcalculating\b/i], tr: [/hesaplanıyor/] },
     // consent dialogs: no network, and the one network access is consented
     { file: 'main.json', key: 'dialog.claude.promise', en: [/\bno network connection\b/i], tr: [/hiçbir ağ bağlantısı açmaz/] },
     { file: 'main.json', key: 'dialog.agy.promise', en: [/\bno network connection\b/i], tr: [/hiçbir ağ bağlantısı açmaz/] },
-    { file: 'main.json', key: 'dialog.agyInstall.detail', en: [/\bonly network access\b/i, /\bwith your consent\b/i], tr: [/tek ağ erişimi/, /onayınızla/] },
+    // The Antigravity install is no longer the app's ONLY network access: a
+    // stored Copilot key adds requests (ADR-003 A5 K21, A8). The consent detail
+    // still names what runs, from where, with whose consent — and now states the
+    // key exception itself, with the host and the interval.
+    { file: 'main.json', key: 'dialog.agyInstall.detail', en: [/install\.ps1/, /antigravity\.google/, /PowerShell/, /\bwith your consent\b/i, /\bno network requests of its own\b/, /api\.github\.com/, /15 minutes/], tr: [/install\.ps1/, /antigravity\.google/, /PowerShell/, /onayınızla/, /hiçbir ağ isteği yapmaz/, /api\.github\.com/, /15 dakikada bir/] },
+    // The optional Copilot key (ADR-003 A5 K21, A8). Consent copy first: what is
+    // sent, to which single host, what is kept, what the storage does NOT
+    // protect against, that removal is not revocation, and that declining costs
+    // the user nothing.
+    { file: 'renderer.json', key: 'keyEntry.optional', en: [/\bentirely optional\b/i, /\bnothing changes\b/i], tr: [/tamamen isteğe bağlı/, /hiçbir şey değişmez/] },
+    // The exclusivity claim is about REQUESTS, not connections: resolving
+    // api.github.com emits DNS datagrams to the configured resolver from this
+    // process, so "connects to no other address" claimed more than the kernel
+    // supports. Both surfaces now say what is requested and name the resolver
+    // (guarded again, as a pair, below).
+    { file: 'renderer.json', key: 'keyEntry.what', en: [/\ba single request\b/i, /api\.github\.com/, /\bno other address\b/i, /Windows DNS/], tr: [/tek bir istek/, /api\.github\.com/, /Başka hiçbir adrese/, /Windows'un kendi DNS/] },
+    // There is no `keyEntry.host` key: the page states the single host inside
+    // `keyEntry.what` and its interval in `keyEntry.frequency`, both pinned here.
+    { file: 'renderer.json', key: 'keyEntry.frequency', en: [/15 minutes/], tr: [/15 dakikada bir/] },
+    // The proxy limit, stated BEFORE the user creates a credential that could
+    // never return a number. Our own limit, conditional, and it says what still
+    // works — never a diagnosis of the reader's network.
+    { file: 'renderer.json', key: 'keyEntry.proxy', en: [/\b(does not use|never uses|no)\b[^.]*\bsystem proxy\b/i, /\bunavailable\b|\bcannot complete\b/i, /\blocal files\b/i], tr: [/vekil sunucusu(nu)?[^.;]*kullan(maz|mıyor)/i, /gösterilemez|tamamlanamaz/, /yerel dosyalar/] },
+    { file: 'renderer.json', key: 'keyEntry.kept', en: [/\bOnly numbers are kept\b/i], tr: [/yalnızca sayılar tutulur/] },
+    { file: 'renderer.json', key: 'keyEntry.storage', en: [/\bencrypted for this Windows user\b/i, /\bnot protect it from programs running as this user\b/], tr: [/şifrelenip saklanır/, /çalışan programlara karşı korumaz/] },
+    { file: 'renderer.json', key: 'keyEntry.selfPaid', en: [/\bpay for yourself\b/i, /\bnot returned\b/i], tr: [/kendi ödediğiniz/, /gelmez/] },
+    { file: 'renderer.json', key: 'keyEntry.removeNote', en: [/\bonly the copy on this computer\b/i, /\brevoke the key at GitHub\b/i], tr: [/yalnızca bu bilgisayardaki kopyayı siler/, /GitHub’da iptal etmeniz gerekir/] },
+    { file: 'renderer.json', key: 'key.remove.confirm', en: [/\bOnly the local copy\b/i, /\buntil you revoke it at GitHub\b/i], tr: [/Yalnızca bu bilgisayardaki kopya silinir/, /GitHub’da iptal edilene kadar/] },
+    // A deletion the app promised and could not perform must SAY SO, and must
+    // name the remedy that works whether or not the file went. The confirm step
+    // above promises "only the local copy is deleted"; this is what is shown
+    // when that did not happen.
+    { file: 'renderer.json', key: 'app.keyRemoveFailed', en: [/\bcould not be deleted\b/i, /\brevoke the token at GitHub\b/i], tr: [/silinemedi/, /GitHub'dan iptal/] },
+    { file: 'renderer.json', key: 'keyEntry.leastPrivilege', en: [/fine-grained/i, /Plan: read/], tr: [/fine-grained/i, /Plan: read/] },
+    { file: 'renderer.json', key: 'keyEntry.keyHint', en: [/\bnever shown\b/i, /\bnever written to logs\b/i], tr: [/gösterilmez/, /günlüklere yazılmaz/] },
+    // Main's dialog carries the same facts as the page (guarded below too).
+    { file: 'main.json', key: 'dialog.keys.consent.message', en: [/\boptional\b/i, /\bnothing changes\b/i], tr: [/isteğe bağlı/, /hiçbir şey değişmez/] },
+    { file: 'main.json', key: 'dialog.keys.consent.what', en: [/\ba single request\b/i, /\bOnly numbers are kept\b/i], tr: [/tek bir istek/, /yalnızca sayılar tutulur/] },
+    { file: 'main.json', key: 'dialog.keys.consent.host', en: [/api\.github\.com/, /15 minutes/, /\bNo other address\b/i, /Windows DNS/], tr: [/api\.github\.com/, /15 dakikada bir/, /Başka hiçbir adrese/, /Windows'un kendi DNS/] },
+    { file: 'main.json', key: 'dialog.keys.consent.storage', en: [/\bencrypted for this Windows user\b/i, /\bnot protect it from programs running as this user\b/], tr: [/şifrelenip saklanır/, /çalışan programlara karşı korumaz/] },
+    { file: 'main.json', key: 'dialog.keys.consent.selfPaid', en: [/\bpay for yourself\b/i, /\bnot returned\b/i], tr: [/kendi ödediğiniz/, /gelmez/] },
+    { file: 'main.json', key: 'dialog.keys.consent.remove', en: [/\bonly the copy on this computer\b/i, /\brevoke the key at GitHub\b/i], tr: [/yalnızca bu bilgisayardaki kopyayı siler/, /GitHub’da iptal etmeniz gerekir/] },
+    // The row's figures are COUNTS of credits GitHub reported, never a share of
+    // an allowance (guarded below: no percentage, limit or quota word).
+    { file: 'renderer.json', key: 'key.credits.used', en: [/\{credits\}/, /\bthis month\b/i], tr: [/\{credits\}/, /^Bu ay/] },
+    { file: 'renderer.json', key: 'key.credits.split', en: [/\{included\}/, /\{billed\}/, /\bbilled\b/i], tr: [/\{included\}/, /\{billed\}/, /faturalanan/] },
+    { file: 'renderer.json', key: 'key.storedAt', en: [/\{date\}/, /\bon this computer\b/i], tr: [/\{date\}/, /bu bilgisayara kaydedildi/] },
+    { file: 'renderer.json', key: 'key.state.stored', en: [/\bnot been read yet\b/i], tr: [/henüz okunmadı/] },
+    { file: 'renderer.json', key: 'key.state.rejected', en: [/\bnot accepted\b/i], tr: [/kabul edilmedi/] },
+    { file: 'renderer.json', key: 'key.state.lacksPermission', en: [/Plan: read/], tr: [/Plan: read/] },
+    { file: 'renderer.json', key: 'key.state.rateLimited', en: [/\bGitHub\b/, /\blater\b/i], tr: [/GitHub/, /sonra okunacak/] },
+    { file: 'renderer.json', key: 'key.state.notAvailable', en: [/\bpay for yourself\b/i], tr: [/kendi ödediğiniz/i] },
+    // 'unreachable' must name the cause that is OURS (ADR-001 A2026-09-22
+    // ruling 2: the app resolves DIRECT and never uses a system proxy). A user
+    // behind a proxy would otherwise read a permanent limit of this app as a
+    // broken key and go and remove it. Two claims, not one sentence: the figure
+    // did not arrive, AND we are a reason it cannot.
+    // ATTRIBUTION IS THE CLAIM THIS LINE MUST CARRY, and it is pinned by NAME.
+    // A proxied network reaches api.github.com perfectly well — the user's own
+    // browser does it hourly — so an unattributed "could not be reached" points
+    // at their network or at GitHub for a limit WE chose. Naming Usage Notch is
+    // what makes the sentence true about the right party. The permanence and the
+    // "removing the key will not change that" clause live one surface away, in
+    // `key.unreachable.cause`, which is visible in Settings and is this row's
+    // title; they are actionability, not attribution.
+    { file: 'renderer.json', key: 'key.state.unreachable', en: [/api\.github\.com/, /\bcould not be reached\b/i, /\bUsage Notch\b/, /\bproxy\b/i], tr: [/api\.github\.com/, /ulaşılamadı/, /\bUsage Notch\b/, /vekil/i] },
+    // The full cause, where there is room for it (Settings, beside "Remove
+    // key"): a proxied network never gets this figure, removing the key does
+    // not change that, and everything else on the row is local.
+    { file: 'renderer.json', key: 'key.unreachable.cause', en: [/\bdoes not use a system proxy\b/i, /\bnever arrives\b|\bunavailable\b/i, /\bremoving the key\b/i, /\blocal files\b/i], tr: [/vekil sunucusunu kullanmaz/, /hiç gelmez|gösterilemez/, /kaldırmak/, /yerel dosyalar/] },
+    { file: 'renderer.json', key: 'key.state.unreadable', en: [/\bcould not be read\b/i, /\bremove it\b/i], tr: [/okunamadı/, /Kaldırıp/] },
+    { file: 'renderer.json', key: 'key.state.secureStorageUnavailable', en: [/\bWindows encrypted storage is unavailable\b/i, /\bcould not be read\b/i], tr: [/Windows şifreli depolama kullanılamıyor/, /okunamadı/] },
+    // the five entry-window error codes: each says what went wrong, never "try again" alone
+    { file: 'renderer.json', key: 'keyEntry.error.invalidUsername', en: [/\bnot valid\b/i, /39 characters/], tr: [/geçersiz/, /39 karakter/] },
+    { file: 'renderer.json', key: 'keyEntry.error.storeFailed', en: [/\bcould not be saved\b/i, /\bon this computer\b/i], tr: [/kaydedilemedi/, /bu bilgisayara/] },
+    { file: 'renderer.json', key: 'keyEntry.error.noEntry', en: [/\bnot found\b/i, /\bopen it again\b/i], tr: [/bulunamadı/, /yeniden açın/] },
+    { file: 'renderer.json', key: 'keyEntry.error.expired', en: [/\btimed out\b/i, /\bOpen it again\b/i], tr: [/zaman aşımına uğradı/, /Yeniden açıp/] },
+    { file: 'renderer.json', key: 'keyEntry.error.rejected', en: [/\bnot accepted\b/i, /\bopen it again\b/i], tr: [/kabul edilmedi/, /yeniden açın/] },
   ];
 
   test('every signed-off honesty key exists and keeps its claim in both languages (ADR-004 A2.2)', () => {
@@ -612,6 +737,128 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
         }
       }
     }
+  });
+
+  test('a claim that the app makes no network requests always carries the stored-key exception (ADR-003 A5 K21)', () => {
+    // The bridge promises ("the bridge … opens no network connection") are about
+    // the BRIDGE and stay true. What must never stand unqualified is a claim
+    // about the APP, because a stored Copilot key makes requests.
+    const NO_NETWORK = /no network (requests?|connection)|hiçbir ağ (isteği|bağlantısı)/i;
+    const ABOUT_THE_APP = /\bthe app\b|\bthis app\b|\buygulama/i;
+    const QUALIFIER = /unless (you store|a key is stored)|\bwith a .{0,20}key\b|anahtar kaydetme|anahtar saklan|anahtar vermezseniz/i;
+    let checked = 0;
+    for (const lang of LANGS) {
+      for (const [file, entries] of Object.entries(catalogs[lang])) {
+        for (const [key, entry] of Object.entries(entries)) {
+          for (const text of variants(entry)) {
+            // Clause by clause: the qualifier has to sit with the claim, not
+            // three sentences away where a reader will not join them.
+            for (const clause of text.split(/(?<=[.;])\s+/)) {
+              if (!NO_NETWORK.test(clause) || !ABOUT_THE_APP.test(clause)) continue;
+              checked += 1;
+              assert.match(clause, QUALIFIER,
+                `${lang}/${file} "${key}" claims the app makes no network requests with no stored-key exception: ${clause}`);
+            }
+          }
+        }
+      }
+    }
+    assert.ok(checked >= 2, `the app-level no-network claim exists in both languages (saw ${checked})`);
+  });
+
+  test("the key consent dialog and the entry page agree on host, storage and removal (ADR-003 A8)", () => {
+    // Two surfaces, one set of facts. If they drift, one of them is lying.
+    const FACTS = {
+      host: { en: /api\.github\.com/, tr: /api\.github\.com/ },
+      // Naming the host is not enough: reaching it resolves the name first, and
+      // that leaves this process. Both surfaces say so, or the quieter one is
+      // the one the user believes.
+      dns: { en: /Windows DNS/, tr: /Windows'un kendi DNS/ },
+      storage: { en: /\bnot protect it from programs running as this user\b/, tr: /çalışan programlara karşı korumaz/ },
+      removal: { en: /\brevoke the key at GitHub\b/i, tr: /GitHub’da iptal etmeniz gerekir/ },
+    };
+    // The page states the host in `keyEntry.what`; the dialog in `.host`.
+    const SURFACES = {
+      host: [['renderer.json', 'keyEntry.what'], ['main.json', 'dialog.keys.consent.host']],
+      dns: [['renderer.json', 'keyEntry.what'], ['main.json', 'dialog.keys.consent.host']],
+      storage: [['renderer.json', 'keyEntry.storage'], ['main.json', 'dialog.keys.consent.storage']],
+      removal: [['renderer.json', 'keyEntry.removeNote'], ['main.json', 'dialog.keys.consent.remove']],
+    };
+    for (const lang of LANGS) {
+      for (const [fact, places] of Object.entries(SURFACES)) {
+        for (const [file, key] of places) {
+          const entries = catalogs[lang][file] || {};
+          assert.ok(has(entries, key), `${lang}/${file} has no "${key}"`);
+          for (const text of variants(entries[key])) {
+            assert.match(text, FACTS[fact][lang], `${lang}/${file} "${key}" dropped the ${fact} fact`);
+          }
+        }
+      }
+    }
+  });
+
+  test('the single-destination claim is about what is REQUESTED, never what is connected to (F7)', () => {
+    // The WPAD defect was this exact shape: copy that claimed more than the
+    // kernel supports. Resolving api.github.com emits UDP/53 to the configured
+    // resolver from this process, so an exclusivity claim worded as "contacted"
+    // or "connects to" is false as measured, while "requested" is true. This
+    // pins the DISTINCTION, so a future edit cannot quietly restore the
+    // stronger verb.
+    const SURFACES = [['renderer.json', 'keyEntry.what'], ['main.json', 'dialog.keys.consent.host']];
+    const OVERCLAIM = /no other address is contacted|connects to no other address|contacts no other address|Başka hiçbir adrese bağlan/i;
+    const CLAIM = { en: /no other address is requested|requests no other address/i, tr: /Başka hiçbir adrese istek yap/i };
+    let seen = 0;
+    for (const lang of LANGS) {
+      for (const [file, key] of SURFACES) {
+        const entries = catalogs[lang][file] || {};
+        assert.ok(has(entries, key), `${lang}/${file} has no "${key}"`);
+        for (const text of variants(entries[key])) {
+          seen += 1;
+          assert.doesNotMatch(text, OVERCLAIM, `${lang}/${file} "${key}" claims exclusivity about connections, which DNS makes false: ${text}`);
+          assert.match(text, CLAIM[lang], `${lang}/${file} "${key}" dropped the requests-only claim: ${text}`);
+        }
+      }
+    }
+    assert.equal(seen, 4, `both surfaces in both languages (saw ${seen})`);
+  });
+
+  test('no credit or key-state line claims a percentage, limit or quota (ADR-003 A5 K21)', () => {
+    // GitHub reports credits USED, never an allowance. A percentage or a quota
+    // word would be a denominator the app was never given.
+    const FORBIDDEN = /%|yüzde|percent|\blimit\b|\bkota\b|\bquota\b/i;
+    let seen = 0;
+    for (const lang of LANGS) {
+      for (const [key, entry] of Object.entries(catalogs[lang]['renderer.json'] || {})) {
+        // Every `key.*` line, not just the figure and state ones: the proxy
+        // cause line is also copy about a number GitHub reports no allowance for.
+        if (!/^key\./.test(key)) continue;
+        seen += 1;
+        for (const text of variants(entry)) {
+          assert.doesNotMatch(text, FORBIDDEN, `${lang} "${key}" claims an allowance: ${text}`);
+        }
+      }
+    }
+    // Two credits keys and eight states, per language, measured 2026-09-22.
+    assert.ok(seen >= 20, `the credit and key-state lines exist in both languages (saw ${seen})`);
+  });
+
+  test('every key state and entry error is one short line that does not hedge (ADR-004 A3)', () => {
+    // Measured 2026-09-22: longest is 111 characters (tr keyEntry.error.wrongTokenType).
+    const MAX_CHARS = 120;
+    const SOFTENING = /yaklaşık|approximate|\broughly\b|\babout\b|\bmerely\b|\bminor\b|\bnegligible\b|\bslight(ly)?\b|worry|\bno problem\b|önemsiz|ihmal edilebilir|endişe|merak etme|sorun değil/i;
+    let seen = 0;
+    for (const lang of LANGS) {
+      for (const [key, entry] of Object.entries(catalogs[lang]['renderer.json'] || {})) {
+        if (!/^(key\.state\.|key\.credits\.|keyEntry\.error\.)/.test(key)) continue;
+        seen += 1;
+        for (const text of variants(entry)) {
+          assert.ok(text.length <= MAX_CHARS, `${lang} "${key}" is ${text.length} characters (max ${MAX_CHARS}): ${text}`);
+          assert.doesNotMatch(text, SOFTENING, `${lang} "${key}" softens its claim: ${text}`);
+        }
+      }
+    }
+    // 23 keys per language, measured 2026-09-22.
+    assert.ok(seen >= 46, `the key state and error lines exist in both languages (saw ${seen})`);
   });
 
   test('a tool that is absent is "not found", never "not supported" (ADR-003 A6)', () => {

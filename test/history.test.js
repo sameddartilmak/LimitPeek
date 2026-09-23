@@ -246,15 +246,25 @@ test.describe('the per-model breakdown of a period', () => {
     assert.ok(entry.costUsd > 0);
   });
 
-  test('honesty invariant: a per-model entry carries cost only, never a merged token total', () => {
+  test('honesty invariant: a per-model entry carries a per-class breakdown, never a merged token total', () => {
     const opus = ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 1000, input: 50, cacheRead: 9_000_000 });
     const { weeks } = history.usageHistory([opus], NOW);
     const entry = weeks[0].byModel[0];
-    // Exactly the three honest fields, and none of the forbidden token sums.
-    assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model', 'provider']);
-    for (const banned of ['billable', 'tokens', 'tokensUsed', 'totalTokens', 'byClass']) {
+    // Exactly the four honest fields plus the per-class token breakdown.
+    assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model', 'provider', 'tokens']);
+    // No scalar "tokens used" anywhere on the entry, at either level.
+    for (const banned of ['billable', 'tokensUsed', 'totalTokens', 'byClass', 'total']) {
       assert.equal(banned in entry, false, `per-model entry must not carry "${banned}"`);
     }
+    // The breakdown is the five declared classes and nothing else.
+    assert.deepEqual(Object.keys(entry.tokens).sort(), ['billable', 'cacheRead', 'cacheWrite', 'input', 'output']);
+    assert.deepEqual(entry.tokens, {
+      input: 50, output: 1000, cacheWrite: 0, cacheRead: 9_000_000, billable: 1050,
+    });
+    // The whole point of the ban: cacheRead is 99.99% of this event's raw
+    // volume and is NOT in `billable`. A merged total would read 9,001,050.
+    assert.equal(entry.tokens.billable, entry.tokens.input + entry.tokens.output + entry.tokens.cacheWrite);
+    assert.ok(entry.tokens.cacheRead > entry.tokens.billable * 1000);
   });
 
   test('an empty period carries an empty byModel, not a fabricated row', () => {
@@ -428,7 +438,7 @@ test.describe('a period covers Claude Code and Codex together', () => {
     const byModel = weeks[0].byModel;
     assert.deepEqual(byModel.map((e) => e.provider).sort(), ['claude', 'claude', 'codex']);
     for (const entry of byModel) {
-      assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model', 'provider']);
+      assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model', 'provider', 'tokens']);
     }
     for (let i = 1; i < byModel.length; i += 1) {
       assert.ok(byModel[i - 1].costUsd >= byModel[i].costUsd, 'largest priced cost first across both tools');
@@ -551,4 +561,450 @@ test('the Codex row tokens use the Codex five-hour reset window while it is ahea
   assert.equal(tokensWith(rl(NOW + HOUR)).input, 100, 'anchored: the 4.5h-old turn belongs to the previous window');
   assert.equal(tokensWith(rl(NOW - HOUR)).input, 107, 'a passed reset does not anchor: trailing 5h');
   assert.equal(tokensWith(undefined).input, 107, 'no rate limits: trailing 5h');
+});
+
+/* ------------------------------------------- tokens per period, per tool ---- */
+
+/**
+ * `PeriodUsage.tokensByProvider` and `PeriodModelCost.tokens`.
+ *
+ * The rule these pin is the one the module header states: token counts are
+ * emitted per tool and per class, NEVER merged. Dollars cross tools; tokens do
+ * not. And a count must be folded from the same events its neighbouring
+ * `costUsd` was priced from, so the two can never disagree.
+ */
+test.describe('per-period token counts stay per tool and per class', () => {
+  const codexPricing = require('../src/core/codex/pricing');
+  const wStart = history.weekStartMs(NOW);
+  const endEx = history.nextWeekStartMs(wStart);
+  const at = wStart + HOUR;
+  const cx = (over) => ({ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 0, cachedInput: 0, cacheWrite: 0, output: 0, ...over });
+  const gm = (over) => ({ ts: at, model: 'gemini-2.5-pro', input: 0, cached: 0, output: 0, thoughts: 0, tool: 0, longPrompt: false, ...over });
+  const km = (over) => ({ ts: at, model: 'kimi-code/k2', input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...over });
+
+  test('two tools in one period keep two entries and are never added together', () => {
+    const claude = [ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 1000, cacheRead: 50 })];
+    const codex = [cx({ output: 7, inputUncached: 3, cachedInput: 900 })];
+    const { weeks } = history.usageHistory(claude, NOW, { codexEvents: codex });
+    const period = weeks[0];
+    assert.deepEqual(Object.keys(period.tokensByProvider).sort(), ['claude', 'codex']);
+    assert.equal(period.tokensByProvider.claude.billable, 1000);
+    assert.equal(period.tokensByProvider.claude.cacheRead, 50);
+    assert.equal(period.tokensByProvider.codex.billable, 10);
+    assert.equal(period.tokensByProvider.codex.cacheRead, 900);
+    // Dollars DO combine across tools; tokens must not, so no field anywhere on
+    // the period equals the merged count.
+    const merged = 1000 + 10;
+    for (const [k, v] of Object.entries(period)) {
+      assert.notEqual(v, merged, `period.${k} must not be a merged token total`);
+    }
+    assert.ok(period.costUsd > 0, 'the dollars, by contrast, are one figure');
+  });
+
+  test('a tool with no usage in the period has no entry at all', () => {
+    const { weeks } = history.usageHistory([ev({ ts: at, key: 'o1', output: 1000 })], NOW);
+    assert.deepEqual(Object.keys(weeks[0].tokensByProvider), ['claude']);
+  });
+
+  test('an empty period carries an empty map, not a fabricated zero for every tool', () => {
+    const wk2 = weeksBack(NOW, 2);
+    const { weeks } = history.usageHistory(
+      [ev({ ts: wk2 + HOUR, key: 'old', output: 1000 }), ev({ ts: wStart + HOUR, key: 'new', output: 1000 })],
+      NOW,
+    );
+    assert.equal(weeks[1].hasUsage, false);
+    assert.deepEqual(weeks[1].tokensByProvider, {});
+  });
+
+  test('all four tools each get their own entry, and cacheRead never enters billable', () => {
+    const { weeks } = history.usageHistory([ev({ ts: at, key: 'o1', output: 11, cacheRead: 9000000 })], NOW, {
+      codexEvents: [cx({ output: 22, cachedInput: 8000000 })],
+      geminiEvents: [gm({ output: 33, cached: 7000000 })],
+      kimiEvents: [km({ output: 44, cacheRead: 6000000 })],
+    });
+    const t = weeks[0].tokensByProvider;
+    assert.deepEqual(Object.keys(t).sort(), ['claude', 'codex', 'gemini', 'kimi']);
+    assert.deepEqual([t.claude.billable, t.codex.billable, t.gemini.billable, t.kimi.billable], [11, 22, 33, 44]);
+    assert.deepEqual(
+      [t.claude.cacheRead, t.codex.cacheRead, t.gemini.cacheRead, t.kimi.cacheRead],
+      [9000000, 8000000, 7000000, 6000000],
+      'reported per tool, and out of every billable above',
+    );
+  });
+
+  test('a tool entry equals the sum of that tool own byModel entries, and only those', () => {
+    const claude = [
+      ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 1000, input: 5, cacheWrite: 2, cacheRead: 700 }),
+      ev({ ts: at, key: 's1', model: 'claude-sonnet-5', output: 200, input: 1, cacheRead: 30 }),
+    ];
+    const codex = [cx({ output: 9, cachedInput: 4 })];
+    const { weeks } = history.usageHistory(claude, NOW, { codexEvents: codex });
+    const period = weeks[0];
+    for (const provider of ['claude', 'codex']) {
+      const rows = period.byModel.filter((e) => e.provider === provider);
+      const summed = rows.reduce((acc, e) => ({
+        input: acc.input + e.tokens.input,
+        output: acc.output + e.tokens.output,
+        cacheWrite: acc.cacheWrite + e.tokens.cacheWrite,
+        cacheRead: acc.cacheRead + e.tokens.cacheRead,
+        billable: acc.billable + e.tokens.billable,
+      }), { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, billable: 0 });
+      assert.deepEqual(summed, period.tokensByProvider[provider], provider);
+    }
+  });
+
+  test('an entry tokens are the events behind its own costUsd — same window, same model', () => {
+    const inWindow = ev({ ts: at, key: 'in', model: 'claude-opus-5', output: 1000, input: 5, cacheWrite: 2, cacheRead: 700 });
+    const before = ev({ ts: wStart - 1, key: 'before', model: 'claude-opus-5', output: 999999 });
+    const { weeks } = history.usageHistory([inWindow, before], NOW);
+    const entry = weeks[0].byModel.find((e) => e.model === 'claude-opus-5');
+    // The reference figures come straight from the pricer over the same window.
+    const priced = pricing.weeklyCost([inWindow, before], wStart, endEx, false);
+    assert.equal(entry.costUsd, priced.totalUsd);
+    assert.deepEqual(entry.tokens, priced.byModel[0].tokens, 'same events as the cost beside it');
+    assert.equal(entry.tokens.output, 1000, 'the ms-before event is in neither figure');
+  });
+
+  test('an unpriced model has costUsd null and a real token count — usage is a fact, price is not', () => {
+    const claude = [ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 1000 })];
+    const codex = [cx({ model: 'gpt-9-imaginary', output: 1234, inputUncached: 6, cachedInput: 500 })];
+    const { weeks } = history.usageHistory(claude, NOW, { codexEvents: codex });
+    const entry = weeks[0].byModel.find((e) => e.model === 'gpt-9-imaginary');
+    assert.equal(entry.costUsd, null, 'never $0,00 for "we have no price"');
+    assert.equal(entry.tokens.billable, 1240);
+    assert.equal(entry.tokens.cacheRead, 500);
+    // ...and the unpriced tokens are still in that tool subtotal.
+    assert.equal(weeks[0].tokensByProvider.codex.billable, 1240);
+  });
+
+  test('Kimi is unpriced end to end and still reports every token it saw', () => {
+    const { weeks } = history.usageHistory([], NOW, {
+      kimiEvents: [km({ input: 1200, output: 300, cacheRead: 5000, cacheWrite: 100 })],
+    });
+    const period = weeks[0];
+    assert.equal(period.costUsd, 0, 'no dollars anywhere');
+    const entry = period.byModel.find((e) => e.provider === 'kimi');
+    assert.equal(entry.costUsd, null);
+    assert.equal(entry.tokens.billable, 1600);
+    assert.deepEqual(period.tokensByProvider.kimi, entry.tokens);
+  });
+
+  test('half-open at both period ends, exactly as the cost is', () => {
+    const events = [
+      ev({ ts: wStart - 1, key: 'prev', output: 3 }),
+      ev({ ts: wStart, key: 'atStart', output: 5 }),
+      ev({ ts: endEx - 1, key: 'lastMs', output: 7 }),
+    ];
+    // `now` has to be inside the period for its bucket to exist, so read the
+    // history at the period's last millisecond.
+    const { weeks } = history.usageHistory(events, endEx - 1);
+    assert.equal(weeks[0].tokensByProvider.claude.output, 12, 'start inclusive, end exclusive');
+    assert.equal(weeks[1].tokensByProvider.claude.output, 3, 'the ms before belongs to the previous week');
+  });
+
+  test('the months list carries the same per-tool shape as the weeks list', () => {
+    const { months } = history.usageHistory([ev({ ts: at, key: 'o1', output: 1000 })], NOW, {
+      codexEvents: [cx({ output: 7 })],
+    });
+    assert.deepEqual(Object.keys(months[0].tokensByProvider).sort(), ['claude', 'codex']);
+    assert.equal(months[0].tokensByProvider.codex.billable, 7);
+  });
+
+  test('a Codex tier that cannot be priced still contributes its tokens to the subtotal', () => {
+    const codex = [
+      cx({ output: 100 }),
+      cx({ tier: 'ultrafast', output: 50 }), // no published row for that tier
+    ];
+    const { weeks } = history.usageHistory([], NOW, { codexEvents: codex });
+    const period = weeks[0];
+    assert.equal(period.tokensByProvider.codex.billable, 150, 'both turns counted');
+    const entry = period.byModel.find((e) => e.provider === 'codex');
+    assert.equal(entry.isFloor, true, 'part of the model was excluded from the price');
+    assert.equal(entry.tokens.billable, 150, 'but not from the count');
+    assert.equal(entry.costUsd, codexPricing.codexCost(codex, wStart, endEx, false).totalUsd);
+  });
+});
+
+/**
+ * `PeriodUsage.tokenFloorCausesByProvider`.
+ *
+ * Narrower than `isFloor` on purpose: `isFloor` answers the money question, and
+ * a period can be a cost floor with every token count exact. What sets this is
+ * source behaviour only — the recorder did not record, or the reader could not
+ * read.
+ */
+test.describe('tokenFloorCausesByProvider marks missing counts, with causes, not missing prices', () => {
+  const wStart = history.weekStartMs(NOW);
+  const at = wStart + HOUR;
+  const cx = (over) => ({ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 0, cachedInput: 0, cacheWrite: 0, output: 0, ...over });
+  const gm = (over) => ({ ts: at, model: 'gemini-2.5-pro', input: 0, cached: 0, output: 0, thoughts: 0, tool: 0, longPrompt: false, ...over });
+  const km = (over) => ({ ts: at, model: 'kimi-code/k2', input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...over });
+
+  test('a fully read, fully priced Claude week marks nothing', () => {
+    const { weeks } = history.usageHistory([ev({ ts: at, key: 'o1', output: 1000 })], NOW);
+    assert.deepEqual(weeks[0].tokenFloorCausesByProvider, {});
+    assert.equal(weeks[0].isFloor, false);
+  });
+
+  test('an unpriced model makes the period a cost floor and leaves every count exact', () => {
+    const { weeks } = history.usageHistory([ev({ ts: at, key: 'x', model: 'claude-not-real', output: 1000 })], NOW);
+    assert.equal(weeks[0].isFloor, true, 'the DOLLARS are a lower bound');
+    assert.deepEqual(weeks[0].tokenFloorCausesByProvider, {}, 'the TOKENS are not');
+    assert.equal(weeks[0].tokensByProvider.claude.output, 1000);
+  });
+
+  test('Gemini is marked whenever it has usage, priced or not', () => {
+    const priced = history.usageHistory([], NOW, { geminiEvents: [gm({ output: 100 })] });
+    assert.deepEqual(priced.weeks[0].tokenFloorCausesByProvider, { gemini: ['unrecorded-calls'] });
+    // Nothing priced: floorCausesByProvider carries no 'unrecorded-calls', and
+    // the mark must not be derived from it.
+    const unpriced = history.usageHistory([], NOW, {
+      geminiEvents: [gm({ model: 'unknown', noModel: true, output: 100 })],
+    });
+    assert.equal((unpriced.floorCausesByProvider.gemini || []).includes('unrecorded-calls'), false);
+    assert.deepEqual(unpriced.weeks[0].tokenFloorCausesByProvider, { gemini: ['unrecorded-calls'] },
+      'the cost note has no cause to lend, so the token side states its own');
+  });
+
+  test('Codex is marked on the zero-recorded-write pattern, including on an unpriced model', () => {
+    const priced = history.usageHistory([], NOW, { codexEvents: [cx({ output: 10, cachedInput: 5000 })] });
+    assert.deepEqual(priced.weeks[0].tokenFloorCausesByProvider, { codex: ['unrecorded-writes'] });
+    const unpriced = history.usageHistory([], NOW, {
+      codexEvents: [cx({ model: 'gpt-9-imaginary', output: 10, cachedInput: 5000 })],
+    });
+    assert.deepEqual(unpriced.weeks[0].tokenFloorCausesByProvider, { codex: ['unrecorded-writes'] },
+      'the writes are missing whatever the price');
+  });
+
+  test('a Codex week that recorded its writes is exact', () => {
+    const { weeks } = history.usageHistory([], NOW, {
+      codexEvents: [cx({ output: 10, inputUncached: 4000, cacheWrite: 2000 })],
+    });
+    assert.deepEqual(weeks[0].tokenFloorCausesByProvider, {});
+  });
+
+  test('a Fast-requested tier is a cost cause and never a token one', () => {
+    const { weeks, floorCausesByProvider } = history.usageHistory([], NOW, {
+      codexEvents: [cx({ tier: 'fast', output: 10, inputUncached: 8 })],
+    });
+    assert.deepEqual(floorCausesByProvider.codex, ['fast-requested']);
+    assert.equal(weeks[0].isFloor, true);
+    assert.deepEqual(weeks[0].tokenFloorCausesByProvider, {});
+  });
+
+  test('a known-unread range marks only the tool it belongs to', () => {
+    const { weeks } = history.usageHistory([ev({ ts: at, key: 'o1', output: 1000 })], NOW, {
+      codexEvents: [cx({ output: 10, inputUncached: 8 })],
+      unreadRanges: { claude: [{ fromMs: at, throughMs: at }] },
+    });
+    assert.deepEqual(weeks[0].tokenFloorCausesByProvider, { claude: ['unread-range'] }, 'Codex read its own week fine');
+  });
+
+  test('it is always a subset of the tools that actually have a count', () => {
+    // Claude is known-incomplete but has NO usage in the period, so there is no
+    // count for "en az" to qualify. The period is still a cost floor, and
+    // incompleteProviders still names the gap.
+    const { weeks, incompleteProviders } = history.usageHistory([], NOW, {
+      codexEvents: [cx({ output: 10, inputUncached: 8 })],
+      unreadRanges: { claude: [{ fromMs: at, throughMs: at }] },
+    });
+    assert.deepEqual(Object.keys(weeks[0].tokensByProvider), ['codex']);
+    assert.deepEqual(weeks[0].tokenFloorCausesByProvider, {});
+    assert.equal(weeks[0].isFloor, true, 'the period-level floor still says it');
+    assert.deepEqual(incompleteProviders, ['claude'], 'and the gap is still named');
+  });
+
+  test('an empty period marks nothing', () => {
+    const wk2 = weeksBack(NOW, 2);
+    const { weeks } = history.usageHistory(
+      [ev({ ts: wk2 + HOUR, key: 'old', output: 1000 }), ev({ ts: wStart + HOUR, key: 'new', output: 1000 })],
+      NOW,
+    );
+    assert.equal(weeks[1].hasUsage, false);
+    assert.deepEqual(weeks[1].tokenFloorCausesByProvider, {});
+  });
+
+  test('several tools marked at once keep the fixed claude, codex, gemini, kimi order', () => {
+    const { weeks, usageProviders } = history.usageHistory([ev({ ts: at, key: 'o1', output: 1000 })], NOW, {
+      codexEvents: [cx({ output: 10, cachedInput: 5000 })],
+      geminiEvents: [gm({ output: 100 })],
+      kimiEvents: [km({ output: 5 })],
+      unreadRanges: { kimi: [{ fromMs: at, throughMs: at }], claude: [{ fromMs: at, throughMs: at }] },
+    });
+    assert.deepEqual(Object.keys(weeks[0].tokenFloorCausesByProvider), ['claude', 'codex', 'gemini', 'kimi']);
+    assert.deepEqual(Object.keys(weeks[0].tokenFloorCausesByProvider), usageProviders, 'same order as usageProviders');
+    // Each tool states its OWN causes, in HistoryFloorCause order.
+    assert.deepEqual(weeks[0].tokenFloorCausesByProvider, {
+      claude: ['unread-range'],
+      codex: ['unrecorded-writes'],
+      gemini: ['unrecorded-calls'],
+      kimi: ['unread-range'],
+    });
+  });
+
+  test('the months list carries it too', () => {
+    const { months } = history.usageHistory([], NOW, { geminiEvents: [gm({ output: 100 })] });
+    assert.deepEqual(months[0].tokenFloorCausesByProvider, { gemini: ['unrecorded-calls'] });
+  });
+});
+
+/**
+ * The row and the period must not disagree about a tool.
+ *
+ * They compute over different windows on purpose — a quota week versus a local
+ * calendar week — but the rule that turns facts into causes is ONE function
+ * (`history.tokenFloorCauses`). Nothing else in the suite asserts the two
+ * producers agree, so this does: one corpus, placed inside both windows, and the
+ * row's `weeklyTokenFloorCauses` compared against the period's
+ * `tokenFloorCausesByProvider` entry, tool by tool.
+ */
+test.describe('the panel row and the history period agree about every tool', () => {
+  const wStart = history.weekStartMs(NOW);
+  // Monday 01:00 of the current calendar week. NOW is Wednesday noon, so a
+  // trailing 7-day quota window also contains it: both sides see this event.
+  const at = wStart + HOUR;
+  const installed = (events) => ({ installed: true, events, readFailed: false, resultAtMs: NOW, unreadRange: null });
+
+  function bothSides(extra) {
+    const snap = buildSnapshot({
+      now: NOW, rateLimits: { state: 'missing', fiveHour: null, sevenDay: null }, scanOk: true,
+      events: [], codexEvents: [], ...extra,
+    });
+    const period = snap.usageHistory.weeks[0];
+    const out = {};
+    for (const id of ['claude', 'codex', 'gemini', 'kimi']) {
+      const row = snap.providers.find((p) => p.id === id);
+      out[id] = {
+        row: row.weeklyTokenFloorCauses,
+        period: period.tokenFloorCausesByProvider[id] || [],
+        counted: row.weeklyTokens !== null && period.tokensByProvider[id] !== undefined,
+      };
+    }
+    return out;
+  }
+
+  test('Gemini: both sides say unrecorded-calls, and neither says anything else', () => {
+    const sides = bothSides({
+      gemini: installed([{ ts: at, model: 'gemini-2.5-pro', input: 500, cached: 0, output: 100, thoughts: 0, tool: 0, longPrompt: false }]),
+    });
+    assert.equal(sides.gemini.counted, true, 'the fixture has to reach both windows or this proves nothing');
+    assert.deepEqual(sides.gemini.row, ['unrecorded-calls']);
+    assert.deepEqual(sides.gemini.period, sides.gemini.row);
+  });
+
+  test('Codex: both sides say unrecorded-writes off the same recorded pattern', () => {
+    const sides = bothSides({
+      codexEvents: [{ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 5000, cacheWrite: 0, output: 20 }],
+    });
+    assert.equal(sides.codex.counted, true);
+    assert.deepEqual(sides.codex.row, ['unrecorded-writes']);
+    assert.deepEqual(sides.codex.period, sides.codex.row);
+  });
+
+  test('Claude: a recorded, fully read week is exact on both sides', () => {
+    const sides = bothSides({ events: [ev({ ts: at, key: 'o1', output: 1000 })] });
+    assert.equal(sides.claude.counted, true);
+    assert.deepEqual(sides.claude.row, []);
+    assert.deepEqual(sides.claude.period, []);
+  });
+
+  test('Kimi: unpriced end to end, and still exact on both sides', () => {
+    const sides = bothSides({
+      kimi: installed([{ ts: at, model: 'kimi-code/k2', input: 100, output: 50, cacheRead: 0, cacheWrite: 0 }]),
+    });
+    assert.equal(sides.kimi.counted, true);
+    assert.deepEqual(sides.kimi.row, [], 'no published price is not a missing token');
+    assert.deepEqual(sides.kimi.period, []);
+  });
+
+  test('all four at once: every tool matches its own row, and none borrows another tool’s cause', () => {
+    const sides = bothSides({
+      events: [ev({ ts: at, key: 'o1', output: 1000 })],
+      codexEvents: [{ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 5000, cacheWrite: 0, output: 20 }],
+      gemini: installed([{ ts: at, model: 'gemini-2.5-pro', input: 500, cached: 0, output: 100, thoughts: 0, tool: 0, longPrompt: false }]),
+      kimi: installed([{ ts: at, model: 'kimi-code/k2', input: 100, output: 50, cacheRead: 0, cacheWrite: 0 }]),
+    });
+    for (const id of ['claude', 'codex', 'gemini', 'kimi']) {
+      assert.equal(sides[id].counted, true, id);
+      assert.deepEqual(sides[id].period, sides[id].row, `${id}: the two producers disagree`);
+    }
+    assert.deepEqual(sides.claude.row, []);
+    assert.deepEqual(sides.codex.row, ['unrecorded-writes']);
+    assert.deepEqual(sides.gemini.row, ['unrecorded-calls']);
+    assert.deepEqual(sides.kimi.row, []);
+  });
+
+  test('the shared rule is one function, and it rejects a monetary cause by construction', () => {
+    // There is no input by which a caller could pass "unpriced" or a tier cause
+    // in: the function takes three source-behaviour facts and nothing else.
+    assert.deepEqual(history.tokenFloorCauses('claude', { hasCount: true, sourceIncomplete: true }), ['unread-range']);
+    assert.deepEqual(history.tokenFloorCauses('gemini', { hasCount: true }), ['unrecorded-calls']);
+    assert.deepEqual(history.tokenFloorCauses('codex', { hasCount: true, unrecordedWrites: true }), ['unrecorded-writes']);
+    assert.deepEqual(history.tokenFloorCauses('claude', { hasCount: true, unrecordedWrites: true }), [],
+      'the Codex write pattern is Codex-only');
+    assert.deepEqual(history.tokenFloorCauses('gemini', { hasCount: false, sourceIncomplete: true }), [],
+      'no amount, no bound — whatever the facts');
+    assert.deepEqual(
+      history.tokenFloorCauses('codex', { hasCount: true, sourceIncomplete: true, unrecordedWrites: true }),
+      ['unread-range', 'unrecorded-writes'],
+      'and the order is the one HistoryFloorCause lists',
+    );
+  });
+
+  test('hasAnyTokens counts a cache-read-only week as a real measurement', () => {
+    // `billable` excludes cacheRead, so gating on it would call a week of pure
+    // cache reads "no amount" and drop a legitimate floor cause.
+    assert.equal(history.hasAnyTokens({ input: 0, output: 0, cacheWrite: 0, cacheRead: 9000, billable: 0 }), true);
+    assert.equal(history.hasAnyTokens({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0, billable: 0 }), false);
+    assert.equal(history.hasAnyTokens(null), false);
+  });
+});
+
+/**
+ * `PeriodModelCost.tokens` is typed nullable so the boundary can say "absent",
+ * but main must never actually send that: an entry exists only where usage
+ * produced it. The invariant is tested rather than typed.
+ */
+test('every byModel entry main emits carries a real count, never null', () => {
+  const wStart = history.weekStartMs(NOW);
+  const at = wStart + HOUR;
+  const out = history.usageHistory(
+    [
+      ev({ ts: at, key: 'o1', model: 'claude-opus-5', output: 1000 }),
+      ev({ ts: at, key: 'u1', model: 'claude-not-a-real-model', output: 7 }),
+    ],
+    NOW,
+    {
+      codexEvents: [
+        { ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 0, cacheWrite: 0, output: 20 },
+        { ts: at, model: 'gpt-9-imaginary', tier: 'standard', inputUncached: 5, cachedInput: 0, cacheWrite: 0, output: 5 },
+      ],
+      geminiEvents: [
+        { ts: at, model: 'gemini-2.5-pro', input: 10, cached: 0, output: 1, thoughts: 0, tool: 0, longPrompt: false },
+        { ts: at, model: 'unknown', noModel: true, input: 3, cached: 0, output: 1, thoughts: 0, tool: 0, longPrompt: false },
+      ],
+      kimiEvents: [{ ts: at, model: 'kimi-code/k2', input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }],
+    },
+  );
+  let entries = 0;
+  let unpriced = 0;
+  for (const period of [...out.weeks, ...out.months]) {
+    for (const entry of period.byModel) {
+      entries += 1;
+      if (entry.costUsd === null) unpriced += 1;
+      assert.notEqual(entry.tokens, null, `${entry.provider}/${entry.model}: tokens must never be null`);
+      assert.deepEqual(
+        Object.keys(entry.tokens).sort(),
+        ['billable', 'cacheRead', 'cacheWrite', 'input', 'output'],
+        `${entry.provider}/${entry.model}`,
+      );
+      assert.equal(entry.tokens.billable, entry.tokens.input + entry.tokens.output + entry.tokens.cacheWrite);
+      assert.ok(
+        history.hasAnyTokens(entry.tokens),
+        `${entry.provider}/${entry.model}: an entry exists only where usage produced it`,
+      );
+    }
+  }
+  assert.ok(entries >= 14, `too few entries to prove anything (${entries})`);
+  assert.ok(unpriced >= 6, `the fixture must include unpriced entries, which is where null would hide (${unpriced})`);
 });

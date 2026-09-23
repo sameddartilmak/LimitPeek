@@ -50,6 +50,9 @@ const INPUTS = [
  */
 export const PACKAGE_GLOBS = [
   'index.html',
+  // The key-entry window's document (ADR-003 A8). Loaded by main from disk,
+  // like index.html, and built from src/key-entry.ts into dist/.
+  'key-entry.html',
   'styles/**/*.css',
   'assets/**/*',
   'dist/shared/**/*.js',

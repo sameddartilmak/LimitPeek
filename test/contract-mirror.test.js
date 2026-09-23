@@ -109,6 +109,16 @@ test('every sendSync channel main serves sets returnValue on all paths', () => {
       `an early return in ${name} would leave returnValue unset and hang the renderer`,
     );
   }
+
+  // The key-entry window's sync channel lives in the key service, and the stake
+  // is the same: an unset `returnValue` would be a consent page that never
+  // paints, on the one screen where a secret is typed.
+  const service = fs.readFileSync(path.join(ROOT, 'src', 'main', 'keys', 'service.js'), 'utf8');
+  const start = service.indexOf('IPC_KEY_ENTRY.ENTRY_INFO');
+  assert.notEqual(start, -1, 'the entry-info listener is gone');
+  const body = service.slice(start, service.indexOf('});', start));
+  assert.ok(body.includes('event.returnValue ='), 'ENTRY_INFO must assign returnValue');
+  assert.equal(/return;/.test(body), false, 'an early return would hang the entry page');
 });
 
 test('the anchor channel now comes from the contract, not from our extension', () => {
@@ -136,7 +146,22 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   assert.ok(declared.has('setTheme'), 'contract.ts should declare setTheme()');
   assert.ok(declared.has('onPanelVisibility'), 'contract.ts should declare onPanelVisibility()');
   assert.ok(declared.has('setLanguage'), 'contract.ts should declare setLanguage()');
-  assert.equal(declared.size, 15, `expected the 15 declared methods, saw ${[...declared].join(',')}`);
+  // ADR-003 Amendment 8 added the three optional-key channels. They are
+  // write-only by construction: there is no getter in this set, and a method
+  // that returned a key — or its length, or a mask of it — would be K3's
+  // violation, which is why the count is asserted rather than left open.
+  assert.ok(declared.has('requestKeyEntry'), 'contract.ts should declare requestKeyEntry()');
+  assert.ok(declared.has('removeKey'), 'contract.ts should declare removeKey()');
+  assert.ok(declared.has('openTokenPage'), 'contract.ts should declare openTokenPage()');
+  for (const forbidden of ['getKey', 'readKey', 'keyPreview', 'maskedKey']) {
+    assert.equal(declared.has(forbidden), false, `${forbidden}() would be a key getter (K3)`);
+  }
+  // 19 since setPlanLabel() joined the setters: the plan the user says they are
+  // on, per tool. Write-only like the rest; the value comes BACK on the snapshot
+  // as `ProviderSnapshot.planLabel`, not from a getter here. The count stays
+  // asserted so a key getter still cannot arrive unnoticed (K3).
+  assert.ok(declared.has('setPlanLabel'), 'contract.ts should declare setPlanLabel()');
+  assert.equal(declared.size, 19, `expected the 19 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const STATE_THRESHOLDS = { ... } as const;`. */
@@ -311,6 +336,85 @@ test('every provider row declares experimental, true only for Gemini and Kimi, a
   }
 });
 
+test('every provider row carries the key fields, and only Copilot is key-capable (A8, K24)', () => {
+  const { buildSnapshot, loadingSnapshot } = require('../src/core/snapshot');
+  const fields = interfaceFields('ProviderSnapshot');
+  for (const key of ['keyCapable', 'keyState', 'keyStoredAt', 'creditUsage']) {
+    assert.ok(fields.includes(key), `contract.ts declares ProviderSnapshot.${key}`);
+  }
+  assert.ok(contractSource().includes('export interface CreditUsage'), 'contract.ts declares CreditUsage');
+  assert.ok(contractSource().includes('export type KeyState'), 'contract.ts declares KeyState');
+
+  const now = new Date(2026, 8, 9, 12, 0, 0).getTime();
+  const installed = { installed: true, events: [], resultAtMs: now };
+  const keys = {
+    copilot: {
+      keyState: 'stored',
+      keyStoredAt: '2026-09-09T09:00:00.000Z',
+      creditUsage: {
+        grossCredits: 10,
+        includedCredits: 8,
+        billedCredits: 2,
+        periodStart: '2026-09-01T00:00:00.000Z',
+        periodEnd: '2026-10-01T00:00:00.000Z',
+        fetchedAt: '2026-09-09T11:00:00.000Z',
+      },
+    },
+  };
+  const creditFields = interfaceFields('CreditUsage');
+  // The reply carries no allowance, so the shape carries no denominator: there
+  // must be nothing here a percentage could be built from (A6.3).
+  for (const forbidden of ['usedPercentage', 'allowance', 'entitlement', 'remaining', 'limit']) {
+    assert.equal(creditFields.includes(forbidden), false, `CreditUsage must not declare ${forbidden}`);
+  }
+
+  for (const s of [
+    buildSnapshot({ now, events: [], rateLimits: null, scanOk: true, gemini: installed, kimi: installed, keys }),
+    loadingSnapshot(now, undefined, undefined, undefined, keys),
+  ]) {
+    for (const p of s.providers) {
+      for (const key of Object.keys(p)) assert.ok(fields.includes(key), `${p.id}: undeclared key "${key}"`);
+      assert.equal(p.keyCapable, p.id === 'copilot', p.id);
+      if (p.id === 'copilot') {
+        assert.equal(p.keyState, 'stored');
+        assert.equal(p.keyStoredAt, '2026-09-09T09:00:00.000Z');
+        assert.deepEqual(Object.keys(p.creditUsage).sort(), creditFields.slice().sort());
+      } else {
+        // A provider that is not key-capable reads as "no key", whatever a
+        // caller passes: the offer itself would be a claim that a key helps.
+        assert.equal(p.keyState, 'none', p.id);
+        assert.equal(p.keyStoredAt, null, p.id);
+        assert.equal(p.creditUsage, null, p.id);
+      }
+    }
+  }
+
+  // With no service at all (an older main, or a collector in a test) every row
+  // reads as "no key" rather than throwing or inventing a state.
+  for (const p of buildSnapshot({ now, events: [], rateLimits: null, scanOk: true }).providers) {
+    assert.equal(p.keyState, 'none', p.id);
+    assert.equal(p.creditUsage, null, p.id);
+  }
+});
+
+test('the key-entry window’s channels are mirrored exactly, and are not on the panel’s surface', () => {
+  const { IPC_KEY_ENTRY } = require('../src/shared/contract');
+  const src = contractSource();
+  const start = src.indexOf('export const IPC_KEY_ENTRY');
+  assert.notEqual(start, -1, 'contract.ts no longer declares IPC_KEY_ENTRY');
+  const block = src.slice(start, src.indexOf('} as const;', start));
+  const expected = {};
+  for (const m of block.matchAll(/^\s*([A-Z_]+):\s*'([^']+)'/gm)) expected[m[1]] = m[2];
+  assert.deepEqual(IPC_KEY_ENTRY, expected);
+  // Four channels, all under the same prefix, and none of them in `IPC` — the
+  // panel's bridge must not be able to reach the entry window's surface.
+  assert.equal(Object.keys(expected).length, 4);
+  for (const channel of Object.values(expected)) {
+    assert.ok(channel.startsWith('keys:'), channel);
+    assert.equal(Object.values(IPC).includes(channel), false, `${channel} is also a panel channel`);
+  }
+});
+
 test('both weekly costs main produces have exactly the WeeklyCost shape contract.ts declares', () => {
   // `unrecordedWriteEvents` is always present (0 for Claude): a field the
   // renderer's floor check reads must not be missing on one provider.
@@ -413,13 +517,51 @@ test('navigation and window-open are blocked process wide', () => {
   assert.ok(src.includes("action: 'deny'"));
 });
 
+/**
+ * Ways a process can put bytes on a wire or spawn something that will.
+ *
+ * Grown for ADR-003 Amendment 5 (Phase B): once ONE module is allowed to make a
+ * request, the list has to name every OTHER way a key could leave — `fetch`, a
+ * socket, a websocket, a child process, http2, UDP, and DNS or TLS reached
+ * directly. Both quote styles, because a single-quote-only list is one
+ * autoformatter away from being blind.
+ */
 const NETWORK_NEEDLES = [
   'axios', 'node-fetch', 'undici', "require('got')", "from 'got'",
   "require('node:http')", "require('http')", "require('node:https')", "require('https')",
   "require('node:net')", "require('net')", "require('node:dgram')",
   "from 'node:http'", "from 'node:https'", "from 'node:net'",
   'createServer', 'crashReporter.start', 'setUploadToServer',
+  'fetch(', 'WebSocket', 'child_process', 'http2', 'dgram',
+  "'node:tls'", '"node:tls"', "'tls'", '"tls"',
+  "'node:dns'", '"node:dns"', "'dns'", '"dns"',
+  '"node:http"', '"node:https"', '"node:net"', '"node:dgram"',
+  '"http"', '"https"', '"net"',
 ];
+
+/**
+ * The exceptions, each with the condition that justifies it. Anything not listed
+ * here is an offender wherever it appears.
+ *
+ * `src/main/keys/keyed-net.js` is the ONE module ADR-003 Amendment 5 K13 permits
+ * to make a request. It is exempt from this list as a whole and guarded instead
+ * by `test/keys-source-scan.test.js`, which asserts the stronger property: that
+ * it is the only file in main or core that takes `net` from electron, that it
+ * calls `net.request(` exactly once, and that no Node network module appears in
+ * it at all.
+ *
+ * The two Antigravity files predate Phase B and spawn `tasklist.exe` and the
+ * installer by ABSOLUTE PATH through `execFile` (ADR-003 Amendment 2 C3-C5):
+ * no shell, no PATH lookup, no network. They are named one by one so a third
+ * `child_process` import anywhere is a failure.
+ */
+const NEEDLE_EXCEPTIONS = {
+  child_process: [
+    'src/core/antigravity/cli-install.js',
+    'src/core/antigravity/process.js',
+  ],
+};
+const NETWORK_EXEMPT_FILES = ['src/main/keys/keyed-net.js'];
 
 function scanForNetwork(dir, skip = () => false) {
   const offenders = [];
@@ -430,16 +572,35 @@ function scanForNetwork(dir, skip = () => false) {
       if (skip(path.relative(ROOT, full))) continue;
       if (entry.isDirectory()) { walk(full); continue; }
       if (!/\.(js|mjs|cjs|ts|html)$/.test(entry.name)) continue;
+      const rel = path.relative(ROOT, full).split(path.sep).join('/');
+      if (NETWORK_EXEMPT_FILES.includes(rel)) continue;
       const text = fs.readFileSync(full, 'utf8');
       const code = text.split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n');
       for (const needle of NETWORK_NEEDLES) {
-        if (code.includes(needle)) offenders.push(`${path.relative(ROOT, full)}: ${needle}`);
+        const allowed = NEEDLE_EXCEPTIONS[needle] || [];
+        if (allowed.includes(rel)) continue;
+        if (code.includes(needle)) offenders.push(`${rel}: ${needle}`);
       }
     }
   };
   walk(dir);
   return offenders;
 }
+
+test('the network scan has teeth: every needle and every exception is reachable', () => {
+  // A scan that matches nothing proves nothing. The exempt file and the two
+  // named exceptions must all still exist, or the exception list is stale and is
+  // silently widening the scan's blind spot.
+  for (const rel of [...NETWORK_EXEMPT_FILES, ...Object.values(NEEDLE_EXCEPTIONS).flat()]) {
+    assert.ok(fs.existsSync(path.join(ROOT, rel)), `${rel} no longer exists; drop its exception`);
+  }
+  // And the exempt file really is the one that makes the request.
+  const keyed = fs.readFileSync(path.join(ROOT, NETWORK_EXEMPT_FILES[0]), 'utf8');
+  assert.ok(keyed.includes('net.request('), 'the exemption belongs to the module that makes the request');
+  assert.ok(NETWORK_NEEDLES.includes('fetch('));
+  assert.ok(NETWORK_NEEDLES.includes('child_process'));
+  assert.ok(NETWORK_NEEDLES.includes("'node:tls'"));
+});
 
 test('no HTTP client and no listening socket in the collector, main process or bridge', () => {
   // The Gemini and Kimi readers (ADR-003 A6) are named explicitly: they are

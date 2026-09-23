@@ -42,6 +42,9 @@ const ROOT = path.join(HERE, '..', '..');
 const SUITES = [
   { name: 'panel', file: 'panel.js', fixture: 'panel' },
   { name: 'cost', file: 'cost.js', fixture: 'cost' },
+  // The key-entry window (ADR-003 A8): its own document, its own preload, so
+  // it needs no provider fixture at all.
+  { name: 'key-entry', file: 'key-entry.js', fixture: 'cost' },
 ];
 
 function electronBin() {

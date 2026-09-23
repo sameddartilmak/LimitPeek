@@ -21,3 +21,9 @@ agent-orchestrator/logs/
 
 # landing page: generated screenshots
 site/screenshots/
+
+# Render koşusunun çıktısı: makineye ve koşuya özel, her koşuda üzerine yazılır.
+render-out.txt
+
+# Paketleme sırasında yazılır (scripts/write-build-info.js); commit edilirse hep bir önceki commit'i anlatır.
+src/main/build-info.json
