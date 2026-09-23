@@ -70,6 +70,25 @@ test.describe('global dedup on requestId', () => {
     assert.equal(agg.dedupe([b, a])[0].ts, 50);
   });
 
+  test('one response written as several lines keeps the FINAL output count', () => {
+    // Claude Code writes a line per content block; output grows line by line,
+    // input and cache stay the same.
+    const lines = [
+      ev({ ts: 100, key: 'req_1', input: 5, output: 12, cacheRead: 900 }),
+      ev({ ts: 101, key: 'req_1', input: 5, output: 40, cacheRead: 900 }),
+      ev({ ts: 102, key: 'req_1', input: 5, output: 377, cacheRead: 900 }),
+    ];
+    const out = agg.dedupe(lines);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].output, 377);
+    assert.equal(out[0].ts, 100, 'the response is still placed at its first line');
+    assert.equal(out[0].input, 5);
+    assert.equal(out[0].cacheRead, 900);
+    // Order of arrival does not matter, and the inputs are not mutated.
+    assert.equal(agg.dedupe(lines.slice().reverse())[0].output, 377);
+    assert.equal(lines[0].output, 12);
+  });
+
   test('distinct keys are never merged', () => {
     const out = agg.dedupe([
       ev({ ts: 1, key: 'req_1' }),

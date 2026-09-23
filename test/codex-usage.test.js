@@ -125,15 +125,18 @@ test.describe('codex cost (OpenAI published prices)', () => {
     assert.equal(cost.byClass.input, 4, '1M uncached x $4');
     assert.equal(cost.byClass.cacheRead, 0.4, '1M cached x $0.40');
     assert.equal(cost.byClass.output, 20, '1M output x $20');
-    assert.equal(cost.totalUsd, 24.4);
+    // Cached reads with 0 RECORDED writes on a model that charges for writes:
+    // since 2026-09-23 the uncached input is priced at the write rate as an
+    // UPPER BOUND, the extra ($5 - $4) x 1M = $1 sitting in cacheWrite5m.
+    assert.equal(cost.byClass.cacheWrite5m, 1, '1M uncached x ($5 write - $4 input)');
+    assert.equal(cost.totalUsd, 25.4);
     assert.equal(cost.pricesAsOf, '2026-09-14');
     assert.equal(cost.byModel[0].model, 'gpt-5.6-sol');
-    assert.equal(cost.byModel[0].usd, 24.4);
+    assert.equal(cost.byModel[0].usd, 25.4);
     assert.deepEqual(cost.unpricedModels, []);
     assert.equal(cost.fallbackWriteEvents, 0, 'the Claude TTL fallback is never taken by Codex');
-    // ...but cached reads with 0 RECORDED writes on a model that charges for
-    // writes make the figure a floor (A3 rule 3), carried beside the cost.
-    assert.equal(codexCostDetail(evs, NOW - DAY, NOW, false).writeFloorEvents, 10);
+    assert.equal(cost.unrecordedWriteEvents, 0, 'an upper bound, no longer a floor');
+    assert.equal(codexCostDetail(evs, NOW - DAY, NOW, false).writeFloorEvents, 0);
   });
 
   test('gpt-5.6 charges cache WRITES at 1.25x input; the tier lands in cacheWrite5m', () => {
@@ -396,9 +399,11 @@ test.describe('Codex accounting rules (ADR-002 Amendment 3)', () => {
     const cost = codexCost(evs, SINCE, NOW, false);
     const fast = cost.byModel.find((m) => m.speed === 'fast');
     const std = cost.byModel.find((m) => m.speed === 'standard');
-    assert.equal(fast.usd, r6(0.1 * 4 + 0.01 * 20), '100K in x $4 + 10K out x $20: the Standard row, not Fast');
+    // 100K uncached is a cacheable prompt with 0 recorded writes: priced at the
+    // $5 write rate as an upper bound (2026-09-23).
+    assert.equal(fast.usd, r6(0.1 * 5 + 0.01 * 20), '100K in x $5 + 10K out x $20: the Standard row, not Fast');
     assert.equal(fast.pricedAs, 'gpt-5.6-sol|standard');
-    assert.equal(std.usd, r6(0.1 * 4 + 0.01 * 20), '100K in x $4 + 10K out x $20 (Standard)');
+    assert.equal(std.usd, r6(0.1 * 5 + 0.01 * 20), '100K in x $5 + 10K out x $20 (Standard)');
     assert.equal(cost.totalUsd, r6(fast.usd + std.usd));
     assert.deepEqual(cost.unpricedModels, []);
     assert.equal(cost.fastRequestedEvents, 1);
@@ -433,26 +438,29 @@ test.describe('Codex accounting rules (ADR-002 Amendment 3)', () => {
     assert.equal(codexCost(evs, SINCE, NOW, false).byModel[0].usd, null);
   });
 
-  test('zero recorded writes with cached reads on GPT-5.6 is a floor; on a model without a write price it is not', () => {
+  test('zero recorded writes with cached reads on GPT-5.6 is an upper-bound write surcharge, not a floor; a model without a write price gets none', () => {
     const home = tmpHome();
     const sol = lines(home, [
       metaLine(), turnLine('gpt-5.6-sol'), settingsLine('default'),
       countLine(T + 2 * HOUR, cumOf(100000, 1000, 90000)),
     ], 'rollout-sol.jsonl');
     const detail = codexCostDetail(sol, SINCE, NOW, false);
-    assert.equal(detail.writeFloorEvents, 1);
-    assert.ok(detail.cost.totalUsd > 0, 'still priced: no write count is estimated');
-    assert.equal(detail.cost.byClass.cacheWrite5m, 0, 'no invented write dollars');
+    assert.equal(detail.writeFloorEvents, 0);
+    assert.equal(detail.cost.unrecordedWriteEvents, 0);
+    assert.equal(detail.cost.byClass.cacheWrite5m, r6(0.01 * 1), '10K uncached x ($5 write - $4 input)');
+    assert.equal(detail.cost.byClass.input, r6(0.01 * 4), 'input keeps the input rate');
     const { weeks } = history.usageHistory([], NOW, { codexEvents: sol });
-    assert.equal(weekOf(weeks).isFloor, true, 'the period reads "en az"');
-    assert.equal(weekOf(weeks).byModel[0].isFloor, true, 'and so does the model entry');
+    assert.equal(weekOf(weeks).isFloor, false, 'an upper bound does not read "en az"');
+    assert.equal(weekOf(weeks).byModel[0].isFloor, false, 'nor does the model entry');
 
     const home2 = tmpHome();
     const gpt5 = lines(home2, [
       metaLine(), turnLine('gpt-5'), settingsLine('default'),
       countLine(T + 2 * HOUR, cumOf(100000, 1000, 90000)),
     ], 'rollout-gpt5.jsonl');
-    assert.equal(codexCostDetail(gpt5, SINCE, NOW, false).writeFloorEvents, 0);
+    const d5 = codexCostDetail(gpt5, SINCE, NOW, false);
+    assert.equal(d5.writeFloorEvents, 0);
+    assert.equal(d5.cost.byClass.cacheWrite5m, 0, 'no write price: nothing added');
     assert.equal(history.usageHistory([], NOW, { codexEvents: gpt5 }).weeks.find((w) => w.hasUsage).isFloor, false);
   });
 
@@ -515,13 +523,15 @@ test.describe('Codex accounting rules (ADR-002 Amendment 3)', () => {
       turnLine('gpt-6-astra'), countLine(T + 2 * HOUR, cumOf(200000, 0)),
     ]);
     const cost = codexCost(evs, SINCE, NOW, false);
-    // Priority requested on both: each model's own Standard row (A3.18).
-    assert.equal(cost.byModel.find((m) => m.model === 'gpt-5.6-sol').usd, r6(0.1 * 4));
-    assert.equal(cost.byModel.find((m) => m.model === 'gpt-6-astra').usd, r6(0.1 * 10));
+    // Priority requested on both: each model's own Standard row (A3.18). 100K
+    // uncached with 0 recorded writes is priced at that row's write rate (upper
+    // bound): sol $5, astra $12.50.
+    assert.equal(cost.byModel.find((m) => m.model === 'gpt-5.6-sol').usd, r6(0.1 * 5));
+    assert.equal(cost.byModel.find((m) => m.model === 'gpt-6-astra').usd, r6(0.1 * 12.5));
     assert.equal(cost.fastRequestedEvents, 2);
   });
 
-  test('A3.17: in a rollout recording only default/priority/fast, turns before the first settings record are Standard, counted', () => {
+  test('A3.17 backfill: turns before the first settings record take the tier it states (priority -> Fast requested)', () => {
     const home = tmpHome();
     const evs = lines(home, [
       metaLine(), turnLine('gpt-5.6-sol'),
@@ -531,18 +541,40 @@ test.describe('Codex accounting rules (ADR-002 Amendment 3)', () => {
       settingsLine('default'),
       countLine(T + 2 * HOUR, cumOf(300000, 30000)),
     ]);
-    assert.deepEqual(evs.map((e) => [e.tier, e.tierAssumable]), [[null, true], ['fast', undefined], ['standard', undefined]]);
+    assert.deepEqual(evs.map((e) => [e.tier, e.tierAssumable, e.preSettings]),
+      [['fast', undefined, undefined], ['fast', undefined, undefined], ['standard', undefined, undefined]]);
     const cost = codexCost(evs, SINCE, NOW, false);
     assert.deepEqual(cost.unpricedModels, []);
-    const assumed = cost.byModel.find((m) => m.speed === 'unknown-tier');
-    assert.equal(assumed.usd, r6(0.1 * 4 + 0.01 * 20));
-    assert.equal(assumed.pricedAs, 'gpt-5.6-sol|standard');
-    assert.equal(cost.assumedTierEvents, 1);
-    assert.equal(cost.fastRequestedEvents, 1);
-    assert.equal(cost.totalUsd, r6(3 * (0.1 * 4 + 0.01 * 20)));
+    assert.equal(cost.byModel.find((m) => m.speed === 'unknown-tier'), undefined, 'no turn is left without a tier');
+    const fast = cost.byModel.find((m) => m.speed === 'fast');
+    // Each turn: 100K uncached at the $5 write rate (upper bound) + 10K out x $20.
+    assert.equal(fast.usd, r6(2 * (0.1 * 5 + 0.01 * 20)));
+    assert.equal(fast.pricedAs, 'gpt-5.6-sol|standard');
+    assert.equal(cost.assumedTierEvents, 0, 'backfilled, not assumed');
+    assert.equal(cost.fastRequestedEvents, 2, 'the backfilled turn is Fast requested like any other');
+    assert.equal(cost.totalUsd, r6(3 * (0.1 * 5 + 0.01 * 20)));
     const { weeks } = history.usageHistory([], NOW, { codexEvents: evs });
-    assert.equal(weekOf(weeks).isFloor, true);
+    assert.equal(weekOf(weeks).isFloor, true, 'Fast requested is still a floor');
     assert.equal(weekOf(weeks).byModel[0].isFloor, true);
+  });
+
+  test('A3.17 backfill: a pre-settings turn before a first `default` record is priced Standard, not assumed', () => {
+    const home = tmpHome();
+    const evs = lines(home, [
+      metaLine(), turnLine('gpt-5.6-sol'),
+      countLine(T, cumOf(1000, 100)), // no tier recorded yet; 1,000 < 1,024: no write surcharge
+      settingsLine('default'),
+      countLine(T + HOUR, cumOf(2000, 200)),
+    ]);
+    assert.deepEqual(evs.map((e) => [e.tier, e.tierAssumable, e.preSettings]),
+      [['standard', undefined, undefined], ['standard', undefined, undefined]]);
+    const cost = codexCost(evs, SINCE, NOW, false);
+    assert.deepEqual(cost.byModel.map((m) => [m.speed, m.pricedAs]), [['standard', 'gpt-5.6-sol|standard']]);
+    assert.equal(cost.totalUsd, r6(2 * (0.001 * 4 + 0.0001 * 20)));
+    assert.equal(cost.assumedTierEvents, 0);
+    assert.equal(cost.fastRequestedEvents, 0);
+    const { weeks } = history.usageHistory([], NOW, { codexEvents: evs });
+    assert.equal(weekOf(weeks).isFloor, false, 'nothing assumed: an exact figure');
   });
 
   test('A3.17: a rollout with no settings record at all is eligible too', () => {
@@ -601,9 +633,11 @@ test.describe('Codex accounting rules (ADR-002 Amendment 3)', () => {
     lines(home, [metaLine(), turnLine('gpt-5.6-sol'), countLine(T, cumOf(1000, 100)), settingsLine('flex')], 'rollout-flex.jsonl');
     const evs = lines(home, [metaLine(), turnLine('gpt-5.6-sol'), countLine(T, cumOf(1000, 100)), settingsLine('default')], 'rollout-ok.jsonl');
     const cost = codexCost(evs, SINCE, NOW, false);
-    assert.equal(cost.assumedTierEvents, 1);
-    const rows = cost.byModel.filter((m) => m.speed === 'unknown-tier').map((m) => m.usd === null);
-    assert.deepEqual(rows.sort(), [false, true], 'one priced group, one unpriced group');
+    // The eligible rollout's pre-settings turn is backfilled to its first
+    // record's `default`; the flex rollout's stays unknown and unpriced.
+    assert.equal(cost.assumedTierEvents, 0);
+    assert.deepEqual(cost.byModel.filter((m) => m.speed === 'unknown-tier').map((m) => m.usd), [null]);
+    assert.equal(cost.byModel.find((m) => m.speed === 'standard').usd, r6(0.001 * 4 + 0.0001 * 20), 'still priced');
   });
 });
 
@@ -678,25 +712,25 @@ test.describe('the running total is trusted only while it is monotonic (ADR-002 
   });
 });
 
-/* ------------------------------------------- A3.9: the broadened write floor */
+/* ---------------------- A3.9, changed 2026-09-23: the broadened write upper bound */
 
-test('a first turn with no cache read but a cacheable prompt on GPT-5.6 is a write floor (A3.9)', () => {
+test('a first turn with no cache read but a cacheable prompt on GPT-5.6 takes the write surcharge, not a floor', () => {
   const home = tmpHome();
   const at = (i) => NOW - HOUR + i;
   const evs = [];
   fs.writeFileSync(rolloutPath(home, 'rollout-first.jsonl'), [
     metaLine(), turnLine('gpt-5.6-sol'), settingsLine('default'),
-    countLine(at(0), cumOf(1024, 10)), // uncached 1,024: cacheable -> floor
+    countLine(at(0), cumOf(1024, 10)), // uncached 1,024: cacheable -> surcharge
   ].join('\n') + '\n');
   fs.writeFileSync(rolloutPath(home, 'rollout-small.jsonl'), [
     metaLine(), turnLine('gpt-5.6-sol'), settingsLine('default'),
-    countLine(at(1), cumOf(1023, 10)), // below the cacheable minimum -> not a floor
+    countLine(at(1), cumOf(1023, 10)), // below the cacheable minimum -> none
   ].join('\n') + '\n');
   evs.push(...codexUsageEvents({ now: NOW, startMs: NOW - DAY, home }));
-  const floorOf = (i) => codexCostDetail(evs.filter((e) => e.ts === at(i)), NOW - DAY, NOW, false).writeFloorEvents;
-  assert.equal(floorOf(0), 1);
-  assert.equal(floorOf(1), 0);
-  assert.equal(codexCost(evs, NOW - DAY, NOW, false).unrecordedWriteEvents, 1);
+  const writeUsdOf = (i) => codexCostDetail(evs.filter((e) => e.ts === at(i)), NOW - DAY, NOW, false).cost.byClass.cacheWrite5m;
+  assert.equal(writeUsdOf(0), 1024 / 1e6, '1,024 x ($5 - $4) per 1M');
+  assert.equal(writeUsdOf(1), 0);
+  assert.equal(codexCost(evs, NOW - DAY, NOW, false).unrecordedWriteEvents, 0, 'never a floor now');
 });
 
 /* ----------------------------------- old turns are folded, prices are not changed */
@@ -707,9 +741,9 @@ test('turns older than the raw window fold into UTC 15-minute buckets without ch
   const rows = [metaLine(), turnLine('gpt-5.6-sol'), settingsLine('priority')];
   // Within one local day, three kinds of turn, spread over several 15-minute
   // slots (review F9):
-  //   kind 0: cached > 0, writes 0              -> write floor
-  //   kind 1: cached 0, uncached 500 (< 1,024)  -> NOT a floor
-  //   kind 2: recorded writes > 0               -> a cacheWriteEvent, not a floor
+  //   kind 0: cached > 0, writes 0              -> write surcharge (upper bound)
+  //   kind 1: cached 0, uncached 500 (< 1,024)  -> no surcharge
+  //   kind 2: recorded writes > 0               -> a cacheWriteEvent, no surcharge
   const cum = { input_tokens: 0, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0, total_tokens: 0 };
   for (let i = 0; i < 12; i += 1) {
     const kind = i % 3;
@@ -735,7 +769,11 @@ test('turns older than the raw window fold into UTC 15-minute buckets without ch
   }
   const a = codexCostDetail(raw, start, NOW, false);
   const b = codexCostDetail(folded, start, NOW, false);
-  assert.equal(a.writeFloorEvents, 4, 'only the cached turns are floors');
+  assert.equal(a.writeFloorEvents, 0, 'no floor is counted any more');
+  // Writes: 4 x 3,000 recorded at $5, plus the surcharge on the 4 cached turns'
+  // 1,000 uncached each at ($5 - $4). The folded buckets must keep the surcharge
+  // on exactly those turns, not spread it over a whole slot.
+  assert.equal(a.cost.byClass.cacheWrite5m, Math.round(((4 * 3000 * 5 + 4 * 1000 * 1) / 1e6) * 1e6) / 1e6);
   assert.equal(a.cost.cacheWriteEvents, 4);
   assert.deepEqual(b.cost.byClass, a.cost.byClass);
   assert.equal(b.cost.totalUsd, a.cost.totalUsd);

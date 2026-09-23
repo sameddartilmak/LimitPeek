@@ -435,7 +435,9 @@ test('both weekly costs main produces have exactly the WeeklyCost shape contract
   assert.deepEqual(Object.keys(claude).sort(), fields);
   assert.deepEqual(Object.keys(codex).sort(), fields);
   assert.equal(claude.unrecordedWriteEvents, 0);
-  assert.equal(codex.unrecordedWriteEvents, 1, 'cached read, 0 recorded writes, on a model with a write price');
+  // Present but 0 since 2026-09-23: a cached read with 0 recorded writes on a
+  // write-priced model is priced as an upper bound, no longer counted as a floor.
+  assert.equal(codex.unrecordedWriteEvents, 0, 'cached read, 0 recorded writes: an upper bound, not a floor');
   // ADR-002 A3.15: always present on both, a boolean, and false for a fully
   // read corpus — the renderer's degraded caveat and floor read only this.
   assert.ok(fields.includes('sourceIncomplete'), 'contract.ts declares sourceIncomplete');

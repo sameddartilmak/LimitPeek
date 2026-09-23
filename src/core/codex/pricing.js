@@ -210,32 +210,6 @@ function classifyCodexEvent(ev) {
   return { longContext, writeFloor, hasWrite };
 }
 
-/**
- * Whether this turn's RECORDED cache-write count understates the writes that
- * really happened — i.e. whether its cacheWrite TOKEN COUNT is a lower bound.
- *
- * Deliberately PRICE-FREE, and that is the whole difference from
- * `classifyCodexEvent().writeFloor`. That flag asks "may we charge for the
- * missing writes?", so it is gated on the model|tier having a published
- * cache-write row. This one asks "are writes missing from the COUNT?", and the
- * answer does not depend on whether anyone publishes a price for them: Codex's
- * recorder writes 0 cache writes on EVERY record (A3.3, broadened by A3.9), so
- * a turn that read cache — or sent an uncached prompt at or above OpenAI's
- * minimum cacheable size — almost certainly wrote cache that was never
- * recorded. Over-marking here is never false; under-marking is (A3.9).
- *
- * `writeFloor` is OR-ed in for folded buckets only: the flag is decided per raw
- * turn BEFORE folding (A3.12), so a bucket whose other turns did record writes
- * can carry a true flag against a summed `cacheWrite` above zero.
- *
- * Nothing here feeds `WeeklyCost.unrecordedWriteEvents`, which stays a COST
- * cause with its own count and its own dollar wording.
- */
-function unrecordedWriteTokensOf(ev) {
-  if (ev.writeFloor === true) return true;
-  return ev.cacheWrite === 0 && (ev.cachedInput > 0 || ev.inputUncached >= MIN_CACHEABLE_PROMPT);
-}
-
 /** Per-1M-token rate applied to a token count. */
 function cost1M(tokens, rate) {
   return (tokens * rate) / 1e6;
@@ -255,20 +229,17 @@ function speedOf(ev, longContext) {
  * The Codex notional cost for events in [startMs, endMs), plus the per-model
  * floor counts the usage history needs.
  *
- * `writeFloorEvents` counts priced events on a model WITH a write price whose
- * recorded writes are 0 while they read cache or sent a cacheable prompt
- * (rule 3, A3.9): the figure is a floor. The cost carries it as `unrecordedWriteEvents`; it is NOT folded into
- * `fallbackWriteEvents`, whose meaning (and whose on-screen caveat) is Claude's
- * missing TTL split — a different claim.
- * `writeFloorByModel` is the same count per model id.
+ * `writeFloorEvents` / `writeFloorByModel` are kept in the shape and are always
+ * 0 / empty since 2026-09-23: a turn with unrecorded writes is priced at an
+ * UPPER bound instead (see the surcharge below), so it is no longer a floor.
+ * The cost's `unrecordedWriteEvents` is therefore 0 too.
  *
  * `assumedTierEvents` / `fastRequestedEvents` count priced events whose tier was
  * assumed Standard or requested Fast (A3.17-18); `tierFloorByModel` is their
  * sum per model id. Each makes the figure a floor.
  *
- * `unrecordedWriteTokens` is the TOKEN-side floor: true when ANY in-window turn's
- * recorded cache writes understate the real ones, decided with no price lookup so
- * unpriced turns set it too. It never touches `unrecordedWriteEvents`.
+ * `unrecordedWriteTokens` is always false: an unrecorded write is part of the
+ * prompt already counted as input, so the billable token total is not short.
  *
  * @returns {{cost: object|null, writeFloorEvents: number, writeFloorByModel: Map<string, number>,
  *   assumedTierEvents: number, fastRequestedEvents: number, tierFloorByModel: Map<string, number>}}
@@ -279,28 +250,25 @@ function codexCostDetail(events, startMs, endMs, anchored) {
   let totalUsd = 0;
   let seenAny = false;
   let cacheWriteEvents = 0;
-  let writeFloorEvents = 0;
+  // No longer counted (upper bound instead of a floor); kept for the shape.
+  const writeFloorEvents = 0;
   const writeFloorByModel = new Map();
   let assumedTierEvents = 0;
   let fastRequestedEvents = 0;
   /** Per model: priced events carrying a tier floor cause (A3.17-18). */
   const tierFloorByModel = new Map();
-  /**
-   * Any in-window turn whose recorded writes understate the real ones — the
-   * TOKEN floor, decided without a price lookup and therefore set by unpriced
-   * turns too. `writeFloorEvents` below is the COST counterpart and is
-   * deliberately left alone.
-   */
-  let unrecordedWriteTokens = false;
+  // No token-side floor any more; kept for the shape.
+  const unrecordedWriteTokens = false;
 
   for (const ev of events || []) {
     if (!ev || !Number.isFinite(ev.ts)) continue;
     if (ev.ts < startMs || ev.ts >= endMs) continue;
     seenAny = true;
 
-    // Decided ABOVE the price guard: a turn whose model or tier has no
-    // published row still had its writes dropped by the recorder.
-    if (!unrecordedWriteTokens && unrecordedWriteTokensOf(ev)) unrecordedWriteTokens = true;
+    // No token-side floor any more (2026-09-23). An unrecorded write is a
+    // part of the prompt that is already counted in input, so the billable
+    // total is not short. Only the split between input and cache write is
+    // unknown. `unrecordedWriteTokens` stays in the shape and is always false.
 
     // A folded 15-minute bucket stands for `count` turns; a raw event for one.
     const n = Number.isSafeInteger(ev.count) && ev.count > 0 ? ev.count : 1;
@@ -338,17 +306,21 @@ function codexCostDetail(events, startMs, endMs, anchored) {
       tierFloorByModel.set(ev.model, (tierFloorByModel.get(ev.model) || 0) + n);
     }
     if (hasWrite) cacheWriteEvents += n;
-    if (writeFloor) {
-      writeFloorEvents += n;
-      writeFloorByModel.set(ev.model, (writeFloorByModel.get(ev.model) || 0) + n);
-    }
     const writeRate = price.cacheWrite != null ? price.cacheWrite : price.input;
+    // UPPER BOUND for writes Codex did not record (owner's decision,
+    // 2026-09-23). Every write is a part of the uncached prompt, so pricing
+    // the whole uncached prompt at the write rate can only overstate, by at
+    // most (write - input) per token: ~6% on the owner's data. That replaces
+    // the old "at least" floor, which fired on every turn because Codex
+    // records 0 writes on every record. The surcharge sits in the write class.
+    // `writeFloorEvents` is no longer counted.
+    const unrecordedWriteSurcharge = writeFloor ? cost1M(ev.inputUncached, Math.max(0, writeRate - price.input)) : 0;
     const c = {
       input: cost1M(ev.inputUncached, price.input),
       output: cost1M(ev.output, price.output),
       // OpenAI has ONE write tier; it is carried in the 5m slot so the shared
       // `CostByClass` shape needs no new field (the renderer merges the two).
-      cacheWrite5m: cost1M(ev.cacheWrite, writeRate),
+      cacheWrite5m: cost1M(ev.cacheWrite, writeRate) + unrecordedWriteSurcharge,
       cacheWrite1h: 0,
       cacheRead: cost1M(ev.cachedInput, price.cachedInput),
     };
@@ -398,8 +370,8 @@ function codexCostDetail(events, startMs, endMs, anchored) {
       // writes are `writeFloorEvents` above, not this.
       fallbackWriteEvents: 0,
       cacheWriteEvents,
-      // Rule 3 (A3.9): priced events with 0 recorded writes that read cache or
-      // sent a cacheable prompt, on a write-priced model. Non-zero: a floor.
+      // Always 0 since 2026-09-23: unrecorded writes are priced at an upper
+      // bound in `cacheWrite5m` instead of being a floor.
       unrecordedWriteEvents: writeFloorEvents,
       // A3.17: pre-settings turns in an eligible rollout, priced at Standard.
       assumedTierEvents,
@@ -422,7 +394,7 @@ function codexCostDetail(events, startMs, endMs, anchored) {
     assumedTierEvents,
     fastRequestedEvents,
     tierFloorByModel,
-    // The TOKEN floor (see `unrecordedWriteTokensOf`), never the cost one.
+    // Always false; kept so the detail's shape does not change.
     unrecordedWriteTokens,
   };
 }
@@ -449,7 +421,6 @@ module.exports = {
   LONG_CONTEXT_MODELS,
   MIN_CACHEABLE_PROMPT,
   classifyCodexEvent,
-  unrecordedWriteTokensOf,
   SPEED_UNKNOWN_TIER,
   LONG_CONTEXT_SUFFIX,
 };

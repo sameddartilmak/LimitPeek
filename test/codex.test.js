@@ -105,6 +105,44 @@ test.describe('the codex rollout reader', () => {
     assert.equal(r.fiveHour.usedPercentage, 88, 'the most recent turn wins');
   });
 
+  test('an empty premium record written after the plan record does not hide the plan figures', () => {
+    // The owner's real log on 2026-09-23 ended exactly like this: the plan record
+    // at 99% / 16%, then an empty `premium` one. The row said "awaiting report".
+    const home = tmpHome();
+    writeRollout(home, { lines: [
+      tokenCount(limits({ primary: { used_percent: 99, window_minutes: 300, resets_at: Math.floor((NOW + HOUR) / 1000) } }), '2026-09-14T11:58:00.000Z'),
+      tokenCount({ limit_id: 'premium', primary: null, secondary: null }, '2026-09-14T11:59:00.000Z'),
+    ] });
+    const r = readCodexRateLimits({ now: NOW, home });
+    assert.equal(r.state, 'fresh');
+    assert.equal(r.fiveHour.usedPercentage, 99);
+    assert.equal(r.sevenDay.usedPercentage, 34);
+    assert.equal(r.capturedAt, '2026-09-14T11:58:00.000Z', 'the age is the plan record’s, not the empty one’s');
+  });
+
+  test('the plan record wins over a newer record of another bucket that has windows', () => {
+    const home = tmpHome();
+    writeRollout(home, { lines: [
+      tokenCount(limits(), '2026-09-14T11:58:00.000Z'),
+      tokenCount(limits({ limit_id: 'premium', primary: { used_percent: 3, window_minutes: 300, resets_at: Math.floor((NOW + HOUR) / 1000) } }), '2026-09-14T11:59:00.000Z'),
+    ] });
+    const r = readCodexRateLimits({ now: NOW, home });
+    assert.equal(r.fiveHour.usedPercentage, 12, 'the plan’s own 5-hour figure');
+  });
+
+  test('with no plan record in the tail, another bucket that has windows is still shown', () => {
+    const home = tmpHome();
+    writeRollout(home, { lines: [tokenCount(limits({ limit_id: 'other' }))] });
+    const r = readCodexRateLimits({ now: NOW, home });
+    assert.equal(r.fiveHour.usedPercentage, 12);
+  });
+
+  test('only empty records means absent, not a zero', () => {
+    const home = tmpHome();
+    writeRollout(home, { lines: [tokenCount({ limit_id: 'premium', primary: null, secondary: null })] });
+    assert.equal(readCodexRateLimits({ now: NOW, home }).state, 'absent');
+  });
+
   test('a used_percent outside 0..100 is dropped, never shown', () => {
     const home = tmpHome();
     writeRollout(home, { lines: [tokenCount(limits({
@@ -324,16 +362,14 @@ test.describe('the Codex row weekly token figure', () => {
 });
 
 /**
- * `weeklyTokenFloorCauses` on the Codex row (A3.3/A3.9).
+ * `weeklyTokenFloorCauses` on the Codex row (A3.3/A3.9, changed 2026-09-23).
  *
- * Codex's recorder writes 0 cache writes on EVERY record, so a turn that read
- * cache — or sent a prompt at or above the minimum cacheable size — almost
- * certainly wrote cache that never reached the log. That is a missing TOKEN,
- * and the key property pinned here is that it does not depend on whether a
- * price row exists: whether a write is priced decides what we may CHARGE for
- * it, not whether it happened.
+ * Codex's recorder writes 0 cache writes on EVERY record. Since 2026-09-23 that
+ * is no longer a TOKEN floor: an unrecorded write is part of the prompt that is
+ * already counted in input, so billable is not short, whether or not the model
+ * has a price row. Only a known-unread range still makes the Codex count a floor.
  */
-test.describe('the Codex token floor causes are decided by the recorder, not by the price table', () => {
+test.describe('the Codex token floor causes: unrecorded writes are not one, an unread range is', () => {
   const cxEv = (over) => ({
     ts: NOW - HOUR, model: 'gpt-5.6-sol', tier: 'standard',
     inputUncached: 0, cachedInput: 0, cacheWrite: 0, output: 0, ...over,
@@ -348,27 +384,27 @@ test.describe('the Codex token floor causes are decided by the recorder, not by 
     enabled: { codex: true }, codexRateLimits: cxRl, codexEvents, ...extra,
   }).providers.find((p) => p.id === 'codex');
 
-  test('a turn that read cache with 0 recorded writes is a token floor', () => {
+  test('a turn that read cache with 0 recorded writes is NOT a token floor', () => {
     const r = row([cxEv({ output: 100, cachedInput: 5000 })]);
-    assert.deepEqual(r.weeklyTokenFloorCauses, ['unrecorded-writes'], 'cacheWrite, and so billable, is understated');
+    assert.deepEqual(r.weeklyTokenFloorCauses, [], 'the write is inside input, already counted');
+    assert.equal(r.weeklyCost.unrecordedWriteEvents, 0, 'and no cost floor either: priced as an upper bound');
   });
 
-  test('an uncached prompt at the minimum cacheable size is one too', () => {
-    assert.deepEqual(row([cxEv({ output: 10, inputUncached: 1024 })]).weeklyTokenFloorCauses, ['unrecorded-writes']);
-    assert.deepEqual(row([cxEv({ output: 10, inputUncached: 1023 })]).weeklyTokenFloorCauses, [],
-      'below the minimum cacheable prompt there is no write to be missing');
+  test('an uncached prompt at or below the minimum cacheable size is not a token floor either', () => {
+    assert.deepEqual(row([cxEv({ output: 10, inputUncached: 1024 })]).weeklyTokenFloorCauses, []);
+    assert.deepEqual(row([cxEv({ output: 10, inputUncached: 1023 })]).weeklyTokenFloorCauses, []);
   });
 
   test('a turn that DID record writes is exact', () => {
     assert.deepEqual(row([cxEv({ output: 10, inputUncached: 4000, cacheWrite: 2000 })]).weeklyTokenFloorCauses, []);
   });
 
-  test('an UNPRICED model still reports the missing writes — the gap F2 named', () => {
+  test('an UNPRICED model reports no unrecorded-writes token floor either', () => {
     const codexEvents = [cxEv({ model: 'gpt-9-imaginary', output: 100, cachedInput: 5000 })];
     const r = row(codexEvents);
     assert.equal(r.weeklyCost.totalUsd, 0, 'nothing could be priced');
-    assert.equal(r.weeklyCost.unrecordedWriteEvents, 0, 'the COST cause counts priced events only, unchanged');
-    assert.deepEqual(r.weeklyTokenFloorCauses, ['unrecorded-writes'], 'but the writes are missing either way');
+    assert.equal(r.weeklyCost.unrecordedWriteEvents, 0);
+    assert.deepEqual(r.weeklyTokenFloorCauses, [], 'priced or not, billable is not short');
   });
 
   test('an assumed or Fast-requested tier is a cost floor only, never a token floor', () => {
@@ -387,11 +423,11 @@ test.describe('the Codex token floor causes are decided by the recorder, not by 
     assert.deepEqual(r.weeklyTokenFloorCauses, ['unread-range']);
   });
 
-  test('both causes at once, in the order HistoryFloorCause lists them', () => {
+  test('an unread range with the zero-write pattern gives the unread-range cause alone', () => {
     const r = row([cxEv({ output: 10, cachedInput: 5000 })], {
       codexUnreadRange: { fromMs: NOW - 2 * DAY, throughMs: NOW - DAY },
     });
-    assert.deepEqual(r.weeklyTokenFloorCauses, ['unread-range', 'unrecorded-writes']);
+    assert.deepEqual(r.weeklyTokenFloorCauses, ['unread-range']);
   });
 
   test('pending has no figure and therefore no floor', () => {

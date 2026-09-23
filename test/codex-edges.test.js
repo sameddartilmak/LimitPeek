@@ -260,33 +260,51 @@ test.describe('sanitize keeps unrecordedWriteEvents as a record count (ADR-002 A
   });
 });
 
-/* ------------------------------------------------ ADR-002 A3.9: the write floor */
+/* ---------------------- ADR-002 A3.9, as changed 2026-09-23: the write upper bound */
 
-test.describe('zero recorded writes on a write-priced model (ADR-002 A3.9)', () => {
+// Codex records 0 writes on every record. A priced turn that read cache or sent
+// a cacheable prompt on a write-priced model now prices its WHOLE uncached
+// input at the write rate (an upper bound), the extra sitting in cacheWrite5m.
+// It is no longer a floor: `unrecordedWriteEvents` stays 0.
+test.describe('zero recorded writes on a write-priced model: an upper-bound surcharge, not a floor', () => {
   function ev(model, uncached, cached) {
     return { ts: at(1), model, tier: 'standard', inputUncached: uncached, cachedInput: cached, cacheWrite: 0, output: 10 };
   }
+  const near = (actual, expected, msg) => assert.ok(Math.abs(actual - expected) < 1e-9, `${msg}: ${actual} vs ${expected}`);
 
-  test('a first turn with no cache read but a cacheable prompt (>= 1024 uncached) is a floor', () => {
+  test('a first turn with no cache read but a cacheable prompt (>= 1024 uncached) takes the write surcharge', () => {
     const d = codexCostDetail([ev('gpt-5.6-sol', 1024, 0)], WEEK_START, NOW, false);
-    assert.equal(d.writeFloorEvents, 1);
-    assert.equal(d.cost.unrecordedWriteEvents, 1);
-    assert.ok(d.cost.totalUsd > 0, 'still priced: no write count is estimated');
-    assert.equal(d.cost.byClass.cacheWrite5m, 0, 'no invented write dollars');
+    assert.equal(d.writeFloorEvents, 0, 'no longer counted as a floor');
+    assert.equal(d.cost.unrecordedWriteEvents, 0);
+    // gpt-5.6-sol: input $4, write $5 -> +$1 per 1M uncached tokens.
+    near(d.cost.byClass.cacheWrite5m, 1024 * 1 / 1e6, 'surcharge = uncached x (write - input)');
+    near(d.cost.byClass.input, 1024 * 4 / 1e6, 'input keeps its own rate');
+    near(d.cost.totalUsd, (1024 * 5 + 10 * 20) / 1e6, 'uncached at the write rate, plus output');
   });
 
-  test('a 1023-token uncached prompt with no cache read is below the cacheable minimum: not a floor', () => {
+  test('a 1023-token uncached prompt with no cache read is below the cacheable minimum: no surcharge', () => {
     const d = codexCostDetail([ev('gpt-5.6-sol', 1023, 0)], WEEK_START, NOW, false);
     assert.equal(d.writeFloorEvents, 0);
     assert.equal(d.cost.unrecordedWriteEvents, 0);
+    assert.equal(d.cost.byClass.cacheWrite5m, 0);
   });
 
-  test('cached reads still make it a floor at any prompt size', () => {
-    assert.equal(codexCostDetail([ev('gpt-5.6-sol', 10, 5)], WEEK_START, NOW, false).cost.unrecordedWriteEvents, 1);
+  test('cached reads still trigger the surcharge at any prompt size', () => {
+    const d = codexCostDetail([ev('gpt-5.6-sol', 10, 5)], WEEK_START, NOW, false);
+    assert.equal(d.cost.unrecordedWriteEvents, 0);
+    near(d.cost.byClass.cacheWrite5m, 10 * 1 / 1e6, 'surcharge on the 10 uncached tokens');
   });
 
-  test('a model with no write price is never a write floor, however large the prompt', () => {
-    assert.equal(codexCostDetail([ev('gpt-5', 100000, 0)], WEEK_START, NOW, false).cost.unrecordedWriteEvents, 0);
+  test('a model with no write price gets no surcharge, however large the prompt', () => {
+    const d = codexCostDetail([ev('gpt-5', 100000, 0)], WEEK_START, NOW, false);
+    assert.equal(d.cost.unrecordedWriteEvents, 0);
+    assert.equal(d.cost.byClass.cacheWrite5m, 0, 'write rate = input rate, so nothing is added');
+    near(d.cost.byClass.input, 100000 * 1.25 / 1e6, 'input at gpt-5 input rate');
+  });
+
+  test('the token-side floor is gone: unrecordedWriteTokens is false even on the write pattern', () => {
+    assert.equal(codexCostDetail([ev('gpt-5.6-sol', 1024, 5)], WEEK_START, NOW, false).unrecordedWriteTokens, false);
+    assert.equal(codexCostDetail([ev('gpt-9-imaginary', 1024, 5)], WEEK_START, NOW, false).unrecordedWriteTokens, false);
   });
 });
 

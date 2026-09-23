@@ -60,9 +60,12 @@
  * eligible. Eligibility depends on records AFTER the turn too, so it is not
  * baked into the event or its folded bucket: each scan emits pre-settings turns
  * with `tierAssumable` set from the whole file read so far, and a flex record
- * appended later turns it false for every earlier turn. The pricer prices
- * `tierAssumable` turns at Standard as a counted floor (`assumedTierEvents`) and
- * leaves the rest unpriced — never a silent Standard.
+ * appended later turns it false for every earlier turn. In an eligible rollout
+ * that has a settings record, those turns take the tier the FIRST record states
+ * (backfill, see the output loop). Only a rollout with no settings record at all
+ * still leaves them unknown: the pricer prices those `tierAssumable` turns at
+ * Standard as a counted floor (`assumedTierEvents`) and leaves ineligible ones
+ * unpriced — never a silent Standard.
  *
  * WINDOWING ACROSS STALE MTIMES
  * -----------------------------
@@ -164,6 +167,8 @@ function freshEntry() {
     // A settings record that STATES a tier has been read. Turns before it carry
     // `preSettings: true` (ADR-002 A3.17).
     settingsSeen: false,
+    // The tier the FIRST settings record stated; backfills the turns before it.
+    firstTier: null,
     // Some recorded service_tier is outside {default, priority, fast} (flex,
     // ultrafast, anything else, or a non-string). Decided over the WHOLE file
     // read so far — including records AFTER a turn — so a later flex record
@@ -279,6 +284,7 @@ function consumeLine(entry, line) {
     // a non-string value makes the tier undeterminable again, not Standard.
     if (s && typeof s === 'object' && Object.prototype.hasOwnProperty.call(s, 'service_tier')) {
       entry.tier = normalizeTier(s.service_tier);
+      if (!entry.settingsSeen) entry.firstTier = entry.tier;
       entry.settingsSeen = true;
       const raw = typeof s.service_tier === 'string' ? s.service_tier.trim().toLowerCase() : null;
       if (!ASSUMABLE_TIERS.has(raw)) entry.tierIneligible = true;
@@ -867,13 +873,26 @@ function createCodexUsageScanner() {
       // A3.17: a pre-settings turn may be priced at Standard only while every
       // tier this rollout has recorded — before OR after it — is assumable.
       const assumable = !entry.tierIneligible;
+      // Backfill: in an assumable rollout, the turns before the first settings
+      // record take the tier that record states. Codex re-emits that record with
+      // unchanged values, so it states the tier the session was already on.
+      // Measured on the owner's data: 51 of 573 turns, every rollout's records
+      // all `default`. Without it those turns were an "assumed" floor.
+      const backfill = assumable && (entry.firstTier === 'standard' || entry.firstTier === 'fast')
+        ? entry.firstTier : null;
+      const outOf = (b) => {
+        if (!b.preSettings) return { ...b };
+        if (!backfill) return { ...b, tierAssumable: assumable };
+        const { preSettings: _pre, ...rest } = b;
+        return { ...rest, tier: backfill };
+      };
       foldOld(entry, rawSinceMs);
       for (const [key, b] of entry.buckets) {
         if (b.ts < startMs || b.ts >= now) continue;
-        const outKey = b.preSettings ? `${key}|${assumable ? 1 : 0}` : key;
+        const outKey = b.preSettings ? `${key}|${assumable ? 1 : 0}|${backfill || ''}` : key;
         const m = merged.get(outKey);
         if (!m) {
-          merged.set(outKey, b.preSettings ? { ...b, tierAssumable: assumable } : { ...b });
+          merged.set(outKey, outOf(b));
         } else {
           m.inputUncached += b.inputUncached;
           m.cachedInput += b.cachedInput;
@@ -883,7 +902,7 @@ function createCodexUsageScanner() {
         }
       }
       for (const ev of entry.events) {
-        if (ev.ts >= startMs && ev.ts < now) out.push(ev.preSettings ? { ...ev, tierAssumable: assumable } : ev);
+        if (ev.ts >= startMs && ev.ts < now) out.push(ev.preSettings ? outOf(ev) : ev);
       }
     }
     for (const b of merged.values()) out.push(b);
