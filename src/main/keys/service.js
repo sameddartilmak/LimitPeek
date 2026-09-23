@@ -44,14 +44,12 @@ class KeyService {
    * @param {(id:string) => boolean} options.isEnabled  the user's own switch
    * @param {() => void} options.onChange  called when the snapshot fields move
    * @param {() => {resolvedLanguage:string, formatLocale:string}} options.getLocale
-   * @param {() => object|null} [options.parentWindow]  for the native dialog
-   * @param {() => void} [options.beforePrompt]  pins the panel before a modal
+   * @param {() => void} [options.beforePrompt]  pins the panel before the key window opens
    */
   constructor(options = {}) {
     this.isEnabled = options.isEnabled || (() => false);
     this.onChange = options.onChange || (() => {});
     this.getLocale = options.getLocale || (() => ({ resolvedLanguage: 'tr', formatLocale: 'tr-TR' }));
-    this.parentWindow = options.parentWindow || (() => null);
     this.beforePrompt = options.beforePrompt || (() => {});
     this._tick = null;
     this._stopped = false;
@@ -72,7 +70,6 @@ class KeyService {
       getLocale: () => this.getLocale(),
       openTokenPage: (id) => openTokenPage(id),
       entryPage: options.entryPage || null,
-      t: options.t,
     });
   }
 
@@ -139,15 +136,10 @@ class KeyService {
       if (!fromPanel(event)) return { ok: false };
       const id = typeof providerId === 'string' && providerId !== '' ? providerId : soleKeyCapableId();
       if (!isKeyCapable(id)) return { ok: false };
-      const result = await this.entry.start({
-        providerId: id,
-        parentWindow: this.parentWindow(),
-        beforePrompt: this.beforePrompt,
-        now: Date.now(),
-      });
+      const result = await this.entry.start({ providerId: id, beforePrompt: this.beforePrompt });
       // The one refusal the row has to be able to explain. Everything else is a
-      // user decision ('declined'), a duplicate ('busy') or an install problem,
-      // none of which changes what the row can offer.
+      // duplicate ('busy') or an install problem, neither of which changes what
+      // the row can offer. Declining now happens later, inside the window.
       if (!result.ok && result.code === 'secure-storage-unavailable') {
         this._states[id].keyState = 'secure-storage-unavailable';
         this.onChange();
@@ -174,6 +166,7 @@ class KeyService {
 
     /* --- the entry window's own channels. Sender-checked by the flow. --- */
 
+    ipcMain.handle(IPC_KEY_ENTRY.CONSENT, (event) => this.entry.consent(event, Date.now()));
     ipcMain.handle(IPC_KEY_ENTRY.SUBMIT, (event, key, username) => this.entry.submit(event, key, username, Date.now()));
     ipcMain.on(IPC_KEY_ENTRY.CANCEL, (event) => { this.entry.cancel(event); });
     // Synchronous. `returnValue` is set on EVERY path including rejection: an

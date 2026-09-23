@@ -131,8 +131,11 @@ function globToRegExp(glob) {
 
 /** The literal array out of build.mjs, without importing it: the module builds on import. */
 function packageGlobs() {
+  // Split on CRLF too: with core.autocrlf a Windows checkout writes CRLF, the
+  // `.*$` below then stops at the `\r`, and a comment's apostrophe ("window's")
+  // is read as the start of a glob.
   const source = fs.readFileSync(path.join(SRC, 'renderer', 'build.mjs'), 'utf8')
-    .split('\n')
+    .split(/\r?\n/)
     .map((line) => line.replace(/^\s*\/\/.*$/, ''))
     .join('\n');
   const match = /export const PACKAGE_GLOBS = \[([\s\S]*?)\];/.exec(source);

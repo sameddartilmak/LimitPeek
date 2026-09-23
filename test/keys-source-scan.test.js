@@ -212,13 +212,13 @@ test('spellcheck is off on every window, because the dictionary is a download (s
   }
 });
 
-test('the entry preload exposes four methods, no getter, and no generic passthrough (K3)', () => {
+test('the entry preload exposes five methods, no getter, and no generic passthrough (K3)', () => {
   const file = path.join(ROOT, 'src', 'main', 'keys', 'entry-preload.js');
   const code = codeOf(file);
   assert.ok(code.includes("exposeInMainWorld('usageNotchKeyEntry'"), 'the global the page reads');
   const exposed = code.slice(code.indexOf('exposeInMainWorld'));
   const methods = (exposed.match(/^ {2}([a-zA-Z]+):/gm) || []).map((m) => m.trim().replace(':', ''));
-  assert.deepEqual(methods.sort(), ['cancel', 'entryInfo', 'openTokenPage', 'submit']);
+  assert.deepEqual(methods.sort(), ['cancel', 'consent', 'entryInfo', 'openTokenPage', 'submit']);
   // No getter of any spelling, and no generic invoke/send.
   for (const needle of ['getKey', 'readKey', 'keyFor', 'peek', 'reveal', 'invoke:', 'send:', 'on:']) {
     assert.equal(exposed.includes(needle), false, needle);

@@ -1,36 +1,38 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, dialog, session, BrowserWindow } = require('electron');
+const { app, session, BrowserWindow } = require('electron');
 
 const log = require('../../core/log');
-const i18n = require('../../core/i18n');
 const { isKeyCapable } = require('../../core/keys/registry');
 const { validateKey, validateUsername } = require('../../core/keys/validate');
 
 /**
- * Consent, then a window of its own, then one write (ADR-003 Amendment 5,
- * K1-K6).
+ * One window of its own: consent first, then one write (ADR-003 Amendment 5,
+ * K1-K6, as revised by Amendment 9).
  *
  * THE ORDER IS THE CONTROL
  * ------------------------
- *  1. A NATIVE dialog in main, raised from the Copilot row. Not a page, not a
- *     toast: the user has to answer an OS-level question before anything at all
- *     happens. Declining writes nothing, creates no session, starts no timer
- *     and leaves the row exactly as it was (K1).
- *  2. Only then a PENDING ENTRY: one-shot, provider fixed at consent, expiring
- *     five minutes later. A submit with no pending entry, a second submit
- *     against the same one, or one that arrives after it expired, is refused.
- *     That is what makes the entry channel unusable as a general "store this
- *     key" call (K4).
- *  3. Only then the window: its OWN in-memory session, sandboxed,
- *     context-isolated, devTools off when packaged, content protection on, and
- *     destroyed on submit, on cancel, or when the five minutes run out (K2).
+ *  1. The window: its OWN in-memory session, sandboxed, context-isolated,
+ *     devTools off when packaged, content protection on, no network, and
+ *     destroyed on submit, on cancel, or when its time runs out (K2). Its first
+ *     screen is the consent text with Cancel and Continue. Amendment 9 moved
+ *     consent here from a native message box: the box and the page said the
+ *     same things twice, in two different-looking windows. Declining still
+ *     writes nothing, starts no poll and leaves the row exactly as it was (K1).
+ *     The only thing it leaves behind is an in-memory session that disappears
+ *     when the app exits.
+ *  2. Only after Continue, a PENDING ENTRY: one-shot, provider fixed when the
+ *     window opened, expiring five minutes after consent. Continue is accepted
+ *     only from this window's main frame, so the panel cannot consent for the
+ *     user. A submit with no pending entry, a second submit against the same
+ *     one, or one that arrives after it expired, is refused. That is what makes
+ *     the entry channel unusable as a general "store this key" call (K4).
  *
  * ONE FLOW AT A TIME
  * ------------------
  * The lock is taken SYNCHRONOUSLY, before the first `await`, so fifty IPC
- * messages arriving in one tick produce one dialog. A second flow would mean two
+ * messages arriving in one tick open one window. A second flow would mean two
  * pending entries and two windows, and a submit could then be attributed to the
  * wrong one.
  *
@@ -50,11 +52,25 @@ const { validateKey, validateUsername } = require('../../core/keys/validate');
  */
 const ENTRY_PARTITION = 'usage-notch-key-entry';
 
-/** The window cannot outlive this, whatever the user does (K2). */
+/**
+ * Each step gets this long, whatever the user does (K2): five minutes to read
+ * and continue, then five minutes from consent to submit. So the window can
+ * never live longer than ten minutes in total.
+ */
 const ENTRY_TTL_MS = 5 * 60 * 1000;
 
-const ENTRY_WIDTH = 560;
-const ENTRY_HEIGHT = 760;
+const ENTRY_WIDTH = 520;
+/** Fits the consent screen, the longer step, at 100% scale; more text scrolls. */
+const ENTRY_HEIGHT = 600;
+
+/**
+ * The page's own ground (`--ink-900`, dark theme) and body ink (`--ink-200`).
+ * The title bar is hidden and Windows draws only its caption buttons over the
+ * page, so these must match tokens.css or a seam shows along the top.
+ */
+const ENTRY_GROUND = '#0E1211';
+const ENTRY_INK = '#C2CFCB';
+const ENTRY_BAR_HEIGHT = 32;
 
 /**
  * The page is the frontend lane's (`src/renderer/key-entry.html`). If it is
@@ -84,7 +100,6 @@ class EntryFlow {
     this.getLocale = options.getLocale || (() => ({ resolvedLanguage: 'tr', formatLocale: 'tr-TR' }));
     this.openTokenPageFor = options.openTokenPage || (() => ({ ok: false }));
     this.entryPage = options.entryPage || null;
-    this.t = options.t || i18n.t;
     /**
      * The one flow: `{ providerId, win, timer, pending, submitting }`.
      * `pending` exists only after consent and is deleted the moment a submit is
@@ -93,7 +108,7 @@ class EntryFlow {
     this._flow = null;
   }
 
-  /** Is a flow (consent or window) currently open? */
+  /** Is the entry window currently open? */
   get busy() {
     return this._flow !== null;
   }
@@ -108,16 +123,15 @@ class EntryFlow {
   }
 
   /**
-   * @param {{providerId:string, parentWindow?:object, now?:number,
-   *          beforePrompt?:Function}} args
+   * @param {{providerId:string, beforePrompt?:Function}} args
    * @returns {Promise<{ok:boolean, code?:string}>}
    */
-  async start({ providerId, parentWindow, now, beforePrompt }) {
+  async start({ providerId, beforePrompt }) {
     // Synchronous guards first: every one of them must answer before the first
-    // await, or fifty messages in one tick become fifty dialogs.
+    // await, or fifty messages in one tick become fifty windows.
     if (this._flow) return { ok: false, code: 'busy' };
     if (!isKeyCapable(providerId)) return { ok: false, code: 'unknown-provider' };
-    // Asked BEFORE consent: there is no point taking the user through a consent
+    // Asked before the window opens: there is no point taking the user through a consent
     // screen for a store that cannot happen, and the row says so instead.
     if (!this.isSecureStorageAvailable()) return { ok: false, code: 'secure-storage-unavailable' };
     const page = this.entryPage || resolveEntryPage();
@@ -127,25 +141,10 @@ class EntryFlow {
     }
     this._flow = { providerId, win: null, timer: null, pending: null, submitting: false };
 
-    let consented = false;
     try {
+      // Pins the panel, so it does not slide away while the window is open.
       if (typeof beforePrompt === 'function') beforePrompt();
-      consented = await this._consent(providerId, parentWindow);
-    } catch (err) {
-      log.warn(`key consent dialog failed: code=${(err && err.code) || 'UNKNOWN'}`);
-      consented = false;
-    }
-    if (!consented) {
-      // Nothing was written, nothing was created, nothing was scheduled.
-      this._flow = null;
-      return { ok: false, code: 'declined' };
-    }
-    // The one-shot pending entry, created AT CONSENT (K4).
-    const startedAt = Number.isFinite(now) ? now : Date.now();
-    this._flow.pending = { providerId, expiresAt: startedAt + ENTRY_TTL_MS };
-
-    try {
-      this._openWindow(page, parentWindow);
+      this._openWindow(page);
     } catch (err) {
       log.warn(`key entry window could not be opened: code=${(err && err.code) || 'UNKNOWN'}`);
       this.destroy('open-failed');
@@ -155,34 +154,37 @@ class EntryFlow {
   }
 
   /**
-   * The consent dialog. Its text is the product's (ADR-004: strings live in the
-   * catalogs, not here), and ADR-003 fixes what it has to say: what the key is
-   * used for, the single host it is sent to, how it is stored and what that does
-   * NOT protect against, that this works only for self-paid plans, and how to
-   * remove it. Two buttons, cancel is the default answer.
+   * The page's Continue button, the user's consent. Only after this does the
+   * one-shot pending entry exist (K4), with five minutes starting now, and the
+   * window's own lifetime is restarted to match.
+   *
+   * Takes no argument: the provider was fixed when the window opened, and
+   * nothing the page sends can change it. A second Continue is answered `ok`
+   * and changes nothing, so a double click neither fails nor adds time.
+   *
+   * @param {object} event
+   * @param {number} [now]
    */
-  async _consent(providerId, parentWindow) {
-    const t = this.t;
-    const choice = await dialog.showMessageBox(parentWindow || undefined, {
-      type: 'question',
-      buttons: [t('dialog.cancel'), t('dialog.keys.consent.confirm')],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-      title: t('dialog.keys.consent.title'),
-      message: t('dialog.keys.consent.message'),
-      detail: [
-        t('dialog.keys.consent.what'),
-        t('dialog.keys.consent.host'),
-        t('dialog.keys.consent.storage'),
-        t('dialog.keys.consent.selfPaid'),
-        t('dialog.keys.consent.remove'),
-      ].join('\n\n'),
-    });
-    return choice && choice.response === 1;
+  consent(event, now) {
+    if (!this.fromEntryWindow(event)) return { ok: false, code: 'rejected' };
+    const flow = this._flow;
+    if (flow.pending) return { ok: true };
+    const at = Number.isFinite(now) ? now : Date.now();
+    flow.pending = { providerId: flow.providerId, expiresAt: at + ENTRY_TTL_MS };
+    this._armTimer();
+    log.trace('keys.entry.consent', {});
+    return { ok: true };
   }
 
-  _openWindow(page, parentWindow) {
+  /** (Re)starts the window's lifetime; when it runs out the window goes. */
+  _armTimer() {
+    const flow = this._flow;
+    if (flow.timer) clearTimeout(flow.timer);
+    flow.timer = setTimeout(() => this.destroy('expired'), ENTRY_TTL_MS);
+    if (flow.timer.unref) flow.timer.unref();
+  }
+
+  _openWindow(page) {
     const flow = this._flow;
     // Its own session. In memory, hardened by `session-created`, and shared with
     // nothing: the panel's session, the keyed request session and this one are
@@ -199,7 +201,12 @@ class EntryFlow {
       fullscreenable: false,
       center: true,
       title: 'Usage Notch',
-      backgroundColor: '#101014',
+      backgroundColor: ENTRY_GROUND,
+      // No Windows title bar: the page draws its own strip in the app's colours,
+      // and Windows keeps only its real caption buttons on top of it, so close
+      // still behaves like any other window's (Alt+F4 and snap included).
+      titleBarStyle: 'hidden',
+      titleBarOverlay: { color: ENTRY_GROUND, symbolColor: ENTRY_INK, height: ENTRY_BAR_HEIGHT },
       icon: path.join(__dirname, '..', '..', '..', 'assets', 'app-icon.png'),
       webPreferences: {
         preload: path.join(__dirname, 'entry-preload.js'),
@@ -231,8 +238,8 @@ class EntryFlow {
     } catch (err) {
       log.warn(`content protection could not be applied: code=${(err && err.code) || 'UNKNOWN'}`);
     }
-    // Above the panel, which is itself always-on-top: a consent window the user
-    // cannot see is a consent window they cannot answer.
+    // Above the panel, which is itself always-on-top: a consent screen the user
+    // cannot see is one they cannot answer.
     try {
       win.setAlwaysOnTop(true, 'modal-panel');
     } catch { /* not fatal */ }
@@ -253,11 +260,10 @@ class EntryFlow {
       if (isMainFrame) log.warn(`key entry page failed to load: code=${code}`);
     });
 
-    flow.timer = setTimeout(() => this.destroy('expired'), ENTRY_TTL_MS);
-    if (flow.timer.unref) flow.timer.unref();
+    // Five minutes to read and continue; consent() restarts it (K2).
+    this._armTimer();
 
     win.loadFile(page);
-    if (parentWindow) { /* deliberately not a modal child: see the class comment */ }
   }
 
   /**
@@ -275,7 +281,9 @@ class EntryFlow {
     if (!event || event.sender !== wc) return false;
     try {
       const frame = event.senderFrame;
-      if (frame && wc.mainFrame && frame !== wc.mainFrame) return false;
+      // A missing frame is refused too: Electron reports null for a frame that
+      // has already gone, and consent and submit both rest on this check.
+      if (!frame || frame !== wc.mainFrame) return false;
     } catch {
       // A frame that has already gone cannot be the live main frame.
       return false;

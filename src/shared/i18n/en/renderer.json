@@ -353,6 +353,7 @@
   "keyEntry.keyHint": "What you type is never shown on any screen and never written to logs.",
   "keyEntry.save": "Save",
   "keyEntry.cancel": "Cancel",
+  "keyEntry.continue": "Continue",
   "keyEntry.escHint": "Esc cancels.",
   "keyEntry.error.empty": "The username and the key are both required.",
   "keyEntry.error.usernameShape": "A username can contain only letters, digits and hyphens, and at most 39 characters.",

@@ -1287,14 +1287,15 @@ export const IPC = {
   SET_PLAN_LABEL: 'prefs:set-plan-label',
   /**
    * renderer -> main invoke(providerId). Asks main to START the optional-key
-   * flow for a key-capable provider: a NATIVE consent dialog raised in main,
-   * and only if it is confirmed, a short-lived entry window of its own (ADR-003
-   * Amendment 5 K1/K2). Returns `{ok}` — whether main accepted the request,
-   * never anything about a key.
+   * flow for a key-capable provider: one short-lived window of its own that
+   * shows the consent screen first and the entry form only after Continue
+   * (ADR-003 Amendment 5 K1/K2, Amendment 9). Returns `{ok}`, which says
+   * whether the window opened and never anything about a key.
    *
-   * `{ok:false}` is the normal answer to a decline, to a second call while a
-   * flow is open, and to a provider that is not key-capable. One flow at a
-   * time: fifty calls in one tick raise exactly one dialog.
+   * `{ok:true}` means the window opened. Declining happens inside it and is
+   * not reported back. `{ok:false}` answers a second call while a window is
+   * open, a provider that is not key-capable, and unavailable secure storage.
+   * One flow at a time: fifty calls in one tick open exactly one window.
    */
   KEY_ENTRY: 'keys:request-entry',
   /**
@@ -1323,9 +1324,10 @@ export const IPC = {
  * exposed by a different preload, to a different window, on its own session
  * (ADR-003 Amendment 8).
  *
- * `usageNotchKeyEntry` exposes exactly four methods and NO GETTER (K3):
+ * `usageNotchKeyEntry` exposes exactly five methods and NO GETTER (K3):
  *
  *   entryInfo(): { provider, language, formatLocale? } | null   (synchronous)
+ *   consent(): Promise<{ ok, code? }>                           (no argument)
  *   submit(key, username): Promise<{ ok, code? }>
  *   cancel(): void
  *   openTokenPage(): Promise<{ ok }>                            (no argument)
@@ -1333,8 +1335,9 @@ export const IPC = {
  * `submit` is Amendment 8's `submit(key)` with the username as a second
  * argument: the page collects both, main validates both, and one call carrying
  * the pair means main never holds half of it. Main accepts it only from the
- * entry window's main frame, against a one-shot pending entry created at
- * consent with the provider fixed and a five-minute expiry (K4).
+ * entry window's main frame, against a one-shot pending entry that `consent()`
+ * creates, with the provider fixed and a five-minute expiry (K4). The window
+ * itself shows the consent text first (Amendment 9). There is no native box.
  *
  * `code` is from a closed set, chosen so a message can never carry a value:
  * 'wrong-token-type' (another GitHub credential: ghp_/gho_/ghu_/ghs_/ghr_),
@@ -1343,6 +1346,7 @@ export const IPC = {
  * 'store-failed'.
  */
 export const IPC_KEY_ENTRY = {
+  CONSENT: 'keys:consent',
   SUBMIT: 'keys:submit',
   CANCEL: 'keys:cancel',
   ENTRY_INFO: 'keys:entry-info',

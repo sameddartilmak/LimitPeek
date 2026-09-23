@@ -380,8 +380,8 @@ kadar geri dönüş, dizin kopyalamaya dayanan elle bir işlemdir.
   (koruma 1), katı protobuf çözücü (koruma 3a), `node:sqlite` sarmalayıcısı ve
   süreç sondası (`process.js`) ve tek-tık `agy` kurulumu (`cli-install.js` — onaya bağlı
   istisna 1'in yaşadığı dar yer).
-- `src/main/keys/**` — isteğe bağlı API anahtarı: onay penceresi ve kısa ömürlü giriş
-  penceresi (`entry-window.js`), DPAPI deposu (`secret-store.js`) ve isteğin yapıldığı tek
+- `src/main/keys/**` — isteğe bağlı API anahtarı: önce onay ekranını, sonra giriş
+  formunu gösteren tek, kısa ömürlü pencere (`entry-window.js`), DPAPI deposu (`secret-store.js`) ve isteğin yapıldığı tek
   modül (`keyed-net.js` — onaya bağlı istisna 2'nin yaşadığı dar yer; `net`'i içe alan
   tek dosya olduğu testle sabit). Anahtar mantığının saf kısmı `src/core/keys/**`
   içindedir: doğrulama, adres izin listesi, yanıt okuyucu ve istek bütçesi.

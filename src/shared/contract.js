@@ -44,10 +44,11 @@ const IPC = {
  * The key-entry window's own channels (ADR-003 Amendment 8). A different
  * preload, a different window, its own session — so they are deliberately NOT
  * in `IPC`, which is the panel's surface: nothing the panel is given may reach
- * `keys:submit`, and `contract.ts` documents the four methods the entry
+ * `keys:submit`, and `contract.ts` documents the five methods the entry
  * window's preload exposes.
  */
 const IPC_KEY_ENTRY = {
+  CONSENT: 'keys:consent',
   SUBMIT: 'keys:submit',
   CANCEL: 'keys:cancel',
   ENTRY_INFO: 'keys:entry-info',

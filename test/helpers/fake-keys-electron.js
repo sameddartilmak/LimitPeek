@@ -337,7 +337,7 @@ function install(options = {}) {
     defaultSession,
     windows,
     dialogCalls,
-    /** Queue of `response` indexes the consent dialog returns, in order. */
+    /** Queue of `response` indexes a native message box returns, in order. The key flow no longer raises one (Amendment 9); its tests assert `dialogCalls` stays empty. */
     dialogAnswers,
     openedExternally,
     /** Every request that reached `end()`: its options and its headers. */

@@ -6,8 +6,8 @@ const { contextBridge, ipcRenderer } = require('electron');
  *
  * WRITE-ONLY, AND THAT IS THE WHOLE DESIGN
  * ----------------------------------------
- * Four methods: hand a key to main, cancel, ask what to render, open the
- * vendor's token page. There is NO getter — nothing here can read a stored key
+ * Five methods: ask what to render, consent, hand a key to main, cancel, open
+ * the vendor's token page. There is NO getter — nothing here can read a stored key
  * back, not whole, not masked, not as a length — so no bug in the page, and no
  * script that somehow ran in it, can produce the secret. That is also why the
  * page never shows "a key is saved (•••• 1234)": there is no channel that could
@@ -18,9 +18,10 @@ const { contextBridge, ipcRenderer } = require('electron');
  * fails the build if a single character drifts from the contract.
  *
  * No clipboard, and no generic `invoke` passthrough: either would hand the page
- * more than the four things it needs (K6, ADR-001 security F8).
+ * more than the five things it needs (K6, ADR-001 security F8).
  */
 const CH = {
+  CONSENT: 'keys:consent',
   SUBMIT: 'keys:submit',
   CANCEL: 'keys:cancel',
   ENTRY_INFO: 'keys:entry-info',
@@ -47,6 +48,15 @@ contextBridge.exposeInMainWorld('usageNotchKeyEntry', {
       return null;
     }
   },
+
+  /**
+   * The consent screen's Continue. NO ARGUMENT: the provider was fixed when the
+   * window opened. Only after this will main accept a submit, and only within
+   * five minutes of it.
+   *
+   * @returns {Promise<{ok:boolean, code?:string}>}
+   */
+  consent: () => ipcRenderer.invoke(CH.CONSENT),
 
   /**
    * Hands the typed values to main. One call carries both, so there is no
