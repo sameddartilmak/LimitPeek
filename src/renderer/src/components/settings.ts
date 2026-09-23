@@ -987,6 +987,19 @@ function createUsageSection(): UsageHandleLocal {
   const noteWhyBlock = el('div', { class: 'usage__why-block' }, noteWhy, noteWhyList);
   const note = el('div', { class: 'usage__note' }, noteLead, noteLeadTokens, noteSources, noteWhyBlock);
   let noteWhyOpen = false;
+
+  // Which per-period disclosures the user has opened. The list below is rebuilt
+  // from scratch on every snapshot (every 15 s while the panel is open), so a
+  // disclosure that kept its state only in its own DOM node snapped shut on the
+  // next push, under the user's cursor. Keyed by grain + period key + start so
+  // it survives the rebuild and a new week sliding in at the top (the rows'
+  // INDEX shifts then; the key does not). Same idea as `noteWhyOpen` above.
+  const openPeriods = new Set<string>();
+  const periodOpenKey = (period: PeriodUsage): string => `${grain}|${period.key}|${period.startsAt}`;
+  // The toggles of the CURRENT list, by the same key, so focus can move to a
+  // replacement without querying the DOM (the node-level test shim does not
+  // implement selectors, and a component those tests cannot mount is untested).
+  let toggleByKey = new Map<string, HTMLElement>();
   function applyNoteWhy(): void {
     noteWhyList.hidden = !noteWhyOpen;
     setAttr(noteWhy, 'aria-expanded', noteWhyOpen ? 'true' : 'false');
@@ -1135,6 +1148,8 @@ function createUsageSection(): UsageHandleLocal {
     regionId: string,
     subtotals: HTMLElement | null,
   ): readonly HTMLElement[] {
+    const openKey = periodOpenKey(period);
+    const startOpen = openPeriods.has(openKey);
     const chev = el('span', { class: 'usage__chev', 'aria-hidden': 'true' }, chevronIcon());
     const label = el(
       'span',
@@ -1146,8 +1161,9 @@ function createUsageSection(): UsageHandleLocal {
       {
         type: 'button',
         class: 'usage__toggle',
-        'aria-expanded': 'false',
+        'aria-expanded': startOpen ? 'true' : 'false',
         'aria-controls': regionId,
+        'data-open-key': openKey,
         title: t('settings.models.breakdown'),
       },
       label,
@@ -1159,16 +1175,19 @@ function createUsageSection(): UsageHandleLocal {
       { class: 'usage__models', id: regionId, role: 'list' },
       ...period.byModel.map((model) => renderModelRow(model, period)),
     ) as HTMLElement;
-    models.hidden = true;
+    models.hidden = !startOpen;
 
-    if (subtotals) subtotals.hidden = true;
+    if (subtotals) subtotals.hidden = !startOpen;
 
     on(toggle, 'click', () => {
       const open = toggle.getAttribute('aria-expanded') === 'true';
       setAttr(toggle, 'aria-expanded', open ? 'false' : 'true');
       models.hidden = open;
       if (subtotals) subtotals.hidden = open;
+      if (open) openPeriods.delete(openKey);
+      else openPeriods.add(openKey);
     });
+    toggleByKey.set(openKey, toggle);
 
     return subtotals ? [toggle, models, subtotals] : [toggle, models];
   }
@@ -1338,7 +1357,22 @@ function createUsageSection(): UsageHandleLocal {
     empty.hidden = true;
     list.hidden = false;
     const maxCost = periods.reduce((max, p) => (p.costUsd > max ? p.costUsd : max), 0);
+    // The rebuild replaces every node, so a keyboard user sitting on a toggle
+    // would lose focus on each push. Remember which toggle held it, by the
+    // same stable key, and put focus back on its replacement.
+    const active = typeof document !== 'undefined' ? document.activeElement : null;
+    let focusedKey: string | null = null;
+    for (const [k, node] of toggleByKey) if (node === active) focusedKey = k;
+    toggleByKey = new Map();
+
+    // Forget periods of THIS grain that are no longer listed (a week that
+    // rolled off the end); the other grain's entries are left alone.
+    const listed = new Set(periods.map(periodOpenKey));
+    for (const k of openPeriods) if (k.startsWith(`${grain}|`) && !listed.has(k)) openPeriods.delete(k);
+
     replaceChildrenWith(list, periods.map((p, i) => renderRow(p, maxCost, i)));
+
+    if (focusedKey) toggleByKey.get(focusedKey)?.focus();
 
     note.hidden = false;
     renderNote();
