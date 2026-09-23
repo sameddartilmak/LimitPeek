@@ -299,20 +299,10 @@
     backBtn.addEventListener('click', function () { showView('list'); settingsBtn.focus(); });
     $('demo-empty-open').addEventListener('click', function () { showView('settings'); backBtn.focus(); });
 
-    /* ---- disclosures (cost, "Neden en az?", per-period models) -------- */
+    /* ---- disclosures (cost, per-period models) ------------------------- */
     demo.addEventListener('click', function (e) {
-      var btn = e.target.closest('.cost__toggle, .cost__why, .usage__toggle');
+      var btn = e.target.closest('.cost__toggle, .usage__toggle');
       if (!btn || !demo.contains(btn)) return;
-      if (btn.classList.contains('cost__why')) {
-        // The app's "why" (cost.ts): the list stays visible; opening adds the
-        // lead sentence once and one short explanation under each cause.
-        var block = btn.parentNode;
-        var opening = btn.getAttribute('aria-expanded') !== 'true';
-        btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
-        block.setAttribute('data-why', opening ? 'true' : 'false');
-        each(block.querySelectorAll('.cost__why-lead, .cost__caveat'), function (el) { el.hidden = !opening; });
-        return;
-      }
       var target = document.getElementById(btn.getAttribute('aria-controls'));
       var open = btn.getAttribute('aria-expanded') !== 'true';
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');

@@ -211,7 +211,7 @@
   "cost.model.unknown": "model belirlenemedi",
   "settings.usage.modelOf": "{tool} modeli",
   "settings.usage.noteNoDate": "Fiyat listesinin tarihi bildirilmedi.",
-  "settings.usage.incomplete": "{tools} için bazı yerel kayıtlar okunamadı; etkilenen dönemler bir alt sınırdır.",
+  "settings.usage.incomplete": "{tools} için bazı yerel kayıtlar okunamadı; bu dönemlerde sayım eksik olabilir.",
   "provider.experimental": "deneysel",
   "provider.experimentalDetail": "Bu aracın kayıt biçimi gerçek bir kurulumda henüz doğrulanmadı.",
   "cost.pricesNotPublished": "{provider} fiyat yayımlamıyor",

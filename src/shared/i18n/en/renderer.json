@@ -232,7 +232,7 @@
   "cost.model.unknown": "model not determinable",
   "settings.usage.modelOf": "{tool} model",
   "settings.usage.noteNoDate": "The price list's date was not reported.",
-  "settings.usage.incomplete": "Some local records for {tools} could not be read; affected periods are a lower bound.",
+  "settings.usage.incomplete": "Some local records for {tools} could not be read; these periods may be undercounted.",
   "provider.experimental": "experimental",
   "provider.experimentalDetail": "This tool's log format has not yet been verified on a real install.",
   "cost.pricesNotPublished": "{provider} does not publish prices",

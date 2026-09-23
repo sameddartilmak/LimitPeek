@@ -1357,7 +1357,7 @@ app.whenReady().then(async () => {
   const incTr = await js(readUsageNotes);
   say('usage incomplete (tr): ' + JSON.stringify(incTr));
   check('[tr] an incomplete tool gets ONE note above the list, known ids only, named once',
-    incTr.incomplete === 'Codex için bazı yerel kayıtlar okunamadı; etkilenen dönemler bir alt sınırdır.'
+    incTr.incomplete === 'Codex için bazı yerel kayıtlar okunamadı; bu dönemlerde sayım eksik olabilir.'
       && incTr.incompleteCount === 1 && incTr.incompleteBeforeList === true
       && incTr.incompleteDrawn === true && incTr.incompleteClipped === false, incTr);
   await js(`window.__probe.setLocaleDirect('en', 'en-US')`);
@@ -1365,7 +1365,7 @@ app.whenReady().then(async () => {
   const incEn = await js(readUsageNotes);
   say('usage incomplete (en-US): ' + JSON.stringify(incEn));
   check('[en-US] the incomplete note and the source line read in English, whole',
-    incEn.incomplete === 'Some local records for Codex could not be read; affected periods are a lower bound.'
+    incEn.incomplete === 'Some local records for Codex could not be read; these periods may be undercounted.'
       && incEn.incompleteClipped === false
       && /Codex · Aug 15, 2026 prices/.test(incEn.note || '')
       && !/Codex: /.test(incEn.note || '')
@@ -1430,7 +1430,7 @@ app.whenReady().then(async () => {
   say('history no periods, incomplete (tr): ' + JSON.stringify(histNone));
   check('no periods with a tool known incomplete: no "no records found", only the incomplete note',
     histNone.emptyText === null && histNone.amounts.length === 0
-      && histNone.incomplete === 'Codex için bazı yerel kayıtlar okunamadı; etkilenen dönemler bir alt sınırdır.', histNone);
+      && histNone.incomplete === 'Codex için bazı yerel kayıtlar okunamadı; bu dönemlerde sayım eksik olabilir.', histNone);
   await js(`window.__probe.setHistoryShapeDirect('restore')`);
   await sleep(250);
   const histBack = await js(readHistory);

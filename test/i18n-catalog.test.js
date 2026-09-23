@@ -218,13 +218,11 @@ test.describe('the catalogs have one shape in both languages', () => {
  * ways a translation softens it: a floor turned into an estimate, a "not
  * reported" turned into "no limit", a stated absence turned into a dash.
  */
+// 'a floor stays a floor' is gone (2026-09-23): the owner decided the UI shows
+// no floor marker at all, so no catalog string says "en az" / "alt sınır" and
+// the row would have nothing to guard. A missing-records sentence now says
+// plainly that a period may be undercounted (settings.usage.incomplete).
 const HONESTY = [
-  {
-    claim: 'a floor stays a floor',
-    tr: /\ben az\b|alt sınır/i,
-    en: /\bat least\b|lower bound/i,
-    enNot: /\babout\b|approx|around|roughly|~|≈|\bup to\b|\bestimated?\b/i,
-  },
   {
     claim: 'the figure is denied as a bill',
     liveIn: 'renderer.json',
@@ -352,7 +350,7 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // ADR-002 A3.20: a history amount cell whose records could not be read (guarded below: no figure)
     { file: 'renderer.json', key: 'settings.amount.incomplete', en: [/\bcould not be read\b/], tr: [/okunamadı/] },
     // unreadable records in the history: affected periods are a floor
-    { file: 'renderer.json', key: 'settings.usage.incomplete', en: [/\{tools\}/, /\bcould not be read\b/, /\blower bound\b/i], tr: [/\{tools\}/, /okunamadı/, /alt sınır/] },
+    { file: 'renderer.json', key: 'settings.usage.incomplete', en: [/\{tools\}/, /\bcould not be read\b/, /\bundercounted\b/i], tr: [/\{tools\}/, /okunamadı/, /eksik olabilir/] },
     // cache reads are outside the billable total
     { file: 'renderer.json', key: 'row.tokens.cacheRead', en: [/\bnot included in the billable total\b/i], tr: [/dahil değil/] },
     // decoded, undocumented source
