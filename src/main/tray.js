@@ -1,6 +1,15 @@
 'use strict';
 const path = require('node:path');
 const { Tray, Menu, nativeImage, app } = require('electron');
+const { versionLabel } = require('../core/build-info');
+
+// Written at package time (scripts/write-build-info.js); absent in a dev run.
+let BUILD_INFO = null;
+try {
+  BUILD_INFO = require('./build-info.json');
+} catch {
+  BUILD_INFO = null;
+}
 const log = require('../core/log');
 const { t } = require('../core/i18n');
 
@@ -136,7 +145,7 @@ class TrayController {
   // index.js) rather than expecting the open menu to follow.
   setMenu({ autostart, onToggleAutostart, onQuit }) {
     const menu = Menu.buildFromTemplate([
-      { label: `Usage Notch ${app.getVersion()}`, enabled: false },
+      { label: versionLabel(app.getVersion(), BUILD_INFO), enabled: false },
       { type: 'separator' },
       {
         label: t('tray.menu.autostart'),

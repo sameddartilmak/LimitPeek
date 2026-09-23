@@ -14,8 +14,8 @@
     "scan": "node scripts/scan-once.js",
     "smoke": "electron scripts/smoke-ipc.js",
     "typecheck": "tsc -p src/renderer/tsconfig.json --noEmit",
-    "dist:dir": "npm run typecheck && npm run build && electron-builder --win --dir --publish never",
-    "dist": "npm run typecheck && npm run build && electron-builder --win nsis --publish never"
+    "dist:dir": "npm run typecheck && npm run build && node scripts/write-build-info.js && electron-builder --win --dir --publish never",
+    "dist": "npm run typecheck && npm run build && node scripts/write-build-info.js && electron-builder --win nsis --publish never"
   },
   "devDependencies": {
     "electron": "44.2.0",
