@@ -26,8 +26,12 @@ const CH = {
   PREFERENCES: 'prefs:changed',
   SET_THEME: 'prefs:set-theme',
   SET_LANGUAGE: 'prefs:set-language',
+  SET_PLAN_LABEL: 'prefs:set-plan-label',
   INITIAL_SNAPSHOT: 'usage:initial-snapshot',
   INITIAL_PREFERENCES: 'prefs:initial',
+  KEY_ENTRY: 'keys:request-entry',
+  KEY_REMOVE: 'keys:remove',
+  KEY_TOKEN_PAGE: 'keys:open-token-page',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -182,6 +186,63 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   setLanguage: (language) => ipcRenderer.invoke(CH.SET_LANGUAGE, String(language)),
+
+  /**
+   * Persists the plan the user says they are on for ONE tool, or clears it.
+   *
+   * The control is an `<input list>` with a per-tool `datalist`, so this carries
+   * ARBITRARY user text. Coerced to a string here for convenience only — main
+   * does the real validation (known id, plain string, trimmed, 24-character cap)
+   * because nothing arriving over IPC may be trusted to have been checked on the
+   * renderer side. An empty or blank label CLEARS the setting.
+   *
+   * NOT optimistic: `{ok:false}` means main wrote nothing and the renderer must
+   * put the control back to the value it had. On success the new label arrives
+   * on the next snapshot, which is what the row reads.
+   *
+   * @param {string} providerId
+   * @param {string} label  free text; '' clears
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setPlanLabel: (providerId, label) =>
+    ipcRenderer.invoke(CH.SET_PLAN_LABEL, String(providerId), String(label == null ? '' : label)),
+
+  /**
+   * Starts the optional-key flow (ADR-003 Amendment 5 K1/K3, Amendment 8).
+   *
+   * WRITE-ONLY, like every key channel on this bridge. There is no method here
+   * that returns a key, a masked key or its length — not because none is
+   * exposed today, but because none may ever be: the renderer's job is to show
+   * WHETHER a key is stored, and a "•••• 1234" affordance would need exactly the
+   * getter K3 forbids. The answer is whether main accepted the request.
+   *
+   * The id is coerced to a string here and validated in main against the
+   * hard-coded key-capable table; it selects a table entry and never reaches a
+   * URL, a path or a file name.
+   *
+   * @param {string} providerId
+   * @returns {Promise<{ok:boolean}>}
+   */
+  requestKeyEntry: (providerId) => ipcRenderer.invoke(CH.KEY_ENTRY, String(providerId)),
+
+  /**
+   * Deletes the LOCAL copy of a provider's key. Not revocation — that is the
+   * user's own step at the vendor, and the copy says so.
+   *
+   * @param {string} providerId
+   * @returns {Promise<{ok:boolean}>}
+   */
+  removeKey: (providerId) => ipcRenderer.invoke(CH.KEY_REMOVE, String(providerId)),
+
+  /**
+   * Opens the provider's token-creation page in the default browser, for the
+   * states where a new key is the fix. Main holds the URL as a literal; nothing
+   * sent from here reaches it.
+   *
+   * @param {string} providerId
+   * @returns {Promise<{ok:boolean}>}
+   */
+  openTokenPage: (providerId) => ipcRenderer.invoke(CH.KEY_TOKEN_PAGE, String(providerId)),
 
   close: () => ipcRenderer.send(CH.PANEL_CLOSE),
   pin: () => ipcRenderer.send(CH.PANEL_PIN),

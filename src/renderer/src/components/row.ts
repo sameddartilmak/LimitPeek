@@ -55,15 +55,20 @@ import { el, on, replaceChildrenWith, setAttr, setText } from '../dom.js';
 import {
   ago,
   agoSpoken,
+  atLeast,
   burnRate,
   compact,
+  mixWithin,
   parseInstant,
   sinceCapture,
   tokens,
 } from '../format.js';
 import { t } from '../i18n.js';
+import { allZero, hasTokenCount, marksFloor, weeklyTokenFloorCauses } from '../tokens.js';
+import { floorCauseClause } from '../floor-causes.js';
 import { createCost, type CostHandle } from './cost.js';
 import { experimentalTag } from './experimental.js';
+import { createKeyBlock, type KeyBlockHandle } from './keys.js';
 import { createQuotas, type QuotaHandle } from './quotas.js';
 import { gripDots, providerMark } from './logo.js';
 import { createMeter, isDrawable, meterStateStep, type MeterHandle } from './meter.js';
@@ -74,6 +79,10 @@ export const REORDER_HELP_ID = 'reorder-help';
 export interface RowContext {
   onRetry(providerId: string): void;
   onSetup(providerId: string): void;
+  /** ADR-003 A8: the user asked to add an optional API key for this provider. */
+  onAddKey(providerId: string): void;
+  /** The user asked for the vendor's token page (owner's A8 addendum). */
+  onOpenTokenPage(providerId: string): void;
   isBusy(providerId: string): boolean;
   /**
    * Wire this row's grip to the reorder controller. Called on every update so
@@ -150,6 +159,7 @@ export interface RowHandle {
 interface Refs {
   grip: HTMLButtonElement;
   cost: CostHandle;
+  keys: KeyBlockHandle;
   quotas: QuotaHandle;
   name: HTMLElement | null;
   plan: HTMLElement | null;
@@ -165,6 +175,7 @@ interface Refs {
 const EMPTY_REFS: Refs = {
   grip: null as unknown as HTMLButtonElement,
   cost: null as unknown as CostHandle,
+  keys: null as unknown as KeyBlockHandle,
   quotas: null as unknown as QuotaHandle,
   name: null,
   plan: null,
@@ -204,7 +215,11 @@ function shapeKeyOf(p: ProviderSnapshot): string {
     p.sevenDay?.resetsAt ? 'r7' : 'no-r7',
     p.setupAction ? p.setupAction.kind : 'no-setup',
     p.planLabel ? 'plan' : 'no-plan',
-    p.tokens ? 'tok' : 'no-tok',
+    // WHICH window the token item describes is structure, not content: the
+    // weekly and the five-hour figure are different claims, and a row that
+    // silently swapped one for the other in place would relabel a number
+    // without redrawing the line that names its window.
+    tokenItemKind(p),
     p.burnRatePerHour !== null ? 'burn' : 'no-burn',
     primary?.capturedAt ? 'cap' : 'no-cap',
     // Presence only. The VALUE must not be part of the key, or every new
@@ -221,9 +236,115 @@ function shapeKeyOf(p: ProviderSnapshot): string {
   ].join('|');
 }
 
-function tokensTitle(p: ProviderSnapshot): string {
-  if (!p.tokens) return '';
+/**
+ * THE TOKEN FIGURE ON THIS LINE IS THE WEEK'S, AND IT SAYS SO.
+ *
+ * It used to be the five-hour count, printed bare. Bare was survivable while
+ * there was one token figure in the row; it is not now. The line sits under
+ * TWO meters — a five-hour block and a weekly one — so an unlabelled count is
+ * read as whichever block the eye came from, and the burn rate beside it is
+ * genuinely a FIVE-HOUR figure (`agg.burnRatePerHour(tokens.billable,
+ * win.elapsedMs)` over the 5h window, src/core/snapshot.js:612). Two numbers
+ * side by side describing two different windows, one of them labelled and one
+ * not, is the misreading this change exists to remove. So every figure on this
+ * line names its own window, and the pair is symmetric.
+ *
+ * Which weekly window it is comes from `weeklyTokensWindowAnchored` — the row's
+ * OWN field, about this figure's window — and never from `sevenDay.resetsAt` or
+ * from `weeklyCost.windowAnchored`. Two reasons, both load-bearing:
+ *
+ *  - Deriving a window from a reset instant is usage arithmetic, and the
+ *    contract's division of labour is that main resolves windows and the
+ *    renderer renders them. It would also be coupling two rules that only
+ *    AGREE BY COINCIDENCE: `resetsAt` is nulled by `windowFrom` under a rule
+ *    about whether a PERCENTAGE may be shown (a rolled-over window loses its
+ *    figure), while main's refusal to anchor to a passed reset is a separate
+ *    rule with its own reason (a closed window would exclude everything spent
+ *    since). Backend measured the five reachable Claude states: today a
+ *    non-null `resetsAt` and an anchored window always coincide, so a renderer
+ *    deriving the label would be RIGHT today — and silently wrong the first
+ *    time either rule moves, with no test able to see it. That is the worse
+ *    failure, not the smaller one.
+ *  - `weeklyCost.windowAnchored` states the same fact about the same window and
+ *    is the right field to read WHEN a cost block exists, but it vanishes
+ *    exactly where the label matters most: a quiet week prices nothing, so
+ *    `weeklyCost` is null while a present all-zero count still has to name its
+ *    window. When both are present they always agree — main derives them from
+ *    one window object.
+ *
+ * `null` means unscanned, so there is no window to name and the label states the
+ * SPAN only ("Haftalık" / "Weekly"). Gemini CLI and Kimi Code are always false
+ * once scanned — neither publishes a weekly reset to us — so neither can ever be
+ * labelled a quota week.
+ */
+function weeklyTokenLabel(p: ProviderSnapshot, value: string): string {
+  const anchored = p.weeklyTokensWindowAnchored;
+  if (anchored === null || anchored === undefined) return t('row.tokens.weekly', { value });
+  return anchored ? t('row.tokens.quotaWeek', { value }) : t('row.tokens.last7', { value });
+}
+
+/**
+ * What the line prints for the week: the count, its window, and "en az" only
+ * when MAIN says the count is a lower bound (`weeklyTokenFloorCauses`), and
+ * never without printing one of those causes beside it (ADR-002 A3.16).
+ *
+ * Never derived here from `sourceIncomplete`, `unrecordedCalls` or
+ * `unrecordedWriteEvents`, and never from a provider id: those signals are
+ * individually incomplete, and the rule kept in a renderer is a rule the next
+ * surface will not carry. The purely monetary floors do NOT reach this figure —
+ * an unpriced model counted every token it saw — so this row can legitimately
+ * read "en az $12,40" in the cost block under an EXACT token count.
+ */
+function weeklyTokenText(p: ProviderSnapshot): string {
+  const tk = p.weeklyTokens;
+  if (!tk) return '';
+  // ADR-002 A3.19, and the ONLY state that reads "could not be counted": the
+  // reader KNOWS it could not read this window, so the zero it reports is not a
+  // measurement. Recognised by `sourceIncomplete` WITH a zero count — never by
+  // the zero alone, which is a real answer (see below).
+  if (allZero(tk) && p.weeklyCost?.sourceIncomplete) return t('row.tokens.uncounted');
+
+  // A MEASURED ZERO PRINTS AS ZERO. A user who did not touch this tool all week
+  // is told they used nothing — our reading succeeded and its answer was zero.
+  // Hiding the item instead would make the row indistinguishable from a
+  // provider we never scanned, and would bring `row.noTokens` ("Token bilgisi
+  // yok") back into reach on a row where we DO have the data.
+  const value = tokens(tk.billable);
+  const causes = weeklyTokenFloorCauses(p);
+  // "en az" only with a positive figure for the bound to qualify: a lower bound
+  // of zero says nothing, and "en az 0 token" is the no-figure-as-floor state
+  // this whole feature exists to prevent. The CAUSE is still shown either way,
+  // so a count that understates never looks exact (ADR-002 A3.16).
+  const figure = marksFloor(tk, causes) ? atLeast(value) : value;
+  const labelled = weeklyTokenLabel(p, figure);
+  if (causes.length === 0) return labelled;
+  return t('row.tokens.floorCause', { value: labelled, cause: floorCauseClause(causes[0]) });
+}
+
+/**
+ * Which window this line's token figure describes.
+ *
+ * 'weekly' is the answer whenever main sent a weekly count at all — including
+ * the all-zero "could not be counted" one, which is a statement ABOUT the week
+ * and belongs under the week's label. 'fiveHour' is the compatibility path: a
+ * main that predates `weeklyTokens` still has a true five-hour count, and the
+ * honest thing is to show it AS a five-hour count, never to relabel a figure
+ * into a window it does not describe.
+ */
+function tokenItemKind(p: ProviderSnapshot): 'weekly' | 'fiveHour' | 'none' {
+  if (p.weeklyTokens) return 'weekly';
+  if (p.tokens) return 'fiveHour';
+  return 'none';
+}
+
+function tokenItemText(p: ProviderSnapshot): string {
+  if (tokenItemKind(p) === 'weekly') return weeklyTokenText(p);
   const tk = p.tokens;
+  return tk ? t('row.tokens.fiveHour', { value: tokens(tk.billable) }) : '';
+}
+
+/** The four classes of one breakdown, in one line. */
+function classes(tk: NonNullable<ProviderSnapshot['weeklyTokens']>): string {
   return [
     t('row.tokens.input', { value: compact(tk.input) }),
     t('row.tokens.output', { value: compact(tk.output) }),
@@ -232,10 +353,39 @@ function tokensTitle(p: ProviderSnapshot): string {
   ].join(' · ');
 }
 
+/**
+ * Both windows' breakdowns, each named. The five-hour figure is not deleted by
+ * this change — it moves here, and it is labelled, because `weeklyTokens` and
+ * `tokens` are both a `TokenBreakdown` and become indistinguishable the moment
+ * they are formatted.
+ */
+function tokensTitle(p: ProviderSnapshot): string {
+  const lines: string[] = [];
+  // `hasTokenCount` here and nowhere else: this is the one decision it is for —
+  // whether a four-class breakdown has anything to say. It never decides
+  // whether a figure prints; that is `null` vs non-null, and a zero prints.
+  const week = p.weeklyTokens;
+  const five = p.tokens;
+  if (week && hasTokenCount(week)) lines.push(`${t('meter.window7d.label')} — ${classes(week)}`);
+  if (five && hasTokenCount(five)) lines.push(`${t('meter.window5h.label')} — ${classes(five)}`);
+  // Every cause, not only the one the line has room for, so nothing is lost to
+  // brevity (ADR-004 A3 keeps the visible line short; this is the full set).
+  const causes = weeklyTokenFloorCauses(p);
+  if (causes.length > 1) lines.push(causes.map((cause) => floorCauseClause(cause)).join(' · '));
+  return lines.join('\n');
+}
+
+/**
+ * The per-model split behind the burn rate. It is the FIVE-HOUR split
+ * (src/core/snapshot.js:613 reads it from the same 5h window the rate is
+ * measured over), so it is named as one rather than left to sit under a line
+ * whose other figure is weekly.
+ */
 function modelsTitle(p: ProviderSnapshot): string {
   const list = p.byModel ?? [];
   if (list.length === 0) return '';
-  return list.map((entry) => `${entry.model}: ${compact(entry.billable)}`).join(' · ');
+  const split = list.map((entry) => `${entry.model}: ${compact(entry.billable)}`).join(' · ');
+  return `${t('meter.window5h.label')} — ${split}`;
 }
 
 function errorText(code: string | undefined): string {
@@ -349,7 +499,32 @@ function buildLive(
   now: number,
 ): void {
   const name = el('span', { class: 'row__name' }, p.displayName);
-  const plan = p.planLabel ? el('span', { class: 'row__plan' }, p.planLabel) : null;
+  // The plan is the USER'S OWN STATEMENT, repeated back — it is in no local
+  // file and no vendor tells us (`ProviderSnapshot.planLabel`: "from app
+  // settings only. Never inferred, never guessed"). So it is a label beside a
+  // name and nothing else: it never enters a usage claim, never colours a
+  // figure, and `null` renders NOTHING — no placeholder, no "bilinmiyor", which
+  // would be the app asking a question in the one place it should be quiet.
+  //
+  // Provenance for anything reading the row aloud: the visible pill is two or
+  // three words with no context, and beside a tool name it could be heard as
+  // something the tool reported. The screen-reader prefix says whose statement
+  // it is. It is `u-sr` rather than a `title` deliberately — a tooltip may not
+  // paint at all on this window (open question), and this is the reader who
+  // most needs the provenance.
+  // NOT on a passive or unconnected row, even when the label exists. A plan
+  // QUALIFIES A READING — it is the allowance the percentages are a share of —
+  // and a row with no reading has nothing for it to qualify. On a not-installed
+  // row it would sit beside "Bu araç bu makinede bulunamadı", annotating a tool
+  // the user is not using; that is noise, and noise that looks like data.
+  const plan = p.connected && p.planLabel
+    ? el(
+        'span',
+        { class: 'row__plan' },
+        el('span', { class: 'u-sr' }, `${t('row.planSpoken')} `),
+        p.planLabel,
+      )
+    : null;
   const line1Children: Array<HTMLElement | null> = [
     name,
     experimentalTag(p),
@@ -446,10 +621,12 @@ function buildLive(
         const since = p.lastGoodAt ?? ctx.generatedAt;
         if (since) setAttr(staleAge, 'data-since', since);
         metaChildren.push(staleAge);
-      } else if (p.tokens) {
+      } else if (tokenItemKind(p) !== 'none') {
         // The capture instant is already inside the window block; keep the
-        // absolutes here.
-        metaTokens = el('span', { title: tokensTitle(p) }, tokens(p.tokens.billable));
+        // absolutes here. A stale CAPTURE is about the percentage, not about
+        // the local corpus these counts come from, so the figure and its window
+        // label are exactly the same as on a fresh row.
+        metaTokens = el('span', { title: tokensTitle(p) }, tokenItemText(p));
         metaChildren.push(metaTokens);
       }
     } else {
@@ -460,15 +637,18 @@ function buildLive(
       const pending = ctx.isPending(p.id);
       if (pending) {
         metaChildren.push(el('span', { class: 'row__pending' }, t('row.tokens.pending')));
-      } else if (p.tokens) {
-        metaTokens = el('span', { title: tokensTitle(p) }, tokens(p.tokens.billable));
+      } else if (tokenItemKind(p) !== 'none') {
+        metaTokens = el('span', { title: tokensTitle(p) }, tokenItemText(p));
         metaChildren.push(metaTokens);
       }
       if (!pending && p.burnRatePerHour !== null) {
+        // The rate is measured over the FIVE-HOUR window and now sits beside a
+        // weekly count, so it names its own window on the visible line. A title
+        // alone would not do it: the misreading happens at a glance.
         metaBurn = el(
           'span',
           { title: modelsTitle(p) || t('row.burnTitle') },
-          burnRate(p.burnRatePerHour),
+          t('row.burn.fiveHour', { rate: burnRate(p.burnRatePerHour) }),
         );
         metaChildren.push(metaBurn);
       }
@@ -485,7 +665,25 @@ function buildLive(
     // this line would be the third figure describing the five-hour window and
     // none describing the weekly one.
 
-    const meta = el('div', { class: 'row__meta' }, ...metaChildren);
+    // A REAL SPACE BETWEEN ITEMS, not only a CSS one.
+    //
+    // The visible separator is a `::after` on every item but the last (row.css),
+    // and pseudo-element content is NOT part of `textContent` — so with nothing
+    // else between the spans, anything reading this line AS A STRING saw
+    // "…6,2 Mn token5 saat: 240 B token/sa", two figures glued into one word.
+    // That predates the labels (the old "·" was a pseudo-element too) but the
+    // labels made it matter: each item is now a sentence, and assistive tech
+    // that concatenates adjacent inline nodes runs them together.
+    //
+    // A whitespace-only text node between flex items is not rendered, so this
+    // changes nothing visually and cannot reintroduce the stray leading dot; it
+    // exists purely so the text stream has a boundary where the layout has one.
+    const spaced: (HTMLElement | string)[] = [];
+    metaChildren.forEach((child, i) => {
+      if (i > 0) spaced.push(' ');
+      spaced.push(child);
+    });
+    const meta = el('div', { class: 'row__meta' }, ...spaced);
     replaceChildrenWith(body, [line1, meterNode, meta]);
   }
 
@@ -533,6 +731,13 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
   // Same lifetime and the same reason: a disclosure that collapsed itself on
   // every 15s push would be unusable.
   refs.quotas = createQuotas(provider.id);
+  // ADR-003 A8: the optional key block. Created once, like the two above, and
+  // for the same reason — it holds a confirm step the user must not lose to a
+  // snapshot push.
+  refs.keys = createKeyBlock(provider.id, {
+    onAddKey: (id) => ctx.onAddKey(id),
+    onOpenTokenPage: (id) => ctx.onOpenTokenPage(id),
+  });
 
   root.appendChild(refs.grip);
   root.appendChild(body);
@@ -580,6 +785,12 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
 
     const step = meterStateStep(p.fiveHour, p.sevenDay);
     setAttr(root, 'data-state', step);
+    // The row-level ramp mixes too, from the same window the step came from,
+    // or the row's own colour would step while the block inside it glides.
+    const primary = primaryWindow(p);
+    const pct = primary && isDrawable(primary) ? primary.usedPercentage : null;
+    if (step && pct !== null) root.style.setProperty('--mix', mixWithin(pct).toFixed(4));
+    else root.style.removeProperty('--mix');
 
     setAttr(root, 'aria-busy', p.status === 'loading' ? 'true' : null);
     setAttr(
@@ -640,14 +851,22 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
       rebuild(p, context, atNow);
     } else {
       if (refs.name) setText(refs.name, p.displayName);
-      if (refs.plan && p.planLabel) setText(refs.plan, p.planLabel);
+      if (refs.plan && p.planLabel) {
+        // NOT setText: that would drop the screen-reader prefix beside it. Only
+        // the last child — the visible label — is the value that changes.
+        const last = refs.plan.lastChild;
+        if (last) last.textContent = p.planLabel;
+      }
       if (refs.meter) refs.meter.update(p.fiveHour, p.sevenDay, p.status === 'stale', atNow);
-      if (refs.metaTokens && p.tokens) {
-        setText(refs.metaTokens, tokens(p.tokens.billable));
+      if (refs.metaTokens && tokenItemKind(p) !== 'none') {
+        // The window label is part of the text, so it is rewritten with the
+        // figure: a count that moved from an anchored quota week to a trailing
+        // seven days must not keep the old window's name.
+        setText(refs.metaTokens, tokenItemText(p));
         setAttr(refs.metaTokens, 'title', tokensTitle(p));
       }
       if (refs.metaBurn && p.burnRatePerHour !== null) {
-        setText(refs.metaBurn, burnRate(p.burnRatePerHour));
+        setText(refs.metaBurn, t('row.burn.fiveHour', { rate: burnRate(p.burnRatePerHour) }));
       }
       if (refs.delta) {
         // Consumption only rises inside a window, so this number moves between
@@ -685,6 +904,14 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     refs.cost.update(p.weeklyCost, p.displayName, context.isPending(p.id));
     if (!refs.cost.el.hidden && refs.cost.el.parentElement !== body) {
       body.appendChild(refs.cost.el);
+    }
+
+    // ADR-003 A8: the optional key block, last in the row. It is an EXTRA, so
+    // it sits after everything the row shows without a key — and a provider
+    // that cannot use a key renders nothing here at all.
+    refs.keys.update(p);
+    if (!refs.keys.el.hidden && refs.keys.el.parentElement !== body) {
+      body.appendChild(refs.keys.el);
     }
     // A row carrying the cost block is several times taller than a plain one,
     // and a vertically centred mark then floats away from the name it

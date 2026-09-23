@@ -33,6 +33,12 @@ function p(id, name, accent, connected, status, extra) {
       accent,
       // ADR-003 A6.4: the registry fact main sends for every provider.
       experimental: id === 'gemini' || id === 'kimi',
+      // ADR-003 A8 (Phase B): only Copilot can use an optional key, and it
+      // starts with none stored — the state that shows the calm offer.
+      keyCapable: id === 'copilot',
+      keyState: 'none',
+      keyStoredAt: null,
+      creditUsage: null,
       // Every fixture row starts ADDED; the settings checks flip these at
       // runtime through __probe so the earlier structural checks still see
       // all six rows.
@@ -43,6 +49,11 @@ function p(id, name, accent, connected, status, extra) {
       fiveHour: null,
       sevenDay: null,
       tokens: null,
+      // The row headline is the WEEKLY count; `tokens` is the 5h detail
+      // beside it. Null together, as the contract states.
+      weeklyTokens: null,
+      weeklyTokensWindowAnchored: null,
+      weeklyTokenFloorCauses: [],
       burnRatePerHour: null,
       byModel: [],
       weeklyCost: null,
@@ -371,6 +382,17 @@ const TINY_COST = {
   totalUsd: 0.004,
   byClass: { input: 0.0009, output: 0.002, cacheWrite5m: 0.0006, cacheWrite1h: 0.0004, cacheRead: 0.0001 },
   byModel: [LIVE_COST.byModel[1]],
+  // This cost sits on the GEMINI row, and Gemini CLI publishes no weekly reset,
+  // so main can only ever price it over a trailing seven days
+  // (`localUsageRow` passes anchored=false unconditionally). Inheriting
+  // LIVE_COST's `windowAnchored: true` made the fixture a state main cannot
+  // produce, and a contradictory one: the cost block would say "kota haftası"
+  // while the row's own token line on the SAME row says "Son 7 gün", because
+  // that line reads `weeklyTokensWindowAnchored`. A fixture that shows an
+  // impossible pairing cannot catch a real one.
+  windowAnchored: false,
+  windowStart: iso(-7 * 864e5),
+  windowEnd: iso(0),
 };
 
 /**
@@ -390,12 +412,17 @@ const FIXTURES = {
       planLabel: 'Max 20x',
       fiveHour: win(62, 'known'),
       sevenDay: win(24, 'known'),
-      tokens: tok(1_240_000),
+      tokens: tok(1240000),
+      weeklyTokens: tok(6200000),
+      weeklyTokensWindowAnchored: true,
       burnRatePerHour: 240_000,
     }),
     p('codex', 'Codex', '#10A37F', true, 'ok', {
       fiveHour: win(91, 'known'),
-      tokens: tok(410_000),
+      tokens: tok(410000),
+      weeklyTokens: tok(2050000),
+      // Codex publishes no weekly reset to us, so its window is trailing.
+      weeklyTokensWindowAnchored: false,
       burnRatePerHour: 90_000,
     }),
     p('gemini', 'Gemini', '#4386F5', false, 'passive', { setupAction: ADD }),
@@ -412,20 +439,28 @@ const FIXTURES = {
       weeklyCost: LIVE_COST,
       fiveHour: win(62, 'known'),
       sevenDay: win(24, 'known'),
-      tokens: tok(1_240_000),
+      tokens: tok(1240000),
+      weeklyTokens: tok(6200000),
+      weeklyTokensWindowAnchored: true,
       burnRatePerHour: 240_000,
     }),
     p('codex', 'Codex', '#10A37F', true, 'ok', {
       weeklyCost: CAVEAT_COST,
       fiveHour: win(91, 'known'),
-      tokens: tok(410_000),
+      tokens: tok(410000),
+      weeklyTokens: tok(2050000),
+      // Codex publishes no weekly reset to us, so its window is trailing.
+      weeklyTokensWindowAnchored: false,
       burnRatePerHour: 90_000,
     }),
     // A stale row: the meter dims, and the cost figure must become a bound.
     p('gemini', 'Gemini', '#4386F5', true, 'stale', {
       weeklyCost: TINY_COST,
       fiveHour: win(31, 'known'),
-      tokens: tok(120_000),
+      tokens: tok(120000),
+      weeklyTokens: tok(600000),
+      // Gemini CLI is ALWAYS trailing (contract): it publishes no weekly reset.
+      weeklyTokensWindowAnchored: false,
       lastGoodAt: new Date(Date.now() - 40 * 60_000).toISOString(),
     }),
     // A payload from a main process that produced the figure and nothing else.
@@ -437,7 +472,10 @@ const FIXTURES = {
     p('antigravity', 'Antigravity', '#E8B84B', true, 'ok', {
       weeklyCost: ALL_UNPRICED_COST,
       fiveHour: win(12, 'known'),
-      tokens: tok(4_215_300),
+      tokens: tok(4215300),
+      weeklyTokens: tok(21076500),
+      // No weekly window on this row, so the count cannot be anchored to one.
+      weeklyTokensWindowAnchored: false,
       modelQuotas: LIVE_QUOTAS,
     }),
     p('kimi', 'Kimi', '#2B6BE8', false, 'passive', { setupAction: ADD }),
@@ -468,6 +506,8 @@ function usageHistoryFixture() {
     costUsd,
     byClass: costUsd > 0 ? { input: 1.2, output: costUsd * 0.2, cacheWrite5m: costUsd * 0.1, cacheWrite1h: 0, cacheRead: costUsd * 0.7 - 1.2 } : zero,
     byModel,
+    tokensByProvider: {},
+    tokenFloorCausesByProvider: {},
     isFloor: false,
     unpricedModels: [],
     hasUsage: costUsd > 0,
@@ -475,16 +515,29 @@ function usageHistoryFixture() {
   });
   const months = [
     month(0, 412.37, [
-      { provider: 'claude', model: 'claude-opus-5', costUsd: 301.12, isFloor: true },
-      { provider: 'codex', model: 'gpt-5-codex', costUsd: 98.4, isFloor: false },
-      { provider: 'claude', model: 'claude-haiku-4-5-20251001', costUsd: 12.85, isFloor: false },
-      { provider: 'codex', model: 'codex-mini-preview', costUsd: null, isFloor: false },
+      { provider: 'claude', model: 'claude-opus-5', costUsd: 301.12, isFloor: true, tokens: tok(9_600_000) },
+      { provider: 'codex', model: 'gpt-5-codex', costUsd: 98.4, isFloor: false, tokens: tok(3_100_000) },
+      { provider: 'claude', model: 'claude-haiku-4-5-20251001', costUsd: 12.85, isFloor: false, tokens: tok(820_000) },
+      // Unpriced, and still counted: the tokens were used whether or not a
+      // price exists for them, so the count must NOT be blanked to match.
+      { provider: 'codex', model: 'codex-mini-preview', costUsd: null, isFloor: false, tokens: tok(240_000) },
       // No resolvable model: shown as "model belirlenemedi", never as "unknown".
-      { provider: 'codex', model: 'unknown', costUsd: null, isFloor: false },
-    ], { isFloor: true, unpricedModels: ['codex-mini-preview', 'unknown'] }),
+      { provider: 'codex', model: 'unknown', costUsd: null, isFloor: false, tokens: tok(55_000) },
+    ], {
+      isFloor: true,
+      unpricedModels: ['codex-mini-preview', 'unknown'],
+      // NOT the sum of the rows above: the list is capped at 24 entries, so
+      // the subtotal is main's own and the renderer must read it from here.
+      tokensByProvider: { claude: tok(10_480_000), codex: tok(3_420_000) },
+      // Codex records 0 cache writes, so its COUNT is a floor AND carries the
+      // reason that has to be on screen with it (A3.16). Claude's dollars are a
+      // floor in this month and its token count is still exact — the two claims
+      // are deliberately different.
+      tokenFloorCausesByProvider: { codex: ['unrecorded-writes'] },
+    }),
     month(1, 87.5, [
-      { provider: 'claude', model: 'claude-opus-5', costUsd: 87.5, isFloor: false },
-    ]),
+      { provider: 'claude', model: 'claude-opus-5', costUsd: 87.5, isFloor: false, tokens: tok(2_900_000) },
+    ], { tokensByProvider: { claude: tok(2_900_000) }, tokenFloorCausesByProvider: {} }),
     // An empty month. With Codex still being counted it must NOT read "—":
     // its Codex usage has simply not been read yet (ADR-002 A3.12).
     month(2, 0, []),
@@ -550,6 +603,9 @@ let deferPrefs = false;
 let heldPrefs = null;
 /** Main owns the mode; the renderer only asks. Mirrored here. */
 let mode = 'hover';
+/** Every key-channel ask the panel made (ADR-003 A8). Ids only: no key ever
+ *  crosses this boundary in either direction. */
+const keyCalls = { requestKeyEntry: [], removeKey: [], openTokenPage: [] };
 
 /** Geometry good enough to place the panel inside the 420x700 test window. */
 function anchorPayload(mode, anchorSource) {
@@ -659,6 +715,23 @@ contextBridge.exposeInMainWorld('usageNotch', {
   },
   close: () => {
     calls.close++;
+  },
+  /**
+   * ADR-003 A8: the three key channels. Write-only, and each answers only
+   * whether main accepted the ask — there is no getter to mirror, because
+   * there is none to expose (K3).
+   */
+  requestKeyEntry: async (id) => {
+    keyCalls.requestKeyEntry.push(id);
+    return { ok: true };
+  },
+  removeKey: async (id) => {
+    keyCalls.removeKey.push(id);
+    return { ok: true };
+  },
+  openTokenPage: async (id) => {
+    keyCalls.openTokenPage.push(id);
+    return { ok: true };
   },
   /**
    * A real TOGGLE, as main is. Pressing while pinned unpins and pushes
@@ -813,6 +886,22 @@ contextBridge.exposeInMainWorld('__probe', {
     if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
     return true;
   },
+  /**
+   * ADR-003 A8: put a provider into a key state, with or without a reading,
+   * and push. `patch` is merged onto the row, so a check can drive one state
+   * at a time without rebuilding the fixture.
+   */
+  setKeyDirect: (id, patch) => {
+    snapshot.providers = snapshot.providers.map((x) =>
+      x.id === id ? { ...x, ...(patch || {}) } : x,
+    );
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+    return true;
+  },
+  /** What the panel asked of the key channels, so a check can prove a control
+   *  actually reached main rather than only looking pressed. */
+  keyCalls: () => JSON.parse(JSON.stringify(keyCalls)),
   /** Set `usageHistory.incompleteProviders` (ADR-002 A3.20), and push. */
   setHistoryIncompleteDirect: (ids) => {
     snapshot.usageHistory = { ...snapshot.usageHistory, incompleteProviders: Array.isArray(ids) ? ids.slice() : [] };

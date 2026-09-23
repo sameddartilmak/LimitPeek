@@ -46,6 +46,7 @@ import {
   parseInstant,
   percent,
   percentSpoken,
+  mixWithin,
   stateFor,
 } from '../format.js';
 import { t } from '../i18n.js';
@@ -384,6 +385,11 @@ function createBlock(
         // figure can never disagree, and the weekly block is never coloured by
         // the five-hour window's pressure.
         setAttr(root, 'data-state', stateFor(value));
+        // How far into that step, so the fill can mix toward the NEXT anchor
+        // instead of holding one colour across a whole band. Same rounded
+        // value as the step and as the printed figure — one number, three
+        // renderings of it, and they cannot disagree.
+        root.style.setProperty('--mix', mixWithin(value).toFixed(4));
 
         fill.style.setProperty('--f', fraction.toFixed(4));
         fill.classList.toggle('rail__fill--estimated', usage.certainty === 'estimated');
@@ -420,6 +426,9 @@ function createBlock(
         const absence = absenceCopy(usage);
         setText(pct, absence.figure);
         setAttr(root, 'data-state', null);
+        // No step, so nothing to mix between: the block falls back to the
+        // neutral ink rather than to the bottom of a ramp it is not on.
+        root.style.removeProperty('--mix');
         setAttr(root, 'aria-label', absence.spoken(spokenText));
         if (reason) {
           setText(reason, absence.reason ?? '');

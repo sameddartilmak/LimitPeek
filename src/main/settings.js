@@ -5,14 +5,18 @@ const { sanitizeOrder } = require('../core/order');
 const { sanitizeEnabled } = require('../core/enabled');
 const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeLanguage, DEFAULT_LANGUAGE } = require('../core/language');
+const { migratePlanLabels } = require('../core/plan-labels');
 
 /**
  * App settings, stored in the app's own userData. Small and hand-editable.
  *
- * `planLabel` lives here on purpose: it is the ONLY source for that field.
+ * `planLabels` lives here on purpose: it is the ONLY source for that field.
  * ADR-001 security F1 forbids opening `~/.claude/.credentials.json`, so the
- * plan is either something the user told us or it stays null. It is never
- * inferred from usage volume, which would be a guess presented as a fact.
+ * plan is either something the user told us or the row says nothing. It is never
+ * inferred from usage volume, which would be a guess presented as a fact, and
+ * nothing computes from it — see `src/core/plan-labels.js`. It became a map when
+ * the plan moved onto every row: one string could only ever be right about one
+ * tool, and a person on Claude Max 20x may also be on a Codex plan.
  *
  * `providerOrder` and `enabledProviders` live here rather than in the
  * transcript store on purpose: the store is derived data that is rewritten,
@@ -24,7 +28,14 @@ const FILE = 'settings.json';
 
 const DEFAULTS = Object.freeze({
   autostart: true,
-  planLabel: null,
+  /**
+   * Partial map id -> plan name the user typed, e.g. `{ claude: 'Max 20x' }`.
+   * Empty means no row shows a plan, which is the honest rendering of a fact
+   * nobody stated. Partial rather than a full map for the same reason
+   * `enabledProviders` is: a tool absent from it shows nothing, and that is
+   * different from an empty string.
+   */
+  planLabels: {},
   /** Empty means "registry order"; see src/core/order.js. */
   providerOrder: [],
   /**
@@ -54,9 +65,10 @@ function file(userDataDir) {
 }
 
 function defaults() {
-  // DEFAULTS is frozen and holds an array and an object, so a spread would hand
-  // the caller a shared, frozen `providerOrder` / `enabledProviders`.
-  return { ...DEFAULTS, providerOrder: [], enabledProviders: {} };
+  // DEFAULTS is frozen and holds an array and two objects, so a spread would
+  // hand the caller a shared, frozen `providerOrder` / `enabledProviders` /
+  // `planLabels`.
+  return { ...DEFAULTS, providerOrder: [], enabledProviders: {}, planLabels: {} };
 }
 
 function load(userDataDir) {
@@ -72,7 +84,11 @@ function load(userDataDir) {
   if (!raw || typeof raw !== 'object') return defaults();
   return {
     autostart: typeof raw.autostart === 'boolean' ? raw.autostart : DEFAULTS.autostart,
-    planLabel: typeof raw.planLabel === 'string' && raw.planLabel ? raw.planLabel : null,
+    // Untrusted user text from a hand-editable file: trimmed, length-capped and
+    // reduced to the known ids at this boundary, so nothing downstream re-checks
+    // it. Carries the legacy single `planLabel` onto the `claude` key rather than
+    // dropping a setting the user typed — see `migratePlanLabels`.
+    planLabels: migratePlanLabels(raw.planLabels, raw.planLabel),
     // Validated at the boundary: whatever survives here is known ids only, so
     // nothing downstream has to re-check it.
     providerOrder: sanitizeOrder(raw.providerOrder),

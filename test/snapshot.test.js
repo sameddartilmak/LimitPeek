@@ -329,9 +329,14 @@ test.describe('provider registry shape', () => {
   });
 
   test('planLabel is null unless app settings supplied one; never inferred', () => {
+    // A billion output tokens is the strongest hint a plan could have, and it
+    // still produces nothing: the plan is not derived from usage volume.
     const a = claude(buildSnapshot({ now: NOW, events: [ev({ output: 1e9 })], rateLimits: { state: 'missing' }, scanOk: true }));
     assert.equal(a.planLabel, null);
-    const b = claude(buildSnapshot({ now: NOW, events: [], rateLimits: { state: 'missing' }, scanOk: true, planLabel: 'Max 20x' }));
+    const b = claude(buildSnapshot({
+      now: NOW, events: [], rateLimits: { state: 'missing' }, scanOk: true,
+      planLabels: { claude: 'Max 20x' },
+    }));
     assert.equal(b.planLabel, 'Max 20x');
   });
 
@@ -592,5 +597,330 @@ test.describe('billableSinceCapture shares TokenBreakdown.billable basis', () =>
     ];
     const c = claude(buildSnapshot({ now: NOW3, events, rateLimits: staleRl(), scanOk: true }));
     assert.equal(c.fiveHour.billableSinceCapture, 5, 'half-open [capturedAt, now)');
+  });
+});
+
+/**
+ * `ProviderSnapshot.weeklyTokens` — the row's headline token figure.
+ *
+ * The one property that matters and that nothing else enforces: it covers
+ * EXACTLY the window `sevenDay` describes and `weeklyCost` is priced over. The
+ * figure is read beside the 7-day percentage, so a window even slightly
+ * different would pair a count with a percentage describing two different
+ * weeks. Every assertion below is about that identity, about the half-open
+ * bounds, or about a row that must stay silent.
+ */
+test.describe('weeklyTokens covers exactly the sevenDay window', () => {
+  const DAY = 24 * HOUR;
+
+  /** A fresh capture whose weekly reset is `sevenResetsAtMs` (null = none). */
+  function rl(sevenResetsAtMs) {
+    return {
+      state: 'fresh',
+      capturedAtMs: NOW,
+      fiveHour: { usedPercentage: 5, resetsAtMs: NOW + HOUR },
+      sevenDay: { usedPercentage: 10, resetsAtMs: sevenResetsAtMs },
+    };
+  }
+
+  test('anchored: the window is [resetsAt - 7d, resetsAt), half-open at both ends', () => {
+    const resetsAt = NOW + 2 * DAY;
+    const start = resetsAt - 7 * DAY;
+    const events = [
+      ev({ ts: start - 1, key: 'justBefore', output: 1_000_000 }),
+      ev({ ts: start, key: 'atStart', output: 7 }),
+      ev({ ts: NOW - HOUR, key: 'inside', output: 11 }),
+    ];
+    const c = claude(buildSnapshot({ now: NOW, events, rateLimits: rl(resetsAt), scanOk: true }));
+    assert.equal(c.weeklyTokens.output, 18, 'start is inclusive, the ms before it is not');
+    assert.equal(c.weeklyTokens.billable, 18);
+  });
+
+  test('anchored: it is the SAME window the weekly cost block reports', () => {
+    const resetsAt = NOW + 2 * DAY;
+    const events = [ev({ ts: NOW - 3 * DAY, key: 'a', input: 5, output: 9, cacheWrite: 3, cacheRead: 77 })];
+    const c = claude(buildSnapshot({ now: NOW, events, rateLimits: rl(resetsAt), scanOk: true }));
+    assert.equal(c.weeklyCost.windowAnchored, true);
+    assert.equal(c.weeklyCost.windowStart, new Date(resetsAt - 7 * DAY).toISOString());
+    assert.equal(c.weeklyCost.windowEnd, new Date(resetsAt).toISOString());
+    // The cost's own per-model token rows are folded over that same window, so
+    // the two figures cannot be describing different events.
+    const priced = c.weeklyCost.byModel.reduce((n, m) => n + m.tokens.billable, 0);
+    assert.equal(c.weeklyTokens.billable, priced);
+  });
+
+  test('rolling: with no weekly reset the window is a trailing 7 days', () => {
+    const events = [
+      ev({ ts: NOW - 7 * DAY - 1, key: 'tooOld', output: 1_000_000 }),
+      ev({ ts: NOW - 7 * DAY, key: 'atStart', output: 4 }),
+      ev({ ts: NOW - DAY, key: 'inside', output: 6 }),
+    ];
+    const c = claude(buildSnapshot({ now: NOW, events, rateLimits: rl(null), scanOk: true }));
+    assert.equal(c.weeklyCost.windowAnchored, false, 'no anchor, so the block says trailing');
+    assert.equal(c.weeklyTokens.output, 10);
+  });
+
+  test('a reset already behind us is NOT anchored to: the dead window would exclude everything since', () => {
+    const resetsAt = NOW - HOUR; // rolled over
+    const events = [ev({ ts: NOW - 30 * 60 * 1000, key: 'sinceReset', output: 500 })];
+    const c = claude(buildSnapshot({ now: NOW, events, rateLimits: rl(resetsAt), scanOk: true }));
+    assert.equal(c.weeklyCost.windowAnchored, false, 'the dead reset is not anchored to');
+    assert.equal(c.weeklyCost.windowEnd, new Date(NOW).toISOString(), 'trailing, ending now');
+    assert.equal(c.weeklyTokens.output, 500, 'so usage since the reset is still counted');
+  });
+
+  test('it is the WEEK, not the five hours: the two figures differ and both are present', () => {
+    const events = [
+      ev({ ts: NOW - 4 * DAY, key: 'old', output: 1000 }),
+      ev({ ts: NOW - 30 * 60 * 1000, key: 'recent', output: 7 }),
+    ];
+    const c = claude(buildSnapshot({ now: NOW, events, rateLimits: rl(null), scanOk: true }));
+    assert.equal(c.tokens.billable, 7, 'the 5-hour breakdown is untouched');
+    assert.equal(c.weeklyTokens.billable, 1007);
+  });
+
+  test('cacheRead is excluded from billable here exactly as it is in tokens', () => {
+    const events = [ev({ ts: NOW - DAY, key: 'a', input: 7, output: 11, cacheWrite: 13, cacheRead: 2_400_000_000 })];
+    const c = claude(buildSnapshot({ now: NOW, events, rateLimits: rl(null), scanOk: true }));
+    assert.equal(c.weeklyTokens.billable, 31);
+    assert.equal(c.weeklyTokens.cacheRead, 2_400_000_000, 'reported, never folded in');
+  });
+
+  test('when a cost block exists the two window labels agree, because one window produced both', () => {
+    const anchored = claude(buildSnapshot({
+      now: NOW, events: [ev({ ts: NOW - DAY, key: 'a', output: 1000 })],
+      rateLimits: rl(NOW + 2 * DAY), scanOk: true,
+    }));
+    assert.equal(anchored.weeklyTokensWindowAnchored, true);
+    assert.equal(anchored.weeklyCost.windowAnchored, anchored.weeklyTokensWindowAnchored);
+
+    const trailing = claude(buildSnapshot({
+      now: NOW, events: [ev({ ts: NOW - DAY, key: 'a', output: 1000 })],
+      rateLimits: rl(null), scanOk: true,
+    }));
+    assert.equal(trailing.weeklyTokensWindowAnchored, false);
+    assert.equal(trailing.weeklyCost.windowAnchored, trailing.weeklyTokensWindowAnchored);
+  });
+
+  test('no local corpus means no figure: every such row is null on both windows', () => {
+    const s = buildSnapshot({ now: NOW, events: [], rateLimits: rl(null), scanOk: true });
+    for (const p of s.providers) {
+      if (p.id === 'claude') continue;
+      assert.equal(p.weeklyTokens, null, `${p.id} has no local corpus here`);
+      assert.equal(p.tokens, null, `${p.id}: the pair is null together`);
+    }
+    for (const p of loadingSnapshot(NOW).providers) {
+      assert.equal(p.weeklyTokens, null, `${p.id}: nothing scanned yet is not a zero week`);
+    }
+  });
+});
+
+/**
+ * `ProviderSnapshot.weeklyTokenFloorCauses`.
+ *
+ * The flag exists so that no surface has to carry a provider-specific honesty
+ * rule. What these tests pin is the line it draws: SOURCE behaviour sets it
+ * (something was not recorded, or could not be read); PRICE never does.
+ */
+test.describe('weeklyTokenFloorCauses separates a missing count from a missing price', () => {
+  const DAY = 24 * HOUR;
+  const range = (fromMs, throughMs) => ({ fromMs, throughMs });
+  const rl = {
+    state: 'fresh',
+    capturedAtMs: NOW,
+    fiveHour: { usedPercentage: 5, resetsAtMs: NOW + HOUR },
+    sevenDay: { usedPercentage: 10, resetsAtMs: null },
+  };
+  const build = (extra) => claude(buildSnapshot({
+    now: NOW, events: [ev({ ts: NOW - DAY, key: 'a', output: 1000 })], rateLimits: rl, scanOk: true, ...extra,
+  }));
+
+  test('a known-unread range inside the week names its cause (A3.16: never a bare floor)', () => {
+    const c = build({ scanUnreadRange: range(NOW - 2 * DAY, NOW - DAY) });
+    assert.equal(c.weeklyCost.sourceIncomplete, true);
+    assert.deepEqual(c.weeklyTokenFloorCauses, ['unread-range'], 'events are missing from the count itself');
+  });
+
+  test('an unread range OUTSIDE the week does not', () => {
+    const c = build({ scanUnreadRange: range(NOW - 20 * DAY, NOW - 19 * DAY) });
+    assert.deepEqual(c.weeklyTokenFloorCauses, []);
+  });
+
+  test('a fully read week is exact', () => {
+    assert.deepEqual(build({}).weeklyTokenFloorCauses, []);
+  });
+
+  test('an UNPRICED model makes the cost a floor and leaves the count exact', () => {
+    const c = build({ events: [ev({ ts: NOW - DAY, key: 'x', model: 'claude-not-a-real-model', output: 1000 })] });
+    assert.deepEqual(c.weeklyCost.unpricedModels, ['claude-not-a-real-model']);
+    assert.equal(c.weeklyTokens.output, 1000, 'the tokens were counted all the same');
+    assert.deepEqual(c.weeklyTokenFloorCauses, [], 'no published price is not a missing token');
+  });
+
+  test("Claude's cache-write TTL fallback prices at a floor but loses no write token", () => {
+    // cw5 + cw1h = 0 against a non-zero total: the TTL split is absent, so the
+    // writes are priced at 1.25x (a cost floor) while every token is counted.
+    const c = build({ events: [ev({ ts: NOW - DAY, key: 'ttl', output: 10, cacheWrite: 4000, cw5: 0, cw1h: 0 })] });
+    assert.ok(c.weeklyCost.fallbackWriteEvents > 0, 'the cost really is on the fallback path');
+    assert.equal(c.weeklyTokens.cacheWrite, 4000, 'and the write tokens are all there');
+    assert.deepEqual(c.weeklyTokenFloorCauses, []);
+  });
+
+  test('a row with no figure is never a floor — there is no bound without an amount', () => {
+    const s = buildSnapshot({ now: NOW, events: [], rateLimits: rl, scanOk: true });
+    for (const p of s.providers) {
+      if (p.weeklyTokens === null) assert.deepEqual(p.weeklyTokenFloorCauses, [], p.id);
+    }
+    for (const p of loadingSnapshot(NOW).providers) assert.deepEqual(p.weeklyTokenFloorCauses, [], p.id);
+  });
+
+  test('a zero count is never a floor either, even with a known-unread range (A3.19)', () => {
+    // Claude's figure is present-but-zero here. "sayilamadi" is that state's own
+    // sentence, driven by sourceIncomplete; it must never read "en az 0".
+    const c = claude(buildSnapshot({
+      now: NOW, events: [], rateLimits: rl, scanOk: true,
+      scanUnreadRange: range(NOW - 2 * DAY, NOW - DAY),
+    }));
+    assert.equal(c.weeklyTokens.billable, 0, 'present, and a measured zero');
+    assert.equal(c.weeklyCost.sourceIncomplete, true, 'the A3.19 signal is the one to read');
+    assert.deepEqual(c.weeklyTokenFloorCauses, [], 'no amount, so nothing for a cause to qualify');
+  });
+
+  test('every row declares the causes as an array, on both snapshot kinds', () => {
+    for (const s of [buildSnapshot({ now: NOW, events: [], rateLimits: rl, scanOk: true }), loadingSnapshot(NOW)]) {
+      for (const p of s.providers) assert.ok(Array.isArray(p.weeklyTokenFloorCauses), p.id);
+    }
+  });
+
+  test('weeklyTokensWindowAnchored is null exactly when there is no count, on both snapshot kinds', () => {
+    for (const s of [buildSnapshot({ now: NOW, events: [], rateLimits: rl, scanOk: true }), loadingSnapshot(NOW)]) {
+      for (const p of s.providers) {
+        assert.equal(
+          p.weeklyTokensWindowAnchored === null, p.weeklyTokens === null,
+          `${p.id}: the label must be present exactly when the figure is`,
+        );
+        if (p.weeklyTokens !== null) assert.equal(typeof p.weeklyTokensWindowAnchored, 'boolean', p.id);
+      }
+    }
+  });
+
+});
+
+/**
+ * The state a user is most likely to see and least likely to forgive: the first
+ * minutes after a WEEKLY quota reset.
+ *
+ * Claude Code then reports a reset seven days ahead, so the anchored window is
+ * `[resetsAt - 7d, resetsAt)` = roughly `[now, now + 7d)`. Usage from three
+ * hours ago falls OUTSIDE it, and the weekly count is legitimately zero while
+ * the five-hour meter still shows real consumption. Under the old
+ * "all-zero reads as absent" rule that state printed "could not be counted" —
+ * a false claim about our own successful reading, next to a five-hour figure
+ * visibly contradicting it.
+ */
+test.describe('just after a weekly reset, a zero week is a measurement and says so', () => {
+  const DAY = 24 * HOUR;
+  const justReset = {
+    state: 'fresh',
+    capturedAtMs: NOW,
+    // The 5-hour window is still mid-flight; only the weekly one rolled over.
+    fiveHour: { usedPercentage: 40, resetsAtMs: NOW + 2 * HOUR },
+    sevenDay: { usedPercentage: 0, resetsAtMs: NOW + 7 * DAY },
+  };
+  // Three hours ago: inside the five-hour window, outside the fresh quota week.
+  const events = [ev({ ts: NOW - 3 * HOUR, key: 'recent', input: 10, output: 900, cacheWrite: 90, cacheRead: 50000 })];
+
+  test('the weekly count is PRESENT and zero, and carries no floor cause', () => {
+    const c = claude(buildSnapshot({ now: NOW, events, rateLimits: justReset, scanOk: true }));
+    assert.notEqual(c.weeklyTokens, null, 'never "we did not look" — we looked, and the new week is empty');
+    assert.deepEqual(c.weeklyTokens, { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, billable: 0 });
+    assert.deepEqual(c.weeklyTokenFloorCauses, [], 'nothing is missing; the window simply just opened');
+  });
+
+  test('the window really is the fresh one, so the zero is not an accident of the fixture', () => {
+    // Proved without reading weeklyCost, which is null in this state (below):
+    // an event exactly ON the new reset instant IS counted, the one three hours
+    // before it is not. That is the half-open window opening at `now`.
+    const c = claude(buildSnapshot({
+      now: NOW, rateLimits: justReset, scanOk: true,
+      events: [...events, ev({ ts: NOW, key: 'atOpen', output: 5 })],
+    }));
+    assert.equal(c.weeklyTokens.output, 5, 'start inclusive, and the older turn is outside');
+    assert.equal(c.weeklyCost.windowAnchored, true);
+    assert.equal(c.weeklyCost.windowStart, new Date(NOW).toISOString(), 'the week opens at now');
+    assert.equal(c.weeklyCost.windowEnd, new Date(NOW + 7 * DAY).toISOString());
+  });
+
+  test('WHY weeklyTokensWindowAnchored exists: here the count is present and weeklyCost is NOT', () => {
+    // This is the state the field was added for. Nothing priced, so there is no
+    // cost block to take a window label from - and an unlabelled "0 token" beside
+    // a five-hour figure reads as "nothing in the last five hours".
+    const c = claude(buildSnapshot({ now: NOW, events, rateLimits: justReset, scanOk: true }));
+    assert.notEqual(c.weeklyTokens, null, 'the count is present');
+    assert.equal(c.weeklyCost, null, 'and there is no cost block to read a label off');
+    assert.equal(c.weeklyTokensWindowAnchored, true, 'so the row states the window itself');
+
+    // The label must still not be RE-DERIVED from sevenDay.resetsAt. Measured
+    // below: the two facts coincide on every reachable state today, so the
+    // derivation would happen to be right - but only because windowFrom nulls a
+    // ROLLED-OVER window, which is a rule about displaying a PERCENTAGE
+    // (ADR-001 Amd 2 state 3), not about the token window. Two independent rules
+    // that agree. This assertion is the tripwire: if either moves, it fails here
+    // instead of silently inverting a label in the panel.
+    const rolledOver = claude(buildSnapshot({
+      now: NOW, events: [], rateLimits: {
+        state: 'fresh', capturedAtMs: NOW,
+        fiveHour: { usedPercentage: 1, resetsAtMs: NOW + HOUR },
+        sevenDay: { usedPercentage: 90, resetsAtMs: NOW - HOUR },
+      }, scanOk: true,
+    }));
+    assert.equal(rolledOver.sevenDay.resetsAt, null, 'a rolled-over window publishes no reset');
+    assert.equal(rolledOver.weeklyTokensWindowAnchored, false, 'and the token window is trailing');
+
+    // A3.19 is unaffected: whenever the source IS known incomplete, main
+    // synthesizes an empty cost, so `sourceIncomplete` is always readable when true.
+    const incomplete = claude(buildSnapshot({
+      now: NOW, events, rateLimits: justReset, scanOk: true,
+      scanUnreadRange: { fromMs: NOW + HOUR, throughMs: NOW + 2 * HOUR },
+    }));
+    assert.equal(incomplete.weeklyCost.sourceIncomplete, true);
+  });
+
+  test('the five-hour figure still shows the usage, and the two do not contradict', () => {
+    const c = claude(buildSnapshot({ now: NOW, events, rateLimits: justReset, scanOk: true }));
+    assert.equal(c.tokens.billable, 1000, 'the 5-hour window still contains the turn');
+    assert.equal(c.weeklyTokens.billable, 0);
+    // The pairing the user reads: 0% of the weekly quota, 0 tokens in that week.
+    assert.equal(c.sevenDay.usedPercentage, 0, 'and the percentage beside it agrees');
+    assert.equal(c.fiveHour.usedPercentage, 40);
+  });
+
+  test('a genuinely unread week is still distinguishable from this one', () => {
+    // Same zero count, but the scan KNOWS it missed events: that is the A3.19
+    // "could not be counted" state, and `sourceIncomplete` is what says so.
+    const c = claude(buildSnapshot({
+      now: NOW, events, rateLimits: justReset, scanOk: true,
+      scanUnreadRange: { fromMs: NOW + HOUR, throughMs: NOW + 2 * HOUR },
+    }));
+    assert.equal(c.weeklyTokens.billable, 0);
+    assert.equal(c.weeklyCost.sourceIncomplete, true, 'the one signal that separates the two states');
+    assert.deepEqual(c.weeklyTokenFloorCauses, [], 'still not "en az 0"');
+  });
+
+  test('every local-log row reads the same way just after its own reset', () => {
+    // Codex anchors to its OWN weekly reset; Gemini and Kimi never anchor.
+    const s = buildSnapshot({
+      now: NOW, events, rateLimits: justReset, scanOk: true,
+      codexEvents: [{ ts: NOW - 3 * HOUR, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 0, cacheWrite: 0, output: 20 }],
+      codexRateLimits: {
+        state: 'fresh', capturedAtMs: NOW,
+        fiveHour: { usedPercentage: 5, resetsAtMs: NOW + 2 * HOUR },
+        sevenDay: { usedPercentage: 0, resetsAtMs: NOW + 7 * DAY },
+      },
+    });
+    const cx = s.providers.find((p) => p.id === 'codex');
+    assert.notEqual(cx.weeklyTokens, null, 'scanned, so present');
+    assert.equal(cx.weeklyTokens.billable, 0, 'and the fresh quota week is empty');
+    assert.deepEqual(cx.weeklyTokenFloorCauses, [], 'no write pattern can fire on zero events');
   });
 });

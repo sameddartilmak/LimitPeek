@@ -12,9 +12,36 @@ const geminiPricing = require('./gemini/pricing');
 const kimiUsage = require('./kimi/usage');
 const kimiCostMod = require('./kimi/cost');
 const { RETENTION_DAYS, DAY_MS } = require('./scan/scanner');
+const { isKeyCapable } = require('./keys/registry');
+const { sanitizePlanLabels } = require('./plan-labels');
 
 /** One shared empty list, so "no events" keeps the same identity across builds. */
 const EMPTY_EVENTS = Object.freeze([]);
+
+/**
+ * The optional-key fields of one row (ADR-003 Amendment 8), on EVERY row.
+ *
+ * `keyCapable` comes from the hard-coded registry in `core/keys/registry.js`,
+ * never from the caller: whether an optional key would add something defensible
+ * is a fact about the provider, and a row that is not key-capable must offer
+ * nothing at all — the offer itself is a claim that a key would help. Amendment
+ * 6 rules Gemini out and holds Kimi, so today exactly one row is capable.
+ *
+ * The other three come from main's key service, which is the only thing that
+ * knows them; with no service (a collector built in a test, or before the
+ * service loads) the row reads as "no key", which is the state that renders
+ * nothing.
+ */
+function keyFields(id, keys) {
+  const capable = isKeyCapable(id);
+  const state = capable && keys && typeof keys === 'object' ? keys[id] : null;
+  return {
+    keyCapable: capable,
+    keyState: state && typeof state.keyState === 'string' ? state.keyState : 'none',
+    keyStoredAt: state && typeof state.keyStoredAt === 'string' ? state.keyStoredAt : null,
+    creditUsage: state && state.creditUsage ? state.creditUsage : null,
+  };
+}
 
 /**
  * The last usage history built, and what it was built from (ADR-003 A6 Phase A
@@ -329,6 +356,22 @@ function emptyWeeklyCost(startMs, endMs, anchored, pricesAsOf) {
   };
 }
 
+/**
+ * `ProviderSnapshot.weeklyTokenFloorCauses` for one row.
+ *
+ * The RULE is `history.tokenFloorCauses` and lives there precisely so this file
+ * does not hold a second copy of it: what differs between a panel row and a
+ * history period is the window arithmetic, not what makes a count a lower bound.
+ * All this does is reduce this row's window to the booleans that function takes.
+ */
+function weeklyTokenFloorCausesFor(providerId, weeklyTokens, sourceIncomplete, unrecordedWrites) {
+  return history.tokenFloorCauses(providerId, {
+    hasCount: history.hasAnyTokens(weeklyTokens),
+    sourceIncomplete,
+    unrecordedWrites,
+  });
+}
+
 function claudeRowState(rl, scanOk, captureFresh, rolledOver) {
   switch (rl.state) {
     case 'missing':
@@ -413,9 +456,16 @@ function codexRowState(cx, anyFigure, fresh, rolledOver) {
  *          resultAtMs?:number|null, unreadRange?:object|null}|undefined} src
  * @param {number} now
  * @param {{sum: Function, cost: Function, pricesAsOf: string}} reader
+ * @param {object} [keys] the optional-key state per provider; see `keyFields`.
+ *        Neither Gemini nor Kimi is key-capable (ADR-003 A6), so both rows read
+ *        as "no key" whatever is passed — the argument exists so a future
+ *        key-capable local reader cannot silently omit the fields.
+ * @param {string|null} [planLabel] the plan the user typed for THIS tool, or
+ *        null. Passed in rather than looked up here so this function keeps no
+ *        opinion about a value it only forwards.
  * @returns {{row: object, unread: Array}}
  */
-function localUsageRow(p, enabled, src, now, reader) {
+function localUsageRow(p, enabled, src, now, reader, keys, planLabel) {
   const installed = Boolean(src && src.installed === true);
   const base = {
     id: p.id,
@@ -423,7 +473,8 @@ function localUsageRow(p, enabled, src, now, reader) {
     accent: p.accent,
     enabled,
     experimental: p.experimental === true,
-    planLabel: null,
+    ...keyFields(p.id, keys),
+    planLabel: typeof planLabel === 'string' && planLabel ? planLabel : null,
     burnRatePerHour: null,
   };
   if (!installed) {
@@ -435,6 +486,9 @@ function localUsageRow(p, enabled, src, now, reader) {
         fiveHour: null,
         sevenDay: null,
         tokens: null,
+        weeklyTokens: null,
+        weeklyTokensWindowAnchored: null,
+        weeklyTokenFloorCauses: [],
         weeklyCost: null,
         setupAction: { ...p.setupAction },
         lastGoodAt: null,
@@ -448,6 +502,18 @@ function localUsageRow(p, enabled, src, now, reader) {
   const fiveWin = agg.fiveHourWindow(now, null);
   const five = reader.sum(list, fiveWin.start, Math.min(fiveWin.end, now));
   const weekWin = agg.sevenDayWindow(now, null);
+  // The row's headline token figure, over EXACTLY the window the cost block
+  // below is priced over — never capped at `now` the way the five-hour sum is,
+  // so the two figures beside each other describe the same seven days. Neither
+  // tool publishes a weekly reset to us, so this window is always trailing
+  // (`windowAnchored: false`), which is what the block already says.
+  const week = reader.sum(list, weekWin.start, weekWin.end);
+  // Present whenever the corpus was SCANNED, all-zero included: a quiet week is
+  // a measurement and must read as one. Null only while pending (`events` is
+  // null), which `Snapshot.pendingUsage` explains. Deliberately NOT the
+  // `billable > 0` rule that `tokens` below still uses — that rule reported a
+  // scanned empty week as "we did not look".
+  const weekTokens = events ? week.tokens : null;
   const unread = events
     ? unreadRangesOf(src.unreadRange, src.readFailed === true, src.resultAtMs, now)
     : [];
@@ -463,6 +529,18 @@ function localUsageRow(p, enabled, src, now, reader) {
       fiveHour: unknownWindow('not-supplied'),
       sevenDay: unknownWindow('not-supplied'),
       tokens: five.tokens.billable > 0 ? five.tokens : null,
+      // Same null rule as `tokens` on this row, deliberately: pending (no
+      // events read yet) and a genuinely empty week both read as "nothing to
+      // state" rather than a confident zero. A row never carries one of the two
+      // figures without the other.
+      weeklyTokens: weekTokens,
+      // Always false once scanned: neither tool publishes a weekly reset to us,
+      // so `weekWin` can only ever be trailing. Stated rather than left to be
+      // inferred, and readable even when nothing priced and `weeklyCost` is null.
+      weeklyTokensWindowAnchored: weekTokens ? weekWin.anchored : null,
+      // Gemini's unrecorded utility calls and Kimi's known-unread ranges are
+      // both decided by the shared rule; neither reads a cost cause.
+      weeklyTokenFloorCauses: weeklyTokenFloorCausesFor(p.id, weekTokens, incomplete, false),
       byModel: five.byModel.slice(0, 6),
       weeklyCost,
       setupAction: null,
@@ -508,12 +586,19 @@ function lastGoodAtFor(scanGoodAtMs, capturedAtMs, rateLimitState) {
  * @param {number|null} [input.codexReadGoodAtMs] when the held Codex result was read
  * @param {{fromMs:number, throughMs:number}|null} [input.codexUnreadRange] instants
  *        of Codex turns the last rollout scan knew it could not read
- * @param {string|null} input.planLabel  from app settings only. Never inferred,
- *        and never read from the credentials file.
+ * @param {object} [input.planLabels]  plan names the user typed, per tool, from
+ *        app settings ONLY. Never inferred, never read from the credentials file
+ *        (ADR-001 security F1), and never read by any figure: it is copied onto
+ *        the row and displayed. See `src/core/plan-labels.js`.
  * @param {string[]} [input.order]  persisted provider order. Applied here so
  *        that EVERY emitted snapshot is ordered — the tray icon is driven by
  *        the first ENABLED row, and a snapshot that skipped the ordering step
  *        would put a different provider on the tray than in the panel.
+ * @param {object} [input.keys]  the optional-key state per provider, from
+ *        main's key service (`src/main/keys/service.js`): `{ <id>: { keyState,
+ *        keyStoredAt, creditUsage } }`. Absent in a collector with no service,
+ *        and then every row reads as "no key" — which is the state that renders
+ *        nothing. `keyCapable` is NOT taken from here: it is a registry fact.
  * @param {object} [input.enabled]  persisted enablement map. Applied here for
  *        the same reason: the snapshot still carries ALL providers, because
  *        the settings view needs the full list, so `enabled` is the only thing
@@ -570,6 +655,14 @@ function buildSnapshot(input) {
   const sevenResetsAtMs = rl.sevenDay ? rl.sevenDay.resetsAtMs : null;
   const weekAnchorMs = Number.isFinite(sevenResetsAtMs) && now < sevenResetsAtMs ? sevenResetsAtMs : null;
   const weekWin = agg.sevenDayWindow(now, weekAnchorMs);
+  // The row's headline token figure: absolute tokens inside EXACTLY that
+  // window — the one `sevenDay` describes and `weeklyCost` is priced over. The
+  // identity is the point: the count is read beside the 7-day percentage, so a
+  // window even slightly different would pair a number with a percentage that
+  // describe two different weeks. Same deduped set, same half-open bounds. One
+  // extra linear pass over events already in memory (no file is re-read), so
+  // the short panel cadence costs nothing here.
+  const weekTokens = agg.sumWindow(deduped, weekWin.start, weekWin.end).tokens;
   // Same deduped set as every other figure: the 115.3% replay inflation would
   // otherwise land directly on the money.
   // ADR-002 A3.15: only the transcript scan's OWN completeness — never the
@@ -601,6 +694,14 @@ function buildSnapshot(input) {
   // default, and a corrupt value degrades to defaults rather than to an empty
   // panel (src/core/enabled.js).
   const enabled = resolveEnabled(input.enabled);
+
+  // Same discipline, one line down, and the only use this value has anywhere in
+  // core: the label the user typed for each tool, copied onto its row. Nothing
+  // below reads it to decide a quota, a price, a floor or a limit — it is not a
+  // fact we verified (src/core/plan-labels.js). A tool the user said nothing
+  // about gets null, and the renderer then shows nothing at all.
+  const planLabels = sanitizePlanLabels(input.planLabels);
+  const planOf = (id) => (planLabels[id] === undefined ? null : planLabels[id]);
 
   /* ------------------------------------------------------------ Antigravity
    *
@@ -797,13 +898,28 @@ function buildSnapshot(input) {
   const cxSevenResetsAtMs = cx.sevenDay ? cx.sevenDay.resetsAtMs : null;
   const cxWeekAnchorMs = Number.isFinite(cxSevenResetsAtMs) && now < cxSevenResetsAtMs ? cxSevenResetsAtMs : null;
   const cxWeekWin = agg.sevenDayWindow(now, cxWeekAnchorMs);
+  // The row's headline token figure, over EXACTLY the window `cxSeven` reports
+  // and `cxWeeklyCost` is priced over — anchored to Codex's own weekly reset
+  // while that reset is still ahead, trailing otherwise, never Claude's. Not
+  // capped at `now`: the cost beside it is not, and the two must describe the
+  // same seven days.
+  const cxWeekUsage = codexUsage.sumCodexTokens(cxEvents, cxWeekWin.start, cxWeekWin.end);
+  // Present whenever the rollout scan has produced a result, all-zero included:
+  // a week without Codex is a measured zero, not "we did not look". Null only
+  // while PENDING, which `Snapshot.pendingUsage` explains (A3.12). `cxTokens`
+  // (5 hours) keeps its own shipped rule, so the two can differ here.
+  const cxWeeklyTokens = Array.isArray(input.codexEvents) ? cxWeekUsage.tokens : null;
   // ADR-002 A3.15, as for Claude: the rollout scan's own completeness only.
   // While pending there is no result to be incomplete (pendingUsage says so).
   const codexUnread = Array.isArray(input.codexEvents)
     ? unreadRangesOf(input.codexUnreadRange, input.codexReadFailed === true, input.codexReadGoodAtMs, now)
     : [];
   const cxIncomplete = overlapsAny(codexUnread, cxWeekWin.start, cxWeekWin.end);
-  let cxWeeklyCost = codexPricing.codexCost(cxEvents, cxWeekWin.start, cxWeekWin.end, cxWeekWin.anchored);
+  // The DETAIL, not just the cost: `unrecordedWriteTokens` rides the same pass
+  // and is what decides whether the token count is a floor (A3.3/A3.9). It is
+  // a different question from `unrecordedWriteEvents`, which stays a cost cause.
+  const cxWeekDetail = codexPricing.codexCostDetail(cxEvents, cxWeekWin.start, cxWeekWin.end, cxWeekWin.anchored);
+  let cxWeeklyCost = cxWeekDetail.cost;
   if (cxWeeklyCost) boundCost(cxWeeklyCost).sourceIncomplete = cxIncomplete;
   else if (cxIncomplete) {
     cxWeeklyCost = emptyWeeklyCost(cxWeekWin.start, cxWeekWin.end, cxWeekWin.anchored, codexPricing.PRICES_AS_OF);
@@ -814,13 +930,13 @@ function buildSnapshot(input) {
     sum: geminiUsage.sumGeminiTokens,
     cost: geminiPricing.geminiCost,
     pricesAsOf: geminiPricing.PRICES_AS_OF,
-  });
+  }, input.keys, planOf('gemini'));
   const km = localUsageRow(PROVIDERS.find((p) => p.id === 'kimi'), enabled.kimi === true, input.kimi, now, {
     sum: kimiUsage.sumKimiTokens,
     cost: kimiCostMod.kimiCost,
     // Kimi has no price table: an incomplete empty cost states no date either.
     pricesAsOf: '',
-  });
+  }, input.keys, planOf('kimi'));
   const localPending = (src) => Boolean(src && src.installed === true && !Array.isArray(src.events));
 
   const providers = PROVIDERS.map((p) => {
@@ -833,16 +949,22 @@ function buildSnapshot(input) {
         accent: p.accent,
         enabled: enabled[p.id] === true,
         experimental: p.experimental === true,
+        ...keyFields(p.id, input.keys),
         connected: agRow.connected,
         status: agRow.status,
-        // Antigravity states a plan tier in its payload. The bridge does not
-        // capture it and this stays null: a subscription tier is an account
-        // fact, not a usage number, and ADR-001 keeps `planLabel` sourced from
-        // app settings for exactly one provider's worth of reasons already.
-        planLabel: null,
+        // Antigravity states a plan tier in its payload, and the bridge still
+        // does not capture it: ADR-001 keeps `planLabel` sourced from app
+        // settings ONLY, so even a tier we could read is not read. What shows
+        // here is what the user typed for this tool, or nothing.
+        planLabel: planOf(p.id),
         fiveHour: agFive,
         sevenDay: agSeven,
         tokens: null,
+        // No local corpus for this provider at all, so there is nothing to
+        // count in either window (see the note above the Antigravity block).
+        weeklyTokens: null,
+        weeklyTokensWindowAnchored: null,
+        weeklyTokenFloorCauses: [],
         burnRatePerHour: null,
         weeklyCost: null,
         modelQuotas: agModelQuotas,
@@ -859,14 +981,24 @@ function buildSnapshot(input) {
         accent: p.accent,
         enabled: enabled[p.id] === true,
         experimental: p.experimental === true,
+        ...keyFields(p.id, input.keys),
         connected: cxRow.connected,
         status: cxRow.status,
-        // plan_type ("plus") is an account fact, not a usage number; ADR-001
-        // keeps planLabel sourced from app settings, as for Antigravity.
-        planLabel: null,
+        // plan_type ("plus") is in the rollout and is still not read: ADR-001
+        // keeps planLabel sourced from app settings, as for Antigravity. So this
+        // is the user's own label for Codex, or nothing.
+        planLabel: planOf(p.id),
         fiveHour: cxFive,
         sevenDay: cxSeven,
         tokens: cxTokens,
+        weeklyTokens: cxWeeklyTokens,
+        // Codex's OWN weekly reset, never Claude's; null while the scan is pending.
+        weeklyTokensWindowAnchored: cxWeeklyTokens ? cxWeekWin.anchored : null,
+        // `unrecordedWriteTokens` rides the pricing pass and is price-free, so
+        // an unpriced turn's missing writes count exactly as a priced one's do.
+        weeklyTokenFloorCauses: weeklyTokenFloorCausesFor(
+          'codex', cxWeeklyTokens, cxIncomplete, cxWeekDetail.unrecordedWriteTokens === true,
+        ),
         burnRatePerHour: null,
         byModel: cxByModel.slice(0, 6),
         weeklyCost: cxWeeklyCost,
@@ -884,12 +1016,18 @@ function buildSnapshot(input) {
         // The user's choice to SEE this row, not our ability to fill it.
         enabled: enabled[p.id] === true,
         experimental: p.experimental === true,
+        ...keyFields(p.id, input.keys),
         connected: false,
         status: 'passive',
-        planLabel: null,
+        // A row we cannot collect for can still be a plan the user pays for, and
+        // saying so is not a claim about usage.
+        planLabel: planOf(p.id),
         fiveHour: null,
         sevenDay: null,
         tokens: null,
+        weeklyTokens: null,
+        weeklyTokensWindowAnchored: null,
+        weeklyTokenFloorCauses: [],
         burnRatePerHour: null,
         // No transcripts, so no usage to price. Never 0, which would read as
         // "this provider cost nothing" rather than "we have no data".
@@ -906,12 +1044,26 @@ function buildSnapshot(input) {
       accent: p.accent,
       enabled: enabled[p.id] === true,
       experimental: p.experimental === true,
+      ...keyFields(p.id, input.keys),
       connected: row.connected,
       status: row.status,
-      planLabel: typeof input.planLabel === 'string' && input.planLabel ? input.planLabel : null,
+      planLabel: planOf(p.id),
       fiveHour,
       sevenDay,
       tokens,
+      // Present whenever `tokens` is, and by the same rule: this row is only
+      // built after a scan, so both are real counts — a zero here is a measured
+      // zero, not "we did not look" (that state is `loadingSnapshot`).
+      weeklyTokens: weekTokens,
+      // The same `weekWin` the count was summed over, so the figure always names
+      // its own window — including on a quiet or just-reset week, where nothing
+      // priced and `weeklyCost` is null.
+      weeklyTokensWindowAnchored: weekWin.anchored,
+      // Claude's own recorder drops nothing we know of: its writes survive the
+      // TTL fallback (`max(total, cw5 + cw1h)`) and an unpriced model still has
+      // its tokens counted. So only a range the scan KNOWS it could not read
+      // makes this count a lower bound.
+      weeklyTokenFloorCauses: weeklyTokenFloorCausesFor('claude', weekTokens, claudeIncomplete, false),
       burnRatePerHour: burn,
       byModel: byModel.slice(0, 6),
       weeklyCost,
@@ -953,10 +1105,15 @@ function buildSnapshot(input) {
 }
 
 /** Shown before the first scan completes, and if the store is empty. */
-function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage) {
+function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage, keys, planLabelsRaw) {
   // Same resolution as buildSnapshot: the skeleton must show exactly the rows
   // the first real snapshot will, or the panel visibly drops rows on load.
   const enabled = resolveEnabled(enabledRaw);
+  // Carried for the same reason `keys` is: the plan sits in the row HEADER, so a
+  // row that gains one a moment after the panel opens visibly changes shape. It
+  // is a setting, already known at cold start — unlike every figure here, which
+  // is why this is the one value the skeleton can state truthfully.
+  const planLabels = sanitizePlanLabels(planLabelsRaw);
   return {
     generatedAt: new Date(now).toISOString(),
     // Ordered too: the skeleton is what a cold start paints, and rows must not
@@ -967,15 +1124,22 @@ function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage) {
       accent: p.accent,
       enabled: enabled[p.id] === true,
       experimental: p.experimental === true,
+      // The skeleton carries them too: a row that gains a key affordance a
+      // moment after the panel opens visibly changes shape.
+      ...keyFields(p.id, keys),
       connected: false,
       // Keyed off `live`, not off the id: a provider we can collect must paint
       // the same skeleton the first real snapshot will replace, or its row
       // visibly changes shape a moment after the panel opens.
       status: p.live ? 'loading' : 'passive',
-      planLabel: null,
+      planLabel: planLabels[p.id] === undefined ? null : planLabels[p.id],
       fiveHour: p.live ? unknownWindow() : null,
       sevenDay: p.live ? unknownWindow() : null,
       tokens: null,
+      // Nothing scanned yet: null is "we have not looked", never a zero week.
+      weeklyTokens: null,
+      weeklyTokensWindowAnchored: null,
+      weeklyTokenFloorCauses: [],
       burnRatePerHour: null,
       weeklyCost: null,
       setupAction: p.live ? null : { ...p.setupAction },
@@ -994,6 +1158,7 @@ function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage) {
 module.exports = {
   buildSnapshot,
   loadingSnapshot,
+  keyFields,
   unknownWindow,
   windowFrom,
   lastGoodAtFor,

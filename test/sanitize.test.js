@@ -175,6 +175,63 @@ test.describe('a window must not drive a meter it cannot justify', () => {
   });
 });
 
+test.describe("the row's weekly token count crosses the boundary on its own terms", () => {
+  const good = { input: 10, output: 20, cacheWrite: 30, cacheRead: 9000, billable: 60 };
+
+  test('a well-formed weekly breakdown passes through, cacheRead kept as its own class', () => {
+    const out = claudeOf(s.sanitizeSnapshot(snapshotWith({ weeklyTokens: good })));
+    assert.deepEqual(out.weeklyTokens, good);
+    assert.equal(out.weeklyTokens.cacheRead, 9000, 'never folded into billable');
+  });
+
+  test('a malformed weekly breakdown becomes null — the no-figure state, never a zero', () => {
+    for (const bad of [{ billable: 'çok' }, { billable: -1 }, {}, 'yes', 7, null]) {
+      const out = claudeOf(s.sanitizeSnapshot(snapshotWith({ weeklyTokens: bad })));
+      assert.equal(out.weeklyTokens, null, JSON.stringify(bad));
+    }
+  });
+
+  test('the two windows are validated independently: one bad field never relabels the other', () => {
+    // Main states that `tokens` and `weeklyTokens` are null together. A producer
+    // that breaks the invariant must lose the field it got wrong — the five-hour
+    // count must not be promoted into a window it does not describe.
+    const out = claudeOf(s.sanitizeSnapshot(snapshotWith({
+      tokens: good,
+      weeklyTokens: { billable: -5 },
+    })));
+    assert.deepEqual(out.tokens, good);
+    assert.equal(out.weeklyTokens, null);
+  });
+
+  test('weeklyTokenFloorCauses carries main CAUSES, known codes only, never inferred here', () => {
+    const out = claudeOf(s.sanitizeSnapshot(snapshotWith({
+      weeklyTokens: good,
+      weeklyTokenFloorCauses: ['unread-range', 'unread-range', 'nonsense'],
+    })));
+    assert.deepEqual(out.weeklyTokenFloorCauses, ['unread-range']);
+  });
+
+  test('anything that is not a list of known causes adds no floor claim', () => {
+    // A floor is a claim; an older main that sends nothing must make none. And
+    // because it is causes rather than a boolean, "a floor with no reason" — the
+    // bare hedge ADR-002 A3.16 forbids — has no representation at all.
+    for (const value of [undefined, null, true, 1, 'unread-range', {}, ['nope']]) {
+      const out = claudeOf(s.sanitizeSnapshot(snapshotWith({ weeklyTokens: good, weeklyTokenFloorCauses: value })));
+      assert.deepEqual(out.weeklyTokenFloorCauses, [], JSON.stringify(value));
+    }
+  });
+
+  test('a measured ZERO week is carried as a zero, not turned into an absence', () => {
+    // The defect this pins: an all-zero breakdown is our own successful reading
+    // of a week with no usage. Dropping it to null here would make the panel say
+    // "could not be counted" about a week we counted.
+    const zero = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, billable: 0 };
+    const out = claudeOf(s.sanitizeSnapshot(snapshotWith({ weeklyTokens: zero })));
+    assert.deepEqual(out.weeklyTokens, zero);
+    assert.notEqual(out.weeklyTokens, null);
+  });
+});
+
 test.describe('provider identity cannot be invented by the payload', () => {
   test('an unknown provider id is dropped from the list entirely', () => {
     const out = s.sanitizeSnapshot({
@@ -505,8 +562,48 @@ test.describe('the per-model breakdown survives the boundary', () => {
     }));
     const byModel = out.usageHistory.weeks[0].byModel;
     assert.equal(byModel.length, 2);
-    assert.deepEqual(byModel[0], { provider: 'claude', model: 'claude-opus-5', costUsd: 200.5, isFloor: false });
-    assert.deepEqual(byModel[1], { provider: 'claude', model: 'claude-sonnet-5', costUsd: 12.25, isFloor: true });
+    // `tokens` is NULL when no count arrived. The boundary type can express
+    // "absent", so nothing has to mint an all-zero datum main never sends — and
+    // the entry keeps its cost line, which is a true figure.
+    assert.deepEqual(byModel[0], { provider: 'claude', model: 'claude-opus-5', costUsd: 200.5, isFloor: false, tokens: null });
+    assert.deepEqual(byModel[1], { provider: 'claude', model: 'claude-sonnet-5', costUsd: 12.25, isFloor: true, tokens: null });
+  });
+
+  test('a per-model entry carries its own token breakdown, and a null cost does not blank it', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ byModel: [
+        { provider: 'codex', model: 'codex-mini', costUsd: null, isFloor: false,
+          tokens: { input: 10, output: 20, cacheWrite: 5, cacheRead: 900, billable: 35 } },
+      ] })],
+      months: [],
+      pricesAsOf: '2026-06-24',
+    }));
+    const entry = out.usageHistory.weeks[0].byModel[0];
+    // The asymmetry the contract is explicit about: the tokens were used
+    // whether or not a price exists for them.
+    assert.equal(entry.costUsd, null);
+    assert.deepEqual(entry.tokens, { input: 10, output: 20, cacheWrite: 5, cacheRead: 900, billable: 35 });
+  });
+
+  test('an unreadable per-model breakdown becomes null, never a zero that would print', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ byModel: [
+        { provider: 'claude', model: 'm1', costUsd: 5, isFloor: false, tokens: { billable: 'çok' } },
+        { provider: 'claude', model: 'm2', costUsd: 5, isFloor: false, tokens: { billable: -4 } },
+        { provider: 'claude', model: 'm3', costUsd: 5, isFloor: false },
+      ] })],
+      months: [],
+      pricesAsOf: '2026-06-24',
+    }));
+    const entries = out.usageHistory.weeks[0].byModel;
+    // All three keep their cost line — a missing count must not delete a true
+    // figure — and all three say "no count" the only way that cannot be
+    // confused with a measured zero.
+    assert.equal(entries.length, 3);
+    for (const entry of entries) {
+      assert.equal(entry.tokens, null);
+      assert.equal(entry.costUsd, 5);
+    }
   });
 
   test('Claude and Codex entries share one list, each keeping its provider', () => {
@@ -591,17 +688,94 @@ test.describe('the per-model breakdown survives the boundary', () => {
     }
   });
 
-  test('no merged token total can ride in on a per-model entry either', () => {
+  test('a per-model count of ZERO survives as a measurement, not as an absence', () => {
+    const zero = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, billable: 0 };
     const out = s.sanitizeSnapshot(historyWith({
       weeks: [period({ byModel: [
-        { provider: 'claude', model: 'm', costUsd: 5, isFloor: false, tokens: { billable: 9 }, billable: 9 },
+        { provider: 'claude', model: 'quiet', costUsd: 0, isFloor: false, tokens: zero },
+      ] })],
+      months: [], pricesAsOf: '2026-06-24',
+    }));
+    // Null and all-zero are different states and the boundary keeps them apart.
+    assert.deepEqual(out.usageHistory.weeks[0].byModel[0].tokens, zero);
+  });
+
+  test('a per-model entry carries a BREAKDOWN and never a bare merged scalar', () => {
+    // `tokens` is now a declared field, but it is a four-class breakdown with
+    // `billable` computed by main — never a loose number on the entry itself.
+    // A scalar `billable` beside it is exactly the merged shape the ADR bans,
+    // and it still has nowhere to land.
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ byModel: [
+        { provider: 'claude', model: 'm', costUsd: 5, isFloor: false,
+          tokens: { input: 1, output: 2, cacheWrite: 3, cacheRead: 4, billable: 6 }, billable: 999 },
       ] })],
       months: [], pricesAsOf: '2026-06-24',
     }));
     const entry = out.usageHistory.weeks[0].byModel[0];
-    assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model', 'provider']);
-    assert.equal('tokens' in entry, false);
+    assert.deepEqual(Object.keys(entry).sort(), ['costUsd', 'isFloor', 'model', 'provider', 'tokens']);
     assert.equal('billable' in entry, false);
+    assert.equal(entry.tokens.billable, 6);
+    // cacheRead is carried as its own class and is never folded into billable.
+    assert.equal(entry.tokens.cacheRead, 4);
+  });
+
+  test('tokensByProvider is carried per tool, unknown keys dropped, and nothing is merged', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [period({
+        tokensByProvider: {
+          claude: { input: 1, output: 1, cacheWrite: 1, cacheRead: 90, billable: 3 },
+          codex: { input: 2, output: 2, cacheWrite: 2, cacheRead: 80, billable: 6 },
+          // Not a provider this panel knows: it labels no row, so it is dropped.
+          openai: { input: 9, output: 9, cacheWrite: 9, cacheRead: 9, billable: 27 },
+          // Unreadable: DROPPED, not zeroed. No entry reads as "nothing to
+          // show"; a zero would read as "this tool used nothing".
+          gemini: { billable: 'çok' },
+        },
+      })],
+      months: [], pricesAsOf: '2026-06-24',
+    }));
+    const p = out.usageHistory.weeks[0];
+    assert.deepEqual(Object.keys(p.tokensByProvider).sort(), ['claude', 'codex']);
+    assert.equal(p.tokensByProvider.claude.billable, 3);
+    assert.equal(p.tokensByProvider.codex.billable, 6);
+    // Still no merged total anywhere on the period.
+    assert.equal('tokens' in p, false);
+    assert.equal('billable' in p, false);
+  });
+
+  test('tokenFloorCausesByProvider is per tool, known codes only, and never inferred from isFloor', () => {
+    const out = s.sanitizeSnapshot(historyWith({
+      weeks: [
+        period({ isFloor: true, tokenFloorCausesByProvider: {
+          codex: ['unrecorded-writes', 'unrecorded-writes', 'not-a-cause'],
+          openai: ['unread-range'],
+          // A floor with NO reason is the bare hedge A3.16 forbids, so it must
+          // not be representable: an empty list drops the tool entirely.
+          claude: [],
+        } }),
+        period({ isFloor: true }),
+      ],
+      months: [], pricesAsOf: '2026-06-24',
+    }));
+    const first = out.usageHistory.weeks[0].tokenFloorCausesByProvider;
+    assert.deepEqual(Object.keys(first), ['codex']);
+    assert.deepEqual(first.codex, ['unrecorded-writes'], 'de-duplicated, unknown codes dropped');
+    // A MONETARY cause is not a legal reason for a short COUNT: it counted every
+    // token it saw. Offering one would be a false explanation, which is worse
+    // than none, because A3.16 exists to make the reason trustworthy.
+    const monetary = s.sanitizeSnapshot(historyWith({
+      weeks: [period({ tokenFloorCausesByProvider: {
+        claude: ['cache-write-ttl-fallback', 'unpriced', 'assumed-tier', 'fast-requested'],
+        codex: ['unpriced', 'unrecorded-writes'],
+      } })],
+      months: [], pricesAsOf: '2026-06-24',
+    }));
+    const map = monetary.usageHistory.weeks[0].tokenFloorCausesByProvider;
+    assert.deepEqual(Object.keys(map), ['codex'], 'a tool left with only monetary causes is dropped');
+    assert.deepEqual(map.codex, ['unrecorded-writes']);
+    // A period whose DOLLARS are a floor says nothing about its token counts.
+    assert.deepEqual(out.usageHistory.weeks[1].tokenFloorCausesByProvider, {});
   });
 
   test('a byModel that is not an array degrades to empty, it does not drop the period', () => {

@@ -382,3 +382,108 @@ test.describe('Phase A review fixes: bounds, future records, path allowlist', ()
     assert.equal(after.usageHistory.weeks[0].costUsd, 25, 'same array identity, but the memo key moved');
   });
 });
+
+/**
+ * `ProviderSnapshot.weeklyTokens` on the two local-log rows.
+ *
+ * Neither tool publishes a weekly reset to us, so this window is always
+ * trailing — and it must match the cost block on the same row, which already
+ * says so through `windowAnchored: false`.
+ */
+test.describe('the Gemini and Kimi weekly token figure', () => {
+  const installed = (events) => ({ installed: true, events, readFailed: false, resultAtMs: NOW, unreadRange: null });
+
+  test('a trailing 7 days, half-open at the start, over the same window the cost block prices', () => {
+    const s = snap({
+      gemini: installed([
+        gemEv({ ts: NOW - 7 * DAY - 1, output: 1_000_000 }),
+        gemEv({ ts: NOW - 7 * DAY, output: 5, thoughts: 0, input: 0, cached: 0 }),
+        gemEv({ ts: NOW - DAY, output: 6, thoughts: 0, input: 0, cached: 0 }),
+      ]),
+    });
+    const g = row(s, 'gemini');
+    assert.equal(g.weeklyTokens.output, 11, 'the ms before the start is out');
+    assert.equal(g.weeklyCost.windowAnchored, false, 'Gemini publishes no weekly reset');
+    assert.equal(g.weeklyCost.windowEnd, new Date(NOW).toISOString());
+  });
+
+  test('Kimi has no price at all and still has a token count', () => {
+    const s = snap({ kimi: installed([kimiEv({ ts: NOW - 3 * DAY })]) });
+    const k = row(s, 'kimi');
+    assert.equal(k.weeklyCost.totalUsd, 0, 'nothing priced');
+    assert.deepEqual(k.weeklyCost.unpricedModels, ['kimi-code/kimi-for-coding']);
+    assert.equal(k.weeklyTokens.billable, 1200 + 300 + 100, 'usage is a fact even where price is not');
+    assert.equal(k.weeklyTokens.cacheRead, 5000, 'reported on its own, never in billable');
+  });
+
+  test('the week is not the five hours', () => {
+    const s = snap({ kimi: installed([kimiEv({ ts: NOW - 3 * DAY }), kimiEv({ ts: NOW - HOUR, input: 1, output: 1, cacheRead: 0, cacheWrite: 0 })]) });
+    const k = row(s, 'kimi');
+    assert.equal(k.tokens.billable, 2, 'only the recent event is in the five hours');
+    assert.equal(k.weeklyTokens.billable, 1602);
+  });
+
+  test('null means only "not scanned"; a scanned empty week is a PRESENT zero', () => {
+    assert.equal(row(snap(), 'gemini').weeklyTokens, null, 'not installed: no corpus');
+    assert.equal(row(snap(), 'kimi').weeklyTokens, null, 'not installed: no corpus');
+    const pending = snap({ gemini: { installed: true, events: null, resultAtMs: null } });
+    assert.equal(row(pending, 'gemini').weeklyTokens, null, 'pending');
+    assert.deepEqual(pending.pendingUsage, ['gemini'], 'and the snapshot says why it is null');
+    // The state that used to read "could not be counted": installed, scanned,
+    // and the user simply did not use the tool.
+    const empty = snap({ gemini: installed([]) });
+    assert.deepEqual(row(empty, 'gemini').weeklyTokens, { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, billable: 0 });
+    assert.deepEqual(row(empty, 'gemini').weeklyTokenFloorCauses, [], 'a measured zero is not a floor');
+    assert.equal(row(empty, 'gemini').tokens, null, 'the 5-hour field keeps its own shipped rule');
+  });
+});
+
+/**
+ * `weeklyTokenFloorCauses` on the two local-log rows (ADR-003 A6).
+ *
+ * Gemini CLI never records its utility calls or failed streams, so ANY Gemini
+ * token figure is a lower bound — unconditionally, and in particular whether or
+ * not the recorded messages could be priced. That last clause is the whole
+ * point: `weeklyCost.unrecordedCalls` is a COST cause and goes false when
+ * nothing priced, which would have left an all-unpriced Gemini week looking
+ * exact. Kimi's recorder drops nothing, so only an unread range moves it.
+ */
+test.describe('the Gemini token floor cause is unconditional, and Kimi has none of its own', () => {
+  const installed = (events, extra) => ({ installed: true, events, readFailed: false, resultAtMs: NOW, unreadRange: null, ...extra });
+
+  test('Gemini with priced usage is a floor', () => {
+    const g = row(snap({ gemini: installed([gemEv({ ts: NOW - DAY })]) }), 'gemini');
+    assert.equal(g.weeklyCost.unrecordedCalls, true);
+    assert.deepEqual(g.weeklyTokenFloorCauses, ['unrecorded-calls']);
+  });
+
+  test('Gemini whose week could not be priced AT ALL is still a floor — the gap F1 named', () => {
+    // A message with tokens but no model: unpriced, so `unrecordedCalls` stays
+    // false. The unrecorded utility calls happened all the same.
+    const noModel = gemEv({ ts: NOW - DAY, model: 'unknown', noModel: true, input: 600, cached: 0, output: 400, thoughts: 0 });
+    const g = row(snap({ gemini: installed([noModel]) }), 'gemini');
+    assert.equal(g.weeklyCost.totalUsd, 0, 'nothing priced');
+    assert.equal(g.weeklyCost.unrecordedCalls, false, 'the COST cause is off, unchanged');
+    assert.equal(g.weeklyTokens.billable, 1000);
+    assert.deepEqual(g.weeklyTokenFloorCauses, ['unrecorded-calls'], 'and the count is still a lower bound');
+  });
+
+  test('Gemini with no amount is not a floor — a zero count has no bound to be lower than', () => {
+    assert.deepEqual(row(snap({ gemini: installed([]) }), 'gemini').weeklyTokenFloorCauses, [], 'scanned, zero');
+    assert.deepEqual(row(snap(), 'gemini').weeklyTokenFloorCauses, [], 'not installed');
+  });
+
+  test('Kimi is exact although every one of its models is unpriced', () => {
+    const k = row(snap({ kimi: installed([kimiEv({ ts: NOW - DAY })]) }), 'kimi');
+    assert.deepEqual(k.weeklyCost.unpricedModels, ['kimi-code/kimi-for-coding']);
+    assert.deepEqual(k.weeklyTokenFloorCauses, [], 'no published price is not a missing token');
+  });
+
+  test('a known-unread range is the one thing that makes a Kimi count a floor', () => {
+    const k = row(snap({
+      kimi: installed([kimiEv({ ts: NOW - DAY })], { unreadRange: { fromMs: NOW - 3 * DAY, throughMs: NOW - 2 * DAY } }),
+    }), 'kimi');
+    assert.equal(k.weeklyCost.sourceIncomplete, true);
+    assert.deepEqual(k.weeklyTokenFloorCauses, ['unread-range']);
+  });
+});

@@ -38,7 +38,7 @@
       five: '5 saatlik limit', week: 'Haftalık limit', unknown: 'bilinmiyor', notReported: 'bildirilmiyor',
       noProviders: 'Panelde sağlayıcı yok', pct: '%{n}',
       whereOn: 'Ana panelde', whereOff: 'Ana panelde değil', connected: 'bağlı',
-      notSupported: '{name} bu sürümde henüz desteklenmiyor',
+      notSupported: '{name} bu sürümde henüz desteklenmiyor', experimental: 'deneysel',
       sections: 'Bölümler', steps: 'Adımlar'
     },
     en: {
@@ -55,7 +55,7 @@
       five: '5-hour limit', week: 'Weekly limit', unknown: 'unknown', notReported: 'not reported',
       noProviders: 'No providers in the panel', pct: '{n}%',
       whereOn: 'On the main panel', whereOff: 'Not on the main panel', connected: 'connected',
-      notSupported: '{name} is not supported in this version yet',
+      notSupported: '{name} is not supported in this version yet', experimental: 'experimental',
       sections: 'Sections', steps: 'Steps'
     }
   };
@@ -370,7 +370,10 @@
         var isOn = item.querySelector('.switch').getAttribute('aria-checked') === 'true';
         var name = item.querySelector('.settings__name').textContent;
         item.setAttribute('data-enabled', isOn ? 'true' : 'false');
-        var how = item.getAttribute('data-connected') === 'true' ? t('connected') : t('notSupported', { name: name });
+        var conn = item.getAttribute('data-connected');
+        var how = conn === 'true' ? t('connected')
+          : conn === 'experimental' ? t('experimental')
+          : t('notSupported', { name: name });
         item.querySelector('.settings__meta').textContent = (isOn ? t('whereOn') : t('whereOff')) + ' · ' + how;
       });
       var any = visibleRows().length > 0;

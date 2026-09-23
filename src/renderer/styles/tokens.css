@@ -22,7 +22,7 @@
  *   ink-400     4.20            4.96   <- meta text, the tightest ink pair
  *   ink-600     1.47            1.47   <- track vs base: an empty bar must
  *                                          still read as a bar
- *   calm        7.69            4.88
+ *   calm       13.03            4.70
  *   watch       8.85            5.49
  *   ember       5.54            6.12
  *   spent       4.62            9.86
@@ -32,7 +32,7 @@
  * threshold:
  *
  *              dark            light
- *   calm        5.23            3.33
+ *   calm        8.87            3.20
  *   watch       6.03            3.75
  *   ember       3.77            4.18
  *   spent       3.14            6.73
@@ -55,7 +55,22 @@
   --ink-700: #1E2625; /* hairline, tile ground */
   --ink-600: #2A3432; /* meter track */
   --ink-500: #3E4A48; /* disabled ink, skeleton */
-  --ink-400: #6B7A77; /* meta text; also the tray track — see the note below */
+  --ink-400: #6B7A77; /* meta text */
+  /* The tray track, and NOT an ink.
+   *
+   * It used to be `--ink-400`, which made one value answer two unrelated
+   * questions: how legible meta text is on the PANEL, and how a half-filled
+   * ring reads on the WINDOWS TASKBAR. Those have different grounds and
+   * different jobs, so moving the track by a shade meant moving panel
+   * typography with it — the coupling that makes a small change expensive.
+   * The tray already has its own light ramp column for the same reason: its
+   * ground is the taskbar, which follows the OS and not this app.
+   *
+   * Chosen against two constraints at once: visible on its own taskbar
+   * (4.51 vs #202020) and still clearly separated from the arc drawn over it
+   * (1.94 vs calm), because a track the eye cannot tell from the fill is a
+   * ring with no fraction in it. */
+  --tray-track-dark: #7A8A86;
   --ink-300: #93A29E; /* secondary text */
   --ink-200: #C2CFCB; /* body text */
   --ink-100: #EDF2F0; /* primary text, brightest ink */
@@ -91,7 +106,7 @@
    * 0.20 relative luminance, so a deeper red was not an option. Urgency is
    * carried by hue and saturation instead, which is the honest carrier anyway —
    * brightness is already spoken for by the ink scale. */
-  --calm:  #3FB89E;
+  --calm:  #22F58C;
   --watch: #E0A845;
   --ember: #E2653F;
   --spent: #E4404E;
@@ -192,7 +207,22 @@
   --ink-800: #EAEFED; /* row surface */
   --ink-700: #DCE3E0; /* hairline, tile ground */
   --ink-600: #C6D0CC; /* meter track */
-  --ink-500: #9AA6A2; /* disabled ink, skeleton; also the tray track */
+  --ink-500: #9AA6A2; /* disabled ink, skeleton */
+  /* The tray track on a LIGHT taskbar. Same two constraints, opposite
+   * direction: the light ramp steps are all DARKER than their ground, so the
+   * track has to sit above them rather than below.
+   *
+   * BALANCED, not raised. The first pass darkened it to #8E9A96 to make it
+   * visible against the taskbar, and that moved it TOWARD the arc drawn over
+   * it: 2.62 vs the taskbar but 1.74 vs calm, when shipped had been 2.01. On a
+   * light ground those two jobs pull in opposite directions, so the value is
+   * the one that maximises the WORSE of them — swept across the neutral family
+   * and measured: 2.11 vs #F3F3F3, 2.16 vs calm, 4.53 vs spent. Worst case
+   * 2.11, against 2.01 for the old ink and 1.74 for the first pass.
+   *
+   * This matters more at D3's geometry than it did: a thinner ring is a
+   * shorter boundary for that contrast to be read across. */
+  --tray-track-light: #A0ACA7;
   --ink-400: #5F6E6A; /* meta text; also the tray identity dot */
   --ink-300: #43514E; /* secondary text */
   --ink-200: #26302E; /* body text */
@@ -205,7 +235,7 @@
 
   /* Same four meanings, re-picked for a light ground. Every step is darker
    * than the one before it, so urgency reads as weight as well as hue. */
-  --calm:  #0F7A66;
+  --calm:  #00803A;
   --watch: #8A5A0B;
   --ember: #A83512;
   --spent: #7C160A;

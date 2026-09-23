@@ -40,7 +40,7 @@
 
 import type { ModelQuotaDetail, ModelQuotaGroup } from '../../../shared/contract.js';
 import { el, on, replaceChildrenWith, setAttr, setText } from '../dom.js';
-import { asOf, clockTimeWithDay, parseInstant, percent, stateFor } from '../format.js';
+import { asOf, clockTimeWithDay, parseInstant, percent, mixWithin, stateFor } from '../format.js';
 import { t } from '../i18n.js';
 
 export interface QuotaHandle {
@@ -160,6 +160,10 @@ export function createQuotas(providerId: string): QuotaHandle {
         // is a share of a whole with no limit in it, which is why that one
         // stays off the ramp.
         setAttr(head, 'data-state', stateFor(group.usedPercentage));
+        // Same ramp, same continuity: a per-model figure and the row's own bar
+        // are two readings of the same kind, and one gliding while the other
+        // stepped would read as two different scales.
+        head.style.setProperty('--mix', mixWithin(group.usedPercentage).toFixed(4));
 
         const members = el('ul', { class: 'quota__models' });
         for (const name of group.members) {

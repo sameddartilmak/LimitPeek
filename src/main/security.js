@@ -1,6 +1,8 @@
 'use strict';
 const { app, session } = require('electron');
 
+const log = require('../core/log');
+
 /**
  * Process-wide hardening. ADR-001 constraints security F8 and F11.
  *
@@ -13,13 +15,113 @@ const { app, session } = require('electron');
 
 const ALLOWED_SCHEMES = ['file:', 'devtools:', 'blob:', 'data:'];
 
+/**
+ * A `file:` URL that names a REMOTE AUTHORITY is a network fetch wearing a
+ * local scheme (security review of Phase B, F5): `file://server/share/x` is an
+ * SMB round trip, and on the sessions this module hardens — which now include
+ * the key-entry window, the one page where a secret is typed — "it is a file
+ * URL" was the whole check. So the authority has to be empty, and a path that
+ * begins with `//` is refused too, because Windows resolves `\\host\share` from
+ * exactly that shape.
+ *
+ * Parsed rather than pattern-matched: `file:////server/share` and
+ * `FILE://server/share` are the same request to Chromium and must be the same
+ * answer here.
+ */
+function isLocalFileUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.host !== '') return false;
+  return !parsed.pathname.startsWith('//');
+}
+
 function isAllowed(url) {
+  if (typeof url !== 'string') return false;
   const i = url.indexOf(':');
   if (i < 0) return false;
-  return ALLOWED_SCHEMES.includes(url.slice(0, i + 1).toLowerCase());
+  const scheme = url.slice(0, i + 1).toLowerCase();
+  if (!ALLOWED_SCHEMES.includes(scheme)) return false;
+  // The other three carry no authority that could reach a host: `data:` and
+  // `blob:` are in-process, and `devtools:` is Chromium's own.
+  return scheme === 'file:' ? isLocalFileUrl(url) : true;
+}
+
+/**
+ * Every session this app creates resolves DIRECT (ADR-001 Amendment 2026-09-22,
+ * ruling 2).
+ *
+ * WHY THIS IS NOT THE CONTROL, AND WHY IT IS STILL HERE
+ * ----------------------------------------------------
+ * The first OS-level measurement of the packaged app found 4 DNS datagrams
+ * within 0.87 s of launch, resolving `wpad`, plus loopback fetches of
+ * http://wpad/wpad.dat — Chromium's proxy auto-discovery, from the
+ * NetworkService child. Host resolution and PAC fetches are NOT URLRequests, so
+ * the block-all `onBeforeRequest` below never saw them and every in-process test
+ * passed while it was happening.
+ *
+ * `setProxy` is per session and cannot be called before the session exists,
+ * which is already inside the window WPAD ran in. So the control is the
+ * process-global switch in `applyProcessHardening` — measured at zero — and this
+ * is belt and braces for any session created later in the process's life (the
+ * key-entry window's, and anything a future change adds).
+ *
+ * `{ mode: 'direct' }` is a literal, in one place, on purpose: `'system'` here
+ * would put WPAD back, and a variable would make which mode ships depend on a
+ * caller. A test asserts both.
+ */
+function setDirectProxy(sess) {
+  if (!sess || typeof sess.setProxy !== 'function') return;
+  try {
+    const applied = sess.setProxy({ mode: 'direct' });
+    if (applied && typeof applied.catch === 'function') {
+      applied.catch((err) => log.warn(`proxy could not be set to direct: code=${(err && err.code) || 'UNKNOWN'}`));
+    }
+  } catch (err) {
+    log.warn(`proxy could not be set to direct: code=${(err && err.code) || 'UNKNOWN'}`);
+  }
+}
+
+/**
+ * DNS-over-HTTPS and Chromium's built-in resolver, pinned OFF (security F9).
+ *
+ * Nothing in this codebase said anything about host resolution before this line.
+ * Electron's `secureDnsMode` defaults to 'automatic' and `enableBuiltInResolver`
+ * defaults to disabled on Windows, so DoH does not fire today — and the OS-level
+ * audit corroborates it: plain UDP/53 to the LAN resolver, not TCP/443 to a DoH
+ * provider. But a default is not a decision. A DoH lookup is a host resolution,
+ * not a URLRequest, so a future Electron default flip would put our traffic on a
+ * third-party HTTPS endpoint silently and completely invisibly to the block-all
+ * filter in `applySessionHardening` — the same blind spot that let `wpad` ship.
+ *
+ * IT RUNS AFTER `ready`, unlike the command-line switches in
+ * `applyProcessHardening`. `configureHostResolver` throws if called earlier, so
+ * this is a PIN AGAINST FUTURE DRIFT and NOT a control over the first moments of
+ * the process: whatever Chromium resolves during startup is governed by
+ * `no-proxy-server` and by there being no host to look up, never by this call.
+ *
+ * Guarded exactly like `setDirectProxy`: an absent method is tolerated, nothing
+ * throws, and a failure logs a fixed code — never a raw error string (ADR-001
+ * security F3).
+ */
+function pinHostResolver() {
+  if (typeof app.configureHostResolver !== 'function') return;
+  try {
+    app.configureHostResolver({ enableBuiltInResolver: false, secureDnsMode: 'off' });
+  } catch (err) {
+    log.warn(`host resolver could not be pinned: code=${(err && err.code) || 'UNKNOWN'}`);
+  }
 }
 
 function applySessionHardening(sess) {
+  // BEFORE the request filter, and before anything else that could touch the
+  // network: proxy resolution is the one piece of outbound traffic the filter
+  // cannot see.
+  setDirectProxy(sess);
+
   sess.webRequest.onBeforeRequest((details, callback) => {
     callback({ cancel: !isAllowed(details.url) });
   });
@@ -46,12 +148,146 @@ function applySessionHardening(sess) {
   });
 }
 
+/**
+ * Sessions that must NOT get the block-all filter above (ADR-003 Amendment 5).
+ *
+ * Exactly one qualifies: the keyed request session (`main/keys/keyed-net.js`),
+ * which carries its own single unfiltered allowlist for one host. Amendment 5
+ * names the trap this arrangement avoids — Electron keeps only the LAST
+ * `onBeforeRequest` listener per session, so two listeners on one session is a
+ * race whose loser silently disappears. Rather than ordering them, the keyed
+ * session is created THROUGH this module and never gets the block-all listener
+ * at all.
+ *
+ * A WeakSet plus a scoped counter, because `session-created` is emitted
+ * SYNCHRONOUSLY from inside `session.fromPartition()` — there is no moment
+ * between "the session exists" and "the handler ran" in which a caller could
+ * mark it.
+ */
+const exemptSessions = new WeakSet();
+let creatingExempt = 0;
+
+/**
+ * The ONE partition that may skip the block-all filter.
+ *
+ * Named here rather than taken from the caller (security review of Phase B,
+ * F1): a function that exempts whatever partition it is handed is a function
+ * whose next caller can create a page-hosting session with no outbound block —
+ * and the exemption would be correct-looking code, not a bug anyone would spot
+ * in review. The keyed request module asserts the same constant from its own
+ * side, and a test covers the refusal.
+ */
+const EXEMPT_PARTITION = 'usage-notch-keyed';
+
+/**
+ * The keyed session, created with the block-all filter suppressed for it alone.
+ * Every other control a session can carry (permissions, devices) is applied by
+ * the caller, which is also the only module that may open a socket.
+ *
+ * Throws on any other partition. Loud, deliberately: it can only be reached by
+ * a code change, the caller (`keys/keyed-net.js`) treats a throw as "no request
+ * was made", and a silent fallback would hand back a session whose filter state
+ * the caller cannot see.
+ */
+function createExemptSession(partition) {
+  if (partition !== EXEMPT_PARTITION) {
+    // A fixed message: no partition string, so a future caller's value cannot
+    // reach a log through the error.
+    throw new Error('refused: only the keyed request session may skip the request filter');
+  }
+  creatingExempt += 1;
+  try {
+    const sess = session.fromPartition(partition);
+    exemptSessions.add(sess);
+    // Exempt from the request FILTER, never from the proxy mode: a session with
+    // no explicit mode is a session that may go looking for a PAC file, which is
+    // the one kind of outbound traffic the filter cannot cancel. Keeping this
+    // here rather than in the caller means EVERY session this app creates has an
+    // explicit mode, which is the property the test can assert.
+    setDirectProxy(sess);
+    return sess;
+  } finally {
+    creatingExempt -= 1;
+  }
+}
+
+/**
+ * `defaultSession`? Its listener is registered ONCE, from `applyAll()`, and is
+ * never re-registered (Amendment 5, K14a): doing it a second time — even with
+ * identical code — is the shape of the edit that removes the global block, so it
+ * is refused structurally rather than by review.
+ */
+function isDefaultSession(sess) {
+  try {
+    return sess === session.defaultSession;
+  } catch {
+    // Before `ready` there is no default session to compare against.
+    return false;
+  }
+}
+
 function applyProcessHardening() {
   // Never start crashReporter: it is the only Electron subsystem that uploads
   // by default once started. Not calling `crashReporter.start()` is the
   // guarantee; this switch removes the child-process uploader as well.
   app.commandLine.appendSwitch('disable-crash-reporter');
   app.commandLine.appendSwitch('disable-features', 'MediaRouter,Translate,OptimizationHints');
+
+  /**
+   * THE control for proxy auto-discovery (ADR-001 Amendment 2026-09-22).
+   *
+   * Chromium's NetworkService starts resolving `wpad` — 4 DNS datagrams and a
+   * loopback fetch of http://wpad/wpad.dat — within 0.87 s of launch, before any
+   * session exists to call `setProxy` on, and through a channel the session
+   * request filter cannot see at all. devops measured this switch at ZERO
+   * outbound events over five minutes, and per-session DIRECT alone could not be
+   * made to win that race.
+   *
+   * A SECOND, INDEPENDENT REASON this switch is the control and not belt and
+   * braces (security review F4): `setDirectProxy` never awaits `setProxy` (it
+   * only attaches a `.catch`), and `keys/keyed-net.js` returns synchronously from
+   * its session setup and creates the request in the same turn — so the first
+   * keyed request can be created before DIRECT has actually been applied, which
+   * is harmless only because this switch has already made the process default
+   * direct. Per-session control could therefore never have been the control; do
+   * not "simplify" this line away on the strength of the `setProxy` calls.
+   *
+   * It is a command-line switch and therefore must be appended BEFORE `ready`,
+   * which is why it lives here: `applyAll()` runs at require time in
+   * `src/main/index.js`, before the app is ready.
+   *
+   * THE COST, STATED PLAINLY: a user whose network needs a proxy cannot reach
+   * `api.github.com`, so the optional Copilot credit figure is unavailable to
+   * them and its row reports 'unreachable'. Nothing else changes — every other
+   * figure in this app comes from local files. The alternative was letting one
+   * optional feature put WPAD traffic on every machine that runs the app,
+   * including the ones with no key at all, and the ADR chose correctly.
+   *
+   * A keyed session on the system proxy (`mode: 'system'`) is deliberately NOT
+   * shipped: whether it re-introduces WPAD under this switch is unmeasured, and
+   * an unmeasured answer to "does the app phone home" is not an answer. The
+   * experiment is one line and belongs to devops (see the report).
+   */
+  app.commandLine.appendSwitch('no-proxy-server');
+
+  /**
+   * EVERY session, not just the default one (ADR-003 Amendment 5: "hardening
+   * today covers defaultSession only").
+   *
+   * The key-entry window runs on its own in-memory session, and a session with
+   * no request filter is a session with no outbound block — on the one window in
+   * this app where a secret is typed. Registered before `ready`, so a session
+   * created during startup cannot slip through.
+   */
+  app.on('session-created', (sess) => {
+    if (creatingExempt > 0) {
+      exemptSessions.add(sess);
+      return;
+    }
+    if (exemptSessions.has(sess)) return;
+    if (isDefaultSession(sess)) return;
+    applySessionHardening(sess);
+  });
 
   app.on('web-contents-created', (_event, contents) => {
     contents.on('will-navigate', (event) => event.preventDefault());
@@ -63,7 +299,21 @@ function applyProcessHardening() {
 
 function applyAll() {
   applyProcessHardening();
-  app.whenReady().then(() => applySessionHardening(session.defaultSession));
+  app.whenReady().then(() => {
+    // After `ready`, which is the whole reason it is not up with the switches.
+    pinHostResolver();
+    applySessionHardening(session.defaultSession);
+  });
 }
 
-module.exports = { applyAll, applySessionHardening, applyProcessHardening, isAllowed };
+module.exports = {
+  applyAll,
+  applySessionHardening,
+  applyProcessHardening,
+  isAllowed,
+  isLocalFileUrl,
+  setDirectProxy,
+  pinHostResolver,
+  createExemptSession,
+  EXEMPT_PARTITION,
+};

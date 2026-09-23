@@ -124,6 +124,13 @@ export interface PanelState {
    */
   language: LanguageChoice;
   /** True while a setLanguage call is in flight. */
+  /**
+   * Tools whose plan label is in flight, and the one whose write main refused.
+   * Same pair, same reason, as `enabledPending`/`revertedId`: the control must
+   * show that it is waiting, and a refusal must be SEEN and not only described.
+   */
+  planPending: readonly string[];
+  planReverted: string | null;
   languagePending: boolean;
   /** Set briefly when main refused a language change and the radio went back. */
   languageReverted: boolean;
@@ -150,6 +157,8 @@ const INITIAL: PanelState = {
   themePending: false,
   themeReverted: false,
   language: 'system',
+  planPending: [],
+  planReverted: null,
   languagePending: false,
   languageReverted: false,
 };

@@ -35,12 +35,21 @@ const GEOMETRY = Object.freeze({
   /** Outer radius as a fraction of the half-box. */
   outerRatio: 0.93,
   /** Inner radius as a fraction of the OUTER radius. */
-  innerRatio: 0.55,
+  innerRatio: 0.59,
   /** Identity dot radius as a fraction of the OUTER radius. */
-  dotRatio: 0.30,
-  /** NxN samples per pixel. 3 is what the probe verified as enough for the
-   *  arc edge at 16 px; 4 costs ~78% more work for no visible gain. */
-  supersample: 3,
+  dotRatio: 0.24,
+  /**
+   * NxN samples per pixel. Raised 3 -> 4 when the ring was thinned to D3.
+   *
+   * The old note said 4 cost ~78% more work for no visible gain, measured
+   * against the THICKER ring at 16 px. Coverage sampling quantises the edge
+   * alpha to N*N+1 levels, so 3x3 gave ten; on a 3.05 px stroke, and at the
+   * 20 px representation the owner's taskbar actually shows, ten levels is
+   * most visible exactly where a ring is judged — the two arc ends and the
+   * inner and outer boundaries. 4x4 gives seventeen. The cost is 16 x 16 x 16
+   * samples for the smallest icon, redrawn only when a snapshot changes.
+   */
+  supersample: 4,
   /**
    * Clear pixels the dot must keep between itself and the ring. Frontend
    * measured 1.86 px at S=16 and set the floor at 1.5: below that the two
@@ -82,14 +91,14 @@ const GEOMETRY = Object.freeze({
 const RAMPS = Object.freeze({
   /** Mirrors `:root { }` in tokens.css. */
   dark: Object.freeze({
-    calm: '#3FB89E',
+    calm: '#22F58C',
     watch: '#E0A845',
     ember: '#E2653F',
     spent: '#E4404E',
   }),
   /** Mirrors `:root[data-theme="light"] { }` in tokens.css. */
   light: Object.freeze({
-    calm: '#0F7A66',
+    calm: '#00803A',
     watch: '#8A5A0B',
     ember: '#A83512',
     spent: '#7C160A',
@@ -125,13 +134,19 @@ function rampFor(ground) {
  * RE-PICKED rather than inverted. Dark ramp steps are brighter than their
  * ground, so the track sits BELOW them; light ramp steps are all darker than
  * their ground, so the track has to sit ABOVE them. Frontend measured light
- * `--ink-400` under the light ramp at 1.02:1 against calm — a healthy donut
- * indistinguishable from the no-data ring, which is the meaning collision
- * `inNoDataGap()` exists to prevent, arriving from the track side instead of
- * the sweep side. `--ink-500` gives 2.09 / 2.35 / 2.62 / 4.23 across the four
- * steps, above the dark theme's own worst case of 1.10.
+ * `--ink-400` under the light ramp at 1.02:1 against the calm of the day — a
+ * healthy donut indistinguishable from the no-data ring, which is the meaning
+ * collision `inNoDataGap()` exists to prevent, arriving from the track side
+ * instead of the sweep side. `--ink-500` gives 2.01 / 2.35 / 2.62 / 4.23 across
+ * the four steps, above the dark theme's own worst case of 1.10.
  *
- *   TRACKS           dark --ink-400   light --ink-500
+ * Re-measured when calm moved to the vivid green (2026-09-22): light calm
+ * 2.09 -> 2.01 against `--ink-500`, dark calm 1.83 -> 3.10 against `--ink-400`.
+ * The light figure is the one to watch — it is the tightest pair in the icon,
+ * and thinning the ring shortens the boundary that contrast has to be read
+ * across.
+ *
+ *   TRACKS           dark --tray-track-dark   light --tray-track-light
  *   NO_DATA_RINGS    dark --ink-400   light --ink-300
  *   NEUTRAL_ACCENTS  dark --ink-400   light --ink-400
  *
@@ -159,7 +174,7 @@ function rampFor(ground) {
  * old single constant asserted the same guarantee and had nothing behind it,
  * which is how it stopped being true without anything failing.
  */
-const TRACKS = Object.freeze({ dark: '#6B7A77', light: '#9AA6A2' });
+const TRACKS = Object.freeze({ dark: '#7A8A86', light: '#A0ACA7' });
 const NO_DATA_RINGS = Object.freeze({ dark: '#6B7A77', light: '#43514E' });
 const NEUTRAL_ACCENTS = Object.freeze({ dark: '#6B7A77', light: '#5F6E6A' });
 
@@ -341,6 +356,22 @@ function drawDonut(size, spec, ground = 'dark') {
 
       // Coverage IS the alpha, and the colour sum is already the premultiplied
       // numerator: dividing by `samples` (not by `hits`) yields colour*alpha.
+      //
+      // THIS SUMS sRGB BYTES ON PURPOSE. It looks like the classic averaging
+      // mistake — average in linear light, not in gamma-encoded space — and it
+      // is not, because what is being averaged is COVERAGE, not two colours:
+      // every sample that hits contributes the same value and misses
+      // contribute nothing, so the result is colour x alpha. That is
+      // premultiplied sRGB, which is exactly what `nativeImage.createFromBitmap`
+      // takes and what the Windows compositor blends. Converting to linear
+      // light and back here would DOUBLE-CORRECT against the platform and make
+      // every anti-aliased edge lighter than it should be.
+      //
+      // The one place the objection does apply is a boundary between two
+      // OPAQUE colours — the sweep/track seam and the dot/ring seam — where the
+      // sRGB midpoint lands a shade dark. That is a one-pixel internal line,
+      // not the perimeter, and it is deliberately left alone: fixing it means
+      // converting every pixel to buy a shade on two seams.
       const i = (y * s + x) * 4;
       buf[i] = Math.round(accB / samples);
       buf[i + 1] = Math.round(accG / samples);

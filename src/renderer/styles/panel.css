@@ -569,6 +569,10 @@
   min-height: var(--row-passive-h);
   padding: var(--s-2) var(--s-4);
   border-top: 1px solid var(--ink-700);
+  /* The plan field is the last child so it comes after the switch in the TAB
+   * order; wrapping is what lets it still be drawn below the row rather than
+   * squeezed into it. */
+  flex-wrap: wrap;
 }
 .settings__list > .settings__item:first-child { border-top: 0; }
 
@@ -602,12 +606,111 @@
   flex-direction: column;
   gap: 2px;
 }
-.settings__title {
+/* The item's name line: the provider's name plus the "deneysel" pill. Its own
+ * class, NOT .settings__title — that one is the settings VIEW heading, and
+ * sharing it made every provider name inherit the heading's weight. */
+.settings__titleline {
   display: flex;
   align-items: baseline;
   gap: var(--s-1);
   min-width: 0;
 }
+
+/* The plan the user says they are on, per tool.
+ *
+ * A native `<input list>`: it offers what we know and accepts what we do not,
+ * which is the whole requirement. Styled as a quiet field rather than a
+ * prominent one — it is an optional note, not something the panel is waiting
+ * for, and an empty one must not read as an unfinished task.
+ *
+ * The browser draws the datalist affordance itself; nothing here fights it. */
+.settings__plan {
+  /* Its own full-width line under the switch — see the wrap note on the item. */
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+.settings__plan-label {
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+}
+.settings__plan-input {
+  width: 100%;
+  min-width: 0;
+  padding: 2px var(--s-1);
+  border: 1px solid var(--ink-700);
+  border-radius: 4px;
+  background: var(--ink-800, transparent);
+  color: var(--ink-100);
+  font: inherit;
+  font-size: var(--fs-micro);
+}
+.settings__plan-input::placeholder { color: var(--ink-500); }
+.settings__plan-input[aria-busy="true"] { opacity: .7; }
+/* Main refused the write, so the field went back to what is stored. Held for a
+ * moment as an attribute so the revert is SEEN and not only described in the
+ * notice — the same treatment `data-revert` gives the switch. */
+.settings__item[data-plan-reverted="true"] .settings__plan-input {
+  border-color: var(--watch);
+}
+.settings__plan-hint {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--ink-500);
+  overflow-wrap: break-word;
+}
+
+/* ADR-003 A8: the key section inside a settings item. State and times only —
+ * never a character of the key, never its length, never a mask (K23). */
+.settings__key {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+}
+.settings__key[hidden] { display: none !important; }
+.settings__key p { margin: 0; overflow-wrap: break-word; white-space: normal; }
+/* The proxy cause behind 'unreachable'. Deliberately the SAME calm meta ink as
+ * every other line here: no warning colour, no icon, no border. It is a stated
+ * limit of this app, permanent on a network that requires a proxy, and styling
+ * it as an alert would promise the user something they can clear. It wraps to
+ * as many lines as it needs — honesty copy is never truncated (ADR-004 A2.3). */
+.settings__key-cause { color: var(--ink-400); }
+.settings__key-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.settings__key-token,
+.settings__key-remove,
+.settings__key-confirm-yes,
+.settings__key-confirm-no {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dashed var(--ink-600);
+  background: transparent;
+  color: var(--ink-300);
+  font: inherit;
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+.settings__key-token:hover,
+.settings__key-remove:hover,
+.settings__key-confirm-yes:hover,
+.settings__key-confirm-no:hover { color: var(--ink-100); }
+.settings__key-token[hidden],
+.settings__key-state[hidden],
+.settings__key-cause[hidden],
+.settings__key-stored[hidden] { display: none !important; }
+.settings__key-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--s-2);
+  border-left: 1px solid var(--ink-600);
+}
+.settings__key-confirm[hidden] { display: none !important; }
+.settings__key-confirm-actions { display: flex; gap: var(--s-2); }
 .settings__name {
   font-size: var(--fs-name);
   color: var(--ink-200);
@@ -1012,7 +1115,7 @@
 }
 .usage__model {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: baseline;
   column-gap: var(--s-2);
   padding: 1px 0;
@@ -1042,9 +1145,79 @@
   color: var(--ink-200);
   white-space: nowrap;
 }
+/* The absolute count, beside the money. Quieter than the amount because this
+ * section's headline claim is the notional cost; it is still legible, because
+ * "how many tokens did I use" is the question this column exists to answer.
+ * It is `billable` only (input + output + cacheWrite) — cacheRead is ~98% of
+ * raw volume at 0.1x and stands on its own in the title, never folded in. */
+.usage__model-tokens {
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+.usage__model-tokens[hidden] { display: none !important; }
 /* A lower bound is not an exact figure, so it does not wear the full weight of
  * one — same treatment as the period amount. */
 .usage__model[data-floor="true"] .usage__model-amount { font-weight: 500; }
+/* The TOKEN floor is a different claim from the money floor and is marked on
+ * the token cell alone. The two can legitimately disagree on one line: an
+ * unpriced model counted every token it saw, so "en az $301,12" sits beside an
+ * exact count, and a Codex line with unrecorded cache writes is the reverse. */
+.usage__model[data-token-floor="true"] .usage__model-tokens { color: var(--ink-300); }
+
+/* Per-tool token subtotals under a period's model list.
+ *
+ * ONE LINE PER TOOL AND NO TOTAL LINE. Dollars add across tools; token counts
+ * do not (each vendor counts its classes its own way, and cacheRead sits in a
+ * different proportion in each), so a merged "tokens used this period" is the
+ * figure ADR-001 bans. The absence of a total row here is the design, not an
+ * omission — and the lead line says so in words, because an absence cannot
+ * make a claim on its own. */
+.usage__tokens {
+  grid-column: 1 / -1;
+  list-style: none;
+  margin: 0 0 var(--s-1);
+  padding: 0 0 0 var(--s-2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-left: 1px solid var(--ink-700);
+}
+.usage__tokens[hidden] { display: none !important; }
+.usage__tokens-lead {
+  font-size: var(--fs-micro);
+  color: var(--ink-500);
+  padding-top: 2px;
+}
+.usage__tokens-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  column-gap: var(--s-2);
+}
+.usage__tokens-tool {
+  font-size: var(--fs-micro);
+  color: var(--ink-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usage__tokens-count {
+  font-size: var(--fs-micro);
+  color: var(--ink-200);
+  white-space: nowrap;
+}
+/* ADR-002 A3.16: the reason a count is a lower bound, on screen with it. Full
+ * width under the tool and figure, because it is a sentence fragment and must
+ * WRAP rather than ellipsize — a cause cut to fit is a cause dropped. Quiet
+ * ink: it explains the figure, it does not compete with it. */
+.usage__tokens-cause {
+  grid-column: 1 / -1;
+  font-size: var(--fs-micro);
+  color: var(--ink-500);
+  white-space: normal;
+  overflow-wrap: break-word;
+}
 /* An unpriced model ("fiyatlanamadı") is stated, quietly. */
 .usage__model[data-unpriced="true"] .usage__model-amount {
   color: var(--ink-400);

@@ -186,7 +186,7 @@ teşhis için tutulan **en üst düzey anahtar adları** listesidir (`payloadKey
 e-mail or identifier" testi sabitliyor. Ayar dosyasında yalnızca `statusLine`
 anahtarına dokunulur; `~/.gemini` altındaki kimlik bilgilerine hiç bakılmaz.
 
-Bu makinede `agy` kurulu değilse **Bağla** düğmesi onu tek tıkla kurabilir: onayınızı isteyen bir pencere çıkar (“Antigravity CLI'ı antigravity.google adresinden indirip kuracak”), onaylarsanız uygulama aracı indirip kurar ve ardından zaten bildiği durum-satırı köprüsünü yapılandırır. Bu, uygulamanın **tek** ağ erişimidir ve yalnızca burada, sizin onayınızla olur — çalışma anındaki sıfır-ağ sözü bozulmaz (aşağıya bakın). İndirme başarısız olursa hiçbir şey değişmez ve bu söylenir.
+Bu makinede `agy` kurulu değilse **Bağla** düğmesi onu tek tıkla kurabilir: onayınızı isteyen bir pencere çıkar (“Antigravity CLI'ı antigravity.google adresinden indirip kuracak”), onaylarsanız uygulama aracı indirip kurar ve ardından zaten bildiği durum-satırı köprüsünü yapılandırır. Bu, bir defalık, onaya bağlı bir indirmedir; zamanlayıcıyla ya da sizden habersiz asla olmaz. Anahtar kaydetmediğiniz sürece uygulama kendiliğinden hiçbir ağ isteği yapmaz (aşağıya bakın). İndirme başarısız olursa hiçbir şey değişmez ve bu söylenir.
 
 Önemli, dürüstçe: `agy`, IDE'den **ayrı** kimlik doğrular (kendi anahtarlığı/tarayıcı oturumu). Kurulumdan sonra kotanın görünmesi için `agy`'ı bir kez çalıştırıp oturum açmanız gerekir; oturum durumunu okuyamıyoruz çünkü bu bir kimlik-bilgisi okuması olurdu ve uygulama bunu asla yapmaz. Bu yüzden akış oturumu **doğrulamaz**, yönlendirir.
 
@@ -244,17 +244,46 @@ gösterir.
 
 ## Güvenlik duruşu
 
-- **Çalışma anında sıfır giden ağ trafiği.** Bağımlılık ağacında HTTP istemcisi yok.
-  Telemetri, çökme raporu ve güncelleme kontrolü yok. Snapshot, yenileme, tarama — hiçbiri
-  ağa çıkmaz. Doğrulaması: uygulamanın exe'sine giden bağlantıyı engelleyen bir güvenlik
-  duvarı kuralı ekle — hiçbir sayı kaybolmamalı.
-- **Tek istisna, açıkça sınırlanmış: isteğe bağlı `agy` kurulumu.** Antigravity satırında
+- **Anahtar kaydetmediyseniz uygulama kendiliğinden hiçbir ağ isteği yapmaz.** Bağımlılık
+  ağacında HTTP istemcisi yok. Telemetri, çökme raporu ve güncelleme kontrolü yok.
+  Snapshot, yenileme, tarama — hiçbiri ağa çıkmaz. Doğrulaması: uygulamanın exe'sine giden
+  bağlantıyı engelleyen bir güvenlik duvarı kuralı ekle — anahtar yoksa hiçbir sayı
+  kaybolmaz; kayıtlı bir Copilot anahtarı varsa kaybolan tek şey bu ayın AI kredisi
+  sayısı olur, diğer bütün satırlar aynı kalır.
+- **Onaya bağlı istisna 1: isteğe bağlı `agy` kurulumu.** Antigravity satırında
   **Bağla**'ya bastığınızda, `agy` kurulu değilse uygulama onu antigravity.google'dan
   indirir. Bu, bir defalık, onaya bağlı bir **kurulum adımı**dır — çalışma-anı çağrısı
   değil. Kodda tek, dar, yorumlu bir yerde olur (`src/core/antigravity/cli-install.js`),
   onay penceresi tam üstünde durur; indirdiği şey vendor'ın belgelediği PowerShell
   komutudur (`irm https://antigravity.google/cli/install.ps1 | iex`), mutlak yoldan,
   kabuk olmadan, zaman aşımlı. Zamanlayıcıyla ya da sizden habersiz asla çalışmaz.
+- **Onaya bağlı istisna 2: isteğe bağlı Copilot anahtarı.** Copilot satırında anahtar
+  eklemeyi seçerseniz — ki hiçbir satır bunu gerektirmez — istekler yalnızca
+  `api.github.com` adresine, yalnızca o satır açıkken ve en sık 15 dakikada bir yapılır.
+  Okunan tek şey bu ayın AI kredisi kullanımıdır (harcanan / plana dahil olan /
+  faturalanan). **Yüzde gösterilmez:** GitHub yanıtında bir üst sınır yok, biz de
+  uydurmayız. Anahtar yalnızca `Authorization` başlığında gider, hiçbir adreste ya da
+  günlükte görünmez; istek kendi ayrı oturumunda, tek bir adrese izin veren bir süzgecin
+  arkasında yapılır, yönlendirme izlenmez ve 401 gelirse yoklama tamamen durur.
+- **Uygulama sistem vekil sunucusunu (proxy) kullanmaz.** Vekil otomatik keşfi (WPAD/PAC)
+  süreç genelinde kapalıdır ve uygulamanın açtığı her oturum DIRECT çözümlenir. Bunun
+  bedeli açıkça şudur: **vekil gerektiren bir ağda, kayıtlı anahtarla bile bu ayın AI
+  kredisi sayısı gösterilemez** — satır "ulaşılamadı" der ve nedenini söyler. Satırdaki
+  ve paneldeki diğer her şey yerel dosyalardan okunur, yani değişmez. `api.github.com`
+  adına yapılan çözümleme Windows'un kendi DNS ayarlarıyla yapılır: uygulama, kendi
+  süreci içinde DNS-over-HTTPS'i **kapalıya sabitler**, yani adı sizin ayarladığınız
+  çözümleyici çözer, uygulamanın seçtiği bir HTTPS DNS sunucusu değil. (Bu, Windows'un kendi
+  DoH ayarını değiştirmez; yalnızca uygulamanın kendi içindeki DNS-over-HTTPS yolunu
+  kapatır, böylece adı her zaman sizin çözümleyiciniz çözer.)
+- **Anahtar Windows DPAPI ile, bu Windows kullanıcısına özel olarak saklanır**
+  (`%LOCALAPPDATA%\UsageNotch\secrets`); kurulumu kaldırdığınızda kaldırıcı bu klasörü
+  siler. Silemezse — bir dosya kullanımdaysa olabilir — size söyler ve ne yapacağınızı
+  yazar: klasörü kendiniz silin, **ve anahtarı GitHub'dan iptal edin**. İptal, dosya
+  gitse de gitmese de işe yarayan tek adımdır.
+  Bu koruma diğer Windows hesaplarına ve dosyanın başka bir makineye kopyalanmasına karşı
+  işe yarar; **bu kullanıcı olarak çalışan programlara karşı korumaz.** Panelden
+  **Anahtarı kaldır** yalnızca bu bilgisayardaki kopyayı siler — belirteci ayrıca
+  GitHub'dan iptal etmeniz gerekir.
 - **OAuth token'ına dokunulmuyor.** `~/.claude/.credentials.json` hiç açılmıyor.
   Aynı kural `~/.gemini` için de geçerli: adı geçen tek dosya
   `antigravity-cli/settings.json`, okunan/yazılan tek anahtar `statusLine`.
@@ -280,7 +309,7 @@ gösterir.
 ## Geliştirme
 
 ```bash
-npm test     # tip kontrolü + 1158 test
+npm test     # tip kontrolü + tüm test paketi
 npm run scan # gerçek corpus üzerinde tarama ölçümü
 npm run build # paketleme derlemesi (dist/ temizlenip yeniden üretilir)
 npm run smoke # Electron IPC duman testi
@@ -293,6 +322,51 @@ node src/renderer/dev/serve.mjs # panel önizlemesi (yalnızca geliştirme)
 `src/renderer/dev/` paketlenen uygulamaya dahil **edilmez** — içindeki önizleme
 sunucusu dinleyen bir soket açar ve yayınlanan uygulamada böyle bir şey yoktur.
 
+## Yayınlama
+
+**Tek geçerli paketleme komutu `npm run dist`.** `electron-builder`'ı doğrudan
+çağırmak yasaktır: `dist` betiği `typecheck → build → electron-builder` zincirini
+kurar, doğrudan çağrı ise hem tip kontrolünü hem renderer derlemesini atlar.
+Bu gerçekten oldu — 2026-09-22'de `npm test`'in reddettiği bir ağaçtan imzalı bir
+kurulum dosyası üretildi ve sorun çıkmamasının tek nedeni şanstı. Atlanabilen bir
+kapı, koruma değil yalnızca maliyettir.
+
+**Yayın öncesi kapı: sıfır-soket denetimi.** Yayınlanacak *nihai* derleme
+üzerinde, yükseltilmiş (yönetici) bir kabukta:
+
+```powershell
+npm run dist:dir
+powershell -ExecutionPolicy Bypass -File scripts\zero-socket-audit.ps1 -Case A -Minutes 16
+```
+
+Sonuçtan şunlar kayda geçer: ölçülen `app.asar` SHA-256'sı, `etwEvents` (0
+olmalı — loopback dahil her tür olay), `appSurvivedWindow` (True), `childRoles`
+içinde `renderer` ve `etwBuffersLost` (0). Bu, ADR-001 F11 ve ADR-003 A5 K25'in
+istediği kanıttır; CI yoktur ve betik yerel yükseltilmiş bir ETW oturumu
+gerektirdiği için gece işi değil, sahibinin elle çalıştırdığı bir kapıdır.
+**Ölçülen ikili dosyanın SHA-256'sı yazılmazsa kanıt hangi derlemeye ait olduğunu
+söylemez** — yeniden derleme, ölçümü sessizce geçersiz kılar.
+
+Henüz ölçülmemiş iki vektör, ikisi de sahibinin çalıştırması gereken:
+
+```powershell
+# ağ değişikliğiyle tetiklenen trafik (yalnızca sahibi, kendi makinesinde)
+powershell -ExecutionPolicy Bypass -File scripts\zero-socket-audit.ps1 -Case A -Minutes 6 -ToggleAdapter 'Wi-Fi' -ToggleDownSeconds 20
+# anahtarlı yol (gerçek bir fine-grained PAT gerektirir)
+powershell -ExecutionPolicy Bypass -File scripts\zero-socket-audit.ps1 -Case B -Minutes 35
+```
+
+**Geri dönüş.** Bugün belgelenmiş bir geri alma adımı yoktur ve bu bir eksiktir.
+Elde olan: `%LOCALAPPDATA%\usage-notch-<sha>-backup\` altında önceki kurulum
+dizinlerinin elle alınmış kopyaları ve `%LOCALAPPDATA%\usage-notch-updater\`
+içinde saklanmış bir kurulum dosyası. Bunları bu depodaki hiçbir kod üretmiyor,
+dolayısıyla geri yükleme yordamı da doğrulanmış değil. Ayrıca `package.json`
+sürümü her derlemede `0.1.0` kaldığı için kurulum kaydı, kurulum dosyası adı ve
+`DisplayVersion` bütün yayınlarda aynıdır: **hangi derlemenin kurulu olduğu
+ayırt edilemez**, bu yüzden geri dönülecek hedef de adlandırılamaz. Sürüm
+numarası artmaya başlayana kadar geri dönüş, dizin kopyalamaya dayanan elle bir
+işlemdir.
+
 ## Mimari
 
 - `src/core/**` — toplayıcı, ayrıştırıcı, birleştirici. Electron'dan tamamen
@@ -303,7 +377,13 @@ sunucusu dinleyen bir soket açar ve yayınlanan uygulamada böyle bir şey yokt
   verisi üzerinde **hiç aritmetik yapmaz**; ana süreç çözülmüş değerler gönderir.
 - `src/core/antigravity/**` — IDE durum deposu okuyucusu: kurulum çözümleme
   (koruma 1), katı protobuf çözücü (koruma 3a), `node:sqlite` sarmalayıcısı ve
-  süreç sondası (`process.js`) ve tek-tık `agy` kurulumu (`cli-install.js` — uygulamanın tek ağ erişiminin yaşadığı dar, onay kapılı yer).
+  süreç sondası (`process.js`) ve tek-tık `agy` kurulumu (`cli-install.js` — onaya bağlı
+  istisna 1'in yaşadığı dar yer).
+- `src/main/keys/**` — isteğe bağlı API anahtarı: onay penceresi ve kısa ömürlü giriş
+  penceresi (`entry-window.js`), DPAPI deposu (`secret-store.js`) ve isteğin yapıldığı tek
+  modül (`keyed-net.js` — onaya bağlı istisna 2'nin yaşadığı dar yer; `net`'i içe alan
+  tek dosya olduğu testle sabit). Anahtar mantığının saf kısmı `src/core/keys/**`
+  içindedir: doğrulama, adres izin listesi, yanıt okuyucu ve istek bütçesi.
 - `src/core/codex/**` — rollout okuyucuları: `rate_limits` (`rollout.js`),
   `token_count` taraması (`usage.js`, `scan-worker.js` içinde çalışır) ve OpenAI
   fiyat tablosu (`pricing.js`).
@@ -322,10 +402,16 @@ yüzde, token sayıları ve model/katman bazlı API fiyatı karşılığı), aç
 başlatma, tepsi simgesi, tıklamayla açılan panel, altı sağlayıcı satırı, Bağla/Ekle
 düğmeleri.
 
-**Yok:** Kimi, Copilot, Gemini için canlı veri. Bunların her biri farklı bir
-mekanizma gerektiriyor (Gemini hiç yüzde vermiyor) — "yerel dosya oku" ortak
-bir soyutlama değil. Satırlar
-pasif duruyor ve hiçbiri uydurma sayı göstermiyor.
+**Kısmen var:** Gemini ve Kimi kendi yerel kayıtlarından token (Gemini'de ayrıca standart
+API fiyatlarına göre kavramsal maliyet); ikisi de **limit yüzdesi yayımlamıyor**, o yüzden
+pencereler `bildirilmiyor` diyor ve satırlar gerçek bir kurulumda doğrulanana kadar
+"deneysel" işaretini taşıyor. Copilot'ta isteğe bağlı bir anahtar eklerseniz bu ayın AI
+kredisi kullanımı gösterilir — yüzde değil, üç sayı ve okuma zamanı (yukarıdaki güvenlik
+duruşu). Anahtar eklemezseniz satır pasif kalır.
+
+**Yok:** Copilot'un yerel token toplamları ve limit göstergesi (gerçek bir kurulumda
+ölçüm ve yeni bir güvenlik incelemesi bekliyor), Gemini ve Kimi için limit yüzdesi
+(yayımlanan bir kaynak yok). Hiçbir satır uydurma sayı göstermiyor.
 
 **Haftalık limit neden yok:** Depodaki 130 anahtarın tamamı tarandı, her
 base64 protobuf değeri çözüldü: tek bir kota yapısı var ve hiçbir yerde

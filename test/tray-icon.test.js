@@ -252,7 +252,11 @@ test.describe('the no-data path (contract.ts, TrayIconSpec)', () => {
     assert.equal(spec.accent, '#6B7A77');
     const size = 32;
     const buf = drawDonut(size, spec);
-    assert.ok(isColour(ringPixel(buf, size, 45), TRACK), 'no ramp colour may be drawn');
+    // NO_DATA_RINGS, not TRACKS: this is the broken no-data ring, a different
+    // constant with a different job. The two shared #6B7A77 on dark until the
+    // track became its own token, so this assertion used to pass against the
+    // wrong name — one value answering two questions, as donut.js warns.
+    assert.ok(isColour(ringPixel(buf, size, 45), NO_DATA_RINGS.dark), 'no ramp colour may be drawn');
     assert.equal(ringPixel(buf, size, 0).a, 0, 'and it must be the broken no-data ring');
   });
 
@@ -301,7 +305,7 @@ test.describe('the no-data path (contract.ts, TrayIconSpec)', () => {
     // Mid-quadrant, i.e. between the four gaps.
     for (const deg of [45, 135, 225, 315]) {
       const px = ringPixel(buf, size, deg);
-      assert.ok(isColour(px, TRACK), `ring at ${deg} deg is not the track colour`);
+      assert.ok(isColour(px, NO_DATA_RINGS.dark), `ring at ${deg} deg is not the no-data ring colour`);
     }
     // ...and not one pixel anywhere carries a ramp colour.
     for (const hex of Object.values(RAMP)) {
@@ -427,7 +431,7 @@ test.describe('the donut bitmap', () => {
     const size = 32;
     const buf = drawDonut(size, { usedPercentage: 95, accent: '#C96442', state: 'none' });
     // 45 deg, not 2 deg: 2 deg now falls inside a no-data gap.
-    assert.ok(isColour(ringPixel(buf, size, 45), TRACK));
+    assert.ok(isColour(ringPixel(buf, size, 45), NO_DATA_RINGS.dark));
   });
 
   test('the arc length comes from the ROUNDED percentage, like the colour', () => {
@@ -441,21 +445,17 @@ test.describe('the donut bitmap', () => {
   });
 
   test('99.4 still leaves the ring open, because it prints as %99', () => {
-    // Counted rather than point-sampled: the unswept wedge is 3.6 degrees,
-    // which at 32px is thinner than the rounding of a single pixel centre.
+    // Compared against the CLOSED ring rather than by counting exact-track
+    // pixels. The old version required at least one pixel to be the track
+    // colour at full alpha, and a 3.6-degree wedge on a thinner ring with 4x4
+    // sampling has no such pixel — every pixel in it is a blend. That made
+    // better anti-aliasing look like a regression while the property itself
+    // held. The property is: 99 must not render as 100, and 99.6 must.
     const size = 32;
-    const trackPixels = (buf) => {
-      const [r, g, b] = parseHex(TRACK);
-      let n = 0;
-      for (let i = 0; i < buf.length; i += 4) {
-        if (buf[i + 3] === 255 && buf[i + 2] === r && buf[i + 1] === g && buf[i] === b) n += 1;
-      }
-      return n;
-    };
-    const open = drawDonut(size, { usedPercentage: 99.4, accent: '#C96442', state: 'ember' });
-    const closed = drawDonut(size, { usedPercentage: 99.6, accent: '#C96442', state: 'ember' });
-    assert.ok(trackPixels(open) > 0, 'the last percent must still show track');
-    assert.equal(trackPixels(closed), 0, '99.6 prints as %100 and must close the ring');
+    const ring = (pct) => drawDonut(size, { usedPercentage: pct, accent: '#C96442', state: 'ember' });
+    const full = ring(100);
+    assert.notDeepEqual(ring(99.4), full, 'the last percent must still leave the ring open');
+    assert.deepEqual(ring(99.6), full, '99.6 prints as %100 and must close the ring');
   });
 
   test('a complete sweep has no seam at the 12 o clock join', () => {
@@ -475,7 +475,12 @@ test.describe('the donut bitmap', () => {
       return rOut * GEOMETRY.innerRatio - rOut * GEOMETRY.dotRatio;
     };
     assert.ok(gapAt(16) >= GEOMETRY.minDotGapPx, `S=16 must keep the dot; gap is ${gapAt(16)}`);
-    assert.ok(gapAt(12) < GEOMETRY.minDotGapPx, 'S=12 is the case the rule exists for');
+    // The box that trips the rule got SMALLER when the ring was thinned to D3:
+    // a wider gap is exactly what thinning buys, so S=12 now clears the floor
+    // at 1.95px where it used to fail. The rule is unchanged and still has a
+    // case — it just takes a smaller box to reach it.
+    assert.ok(gapAt(12) >= GEOMETRY.minDotGapPx, `S=12 now clears it at ${gapAt(12).toFixed(2)}px`);
+    assert.ok(gapAt(9) < GEOMETRY.minDotGapPx, 'S=9 is the case the rule exists for now');
 
     const centreAlpha = (s) => {
       const buf = drawDonut(s, { usedPercentage: 50, accent: '#C96442', state: 'calm' });
@@ -483,7 +488,11 @@ test.describe('the donut bitmap', () => {
       return buf[(c * s + c) * 4 + 3];
     };
     assert.equal(centreAlpha(16), 255, 'the dot must survive at the tray default size');
-    assert.equal(centreAlpha(12), 0, 'the dot must be dropped, not drawn fused');
+    assert.equal(centreAlpha(20), 255, 'and at 20px, which is what a 1.25x taskbar shows');
+    // Same move as the gap arithmetic above: the box that drops the dot is
+    // smaller now, so the probe follows it down rather than pinning a size
+    // that no longer exercises the branch.
+    assert.equal(centreAlpha(9), 0, 'the dot must be dropped, not drawn fused');
   });
 
   test('an unparsable accent falls back instead of throwing', () => {
@@ -594,7 +603,10 @@ test.describe('the icon follows the taskbar, not the panel', () => {
     ['RAMPS', 'watch', (g) => RAMPS[g].watch, { dark: 'watch', light: 'watch' }],
     ['RAMPS', 'ember', (g) => RAMPS[g].ember, { dark: 'ember', light: 'ember' }],
     ['RAMPS', 'spent', (g) => RAMPS[g].spent, { dark: 'spent', light: 'spent' }],
-    ['TRACKS', '', (g) => TRACKS[g], { dark: 'ink-400', light: 'ink-500' }],
+    // NOT an ink. The track answers a taskbar question, not a panel one, so it
+    // has its own token — otherwise moving a tray pixel moves panel meta text
+    // with it. The mirror still holds; it just points at the right variable.
+    ['TRACKS', '', (g) => TRACKS[g], { dark: 'tray-track-dark', light: 'tray-track-light' }],
     ['NO_DATA_RINGS', '', (g) => NO_DATA_RINGS[g], { dark: 'ink-400', light: 'ink-300' }],
     ['NEUTRAL_ACCENTS', '', (g) => NEUTRAL_ACCENTS[g], { dark: 'ink-400', light: 'ink-400' }],
   ];
@@ -677,10 +689,14 @@ test.describe('the icon follows the taskbar, not the panel', () => {
   test('the no-data ring gets its OWN colour, not the track colour', () => {
     // The track is drawn under a sweep, so it must separate from the SWEEP.
     // The no-data ring is drawn alone, so it must separate from the TASKBAR.
-    // With this ramp those two cannot be the same value on a light ground —
-    // the squeeze is arithmetic, not a preference — so they are two constants.
-    assert.equal(noDataRingFor('dark'), trackFor('dark'), 'dark never needed to split');
-    assert.notEqual(noDataRingFor('light'), trackFor('light'), 'light does');
+    // Two jobs, two constants — and now they differ on BOTH grounds. Dark used
+    // to share one value because the track was `--ink-400`; the track becoming
+    // a taskbar-chosen token (`--tray-track-dark`) separated them there too.
+    // That is a gain, not a side effect: a no-data ring and a 0% track are the
+    // two pictures `inNoDataGap()` exists to keep apart, and they now differ in
+    // colour as well as in shape.
+    assert.notEqual(noDataRingFor('dark'), trackFor('dark'), 'dark separated when the track left the ink scale');
+    assert.notEqual(noDataRingFor('light'), trackFor('light'), 'light always needed it');
 
     const size = 32;
     const spec = traySpecFromSnapshot(snapshot([provider({ fiveHour: null })]));
@@ -706,16 +722,18 @@ test.describe('the icon follows the taskbar, not the panel', () => {
     }
   });
 
-  test('every dark-ground buffer is byte-identical to what shipped', () => {
-    // The dark ground was never the complaint. Splitting one grey into three
-    // must not have moved a single dark pixel.
+  test('the default ground is dark, so an unnamed call and an explicit one agree', () => {
+    // This used to also pin TRACK to '#6B7A77' under the heading "byte-identical
+    // to what shipped" — true of the grey SPLIT that test was written for, and
+    // false the moment the track was deliberately raised for legibility. The
+    // durable property is the one that was actually being protected: a caller
+    // that names no ground must get the dark one, byte for byte.
     const size = 32;
     for (const over of [{ fiveHour: null }, {}, { connected: false }]) {
       const spec = traySpecFromSnapshot(snapshot([provider(over)]));
       assert.deepEqual(drawDonut(size, spec), drawDonut(size, spec, 'dark'));
     }
     assert.equal(TRACK, TRACKS.dark);
-    assert.equal(TRACK, '#6B7A77');
   });
 
   test('the neutral identity dot follows the ground, the brand accent does not', () => {

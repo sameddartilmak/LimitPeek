@@ -44,6 +44,8 @@ let failOrder = false;
 let failEnabled = false;
 /** Same, for setTheme(): `{ok:false}` must put the previous palette back. */
 let failTheme = false;
+/** Same, for setPlanLabel(): `{ok:false}` must put the previous label back. */
+let failPlanLabel = false;
 /**
  * The harness's stand-in for main's persisted preferences. It survives a
  * remount, so switching scenario does not silently reset the theme — which is
@@ -72,6 +74,12 @@ function makeBridge(scenario: Scenario): Bridge {
   let base = scenario.snapshot();
   return {
     available: scenario.bridgeAvailable,
+
+    // ADR-003 A8: the harness has no main process, so the key channels answer
+    // "nothing happened" rather than pretending a window opened.
+    requestKeyEntry: async () => false,
+    removeKey: async () => false,
+    openTokenPage: async () => false,
 
     initialSnapshot: () => base,
 
@@ -174,6 +182,36 @@ function makeBridge(scenario: Scenario): Bridge {
         pushSnapshot?.(base);
       }
       log('setEnabled() -> ok');
+      return true;
+    },
+
+    /**
+     * The plan the user says they are on. Mirrors main: whitespace collapsed,
+     * invisibles stripped, capped at 24 — so the harness shows the same
+     * normalisation the real channel performs, and the control can be seen
+     * correcting itself to what was actually stored.
+     */
+    async setPlanLabel(id: string, label: string): Promise<boolean> {
+      log(`setPlanLabel("${id}", ${JSON.stringify(label)})`);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      if (failPlanLabel) {
+        log('setPlanLabel() -> hata');
+        return false;
+      }
+      const stored = String(label ?? '')
+        .replace(/[\u0000-\u001F\u007F\u200B-\u200F\u2028\u2029\uFEFF]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 24);
+      if (base) {
+        base = {
+          generatedAt: new Date().toISOString(),
+          providers: base.providers.map((p) => (p.id === id ? { ...p, planLabel: stored || null } : p)),
+          pendingUsage: base.pendingUsage,
+        };
+        pushSnapshot?.(base);
+      }
+      log(`setPlanLabel() -> ok ${JSON.stringify(stored)}`);
       return true;
     },
 

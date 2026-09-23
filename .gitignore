@@ -21,3 +21,6 @@ agent-orchestrator/logs/
 
 # landing page: generated screenshots
 site/screenshots/
+
+# Render koşusunun çıktısı: makineye ve koşuya özel, her koşuda üzerine yazılır.
+render-out.txt

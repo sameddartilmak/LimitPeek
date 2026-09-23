@@ -239,3 +239,167 @@ test.describe('codex reader — robustness', () => {
     assert.equal(readCodexRateLimits({ now: NOW, home }).fiveHour.usedPercentage, 100);
   });
 });
+
+/**
+ * `ProviderSnapshot.weeklyTokens` on the Codex row.
+ *
+ * Codex has its OWN weekly reset, so the point to pin is that its token week
+ * is anchored to that reset and never to Claude's, and that a pending scan
+ * stays null rather than reporting a confident zero (A3.12).
+ */
+test.describe('the Codex row weekly token figure', () => {
+  const cxEv = (over) => ({
+    ts: NOW - HOUR, model: 'gpt-5.6-sol', tier: 'standard',
+    inputUncached: 0, cachedInput: 0, cacheWrite: 0, output: 0, ...over,
+  });
+
+  function codexRow(extra) {
+    return buildSnapshot({
+      now: NOW, events: [], rateLimits: { state: 'missing' }, scanOk: true,
+      enabled: { codex: true }, ...extra,
+    }).providers.find((p) => p.id === 'codex');
+  }
+
+  /** A fresh Codex capture whose weekly reset is `sevenResetsAtMs`. */
+  const cxRl = (sevenResetsAtMs) => ({
+    state: 'fresh',
+    capturedAtMs: NOW,
+    fiveHour: { usedPercentage: 12, resetsAtMs: NOW + HOUR },
+    sevenDay: { usedPercentage: 34, resetsAtMs: sevenResetsAtMs },
+  });
+
+  test("anchored to Codex's own weekly reset, half-open at the start", () => {
+    const resetsAt = NOW + 2 * DAY;
+    const start = resetsAt - 7 * DAY;
+    const row = codexRow({
+      codexRateLimits: cxRl(resetsAt),
+      codexEvents: [
+        cxEv({ ts: start - 1, output: 1_000_000 }),
+        cxEv({ ts: start, output: 5 }),
+        cxEv({ ts: NOW - HOUR, output: 6 }),
+      ],
+    });
+    assert.equal(row.weeklyTokens.output, 11);
+    assert.equal(row.weeklyCost.windowAnchored, true);
+    assert.equal(row.weeklyCost.windowStart, new Date(start).toISOString());
+  });
+
+  test('a Claude weekly reset does not move the Codex token week', () => {
+    const cxResets = NOW + 2 * DAY;
+    const events = [cxEv({ ts: cxResets - 7 * DAY, output: 5 })];
+    const claudeRl = {
+      state: 'fresh', capturedAtMs: NOW,
+      fiveHour: { usedPercentage: 1, resetsAtMs: NOW + HOUR },
+      sevenDay: { usedPercentage: 2, resetsAtMs: NOW + 6 * DAY },
+    };
+    const row = codexRow({ rateLimits: claudeRl, codexRateLimits: cxRl(cxResets), codexEvents: events });
+    assert.equal(row.weeklyTokens.output, 5, "Claude's later reset would have excluded this event");
+  });
+
+  test('the week is not the five hours, and cacheRead stays out of billable', () => {
+    const row = codexRow({
+      codexRateLimits: cxRl(null),
+      codexEvents: [
+        cxEv({ ts: NOW - 4 * DAY, output: 1000, cachedInput: 9_000_000 }),
+        cxEv({ ts: NOW - 30 * 60 * 1000, output: 7 }),
+      ],
+    });
+    assert.equal(row.tokens.billable, 7);
+    assert.equal(row.weeklyTokens.billable, 1007);
+    assert.equal(row.weeklyTokens.cacheRead, 9_000_000, 'reported, never folded in');
+  });
+
+  test('pending: null, because nobody has looked yet', () => {
+    const row = codexRow({ codexRateLimits: cxRl(null) }); // codexEvents omitted
+    assert.equal(row.weeklyTokens, null, 'null means "not scanned", and only that');
+    assert.deepEqual(row.weeklyTokenFloorCauses, []);
+  });
+
+  test('scanned and empty: a measured zero, PRESENT — a quiet week is not "could not count"', () => {
+    const row = codexRow({ codexRateLimits: cxRl(null), codexEvents: [] });
+    assert.deepEqual(row.weeklyTokens, { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, billable: 0 });
+    assert.deepEqual(row.weeklyTokenFloorCauses, [], 'no amount, so no bound');
+    assert.equal(row.tokens, null, 'the 5-hour field keeps its own shipped rule; the two may differ');
+  });
+});
+
+/**
+ * `weeklyTokenFloorCauses` on the Codex row (A3.3/A3.9).
+ *
+ * Codex's recorder writes 0 cache writes on EVERY record, so a turn that read
+ * cache — or sent a prompt at or above the minimum cacheable size — almost
+ * certainly wrote cache that never reached the log. That is a missing TOKEN,
+ * and the key property pinned here is that it does not depend on whether a
+ * price row exists: whether a write is priced decides what we may CHARGE for
+ * it, not whether it happened.
+ */
+test.describe('the Codex token floor causes are decided by the recorder, not by the price table', () => {
+  const cxEv = (over) => ({
+    ts: NOW - HOUR, model: 'gpt-5.6-sol', tier: 'standard',
+    inputUncached: 0, cachedInput: 0, cacheWrite: 0, output: 0, ...over,
+  });
+  const cxRl = {
+    state: 'fresh', capturedAtMs: NOW,
+    fiveHour: { usedPercentage: 12, resetsAtMs: NOW + HOUR },
+    sevenDay: { usedPercentage: 34, resetsAtMs: null },
+  };
+  const row = (codexEvents, extra) => buildSnapshot({
+    now: NOW, events: [], rateLimits: { state: 'missing' }, scanOk: true,
+    enabled: { codex: true }, codexRateLimits: cxRl, codexEvents, ...extra,
+  }).providers.find((p) => p.id === 'codex');
+
+  test('a turn that read cache with 0 recorded writes is a token floor', () => {
+    const r = row([cxEv({ output: 100, cachedInput: 5000 })]);
+    assert.deepEqual(r.weeklyTokenFloorCauses, ['unrecorded-writes'], 'cacheWrite, and so billable, is understated');
+  });
+
+  test('an uncached prompt at the minimum cacheable size is one too', () => {
+    assert.deepEqual(row([cxEv({ output: 10, inputUncached: 1024 })]).weeklyTokenFloorCauses, ['unrecorded-writes']);
+    assert.deepEqual(row([cxEv({ output: 10, inputUncached: 1023 })]).weeklyTokenFloorCauses, [],
+      'below the minimum cacheable prompt there is no write to be missing');
+  });
+
+  test('a turn that DID record writes is exact', () => {
+    assert.deepEqual(row([cxEv({ output: 10, inputUncached: 4000, cacheWrite: 2000 })]).weeklyTokenFloorCauses, []);
+  });
+
+  test('an UNPRICED model still reports the missing writes — the gap F2 named', () => {
+    const codexEvents = [cxEv({ model: 'gpt-9-imaginary', output: 100, cachedInput: 5000 })];
+    const r = row(codexEvents);
+    assert.equal(r.weeklyCost.totalUsd, 0, 'nothing could be priced');
+    assert.equal(r.weeklyCost.unrecordedWriteEvents, 0, 'the COST cause counts priced events only, unchanged');
+    assert.deepEqual(r.weeklyTokenFloorCauses, ['unrecorded-writes'], 'but the writes are missing either way');
+  });
+
+  test('an assumed or Fast-requested tier is a cost floor only, never a token floor', () => {
+    // No cached read and a short prompt, so the write pattern cannot fire; the
+    // only floor cause left is the tier, which is about dollars.
+    const fast = row([cxEv({ tier: 'fast', output: 10, inputUncached: 8 })]);
+    assert.ok(fast.weeklyCost.fastRequestedEvents > 0, 'the tier cause really is present');
+    assert.deepEqual(fast.weeklyTokenFloorCauses, [], 'a tier changes the price, not the count');
+  });
+
+  test('a known-unread range in the Codex week is a token floor on its own', () => {
+    const r = row([cxEv({ output: 10, inputUncached: 8 })], {
+      codexUnreadRange: { fromMs: NOW - 2 * DAY, throughMs: NOW - DAY },
+    });
+    assert.equal(r.weeklyCost.sourceIncomplete, true);
+    assert.deepEqual(r.weeklyTokenFloorCauses, ['unread-range']);
+  });
+
+  test('both causes at once, in the order HistoryFloorCause lists them', () => {
+    const r = row([cxEv({ output: 10, cachedInput: 5000 })], {
+      codexUnreadRange: { fromMs: NOW - 2 * DAY, throughMs: NOW - DAY },
+    });
+    assert.deepEqual(r.weeklyTokenFloorCauses, ['unread-range', 'unrecorded-writes']);
+  });
+
+  test('pending has no figure and therefore no floor', () => {
+    const r = buildSnapshot({
+      now: NOW, events: [], rateLimits: { state: 'missing' }, scanOk: true,
+      enabled: { codex: true }, codexRateLimits: cxRl,
+    }).providers.find((p) => p.id === 'codex');
+    assert.equal(r.weeklyTokens, null);
+    assert.deepEqual(r.weeklyTokenFloorCauses, []);
+  });
+});

@@ -64,6 +64,12 @@ export interface Bridge {
    */
   setEnabled(id: string, enabled: boolean): Promise<boolean>;
   /**
+   * The plan the USER says they are on, per tool (IPC `prefs:set-plan-label`).
+   * An empty string clears it. `false` means main wrote NOTHING — the caller
+   * must put its control back, exactly as for setEnabled.
+   */
+  setPlanLabel(id: string, label: string): Promise<boolean>;
+  /**
    * Preferences main already holds, SYNCHRONOUSLY. Same reason as
    * initialSnapshot(): the theme has to be on the document in frame one, and
    * anything awaited is a visible flash of the other palette.
@@ -87,6 +93,18 @@ export interface Bridge {
    * what the panel applies (contract.ts, ADR-004).
    */
   setLanguage(language: LanguageChoice): Promise<boolean>;
+  /**
+   * ADR-003 A8 (Phase B): ask main to open the key-entry window for a provider
+   * (IPC `keys:request-entry`). Write-only, like every key channel: the answer
+   * is only whether main accepted the request, never anything about a key.
+   */
+  requestKeyEntry(providerId: string): Promise<boolean>;
+  /** Delete the LOCAL copy of a provider's key (IPC `keys:remove`). Revocation
+   *  is the user's own step at the vendor; the copy is all we can remove. */
+  removeKey(providerId: string): Promise<boolean>;
+  /** Open the vendor's token page in the default browser. Main holds the URL;
+   *  the renderer never constructs one. */
+  openTokenPage(providerId: string): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
@@ -114,10 +132,14 @@ function nullBridge(): Bridge {
     runSetup: async () => ({ ok: false, message: t('bridge.unreachable') }),
     setOrder: async () => false,
     setEnabled: async () => false,
+    setPlanLabel: async () => false,
     initialPreferences: () => null,
     onPreferences: () => () => {},
     setTheme: async () => false,
     setLanguage: async () => false,
+    requestKeyEntry: async () => false,
+    removeKey: async () => false,
+    openTokenPage: async () => false,
     close: () => {},
     pin: () => {},
   };
@@ -127,6 +149,30 @@ function nullBridge(): Bridge {
  *  once, loudly enough for a developer, without breaking the panel. */
 function missing(name: string): void {
   console.error(`usageNotch.${name} is missing; preload does not match UsageNotchApi`);
+}
+
+/**
+ * The key channels answer `{ ok }` and nothing else (A8), so a shape mismatch
+ * can only cost the control its effect, never leak a value.
+ */
+type KeyChannel = 'requestKeyEntry' | 'removeKey' | 'openTokenPage';
+
+type KeyCapableApi = UsageNotchApi &
+  Partial<Record<KeyChannel, (id: string) => Promise<{ ok?: boolean }>>>;
+
+async function callKeyChannel(name: KeyChannel, providerId: string): Promise<boolean> {
+  const api = getApi() as KeyCapableApi | null;
+  const method = api ? api[name] : undefined;
+  if (typeof method !== 'function') {
+    missing(name);
+    return false;
+  }
+  try {
+    const result = await method.call(api, providerId);
+    return !!result && result.ok === true;
+  } catch {
+    return false;
+  }
 }
 
 export function createBridge(): Bridge {
@@ -246,6 +292,23 @@ export function createBridge(): Bridge {
       }
     },
 
+    /**
+     * The three key channels (ADR-003 A8). Each is write-only and answers only
+     * whether main accepted the request: there is no getter anywhere, so no
+     * shape here could carry a secret back (K3).
+     */
+    async requestKeyEntry(providerId: string): Promise<boolean> {
+      return callKeyChannel('requestKeyEntry', providerId);
+    },
+
+    async removeKey(providerId: string): Promise<boolean> {
+      return callKeyChannel('removeKey', providerId);
+    },
+
+    async openTokenPage(providerId: string): Promise<boolean> {
+      return callKeyChannel('openTokenPage', providerId);
+    },
+
     /** Mirrors setOrder: any failure is a real instruction to revert. */
     async setEnabled(id: string, enabled: boolean): Promise<boolean> {
       if (typeof api.setEnabled !== 'function') {
@@ -254,6 +317,30 @@ export function createBridge(): Bridge {
       }
       try {
         const result = await api.setEnabled(String(id), enabled === true);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    /**
+     * Mirrors setEnabled exactly, including that an absent method answers
+     * `false` rather than throwing: a main that predates this channel must
+     * leave the control reverted and the user told, never leave a value on
+     * screen that was never written.
+     *
+     * The label is NOT validated here. Main is the validation boundary (it
+     * trims, collapses whitespace, strips invisibles and caps at 24 with the
+     * same function the settings loader uses), and a second, looser copy of
+     * those rules in the renderer would be a place for the two to disagree.
+     */
+    async setPlanLabel(id: string, label: string): Promise<boolean> {
+      if (typeof api.setPlanLabel !== 'function') {
+        missing('setPlanLabel');
+        return false;
+      }
+      try {
+        const result = await api.setPlanLabel(String(id), String(label ?? ''));
         return !!result && result.ok === true;
       } catch {
         return false;
