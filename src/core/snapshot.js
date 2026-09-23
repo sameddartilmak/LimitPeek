@@ -1009,6 +1009,13 @@ function buildSnapshot(input) {
       return snap;
     }
     if (p.id !== 'claude') {
+      const keys = keyFields(p.id, input.keys);
+      // A stored key IS this row's source. Without it the row says "not
+      // supported yet" and offers "Add"; with it, saying that next to the
+      // credits the key just read would contradict the row itself. A row whose
+      // key has produced a figure counts as connected. The status stays
+      // 'passive' because there is still no 5-hour or weekly window to show.
+      const keyStored = keys.keyCapable && keys.keyState !== 'none' && keys.keyState !== 'secure-storage-unavailable';
       return {
         id: p.id,
         displayName: p.displayName,
@@ -1016,8 +1023,8 @@ function buildSnapshot(input) {
         // The user's choice to SEE this row, not our ability to fill it.
         enabled: enabled[p.id] === true,
         experimental: p.experimental === true,
-        ...keyFields(p.id, input.keys),
-        connected: false,
+        ...keys,
+        connected: keys.creditUsage !== null,
         status: 'passive',
         // A row we cannot collect for can still be a plan the user pays for, and
         // saying so is not a claim about usage.
@@ -1032,7 +1039,7 @@ function buildSnapshot(input) {
         // No transcripts, so no usage to price. Never 0, which would read as
         // "this provider cost nothing" rather than "we have no data".
         weeklyCost: null,
-        setupAction: { ...p.setupAction },
+        setupAction: keyStored ? null : { ...p.setupAction },
         // Never had a good value, so there is no age to report. The renderer
         // must not fall back to generatedAt and imply one.
         lastGoodAt: null,

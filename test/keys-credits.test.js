@@ -23,8 +23,51 @@ function reply(items, extra) {
   return { usageItems: items, ...(extra || {}) };
 }
 
-const QUANTITY_ITEM = { grossQuantity: 12.5, includedQuantity: 10, billedQuantity: 2.5 };
+const QUANTITY_ITEM = { grossQuantity: 12.5, discountQuantity: 10, netQuantity: 2.5 };
 const AMOUNT_ITEM = { grossAmount: 4, discountAmount: 3, netAmount: 1 };
+
+/**
+ * One item exactly as GitHub documents it (docs.github.com/en/rest/billing/
+ * usage, AI credit report for a user): the credit triple AND the dollar triple
+ * side by side. Values chosen so a dollar sum would be visibly different.
+ */
+const DOCUMENTED_ITEM = {
+  product: 'copilot', sku: 'copilot_ai_credit', model: 'gpt-5.6-sol', unitType: 'ai-credits',
+  pricePerUnit: 0.04,
+  grossQuantity: 300, grossAmount: 12, discountQuantity: 250, discountAmount: 10,
+  netQuantity: 50, netAmount: 2,
+};
+
+test('a reply in the documented shape is read as CREDITS, never dollars', () => {
+  const usage = creditUsageFrom({
+    timePeriod: { year: 2026, month: 9 }, user: 'octocat',
+    usageItems: [DOCUMENTED_ITEM, DOCUMENTED_ITEM],
+  }, AT);
+  assert.ok(usage);
+  assert.deepEqual([usage.grossCredits, usage.includedCredits, usage.billedCredits], [600, 500, 100]);
+  // Its stated month is the period.
+  assert.equal(usage.periodStart, '2026-09-01T00:00:00.000Z');
+  assert.equal(usage.periodEnd, '2026-10-01T00:00:00.000Z');
+});
+
+test('the dollar triple alone is NOT read: dollars would print under the word credits', () => {
+  assert.equal(creditUsageFrom(reply([AMOUNT_ITEM]), AT), null);
+});
+
+test('an item in a unit other than AI credits discards the reading', () => {
+  assert.equal(creditUsageFrom(reply([{ ...QUANTITY_ITEM, unitType: 'minutes' }]), AT), null);
+  assert.ok(creditUsageFrom(reply([{ ...QUANTITY_ITEM, unitType: 'AI-Credits' }]), AT));
+});
+
+test('a stated month wins over the fetch month; a year alone does not', () => {
+  const aug = creditUsageFrom(reply([QUANTITY_ITEM], { timePeriod: { year: 2026, month: 8 } }), AT);
+  assert.equal(aug.periodStart, '2026-08-01T00:00:00.000Z');
+  assert.equal(aug.periodEnd, '2026-09-01T00:00:00.000Z');
+  const yearOnly = creditUsageFrom(reply([QUANTITY_ITEM], { timePeriod: { year: 2026 } }), AT);
+  assert.equal(yearOnly.periodStart, '2026-09-01T00:00:00.000Z');
+  const nonsense = creditUsageFrom(reply([QUANTITY_ITEM], { timePeriod: { year: 2026, month: 13 } }), AT);
+  assert.equal(nonsense.periodStart, '2026-09-01T00:00:00.000Z');
+});
 
 test('the quantity triple is summed across items', () => {
   const usage = creditUsageFrom(reply([QUANTITY_ITEM, QUANTITY_ITEM]), AT);
@@ -34,16 +77,6 @@ test('the quantity triple is summed across items', () => {
   assert.equal(usage.billedCredits, 5);
   assert.equal(usage.fields, 'quantity');
   assert.equal(usage.fetchedAt, '2026-09-22T10:30:00.000Z');
-});
-
-test('the enhanced-billing amount triple is summed as gross / included / billed', () => {
-  const usage = creditUsageFrom(reply([AMOUNT_ITEM]), AT);
-  assert.ok(usage);
-  assert.deepEqual(
-    [usage.grossCredits, usage.includedCredits, usage.billedCredits],
-    [4, 3, 1],
-  );
-  assert.equal(usage.fields, 'amount');
 });
 
 test('the period defaults to the UTC calendar month of the fetch, and the reply can override it', () => {
@@ -88,13 +121,13 @@ test('reply-mutation fixtures produce NO figure', () => {
     ['an item that is null', reply([QUANTITY_ITEM, null])],
     ['an item that is a string', reply([QUANTITY_ITEM, 'x'])],
     ['an item that is an array', reply([[1, 2, 3]])],
-    ['a missing third field', reply([{ grossQuantity: 1, includedQuantity: 1 }])],
-    ['a numeric string', reply([{ grossQuantity: '12.5', includedQuantity: 10, billedQuantity: 2.5 }])],
-    ['a negative', reply([{ grossQuantity: -1, includedQuantity: 0, billedQuantity: 0 }])],
-    ['a NaN', reply([{ grossQuantity: Number.NaN, includedQuantity: 0, billedQuantity: 0 }])],
-    ['an Infinity', reply([{ grossQuantity: Number.POSITIVE_INFINITY, includedQuantity: 0, billedQuantity: 0 }])],
-    ['null where a number belongs', reply([{ grossQuantity: null, includedQuantity: 0, billedQuantity: 0 }])],
-    ['a boolean where a number belongs', reply([{ grossQuantity: true, includedQuantity: 0, billedQuantity: 0 }])],
+    ['a missing third field', reply([{ grossQuantity: 1, discountQuantity: 1 }])],
+    ['a numeric string', reply([{ grossQuantity: '12.5', discountQuantity: 10, netQuantity: 2.5 }])],
+    ['a negative', reply([{ grossQuantity: -1, discountQuantity: 0, netQuantity: 0 }])],
+    ['a NaN', reply([{ grossQuantity: Number.NaN, discountQuantity: 0, netQuantity: 0 }])],
+    ['an Infinity', reply([{ grossQuantity: Number.POSITIVE_INFINITY, discountQuantity: 0, netQuantity: 0 }])],
+    ['null where a number belongs', reply([{ grossQuantity: null, discountQuantity: 0, netQuantity: 0 }])],
+    ['a boolean where a number belongs', reply([{ grossQuantity: true, discountQuantity: 0, netQuantity: 0 }])],
     ['a mixed list', reply([QUANTITY_ITEM, AMOUNT_ITEM])],
     ['a list past the cap', reply(new Array(MAX_USAGE_ITEMS + 1).fill(QUANTITY_ITEM))],
     ['GitHub’s field names renamed', reply([{ credits: 12, included: 10, billed: 2 }])],

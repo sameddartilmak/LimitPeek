@@ -37,8 +37,8 @@ const NOW = Date.parse('2026-09-22T12:00:00Z');
 
 const GOOD_BODY = JSON.stringify({
   usageItems: [
-    { grossQuantity: 8, includedQuantity: 6, billedQuantity: 2 },
-    { grossQuantity: 2, includedQuantity: 2, billedQuantity: 0 },
+    { grossQuantity: 8, discountQuantity: 6, netQuantity: 2 },
+    { grossQuantity: 2, discountQuantity: 2, netQuantity: 0 },
   ],
 });
 
@@ -494,7 +494,7 @@ test('a key echoed in the reply body and headers never reaches a log, the snapsh
   electron.netScript.push({
     statusCode: 200,
     headers: { 'x-echo': KEY, 'set-cookie': `token=${KEY}` },
-    body: JSON.stringify({ usageItems: [{ grossQuantity: 1, includedQuantity: 1, billedQuantity: 0 }], echo: KEY }),
+    body: JSON.stringify({ usageItems: [{ grossQuantity: 1, discountQuantity: 1, netQuantity: 0 }], echo: KEY }),
   });
   await svc.poll(NOW);
 
