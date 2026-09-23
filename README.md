@@ -360,12 +360,13 @@ powershell -ExecutionPolicy Bypass -File scripts\zero-socket-audit.ps1 -Case B -
 Elde olan: `%LOCALAPPDATA%\usage-notch-<sha>-backup\` altında önceki kurulum
 dizinlerinin elle alınmış kopyaları ve `%LOCALAPPDATA%\usage-notch-updater\`
 içinde saklanmış bir kurulum dosyası. Bunları bu depodaki hiçbir kod üretmiyor,
-dolayısıyla geri yükleme yordamı da doğrulanmış değil. Ayrıca `package.json`
-sürümü her derlemede `0.1.0` kaldığı için kurulum kaydı, kurulum dosyası adı ve
-`DisplayVersion` bütün yayınlarda aynıdır: **hangi derlemenin kurulu olduğu
-ayırt edilemez**, bu yüzden geri dönülecek hedef de adlandırılamaz. Sürüm
-numarası artmaya başlayana kadar geri dönüş, dizin kopyalamaya dayanan elle bir
-işlemdir.
+dolayısıyla geri yükleme yordamı da doğrulanmış değil. Sürüm numarası `0.2.0`
+ile birlikte artmaya başladı: bundan sonraki yayınlar kurulum kaydı, kurulum
+dosyası adı ve `DisplayVersion` üzerinden birbirinden ayırt edilebilir. Ama
+`0.2.0` ÖNCESİNDEKİ her derleme `0.1.0` olduğu için **hangisinin kurulu olduğu
+hâlâ ayırt edilemez** — yani bu yayından geri dönülecek hedef adlandırılamaz, ve
+adıyla geri dönülebilecek ilk sürüm `0.3.0` çıktığında `0.2.0` olacak. O zamana
+kadar geri dönüş, dizin kopyalamaya dayanan elle bir işlemdir.
 
 ## Mimari
 
