@@ -143,8 +143,9 @@ test.describe('the price table is a lookup, never a branch', () => {
     })]);
     close(cost.totalUsd, 4 + 20 + 5 + 8 + 0.2, 'opus 5.5 total');
     assert.deepEqual(cost.unpricedModels, []);
-    // Its fast price is not final yet, so fast usage stays a visible gap.
-    assert.equal(pricing.priceFor('claude-opus-5-5', 'fast'), null);
+    // Fast is $8/$40, with the same 0.05x read on top.
+    const fast = week([ev({ model: 'claude-opus-5-5', speed: 'fast', input: MTOK, output: MTOK, cacheRead: MTOK })]);
+    close(fast.totalUsd, 8 + 40 + 0.4, 'opus 5.5 fast total');
     // Every other row keeps the standard 0.1x read.
     close(week([ev({ model: 'claude-opus-5', cacheRead: MTOK })]).totalUsd, 0.5, 'opus 5 read');
   });
@@ -154,6 +155,7 @@ test.describe('the price table is a lookup, never a branch', () => {
       'claude-haiku-4-5|standard',
       'claude-opus-4-7|standard',
       'claude-opus-4-8|standard',
+      'claude-opus-5-5|fast',
       'claude-opus-5-5|standard',
       'claude-opus-5|fast',
       'claude-opus-5|standard',

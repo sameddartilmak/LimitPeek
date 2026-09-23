@@ -49,12 +49,12 @@ const PRICES_AS_OF = '2026-06-24';
  * visible gap instead of a plausible guess (ADR-002 rule 2, amendment 2).
  */
 const PRICES = Object.freeze({
-  // Opus 5.5 reads cache at $0.20, 0.05x its input rate, half the usual 0.1x
-  // (`claude-api` skill, 2026-09-23). Writes use the standard multipliers.
-  // No `|fast` row: its fast-mode price was still marked "confirm after
-  // launch", so fast usage stays visibly unpriced (rule 2). None was recorded
-  // on the owner's data (988 standard records).
+  // Opus 5.5 reads cache at 0.05x its input rate, half the usual 0.1x
+  // ($0.20 standard). Writes use the standard multipliers. Fast mode is
+  // $8/$40 and the cache multipliers apply on top of it. Source:
+  // platform.claude.com/docs/en/about-claude/pricing, checked 2026-09-23.
   'claude-opus-5-5|standard': { input: 4.00, output: 20.00, read: 0.05 },
+  'claude-opus-5-5|fast': { input: 8.00, output: 40.00, read: 0.05 },
   'claude-opus-5|standard': { input: 5.00, output: 25.00 },
   'claude-opus-5|fast': { input: 10.00, output: 50.00 },
   'claude-opus-4-8|standard': { input: 5.00, output: 25.00 },
