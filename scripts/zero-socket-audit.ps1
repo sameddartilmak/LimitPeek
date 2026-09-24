@@ -59,9 +59,9 @@
               `wpad` to a loopback proxy. Runnable here.
     -Case B   A real key stored (owner only; needs a fine-grained GitHub PAT).
               Asserts that every non-loopback event is either UDP/53 to a
-              configured DNS server or TCP/443 to an address currently resolved
-              for the allowlisted host (src/core/keys/registry.js:83
-              api.github.com), that no other remote endpoint appears at all, and
+              configured DNS server or TCP/443 to an address of the allowlisted
+              host (src/core/keys/registry.js:83 api.github.com), that no other
+              remote endpoint appears at all, and
               that the number of distinct TCP/443 connection attempts is at most
               ceil(Minutes / 5) + 1 — the MIN_GAP_MS floor of
               src/core/keys/schedule.js:37 plus the one request at startup.
@@ -295,6 +295,46 @@ if ($Case -ne 'A') {
   $allowedIps = @(Resolve-DnsName -Name $ALLOWED_HOST -ErrorAction SilentlyContinue |
     Where-Object { $_.IPAddress } | ForEach-Object { $_.IPAddress } | Sort-Object -Unique)
   Say ("allowlisted host " + $ALLOWED_HOST + " resolves to: " + ($allowedIps -join ', '))
+}
+# ONE resolution is not "the host's addresses". api.github.com answers from
+# several front ends, and the first full Case B run (2026-09-24 15:18) failed
+# on it: three polls, five minutes apart, went to 140.82.121.6, 140.82.121.5
+# and 20.199.39.228, and only the first had been resolved here. All three are in
+# the "api" list of GitHub's own https://api.github.com/meta. That list is
+# fetched once here (by this script, not by the app) and an address inside it
+# counts as the allowlisted host. It covers api.github.com only, not
+# github.com's web or git ranges, except where GitHub lists a range under both.
+$apiCidrs = @()
+if ($Case -ne 'A') {
+  try {
+    $meta = Invoke-RestMethod -Uri 'https://api.github.com/meta' -TimeoutSec 20 -ErrorAction Stop
+    $apiCidrs = @($meta.api | Where-Object { $_ -match '/' })
+    Say ("GitHub meta: " + $apiCidrs.Count + " published api ranges")
+  } catch {
+    Say "GitHub meta could not be fetched; only the resolved addresses count"
+  }
+}
+
+function Test-InCidr([string]$ip, [string]$cidr) {
+  $parts = $cidr.Split('/')
+  $a = $null; $n = $null
+  if (-not [System.Net.IPAddress]::TryParse($ip, [ref]$a)) { return $false }
+  if (-not [System.Net.IPAddress]::TryParse($parts[0], [ref]$n)) { return $false }
+  if ($a.AddressFamily -ne $n.AddressFamily) { return $false }
+  $ab = $a.GetAddressBytes(); $nb = $n.GetAddressBytes(); $bits = [int]$parts[1]
+  for ($i = 0; $i -lt $ab.Length; $i++) {
+    $take = [Math]::Min(8, [Math]::Max(0, $bits - 8 * $i))
+    if ($take -eq 0) { break }
+    $mask = [byte]((0xFF -shl (8 - $take)) -band 0xFF)
+    if (($ab[$i] -band $mask) -ne ($nb[$i] -band $mask)) { return $false }
+  }
+  return $true
+}
+
+function Test-ApiAddress([string]$ip) {
+  if ($allowedIps -contains $ip) { return $true }
+  foreach ($c in $apiCidrs) { if (Test-InCidr $ip $c) { return $true } }
+  return $false
 }
 
 $pids = [System.Collections.Generic.HashSet[int]]::new()
@@ -640,7 +680,7 @@ switch ($Case) {
     foreach ($o in $offenders) {
       $peer = if (Test-Loopback $o.saddr) { $o.daddr } elseif (Test-Loopback $o.daddr) { $o.saddr } else { $o.daddr }
       $okDns = ($o.proto -eq 'udp' -and ($o.dport -eq '53' -or $o.sport -eq '53') -and ($dnsServers -contains $peer -or $dnsServers -contains $o.saddr -or $dnsServers -contains $o.daddr))
-      $okApi = ($o.proto -eq 'tcp' -and ($o.dport -eq '443' -or $o.sport -eq '443') -and ($allowedIps -contains $o.saddr -or $allowedIps -contains $o.daddr))
+      $okApi = ($o.proto -eq 'tcp' -and ($o.dport -eq '443' -or $o.sport -eq '443') -and ((Test-ApiAddress $o.saddr) -or (Test-ApiAddress $o.daddr)))
       if (-not ($okDns -or $okApi)) {
         $verdict = 'FAIL'
         # NAME the peer. A TCP/80 contact to a certificate authority is the known
@@ -701,7 +741,7 @@ $summary = [pscustomobject]@{
   etwEvents = $events.Count; nonLoopbackEvents = $offenders.Count
   samplerRows = $samples.Count; samplerNonLoopbackTcp = $sampledRemote.Count
   etwUsed = (-not $SkipEtw); elevated = $isAdmin
-  dnsServers = $dnsServers; allowedIps = $allowedIps
+  dnsServers = $dnsServers; allowedIps = $allowedIps; apiRanges = $apiCidrs
   outDir = $OutDir
 }
 $summary | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $OutDir 'summary.json')
