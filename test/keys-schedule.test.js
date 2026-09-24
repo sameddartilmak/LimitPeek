@@ -194,3 +194,12 @@ test('"refresh" obeys the same switches as the poll', () => {
   assert.equal(schedule.mayStartManual(state, T0, conditions({ inFlight: true })), false);
   assert.equal(schedule.mayStartManual(null, T0, conditions()), false);
 });
+
+test('the OS-level audit budgets requests with the same gap as the schedule', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'zero-socket-audit.ps1'), 'utf8');
+  const match = script.match(/^\$MIN_GAP_MINUTES = (\d+)\s*$/m);
+  assert.ok(match, 'the audit script declares $MIN_GAP_MINUTES');
+  assert.equal(Number(match[1]) * MIN, schedule.MIN_GAP_MS);
+});

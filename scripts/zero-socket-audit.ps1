@@ -63,7 +63,7 @@
               for the allowlisted host (src/core/keys/registry.js:83
               api.github.com), that no other remote endpoint appears at all, and
               that the number of distinct TCP/443 connection attempts is at most
-              ceil(Minutes / 15) + 1 — the MIN_GAP_MS floor of
+              ceil(Minutes / 5) + 1 — the MIN_GAP_MS floor of
               src/core/keys/schedule.js:37 plus the one request at startup.
     -Case C   Starts with a key stored, waits for the secret record to disappear
               (the owner removes the key from the panel), then asserts ZERO
@@ -181,7 +181,8 @@ $RUN_KEY = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $RUN_VALUE = 'electron.app.Usage Notch'
 $SECRETS_DIR = Join-Path $env:LOCALAPPDATA 'UsageNotch\secrets'
 $ALLOWED_HOST = 'api.github.com'
-$MIN_GAP_MINUTES = 15
+# Must match MIN_GAP_MS in src/core/keys/schedule.js (5 min since 2026-09-24).
+$MIN_GAP_MINUTES = 5
 
 function Say([string]$m) { Write-Host ("[audit] " + $m) }
 function Fail([string]$m) { Write-Host ("[audit] FAIL " + $m) -ForegroundColor Red; exit 1 }
@@ -229,6 +230,13 @@ switch ($Case) {
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $userData = Join-Path $OutDir 'user-data'
 New-Item -ItemType Directory -Force -Path $userData | Out-Null
+# A key is polled only while Copilot is in the panel (K16), and a fresh
+# user-data-dir starts with it switched off. Without this seed Case B and C
+# would see no request at all and pass for the wrong reason.
+if ($Case -ne 'A') {
+  [System.IO.File]::WriteAllText((Join-Path $userData 'settings.json'),
+    '{"enabledProviders":{"copilot":true}}', (New-Object System.Text.UTF8Encoding($false)))
+}
 $etl = Join-Path $OutDir 'kernel-network.etl'
 
 Say "case=$Case minutes=$Minutes"
@@ -635,7 +643,14 @@ switch ($Case) {
     }
     if ($connects.Count -gt $budget) {
       $verdict = 'FAIL'
-      $null = $reasons.Add("$($connects.Count) tcp connection attempts, budget $budget (MIN_GAP_MS 15 min + one at startup)")
+      $null = $reasons.Add("$($connects.Count) tcp connection attempts, budget $budget (MIN_GAP_MS $MIN_GAP_MINUTES min + one at startup)")
+    }
+    # A window with no request proves nothing about the request it exists to
+    # measure: the provider switched off, a stale schedule, another instance
+    # spending the shared slots. Say so rather than pass.
+    if ($connects.Count -eq 0) {
+      $verdict = 'FAIL'
+      $null = $reasons.Add('no tcp connection attempt was observed, so the keyed request was never measured')
     }
     Say ("connection attempts: " + $connects.Count + " / budget " + $budget)
   }
