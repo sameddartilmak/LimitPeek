@@ -924,3 +924,71 @@ test.describe('just after a weekly reset, a zero week is a measurement and says 
     assert.deepEqual(cx.weeklyTokenFloorCauses, [], 'no write pattern can fire on zero events');
   });
 });
+
+/**
+ * A stored Copilot key IS that row's source (the key-backed passive row). With
+ * it, "not supported yet" and "Add" would contradict the credits the key just
+ * read, so the setup offer goes; the row counts as connected once a reading
+ * exists; and it stays 'passive' because GitHub reports monthly AI credits, not
+ * a five-hour or weekly window.
+ */
+test.describe('copilot row with an optional key', () => {
+  const USAGE = {
+    grossCredits: 1234, includedCredits: 900, billedCredits: 334,
+    periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-09-30T23:59:59.000Z',
+    fetchedAt: '2026-09-08T11:48:00.000Z',
+  };
+  const copilotWith = (keys) =>
+    buildSnapshot({ now: NOW, events: [], scanOk: true, keys }).providers.find((p) => p.id === 'copilot');
+
+  test.it('no key stored: the row is exactly the unsupported passive row, with its offer', () => {
+    const row = copilotWith(undefined);
+    assert.equal(row.keyCapable, true);
+    assert.equal(row.keyState, 'none');
+    assert.equal(row.status, 'passive');
+    assert.equal(row.connected, false);
+    assert.ok(row.setupAction && typeof row.setupAction.label === 'string');
+  });
+
+  test.it('a key with a reading: connected, no setup offer, still passive and windowless', () => {
+    const row = copilotWith({ copilot: { keyState: 'stored', keyStoredAt: '2026-09-01T09:00:00.000Z', creditUsage: USAGE } });
+    assert.equal(row.setupAction, null);
+    assert.equal(row.connected, true);
+    assert.equal(row.status, 'passive');
+    assert.equal(row.fiveHour, null);
+    assert.equal(row.sevenDay, null);
+    assert.deepEqual(row.creditUsage, USAGE);
+  });
+
+  for (const state of ['stored', 'key-rejected', 'key-lacks-permission', 'rate-limited', 'not-available', 'unreachable', 'unreadable']) {
+    test.it(`a key in state ${state} with no reading: no setup offer, not connected`, () => {
+      const row = copilotWith({ copilot: { keyState: state, keyStoredAt: null, creditUsage: null } });
+      assert.equal(row.keyState, state);
+      assert.equal(row.setupAction, null);
+      assert.equal(row.connected, false);
+      assert.equal(row.status, 'passive');
+    });
+  }
+
+  test.it('a reading kept through an error state still counts as connected', () => {
+    const row = copilotWith({ copilot: { keyState: 'unreachable', keyStoredAt: null, creditUsage: USAGE } });
+    assert.equal(row.setupAction, null);
+    assert.equal(row.connected, true);
+  });
+
+  test.it('secure storage unavailable: no key can be read, so the offer stays', () => {
+    const row = copilotWith({ copilot: { keyState: 'secure-storage-unavailable', keyStoredAt: null, creditUsage: null } });
+    assert.ok(row.setupAction);
+    assert.equal(row.connected, false);
+  });
+
+  test.it('a key entry for a provider that cannot use one changes nothing on that row', () => {
+    const snap = buildSnapshot({ now: NOW, events: [], scanOk: true,
+      keys: { kimi: { keyState: 'stored', keyStoredAt: null, creditUsage: USAGE } } });
+    const kimi = snap.providers.find((p) => p.id === 'kimi');
+    assert.equal(kimi.keyCapable, false);
+    assert.equal(kimi.creditUsage, null);
+    assert.equal(kimi.connected, false);
+    assert.ok(kimi.setupAction);
+  });
+});

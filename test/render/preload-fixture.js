@@ -396,6 +396,34 @@ const TINY_COST = {
 };
 
 /**
+ * The Copilot row as main builds it for each key situation (snapshot.js, the
+ * non-claude passive branch). A stored key is the row's source, so main drops
+ * the setup offer; a reading makes the row connected; it stays 'passive'
+ * because GitHub reports monthly AI credits, not a five-hour or weekly window.
+ * Patches, merged onto the fixture's own Copilot row by `setCopilotKeyDirect`.
+ */
+const COPILOT_KEY = {
+  // No key: exactly the fixture's own row — the unsupported passive row with
+  // its "Ekle" and the calm offer to add a key.
+  none: () => ({ keyState: 'none', keyStoredAt: null, creditUsage: null, connected: false, setupAction: ADD }),
+  credits: () => ({
+    keyState: 'stored',
+    keyStoredAt: '2026-09-20T09:15:00.000Z',
+    creditUsage: {
+      grossCredits: 1234, includedCredits: 900, billedCredits: 334,
+      periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-09-30T23:59:59.000Z',
+      fetchedAt: new Date(Date.now() - 12 * 60000).toISOString(),
+    },
+    connected: true,
+    setupAction: null,
+  }),
+  'key-rejected': () => ({
+    keyState: 'key-rejected', keyStoredAt: '2026-09-20T09:15:00.000Z', creditUsage: null,
+    connected: false, setupAction: null,
+  }),
+};
+
+/**
  * Two fixtures, selected by RENDER_FIXTURE.
  *
  * They are separate on purpose. The panel suite drives OS-level mouse input at
@@ -894,6 +922,20 @@ contextBridge.exposeInMainWorld('__probe', {
   setKeyDirect: (id, patch) => {
     snapshot.providers = snapshot.providers.map((x) =>
       x.id === id ? { ...x, ...(patch || {}) } : x,
+    );
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+    return true;
+  },
+  /**
+   * Put the Copilot row into one of the COPILOT_KEY shapes above — the whole
+   * row as main builds it, setup offer and `connected` included — and push.
+   */
+  setCopilotKeyDirect: (name) => {
+    const make = COPILOT_KEY[name];
+    if (!make) return false;
+    snapshot.providers = snapshot.providers.map((x) =>
+      x.id === 'copilot' ? { ...x, ...make() } : x,
     );
     snapshot.generatedAt = new Date().toISOString();
     if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));

@@ -67,7 +67,7 @@ app.whenReady().then(async () => {
   // The owner's call (2026-09-23): the header named a section ("Kullanım"); it
   // now names the product, beside the Windows app tile. The tile is a local
   // asset painted from CSS, so this also proves it LOADS under the CSP
-  // (img-src 'self') — a blocked image would leave an empty 16px box.
+  // (img-src 'self') — a blocked image would leave an empty 24px box.
   const brand = await js(`(async () => {
     const h1 = document.querySelector('.hdr__title');
     const logo = h1 && h1.querySelector('.hdr__logo');
@@ -83,6 +83,12 @@ app.whenReady().then(async () => {
     }
     const lr = logo ? logo.getBoundingClientRect() : null;
     const hr = h1 ? h1.getBoundingClientRect() : null;
+    const br = btn ? btn.getBoundingClientRect() : null;
+    // The NAME's own box, not the h1's: the h1 is as tall as the tile now.
+    const words = h1 ? [...h1.childNodes].find((n) => n.nodeType === 3) : null;
+    const range = document.createRange();
+    if (words) range.selectNodeContents(words);
+    const tr = words ? range.getBoundingClientRect() : null;
     return {
       text: h1 ? h1.textContent : null,
       tag: h1 ? h1.tagName : null,
@@ -92,6 +98,8 @@ app.whenReady().then(async () => {
       logoW: lr ? lr.width : 0, logoH: lr ? lr.height : 0,
       logoMid: lr ? lr.top + lr.height / 2 : 0,
       h1Mid: hr ? hr.top + hr.height / 2 : 0,
+      textMid: tr ? tr.top + tr.height / 2 : 0,
+      btnMid: br ? br.top + br.height / 2 : 0,
       topH: top ? top.getBoundingClientRect().height : 0,
       btnH: btn ? btn.getBoundingClientRect().height : 0,
       transform: h1 ? getComputedStyle(h1).textTransform : null,
@@ -104,10 +112,13 @@ app.whenReady().then(async () => {
     brand.logoHidden === 'true', brand.logoHidden);
   check('the tile is the local app-icon asset and it actually loads under the CSP',
     /\/assets\/app-icon\.svg$/.test(brand.src) && brand.loaded === true, [brand.src, brand.loaded]);
-  check('the tile is 16 CSS px, the size its small art is drawn for, centred on the name',
-    Math.round(brand.logoW) === 16 && Math.round(brand.logoH) === 16
+  check('the tile is 24 CSS px, the small art, centred on the name',
+    /app-icon\.svg$/.test(brand.src) && Math.round(brand.logoW) === 24 && Math.round(brand.logoH) === 24
       && Math.abs(brand.logoMid - brand.h1Mid) <= 1, brand);
-  check('the header row is no taller than its icon buttons: adding the tile grew nothing',
+  check('the tile, the name and the buttons share one vertical centre',
+    Math.abs(brand.logoMid - brand.btnMid) <= 1 && Math.abs(brand.textMid - brand.btnMid) <= 1.5,
+    [brand.logoMid, brand.textMid, brand.btnMid]);
+  check('the header row is no taller than its icon buttons: the bigger tile grew nothing',
     brand.topH > 0 && Math.round(brand.topH) === Math.round(brand.btnH), [brand.topH, brand.btnH]);
   check('no uppercase transform on the name (Turkish i/İ)', brand.transform === 'none', brand.transform);
 
@@ -2214,6 +2225,89 @@ app.whenReady().then(async () => {
     escNotice.hidden === false && escNotice.text.length > 0, escNotice);
   check('Esc still closes the panel while a notice is on screen',
     closesAfter === closesBefore + 1, [closesBefore, closesAfter]);
+
+  // ---- the Copilot row with an optional key (ADR-003 A8) -----------------
+  //
+  // A stored key is the row's source, so main drops the setup offer; a reading
+  // makes the row connected; it stays 'passive' (no 5-hour/weekly window). The
+  // row must then read as a real connected row with the month's credits — no
+  // "not supported / not connected" line, no "Ekle", no percentage, no meter —
+  // and a key in a failure state shows its one fixed sentence instead.
+  await js(`window.__probe.restore()`);
+  await sleep(300);
+  const readCopilot = `(() => {
+    const row = document.querySelector('.row[data-provider="copilot"]');
+    const claudeName = document.querySelector('.row[data-provider="claude"] .row__name');
+    const mark = row.querySelector('.mark');
+    const vis = (sel) => { const n = row.querySelector(sel); return n && !n.hidden && n.getClientRects().length > 0 ? n : null; };
+    const text = (sel) => { const n = vis(sel); return n ? n.textContent : null; };
+    const rowBtn = [...row.children].find((n) => n.matches('button.btn'));
+    return {
+      status: row.getAttribute('data-status'),
+      connected: row.getAttribute('data-connected'),
+      detail: text('.row__meta-detail'),
+      rowButton: rowBtn ? rowBtn.textContent : null,
+      add: text('.key__add'),
+      figure: text('.key__figure'),
+      split: text('.key__split'),
+      asof: text('.key__asof'),
+      state: text('.key__state'),
+      token: vis('.key__token') ? { text: vis('.key__token').textContent, tag: vis('.key__token').tagName } : null,
+      percent: /%/.test(row.textContent),
+      gauge: row.querySelectorAll('.meter, .win, [role="progressbar"], [role="meter"]').length,
+      markFill: getComputedStyle(mark).backgroundColor,
+      markW: Math.round(mark.getBoundingClientRect().width),
+      nameColour: getComputedStyle(row.querySelector('.row__name')).color,
+      nameWeight: getComputedStyle(row.querySelector('.row__name')).fontWeight,
+      liveNameColour: claudeName ? getComputedStyle(claudeName).color : null,
+      liveNameWeight: claudeName ? getComputedStyle(claudeName).fontWeight : null,
+      text: row.textContent,
+    };
+  })()`;
+  const NOT_SUPPORTED = /desteklenmiyor|bulunamadı|bağlı değil/;
+
+  await js(`window.__probe.setCopilotKeyDirect('credits')`);
+  await sleep(300);
+  const cpCredits = await js(readCopilot);
+  say('copilot with credits: ' + JSON.stringify(cpCredits));
+  check('copilot with credits: passive (no window) but connected, with no setup line and no "Ekle"',
+    cpCredits.status === 'passive' && cpCredits.connected === 'true'
+      && cpCredits.detail === null && cpCredits.rowButton === null && cpCredits.add === null
+      && !NOT_SUPPORTED.test(cpCredits.text), cpCredits);
+  check('copilot with credits: the month\'s credits, the included/billed split and the "as of" time',
+    cpCredits.figure === 'Bu ay 1.234 AI kredisi kullanıldı'
+      && cpCredits.split === 'Plan kapsamında 900 · faturalanan 334'
+      && /itibarıyla/.test(cpCredits.asof || '') && cpCredits.state === null,
+    [cpCredits.figure, cpCredits.split, cpCredits.asof, cpCredits.state]);
+  check('copilot with credits: no percentage and no meter (there is no denominator)',
+    cpCredits.percent === false && cpCredits.gauge === 0, [cpCredits.percent, cpCredits.gauge]);
+  check('copilot with credits: the mark is in colour at full size and the name at the connected ink',
+    cpCredits.markFill === 'rgb(139, 92, 246)' && cpCredits.markW === 24
+      && cpCredits.nameColour === cpCredits.liveNameColour
+      && cpCredits.nameWeight === cpCredits.liveNameWeight, cpCredits);
+
+  await js(`window.__probe.setCopilotKeyDirect('key-rejected')`);
+  await sleep(300);
+  const cpRejected = await js(readCopilot);
+  say('copilot key-rejected: ' + JSON.stringify(cpRejected));
+  check('copilot key-rejected: its fixed sentence and the token-page button, nothing else',
+    cpRejected.state === 'Anahtar kabul edilmedi. Ayarlar’dan kaldırıp yenisini ekleyebilirsiniz.'
+      && cpRejected.token && cpRejected.token.tag === 'BUTTON' && cpRejected.token.text === 'GitHub’da anahtar oluştur'
+      && cpRejected.figure === null && cpRejected.add === null && cpRejected.percent === false, cpRejected);
+  check('copilot key-rejected: still no "not supported" line and no "Ekle"',
+    cpRejected.detail === null && cpRejected.rowButton === null && !NOT_SUPPORTED.test(cpRejected.text), cpRejected);
+  check('copilot key-rejected: not connected, so the mark is the grey passive one',
+    cpRejected.connected === 'false' && cpRejected.markFill !== 'rgb(139, 92, 246)' && cpRejected.markW === 20, cpRejected);
+
+  await js(`window.__probe.setCopilotKeyDirect('none')`);
+  await sleep(300);
+  const cpNone = await js(readCopilot);
+  say('copilot no key: ' + JSON.stringify(cpNone));
+  check('copilot with no key is unchanged: the setup line, "Ekle" and the calm key offer',
+    cpNone.status === 'passive' && cpNone.connected === 'false'
+      && cpNone.detail === 'Bu araç bu makinede bulunamadı.' && cpNone.rowButton === 'Ekle'
+      && cpNone.add === 'Daha fazla ayrıntı için API anahtarı ekle'
+      && cpNone.figure === null && cpNone.state === null && cpNone.token === null, cpNone);
 
   // ---- no innerHTML anywhere in shipped renderer ------------------------
   say(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}  (${lines.filter(l=>l.startsWith('PASS')).length} pass)`);

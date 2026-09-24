@@ -86,7 +86,10 @@ const PROVIDERS = [
     accent: '#8B5CF6',
     live: false,
     enabledByDefault: false,
-    experimental: false,
+    // Experimental until a real, NON-EMPTY AI-credit reply has been read
+    // (2026-09-24). The reply envelope and the empty case are confirmed against
+    // GitHub, but the item fields are only as good as GitHub's documentation.
+    experimental: true,
     get setupAction() {
       return setup('not-installed', 'provider.setup.add', 'provider.notSupportedYet', { provider: 'GitHub Copilot' });
     },

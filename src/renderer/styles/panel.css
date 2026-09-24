@@ -158,16 +158,20 @@
 
 .hdr { padding: var(--s-4) var(--s-4) var(--s-3); }
 
+/* Centred, not baseline-aligned: the row carries a 24px tile, a 13px name, an
+ * 18px freshness marker and 24px buttons, and centring is the one alignment
+ * that keeps all four on a single axis. The tile is exactly as tall as the
+ * buttons, so it grows nothing. */
 .hdr__top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--s-2);
 }
 
 .hdr__title {
   display: flex;
-  align-items: baseline;
-  gap: 7px;
+  align-items: center;
+  gap: var(--s-2);
   margin: 0;
   font-size: var(--fs-title);
   font-weight: 600;
@@ -175,14 +179,15 @@
   color: var(--ink-100);
 }
 
-/* The app tile (assets/app-icon.svg, the small ICO art). 16 CSS px on purpose:
- * that is 16, 20 and 24 device px at 100, 125 and 150% scaling — the sizes the
- * art is drawn for, so its ring edges land on whole pixels. Centred on its own
- * so the title keeps a text baseline for the row to align on. */
+/* The app tile (assets/app-icon.svg, the small ICO art). 24 CSS px, the height
+ * of the header's icon buttons: 24, 30 and 36 device px at 100, 125 and 150%
+ * scaling. The small art rather than the master, by the owner's call after a
+ * side-by-side (2026-09-23): at this size the master's thin ring and dark track
+ * shrink to a speck, while the small art's heavier ring and lifted track stay
+ * legible. Vector either way, so it stays crisp at every scale. */
 .hdr__logo {
   flex: none;
-  align-self: center;
-  width: 16px; height: 16px;
+  width: 24px; height: 24px;
   background: url(../assets/app-icon.svg) center / contain no-repeat;
 }
 

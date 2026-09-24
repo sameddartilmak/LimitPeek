@@ -35,8 +35,10 @@ function snap(extra = {}) {
 const row = (s, id) => s.providers.find((p) => p.id === id);
 
 test.describe('the experimental marker (ADR-003 A6 decision 4)', () => {
-  test('true for Gemini and Kimi, false for every other provider, on every snapshot kind', () => {
-    const expected = { claude: false, codex: false, gemini: true, copilot: false, antigravity: false, kimi: true };
+  test('true for Gemini, Kimi and Copilot, false for every other provider, on every snapshot kind', () => {
+    // Copilot: its AI-credit item fields are docs-only until a real, non-empty
+    // reply has been read (2026-09-24).
+    const expected = { claude: false, codex: false, gemini: true, copilot: true, antigravity: false, kimi: true };
     const installed = { installed: true, events: [], readFailed: false, resultAtMs: NOW, unreadRange: null };
     for (const s of [snap(), snap({ gemini: installed, kimi: installed }), loadingSnapshot(NOW)]) {
       const got = Object.fromEntries(s.providers.map((p) => [p.id, p.experimental]));

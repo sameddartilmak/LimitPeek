@@ -23,46 +23,55 @@
  *
  * WHICH FIELDS ARE SUMMED
  * -----------------------
- * Each element of `usageItems` must carry ONE of these two documented triples,
- * and every element must carry the SAME one:
+ * GitHub documents each `usageItems` element as carrying BOTH a credit
+ * quantity triple and a dollar amount triple (docs.github.com/en/rest/billing/
+ * usage, "Get billing AI credit usage report for a user", checked 2026-09-23):
  *
- *   A. `grossQuantity` / `includedQuantity` / `billedQuantity`
- *   B. `grossAmount`   / `discountAmount`   / `netAmount`
+ *   grossQuantity / discountQuantity / netQuantity   credits (unitType ai-credits)
+ *   grossAmount   / discountAmount   / netAmount      US dollars
  *
- * B is the shape of GitHub's enhanced-billing usage report, where
- * `discountAmount` is the part covered by the included allowance and
- * `netAmount` is what is billed. A is the credit-quantity spelling of the same
- * three numbers.
+ * `discount` is the part the plan's included allowance covered and `net` is
+ * the billed overage. Only the QUANTITY triple is read: the row says
+ * "credits", and summing the dollar triple would print dollars under that
+ * word. An earlier reader expected `includedQuantity` / `billedQuantity`,
+ * which GitHub never sends, and then fell back to the dollar triple. That is
+ * exactly the dollars-as-credits error, so the dollar fields are not a
+ * fallback any more.
  *
- * UNVERIFIED, AND SAFE WHEN WRONG: this lane has no GitHub PAT and no network
- * access, so neither spelling has been confirmed against a live reply. That is
- * why the reader is all-or-nothing and additive-only: if GitHub's field names
- * are neither of these, `creditUsageFrom` returns null, the row reports
- * 'not-available' and NO figure is shown. A wrong name can cost the user a
- * figure; it cannot invent one.
+ * An item whose `unitType` is stated and is not AI credits is a unit we do not
+ * understand, and discards the reading. ALL OR NOTHING still holds: a missing
+ * or malformed number anywhere means no figure, never a partial one.
  */
 
 /** Bound on the list we will walk, well under the 256 KiB body cap. */
 const MAX_USAGE_ITEMS = 5000;
 
-const FIELD_SHAPES = Object.freeze([
-  Object.freeze({ name: 'quantity', gross: 'grossQuantity', included: 'includedQuantity', billed: 'billedQuantity' }),
-  Object.freeze({ name: 'amount', gross: 'grossAmount', included: 'discountAmount', billed: 'netAmount' }),
-]);
+/** The credit quantity triple GitHub documents on every usage item. */
+const QUANTITY = Object.freeze({ name: 'quantity', gross: 'grossQuantity', included: 'discountQuantity', billed: 'netQuantity' });
+
+/** GitHub's documented unit for this report, compared loosely ("ai-credits"). */
+const CREDIT_UNIT = /^ai[-_ ]?credits?$/i;
 
 /** A number we are willing to sum: a real, finite, non-negative one. */
 function usable(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-/** The shape an item carries, or null when it carries neither completely. */
-function shapeOf(item) {
-  for (const shape of FIELD_SHAPES) {
-    if (usable(item[shape.gross]) && usable(item[shape.included]) && usable(item[shape.billed])) {
-      return shape;
-    }
-  }
-  return null;
+/** Does the item carry a full credit triple in a unit we understand? */
+function readable(item) {
+  if (item.unitType !== undefined && !(typeof item.unitType === 'string' && CREDIT_UNIT.test(item.unitType))) return false;
+  return usable(item[QUANTITY.gross]) && usable(item[QUANTITY.included]) && usable(item[QUANTITY.billed]);
+}
+
+/**
+ * The month the reply says it covers, from `timePeriod: {year, month}`, or
+ * null. A year alone is not a month, so it is not used.
+ */
+function statedMonth(timePeriod) {
+  if (!timePeriod || typeof timePeriod !== 'object') return null;
+  const { year, month } = timePeriod;
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12 || year < 2000 || year > 2200) return null;
+  return { start: Date.UTC(year, month - 1, 1), end: Date.UTC(year, month, 1) };
 }
 
 /** An ISO instant from a reply field, or null. Never a guess. */
@@ -104,37 +113,37 @@ function creditUsageFrom(body, fetchedAtMs) {
   const items = body.usageItems;
   if (!Array.isArray(items) || items.length > MAX_USAGE_ITEMS) return null;
 
-  let shape = null;
   let gross = 0;
   let included = 0;
   let billed = 0;
   for (const item of items) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-    const itemShape = shapeOf(item);
-    if (itemShape === null) return null;
-    // One reply, one spelling. A list that mixes them is a list we have
-    // misread, and summing across both would double-count.
-    if (shape === null) shape = itemShape;
-    else if (shape !== itemShape) return null;
-    gross += item[shape.gross];
-    included += item[shape.included];
-    billed += item[shape.billed];
+    if (!readable(item)) return null;
+    gross += item[QUANTITY.gross];
+    included += item[QUANTITY.included];
+    billed += item[QUANTITY.billed];
   }
   // An EMPTY list is a legitimate reading: a month with no AI-credit usage.
   // Zero here is a true statement about a reply we fully understood, which is
   // categorically different from the zero a partial parse would produce — and
   // that path returns null above rather than reaching this line.
-  if (shape === null) shape = FIELD_SHAPES[0];
+  const shape = QUANTITY;
 
   // Float addition can drift a hair past the guard above; a sum that is not a
   // usable number is discarded rather than repaired.
   if (!usable(gross) || !usable(included) || !usable(billed)) return null;
 
+  // The documented reply states its period as `timePeriod: {year, month}`.
+  // `periodStart` / `periodEnd` are kept as a second spelling.
+  const month = statedMonth(body.timePeriod);
   const statedStart = instantOf(body.periodStart);
   const statedEnd = instantOf(body.periodEnd);
   let startMs;
   let endMs;
-  if (statedStart !== null && statedEnd !== null && statedStart <= statedEnd) {
+  if (month) {
+    startMs = month.start;
+    endMs = month.end;
+  } else if (statedStart !== null && statedEnd !== null && statedStart <= statedEnd) {
     startMs = statedStart;
     endMs = statedEnd;
   } else {
@@ -217,5 +226,5 @@ module.exports = {
   keyStateForStatus,
   utcMonthBounds,
   MAX_USAGE_ITEMS,
-  FIELD_SHAPES,
+  QUANTITY,
 };

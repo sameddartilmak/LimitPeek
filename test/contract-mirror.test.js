@@ -322,7 +322,7 @@ test('Gemini and Kimi weekly costs have exactly the WeeklyCost shape, and their 
   assert.deepEqual([...new Set(emitted)].sort(), [...codes].sort(), 'every emitted non-tier code is declared');
 });
 
-test('every provider row declares experimental, true only for Gemini and Kimi, and carries no undeclared key', () => {
+test('every provider row declares experimental, true only for Gemini, Kimi and Copilot, and carries no undeclared key', () => {
   const { buildSnapshot, loadingSnapshot } = require('../src/core/snapshot');
   const fields = interfaceFields('ProviderSnapshot');
   assert.ok(fields.includes('experimental'), 'contract.ts declares ProviderSnapshot.experimental');
@@ -331,7 +331,7 @@ test('every provider row declares experimental, true only for Gemini and Kimi, a
   for (const s of [buildSnapshot({ now, events: [], rateLimits: null, scanOk: true, gemini: installed, kimi: installed }), loadingSnapshot(now)]) {
     for (const p of s.providers) {
       for (const key of Object.keys(p)) assert.ok(fields.includes(key), `${p.id}: undeclared key "${key}"`);
-      assert.equal(p.experimental, p.id === 'gemini' || p.id === 'kimi', p.id);
+      assert.equal(p.experimental, p.id === 'gemini' || p.id === 'kimi' || p.id === 'copilot', p.id);
     }
   }
 });

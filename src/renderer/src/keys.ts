@@ -90,6 +90,19 @@ export function keyStateSentence(state: KeyState): MessageKey | null {
 }
 
 /**
+ * Whether a stored key is this row's source. Mirrors main (snapshot.js, the
+ * non-claude passive branch), which drops the row's setup offer on exactly this
+ * condition: a key-capable row with a key in any state but 'none', and not
+ * 'secure-storage-unavailable' (where no key can be read at all). On such a row
+ * the key block IS the row's content, so the passive "not connected yet" line
+ * would contradict it.
+ */
+export function keyIsSource(provider: ProviderSnapshot): boolean {
+  const keys = keyFieldsOf(provider);
+  return keys.keyCapable && keys.keyState !== 'none' && keys.keyState !== 'secure-storage-unavailable';
+}
+
+/**
  * The two states a new key fixes, so the panel offers the token page beside
  * them (owner's Amendment 8 addendum). Never offered with no key stored: with
  * nothing to replace, the affordance would be an unsolicited push to create a
