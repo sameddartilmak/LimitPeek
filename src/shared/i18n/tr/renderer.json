@@ -240,6 +240,7 @@
   "key.credits.used": {"other": "Bu ay {credits} AI kredisi kullanıldı"},
   "key.credits.split": "Plan kapsamında {included} · faturalanan {billed}",
   "key.state.stored": "Anahtar kayıtlı; kredi sayıları henüz okunmadı.",
+  "key.state.paused": "{provider} panelde kapalı; kredi sayıları okunmuyor.",
   "key.state.rejected": "Anahtar kabul edilmedi. Ayarlar’dan kaldırıp yenisini ekleyebilirsiniz.",
   "key.state.lacksPermission": "Anahtarda Plan: read yetkisi yok.",
   "key.state.rateLimited": "GitHub şu an istek sınırı uyguluyor; sayılar sonra okunacak.",

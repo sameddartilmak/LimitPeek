@@ -463,8 +463,16 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     keyBlock.hidden = !hasKey;
     setAttr(keyBlock, 'data-key-state', hasKey ? keys.keyState : null);
     if (hasKey) {
-      const sentence = keyStateSentence(keys.keyState);
-      setText(keyState, sentence ? t(sentence) : '');
+      // A key on a provider that is not in the panel is never read (K16), so
+      // "not read yet" would promise a reading that will not come. And once a
+      // figure exists, "not read yet" is simply false.
+      const paused = !next.enabled && keys.keyState === 'stored';
+      const sentence = paused
+        ? 'key.state.paused'
+        : keys.keyState === 'stored' && keys.creditUsage !== null
+          ? null
+          : keyStateSentence(keys.keyState);
+      setText(keyState, sentence ? t(sentence, { provider: next.displayName }) : '');
       keyState.hidden = sentence === null;
       const unreachable = keys.keyState === 'unreachable';
       keyCause.hidden = !unreachable;

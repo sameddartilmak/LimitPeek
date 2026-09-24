@@ -156,7 +156,7 @@ export function createKeyBlock(providerId: string, ctx: KeyBlockContext): KeyBlo
     // title is the hover shortcut to it, never the only place it exists.
     setAttr(sentence, 'title', keys.keyState === 'unreachable' ? t('key.unreachable.cause') : null);
 
-    refresh.hidden = !REFRESHABLE.has(keys.keyState);
+    refresh.hidden = !provider.enabled || !REFRESHABLE.has(keys.keyState);
     setAttr(refresh, 'aria-label', refresh.hidden ? null : t('key.refreshLabel', { provider: provider.displayName }));
     when.hidden = asOfLine.hidden && refresh.hidden;
 

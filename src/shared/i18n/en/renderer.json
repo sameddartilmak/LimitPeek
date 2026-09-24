@@ -261,6 +261,7 @@
   "key.credits.used": {"one": "{credits} AI credit used this month", "other": "{credits} AI credits used this month"},
   "key.credits.split": "{included} included · {billed} billed",
   "key.state.stored": "A key is stored; the credit numbers have not been read yet.",
+  "key.state.paused": "{provider} is off in the panel; credits are not read.",
   "key.state.rejected": "The key was not accepted. You can remove it in Settings and add a new one.",
   "key.state.lacksPermission": "The key does not have the Plan: read permission.",
   "key.state.rateLimited": "GitHub is rate-limiting requests; the numbers will be read later.",
