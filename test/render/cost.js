@@ -776,7 +776,7 @@ app.whenReady().then(async () => {
       ${q('copilot')}.querySelector('.key__add').click();
       await new Promise((r) => setTimeout(r, 80));
       return JSON.stringify(window.__probe.keyCalls());
-    })()`)) === JSON.stringify({ requestKeyEntry: ['copilot'], removeKey: [], openTokenPage: [] }));
+    })()`)) === JSON.stringify({ requestKeyEntry: ['copilot'], removeKey: [], openTokenPage: [], refreshKey: [] }));
 
   // 2. a key stored, with a reading: three counts and a time. No gauge.
   const CREDITS = `{ keyState: 'stored', keyStoredAt: '2026-09-20T09:15:00.000Z', creditUsage: {
@@ -799,6 +799,29 @@ app.whenReady().then(async () => {
     keyFigure.lines.every((n) => n >= 1 && n <= 2) && keyFigure.clipped.every((v) => v === false),
     [keyFigure.lines, keyFigure.clipped]);
 
+  // "Yenile" (2026-09-24): on the same line as the reading's time, a real
+  // button, and after one press it cannot be pressed again for a while.
+  const refreshInfo = await js(`(() => {
+    const b = ${q('copilot')}.querySelector('.key__refresh');
+    const a = ${q('copilot')}.querySelector('.key__asof');
+    const rb = b.getBoundingClientRect(); const ra = a.getBoundingClientRect();
+    return { hidden: b.hidden, text: b.textContent, tag: b.tagName, aria: b.getAttribute('aria-label'),
+             sameLine: Math.abs(rb.top - ra.top) < 4, right: rb.right };
+  })()`);
+  check('[tr] a "Yenile" button sits on the reading-time line',
+    refreshInfo.hidden === false && refreshInfo.text === 'Yenile' && refreshInfo.tag === 'BUTTON'
+      && refreshInfo.sameLine === true && refreshInfo.right <= 420, refreshInfo);
+  try { fs.writeFileSync(path.join(os.tmpdir(), 'usage-notch-refresh.png'),
+    (await win.webContents.capturePage()).toPNG()); } catch {}
+  const pressed = await js(`(async () => {
+    const b = ${q('copilot')}.querySelector('.key__refresh');
+    b.click(); b.click(); b.click();
+    await new Promise((r) => setTimeout(r, 80));
+    return { calls: window.__probe.keyCalls().refreshKey, disabled: b.disabled };
+  })()`);
+  check('[tr] pressing it asks main once, and it stays disabled against repeat presses',
+    JSON.stringify(pressed.calls) === JSON.stringify(['copilot']) && pressed.disabled === true, pressed);
+
   // 3. every other state: one short fixed sentence, and the token page only
   //    where a new key is the fix.
   const STATES = [
@@ -819,6 +842,9 @@ app.whenReady().then(async () => {
       seen.state === expected && seen.figure === null && seen.percent === false
         && seen.lines.every((n) => n <= 2) && seen.clipped.every((v) => v === false),
       [seen.state, seen.lines]);
+    const refreshShown = await js(`!${q('copilot')}.querySelector('.key__refresh').hidden`);
+    check(`[tr] ${state}: "Yenile" is ${state === 'stored' || state === 'unreachable' ? 'offered' : 'not offered'}`,
+      refreshShown === (state === 'stored' || state === 'unreachable'), refreshShown);
     check(`[tr] ${state}: the token-page action is ${offersToken ? 'offered' : 'not offered'}`,
       (seen.token !== null) === offersToken
         && (!offersToken || (seen.token.tag === 'BUTTON' && seen.token.tabbable === true

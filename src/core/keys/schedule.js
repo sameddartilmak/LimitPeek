@@ -11,8 +11,9 @@
  *
  * The rules, and why each exists:
  *
- *  - `MIN_GAP_MS` (15 min) between two request STARTS, not between a reply and
- *    the next start. A start-to-start floor is the only shape a hammering bug
+ *  - `MIN_GAP_MS` (5 min) between two automatic request STARTS, not between a
+ *    reply and the next start. It was 15 min until 2026-09-24. The owner found
+ *    15 too slow, and 5 is still 12 requests an hour against GitHub's 5,000. A start-to-start floor is the only shape a hammering bug
  *    cannot walk around: a request that hangs for its full timeout still
  *    consumes its own slot.
  *  - PERSISTED. The floor survives a restart, so quitting and reopening the app
@@ -22,6 +23,10 @@
  *    being retried, and retrying a rejected credential against an account is
  *    indistinguishable from a slow password guess. Only the user replacing or
  *    removing the key clears it.
+ *  - A MANUAL refresh (the row's "refresh" button, `mayStartManual`) may start
+ *    early, but never within `MANUAL_GAP_MS` (1 min) of the last start, never
+ *    after a 401, and never inside a backoff or a Retry-After wait. Pressing
+ *    it a thousand times in a minute still makes one request.
  *  - `Retry-After` is honoured but CLAMPED to 15 min…24 h. A provider header is
  *    input: a `1` would let a broken server pull us into a per-second loop, and
  *    a `31536000` would silently disable the row for a year with no way for the
@@ -34,7 +39,8 @@
  */
 
 const MINUTE_MS = 60 * 1000;
-const MIN_GAP_MS = 15 * MINUTE_MS;
+const MIN_GAP_MS = 5 * MINUTE_MS;
+const MANUAL_GAP_MS = MINUTE_MS;
 const MAX_BACKOFF_MS = 6 * 60 * MINUTE_MS;
 const RETRY_AFTER_MIN_MS = 15 * MINUTE_MS;
 const RETRY_AFTER_MAX_MS = 24 * 60 * MINUTE_MS;
@@ -78,6 +84,28 @@ function mayStart(state, now, conditions) {
   // original instant arrived again.
   if (next - now > MAX_FUTURE_MS) return true;
   return now >= next;
+}
+
+/**
+ * The user pressed "refresh". Same conditions as `mayStart`, but the
+ * automatic gap is replaced by `MANUAL_GAP_MS` — EXCEPT while the schedule is
+ * waiting longer than a normal gap. That wait is a backoff after failures or
+ * a provider's own Retry-After, and a button must not walk around either.
+ */
+function mayStartManual(state, now, conditions) {
+  if (!conditions || conditions.enabled !== true || conditions.hasKey !== true) return false;
+  if (conditions.inFlight === true) return false;
+  if (!state || state.stopped === true) return false;
+  if (!Number.isFinite(now)) return false;
+  const last = state.lastAttemptAt;
+  const next = state.nextEligibleAt;
+  if (Number.isFinite(last) && Number.isFinite(next) && next - last > MIN_GAP_MS) {
+    return mayStart(state, now, conditions);
+  }
+  if (!Number.isFinite(last)) return true;
+  // A clock that stepped backward must not lock the button until it catches up.
+  if (now < last) return true;
+  return now - last >= MANUAL_GAP_MS;
 }
 
 /**
@@ -151,7 +179,7 @@ function afterOutcome(state, outcome, now) {
   return { lastAttemptAt: now, nextEligibleAt: now + backoffMs, backoffMs, stopped: false };
 }
 
-/** 15 min, then 30, 60, 2 h, 4 h, 6 h, 6 h, … */
+/** 5 min, then 10, 20, 40, 80, 160, 320, 6 h, 6 h, … */
 function nextBackoff(current) {
   const base = Number.isFinite(current) && current > 0 ? current * 2 : MIN_GAP_MS;
   return Math.min(base, MAX_BACKOFF_MS);
@@ -161,12 +189,14 @@ module.exports = {
   emptyState,
   sanitizeState,
   mayStart,
+  mayStartManual,
   afterStart,
   afterOutcome,
   parseRetryAfter,
   clampRetryAfter,
   nextBackoff,
   MIN_GAP_MS,
+  MANUAL_GAP_MS,
   MAX_BACKOFF_MS,
   RETRY_AFTER_MIN_MS,
   RETRY_AFTER_MAX_MS,

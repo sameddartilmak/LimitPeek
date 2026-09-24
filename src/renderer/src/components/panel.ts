@@ -489,6 +489,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onSetup: (id) => ctx.onSetup(id),
     onAddKey: (id) => ctx.onAddKey(id),
     onOpenTokenPage: (id) => ctx.onOpenTokenPage(id),
+    onRefreshKey: (id) => ctx.onRefreshKey(id),
     isBusy: (id) => ctx.isBusy(id),
     isPending: (id) => ctx.isPending(id),
     attachGrip: (grip, id, name) => reorder.attach(grip, id, name),

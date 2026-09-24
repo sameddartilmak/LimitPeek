@@ -633,7 +633,7 @@ let heldPrefs = null;
 let mode = 'hover';
 /** Every key-channel ask the panel made (ADR-003 A8). Ids only: no key ever
  *  crosses this boundary in either direction. */
-const keyCalls = { requestKeyEntry: [], removeKey: [], openTokenPage: [] };
+const keyCalls = { requestKeyEntry: [], removeKey: [], openTokenPage: [], refreshKey: [] };
 
 /** Geometry good enough to place the panel inside the 420x700 test window. */
 function anchorPayload(mode, anchorSource) {
@@ -759,6 +759,10 @@ contextBridge.exposeInMainWorld('usageNotch', {
   },
   openTokenPage: async (id) => {
     keyCalls.openTokenPage.push(id);
+    return { ok: true };
+  },
+  refreshKey: async (id) => {
+    keyCalls.refreshKey.push(id);
     return { ok: true };
   },
   /**

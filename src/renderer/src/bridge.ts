@@ -105,6 +105,9 @@ export interface Bridge {
   /** Open the vendor's token page in the default browser. Main holds the URL;
    *  the renderer never constructs one. */
   openTokenPage(providerId: string): Promise<boolean>;
+  /** Read the credit figure early (IPC `keys:refresh`). Main's schedule
+   *  decides; false means it did not ask. */
+  refreshKey(providerId: string): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
@@ -140,6 +143,7 @@ function nullBridge(): Bridge {
     requestKeyEntry: async () => false,
     removeKey: async () => false,
     openTokenPage: async () => false,
+    refreshKey: async () => false,
     close: () => {},
     pin: () => {},
   };
@@ -155,7 +159,7 @@ function missing(name: string): void {
  * The key channels answer `{ ok }` and nothing else (A8), so a shape mismatch
  * can only cost the control its effect, never leak a value.
  */
-type KeyChannel = 'requestKeyEntry' | 'removeKey' | 'openTokenPage';
+type KeyChannel = 'requestKeyEntry' | 'removeKey' | 'openTokenPage' | 'refreshKey';
 
 type KeyCapableApi = UsageNotchApi &
   Partial<Record<KeyChannel, (id: string) => Promise<{ ok?: boolean }>>>;
@@ -293,7 +297,7 @@ export function createBridge(): Bridge {
     },
 
     /**
-     * The three key channels (ADR-003 A8). Each is write-only and answers only
+     * The four key channels (ADR-003 A8). Each is write-only and answers only
      * whether main accepted the request: there is no getter anywhere, so no
      * shape here could carry a secret back (K3).
      */
@@ -307,6 +311,10 @@ export function createBridge(): Bridge {
 
     async openTokenPage(providerId: string): Promise<boolean> {
       return callKeyChannel('openTokenPage', providerId);
+    },
+
+    async refreshKey(providerId: string): Promise<boolean> {
+      return callKeyChannel('refreshKey', providerId);
     },
 
     /** Mirrors setOrder: any failure is a real instruction to revert. */

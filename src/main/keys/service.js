@@ -3,7 +3,7 @@ const log = require('../../core/log');
 const { IPC, IPC_KEY_ENTRY } = require('../../shared/contract');
 const { KEY_CAPABLE_IDS, isKeyCapable, soleKeyCapableId } = require('../../core/keys/registry');
 const schedule = require('../../core/keys/schedule');
-const { toContractShape } = require('../../core/keys/credits');
+const { toContractShape, sanitizeFigure } = require('../../core/keys/credits');
 const secretStore = require('./secret-store');
 const keyedNet = require('./keyed-net');
 const { EntryFlow } = require('./entry-window');
@@ -33,9 +33,14 @@ const { openTokenPage } = require('./token-page');
  * renderer dims it and prints its age. But the instant the PERIOD it describes
  * has ended, the figure is provably about a dead month and is dropped
  * unconditionally, exactly as a rolled-over window is.
+ *
+ * The figure is also kept ON DISK (`<id>.usage.json`, six numbers and dates,
+ * no secret), so a restart shows the last reading with its age instead of an
+ * empty row until the next request (2026-09-24). The same period rule applies
+ * to the copy read back.
  */
 
-/** How often the poll wakes up. The 15-minute floor lives in the schedule. */
+/** How often the poll wakes up. The 5-minute floor lives in the schedule. */
 const TICK_MS = 60 * 1000;
 
 class KeyService {
@@ -89,6 +94,8 @@ class KeyService {
       if (!state.hasKey) {
         state.creditUsage = null;
         state.schedule = schedule.emptyState();
+      } else if (!state.creditUsage) {
+        state.creditUsage = sanitizeFigure(secretStore.readFigure(id), Date.now());
       }
     }
     this._arm();
@@ -121,7 +128,10 @@ class KeyService {
     const usage = state.creditUsage;
     if (!usage) return;
     const endMs = Date.parse(usage.periodEnd);
-    if (Number.isFinite(endMs) && now >= endMs) state.creditUsage = null;
+    if (Number.isFinite(endMs) && now >= endMs) {
+      state.creditUsage = null;
+      secretStore.removeFigure(id);
+    }
   }
 
   /* ------------------------------------------------------------------ ipc */
@@ -157,6 +167,16 @@ class KeyService {
     // The panel's "open the token page" affordance, for the two states a new key
     // fixes. The argument only ever SELECTS a hard-coded branch; it never
     // reaches a URL (see token-page.js).
+    // "Refresh now". Allowed early, but the schedule still decides: never
+    // within a minute of the last start, never after a 401, never inside a
+    // backoff or a Retry-After wait (`schedule.mayStartManual`).
+    ipcMain.handle(IPC.KEY_REFRESH, (event, providerId) => {
+      if (!fromPanel(event)) return { ok: false };
+      const id = typeof providerId === 'string' && providerId !== '' ? providerId : soleKeyCapableId();
+      if (!isKeyCapable(id)) return { ok: false };
+      return this.refreshNow(id, Date.now());
+    });
+
     ipcMain.handle(IPC.KEY_TOKEN_PAGE, (event, providerId) => {
       if (!fromPanel(event)) return { ok: false };
       const id = typeof providerId === 'string' && providerId !== '' ? providerId : soleKeyCapableId();
@@ -198,8 +218,9 @@ class KeyService {
     state.keyState = 'stored';
     state.keyStoredAt = result.storedAt;
     // A NEW key may belong to a different account, so the old figure is dropped
-    // rather than kept beside it.
+    // rather than kept beside it — on disk as well.
     state.creditUsage = null;
+    secretStore.removeFigure(provider);
     // A fresh schedule: a replaced key clears a 401 stop and is read at once,
     // because the user is standing in front of the app waiting to see it work.
     state.schedule = schedule.emptyState();
@@ -262,7 +283,7 @@ class KeyService {
 
   /**
    * One pass. Makes at most one request per provider, and only when the schedule
-   * allows it — so a thousand refreshes inside fifteen minutes make one request,
+   * allows it — so a thousand refreshes inside five minutes make one request,
    * and a rejected key makes none at all.
    *
    * @returns {Promise<number>} how many requests were actually made
@@ -271,43 +292,64 @@ class KeyService {
     if (this._stopped) return 0;
     let made = 0;
     for (const id of KEY_CAPABLE_IDS) {
-      const state = this._states[id];
-      const conditions = {
-        enabled: this.isEnabled(id) === true,
-        hasKey: state.hasKey === true,
-        inFlight: keyedNet.isInFlight(),
-      };
-      if (!schedule.mayStart(state.schedule, now, conditions)) continue;
-
-      // The slot is spent BEFORE the request is sent and persisted immediately,
-      // so a crash mid-flight cannot buy a second start (K16).
-      state.schedule = schedule.afterStart(state.schedule, now);
-      secretStore.writeSchedule(id, state.schedule);
-
-      let result;
-      try {
-        result = await keyedNet.requestCreditUsage({
-          providerId: id,
-          // Decrypted inside the request function, immediately before the
-          // request, and never returned to this scope (K17).
-          readSecret: () => secretStore.open(id),
-          now,
-        });
-      } catch (err) {
-        // Nothing in the request path is expected to throw; a throw here must
-        // not take the poll (or the snapshot) with it.
-        log.warn(`keyed request threw: code=${(err && err.code) || 'UNKNOWN'}`);
-        result = { keyState: 'unreachable', usage: null, retryAfterMs: null, requests: 0 };
-      }
-      made += Number.isFinite(result.requests) ? result.requests : 0;
-      // ONE instant for the whole pass, the same one `mayStart` and `afterStart`
-      // used. Reading the clock again here would put the start and its outcome on
-      // two different timelines, and the 15-minute floor is the difference
-      // between them — a floor measured against a clock read after the reply is
-      // a floor that moves with the reply's latency.
-      this._applyResult(id, result, now);
+      if (!schedule.mayStart(this._states[id].schedule, now, this._conditions(id))) continue;
+      made += await this._attempt(id, now);
     }
     return made;
+  }
+
+  /**
+   * The user pressed "refresh". `{ok:true}` once the attempt has finished
+   * (its outcome arrives in the snapshot like any other), `{ok:false}` when the
+   * schedule refused it.
+   */
+  async refreshNow(id, now = Date.now()) {
+    if (this._stopped || !isKeyCapable(id)) return { ok: false };
+    if (!schedule.mayStartManual(this._states[id].schedule, now, this._conditions(id))) {
+      return { ok: false };
+    }
+    await this._attempt(id, now);
+    return { ok: true };
+  }
+
+  _conditions(id) {
+    return {
+      enabled: this.isEnabled(id) === true,
+      hasKey: this._states[id].hasKey === true,
+      inFlight: keyedNet.isInFlight(),
+    };
+  }
+
+  /** One request for one provider, already cleared by the schedule. */
+  async _attempt(id, now) {
+    const state = this._states[id];
+    // The slot is spent BEFORE the request is sent and persisted immediately,
+    // so a crash mid-flight cannot buy a second start (K16).
+    state.schedule = schedule.afterStart(state.schedule, now);
+    secretStore.writeSchedule(id, state.schedule);
+
+    let result;
+    try {
+      result = await keyedNet.requestCreditUsage({
+        providerId: id,
+        // Decrypted inside the request function, immediately before the
+        // request, and never returned to this scope (K17).
+        readSecret: () => secretStore.open(id),
+        now,
+      });
+    } catch (err) {
+      // Nothing in the request path is expected to throw; a throw here must
+      // not take the poll (or the snapshot) with it.
+      log.warn(`keyed request threw: code=${(err && err.code) || 'UNKNOWN'}`);
+      result = { keyState: 'unreachable', usage: null, retryAfterMs: null, requests: 0 };
+    }
+    // ONE instant for the whole attempt, the same one `mayStart` and `afterStart`
+    // used. Reading the clock again here would put the start and its outcome on
+    // two different timelines, and the 5-minute floor is the difference
+    // between them — a floor measured against a clock read after the reply is
+    // a floor that moves with the reply's latency.
+    this._applyResult(id, result, now);
+    return Number.isFinite(result.requests) ? result.requests : 0;
   }
 
   _applyResult(id, result, now) {
@@ -329,6 +371,7 @@ class KeyService {
     if (code === 'stored' && result.usage) {
       state.keyState = 'stored';
       state.creditUsage = toContractShape(result.usage);
+      secretStore.writeFigure(id, state.creditUsage);
       state.schedule = schedule.afterOutcome(state.schedule, { kind: 'ok' }, now);
     } else {
       state.keyState = code;

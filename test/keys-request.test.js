@@ -475,7 +475,7 @@ test('a 200 fills the snapshot fields; a 401 stops polling for good (K16)', asyn
   // A 401 at the next slot stops it, and 48 hours of asking changes nothing.
   electron.netScript.length = 0;
   electron.netScript.push({ statusCode: 401, body: '{"message":"Bad credentials"}' });
-  const at = NOW + 16 * 60 * 1000;
+  const at = NOW + 6 * 60 * 1000;
   assert.equal(await svc.poll(at), 1);
   input = svc.snapshotInput(at);
   assert.equal(input.copilot.keyState, 'key-rejected');
@@ -679,6 +679,74 @@ test('a figure whose month has ended is dropped, however fresh the reading was',
   // 1 October, 00:00 UTC: the September figure is now provably about a dead
   // period (ADR-001 A2 state 3, unconditional).
   assert.equal(svc.snapshotInput(Date.parse('2026-10-01T00:00:00Z')).copilot.creditUsage, null);
+  svc.stop();
+});
+
+test('the last figure survives a restart, with its own reading time (2026-09-24)', async () => {
+  storeKey();
+  const first = service();
+  first.load();
+  electron.netScript.push({ statusCode: 200, body: GOOD_BODY });
+  await first.poll(NOW);
+  const read = first.snapshotInput(NOW).copilot.creditUsage;
+  assert.ok(read);
+  first.stop();
+
+  // A new process: nothing in memory, no request yet.
+  electron.requestLog.length = 0;
+  const second = service();
+  second.load();
+  assert.deepEqual(second.snapshotInput(NOW + 60 * 1000).copilot.creditUsage, read);
+  assert.equal(electron.requestLog.length, 0, 'showing the saved figure sends nothing');
+
+  // The file holds the six numbers and dates, and nothing about the key.
+  const file = path.join(root, 'UsageNotch', 'secrets', 'copilot.usage.json');
+  const text = fs.readFileSync(file, 'utf8');
+  assert.equal(text.includes(KEY), false);
+  assert.equal(text.includes(USERNAME), false);
+  second.stop();
+});
+
+test('a saved figure that does not validate is ignored, and a new key drops it', async () => {
+  storeKey();
+  const dir = path.join(root, 'UsageNotch', 'secrets');
+  const file = path.join(dir, 'copilot.usage.json');
+  fs.writeFileSync(file, JSON.stringify({ v: 1, provider: 'copilot', usage: { grossCredits: -5 } }));
+  const svc = service();
+  svc.load();
+  assert.equal(svc.snapshotInput(NOW).copilot.creditUsage, null);
+
+  electron.netScript.push({ statusCode: 200, body: GOOD_BODY });
+  await svc.poll(NOW);
+  assert.equal(fs.existsSync(file), true);
+  // Replacing the key may mean another account: the old figure goes, on disk too.
+  svc._store({ provider: 'copilot', key: KEY, username: USERNAME });
+  assert.equal(fs.existsSync(file), false);
+  svc.stop();
+});
+
+test('"refresh now" through IPC: panel only, and at most once a minute', async () => {
+  storeKey();
+  const svc = service();
+  svc.load();
+  const ipcMain = electron.fake.ipcMain;
+  const panelEvent = { sender: 'panel' };
+  svc.registerIpc(ipcMain, (event) => event === panelEvent);
+
+  electron.netScript.push({ statusCode: 200, body: GOOD_BODY });
+  assert.equal(await svc.poll(NOW), 1);
+  electron.requestLog.length = 0;
+  electron.netScript.push({ statusCode: 200, body: GOOD_BODY }, { statusCode: 200, body: GOOD_BODY });
+
+  assert.deepEqual(await ipcMain.invoke(IPC.KEY_REFRESH, { sender: 'stranger' }, 'copilot'), { ok: false });
+  assert.deepEqual(await svc.refreshNow('copilot', NOW + 30 * 1000), { ok: false }, 'inside the minute');
+  assert.equal(electron.requestLog.length, 0);
+  const reply = await ipcMain.invoke(IPC.KEY_REFRESH, panelEvent, 'copilot');
+  assert.deepEqual(reply, { ok: true }, 'real clock: well past the fake NOW');
+  assert.equal(electron.requestLog.length, 1);
+  assert.deepEqual(await ipcMain.invoke(IPC.KEY_REFRESH, panelEvent, 'copilot'), { ok: false }, 'a second press at once');
+  assert.deepEqual(await ipcMain.invoke(IPC.KEY_REFRESH, panelEvent, 'gemini'), { ok: false });
+  assert.equal(electron.requestLog.length, 1);
   svc.stop();
 });
 
