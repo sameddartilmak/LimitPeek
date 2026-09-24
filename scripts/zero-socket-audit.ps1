@@ -236,6 +236,14 @@ New-Item -ItemType Directory -Force -Path $userData | Out-Null
 if ($Case -ne 'A') {
   [System.IO.File]::WriteAllText((Join-Path $userData 'settings.json'),
     '{"enabledProviders":{"copilot":true}}', (New-Object System.Text.UTF8Encoding($false)))
+  # The key record is sealed with Electron safeStorage, whose key lives in
+  # "Local State" INSIDE the user-data-dir. A fresh dir gets a fresh key, so the
+  # audited app cannot open the record, answers 'unreadable' and sends nothing.
+  # First Case B run (2026-09-24) measured exactly that: 0 events. The owner's
+  # Local State is copied in for the run and deleted in the finally block.
+  $ownerLocalState = Join-Path (Join-Path $env:APPDATA 'usage-notch') 'Local State'
+  if (-not (Test-Path -LiteralPath $ownerLocalState)) { Fail "no Local State at $ownerLocalState; the stored key could not be opened" }
+  Copy-Item -LiteralPath $ownerLocalState -Destination (Join-Path $userData 'Local State') -Force
 }
 $etl = Join-Path $OutDir 'kernel-network.etl'
 
@@ -434,6 +442,11 @@ finally {
     $p = Get-CimInstance Win32_Process -Filter "ProcessId = $id" -ErrorAction SilentlyContinue
     # Only ever our own unpacked exe: never the installed build, never anything else.
     if ($p -and $p.ExecutablePath -eq $exe) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+  }
+  if ($Case -ne 'A') {
+    # The copied key wrapper is not left lying in %TEMP%.
+    Start-Sleep -Milliseconds 500
+    Remove-Item -LiteralPath (Join-Path $userData 'Local State') -Force -ErrorAction SilentlyContinue
   }
   if (-not $SkipEtw) {
     # Read the session's own counters BEFORE stopping it: a dropped buffer could
