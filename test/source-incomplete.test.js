@@ -433,6 +433,7 @@ test.describe('collector: a failed scan serves an older result and says so', () 
       antigravityQuotaFile: path.join(dir, 'antigravity-quota.json'),
       ideAppDataDir: path.join(dir, 'ide'),
       codexHome: path.join(dir, 'codex'),
+      antigravityUsageHome: path.join(dir, 'antigravity-home'),
     });
   }
   const codexCost = (c) => row(c.rebuild(), 'codex').weeklyCost;
@@ -657,6 +658,7 @@ test.describe('review F7: a Codex read failure repaints at once', () => {
       antigravityQuotaFile: path.join(dir, 'antigravity-quota.json'),
       ideAppDataDir: path.join(dir, 'ide'),
       codexHome: path.join(dir, 'codex'),
+      antigravityUsageHome: path.join(dir, 'antigravity-home'),
     });
     t.after(() => c.stop());
     const worker = { terminate() {}, postMessage() { throw new Error('no dispatch expected'); } };
@@ -923,6 +925,7 @@ test.describe('review F7: a failed dispatch repaints through the same transition
       antigravityQuotaFile: path.join(dir, 'antigravity-quota.json'),
       ideAppDataDir: path.join(dir, 'ide'),
       codexHome: path.join(dir, 'codex'),
+      antigravityUsageHome: path.join(dir, 'antigravity-home'),
     });
     t.after(() => c.stop());
     c._codexEvents = [codexEvent(Date.now() - HOUR)];

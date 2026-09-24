@@ -34,6 +34,7 @@ const IPC = {
   PREFERENCES: 'prefs:changed',
   SET_THEME: 'prefs:set-theme',
   SET_LANGUAGE: 'prefs:set-language',
+  SET_AUTOSTART: 'prefs:set-autostart',
   SET_PLAN_LABEL: 'prefs:set-plan-label',
   KEY_ENTRY: 'keys:request-entry',
   KEY_REMOVE: 'keys:remove',

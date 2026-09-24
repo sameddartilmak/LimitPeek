@@ -1064,7 +1064,7 @@ app.whenReady().then(async () => {
   await sleep(150);
   const split = await js(`(() => ({
     settingsIds: [...document.querySelectorAll('#settings-view li.settings__item')].map(i => i.dataset.provider),
-    checked: [...document.querySelectorAll('#settings-view button.switch')].map(s => s.getAttribute('aria-checked')),
+    checked: [...document.querySelectorAll('#settings-view li.settings__item button.switch')].map(s => s.getAttribute('aria-checked')),
     metas: [...document.querySelectorAll('#settings-view .settings__meta')].map(m => m.textContent),
   }))()`);
   check('settings still lists all six after four are removed', split.settingsIds.length === 6, split.settingsIds);
@@ -1570,6 +1570,48 @@ app.whenReady().then(async () => {
   check('and it says so in words', /kaydedilemedi/.test(themeReverted.notice || ''), themeReverted.notice);
   check('main really did keep the old value', themeStored === 'light', themeStored);
   await js('window.__probe.setFailTheme(false)');
+
+  // "Start with Windows": the same optimistic-then-reconciled switch as the
+  // theme, in the same section. A refusal puts it back and says so, and a
+  // push with no request behind it — the tray menu's checkbox — moves it too.
+  const AS = '#settings-view .settings__item--autostart';
+  const asRead = () => js(`(() => {
+    const item = document.querySelector('${AS}');
+    const sw = item && item.querySelector('.switch');
+    return item && { checked: sw.getAttribute('aria-checked'), role: sw.getAttribute('role'),
+      flash: item.dataset.revert || null, label: item.querySelector('.settings__name').textContent,
+      notice: (document.querySelector('.notice') || {}).textContent };
+  })()`);
+  const asStart = await asRead();
+  say('autostart: ' + JSON.stringify(asStart));
+  check('settings has a "Windows açılışında başlat" switch, on by default',
+    asStart && asStart.role === 'switch' && asStart.checked === 'true'
+      && /Windows açılışında başlat/.test(asStart.label), asStart);
+  await js(`document.querySelector('${AS} .switch').click()`);
+  await sleep(120);
+  const asOff = await asRead();
+  probe = await js('window.__probe.calls()');
+  check('flipping it asks main with a real boolean, and the switch follows',
+    asOff.checked === 'false' && probe.setAutostart[probe.setAutostart.length - 1] === false,
+    [asOff, probe.setAutostart]);
+  check('main holds the new value', (await js('window.__probe.prefs()')).autostart === false);
+  await js('window.__probe.setFailAutostart(true)');
+  await js(`document.querySelector('${AS} .switch').click()`);
+  await sleep(120);
+  const asOptimistic = await asRead();
+  await sleep(600);
+  const asReverted = await asRead();
+  say('autostart revert: ' + JSON.stringify([asOptimistic, asReverted]));
+  check('the switch moves on the gesture, before main answers', asOptimistic.checked === 'true', asOptimistic);
+  check('a refused write puts it back, flagged and said in words',
+    asReverted.checked === 'false' && asReverted.flash === 'true'
+      && /kaydedilemedi/.test(asReverted.notice || ''), asReverted);
+  await js('window.__probe.setFailAutostart(false)');
+  await js('window.__probe.setAutostartDirect(true)');
+  await sleep(120);
+  const asFromTray = await asRead();
+  check('a change made in the tray menu reaches an open settings screen',
+    asFromTray.checked === 'true', asFromTray);
 
   // 'system' is a LIVE binding, not a one-time read. nativeTheme is what
   // actually drives prefers-color-scheme in a renderer, so this is the real

@@ -178,7 +178,7 @@ app.whenReady().then(async () => {
     consent.facts.length >= 8
       && consent.facts.some((f) => /tamamen isteğe bağlı/.test(f) && /hiçbir şey değişmez/.test(f))
       && consent.facts.some((f) => /api\.github\.com/.test(f) && /tek bir istek/.test(f))
-      && consent.facts.some((f) => /15 dakikada bir/.test(f))
+      && consent.facts.some((f) => /5 dakikada bir/.test(f))
       && consent.facts.some((f) => /yalnızca sayılar tutulur/.test(f))
       && consent.facts.some((f) => /şifrelenip saklanır/.test(f) && /çalışan programlara karşı korumaz/.test(f))
       && consent.facts.some((f) => /kendi ödediğiniz Copilot planlarında/.test(f))
@@ -381,7 +381,7 @@ app.whenReady().then(async () => {
       && en.create === 'Create the key on GitHub' && en.save === 'Save' && en.cancel === 'Cancel'
       && en.facts.some((f) => /entirely optional/.test(f))
       && en.facts.some((f) => /api\.github\.com/.test(f))
-      && en.facts.some((f) => /15 minutes/.test(f))
+      && en.facts.some((f) => /5 minutes/.test(f))
       && en.facts.some((f) => /Only numbers are kept/.test(f))
       && en.facts.some((f) => /not protect it from programs running as this user/.test(f))
       && en.facts.some((f) => /revoke the key at GitHub/.test(f))

@@ -192,6 +192,7 @@ test.describe('the collector runs Gemini and Kimi scans off the main thread', ()
       antigravityQuotaFile: path.join(dir, 'antigravity-quota.json'),
       ideAppDataDir: path.join(dir, 'ide'),
       codexHome: path.join(dir, 'codex'),
+      antigravityUsageHome: path.join(dir, 'antigravity-home'),
       geminiHome: path.join(dir, 'gemini-home'),
       kimiHome: path.join(dir, 'kimi-home'),
       ...over,

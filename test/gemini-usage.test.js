@@ -293,11 +293,17 @@ test.describe('Gemini pricing rules (ADR-003 A6)', () => {
     assert.equal(cost.byModel[cost.byModel.length - 1].usd, null, 'unpriced rows sort last');
   });
 
-  test('the six verified rows, and nothing else', () => {
+  test('the seven verified rows, and nothing else', () => {
     const { PRICES } = require('../src/core/gemini/pricing');
     assert.deepEqual(Object.keys(PRICES).sort(), [
       'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3.5-flash',
+      'gemini-3.8-flash',
     ]);
+    // Transcribed 2026-09-24, with the published 2027-01-01 rate change.
+    assert.deepEqual(PRICES['gemini-3.8-flash'], {
+      input: 0.75, output: 3.75, cached: 0.075, long: null,
+      changes: [{ from: '2027-01-01', input: 1.50, output: 7.50, cached: 0.15 }],
+    });
     assert.deepEqual(PRICES['gemini-3.1-pro-preview'], { input: 2.00, output: 12.00, cached: 0.20, long: { input: 4.00, output: 18.00, cached: 0.40 } });
     assert.deepEqual(PRICES['gemini-2.5-pro'].long, { input: 2.50, output: 15.00, cached: 0.25 });
     assert.equal(PRICES['gemini-3.1-flash-lite'].cached, 0.025);

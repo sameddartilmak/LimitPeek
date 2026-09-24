@@ -590,12 +590,13 @@ const snapshot = {
   pendingUsage: [],
 };
 
-const calls = { setOrder: [], setEnabled: [], setTheme: [], setLanguage: [], panelOpened: 0, pin: 0, close: 0 };
+const calls = { setOrder: [], setEnabled: [], setTheme: [], setLanguage: [], setAutostart: [], panelOpened: 0, pin: 0, close: 0 };
 let snapshotCb = null;
 let anchorCb = null;
 let failOrder = false;
 let failEnabled = false;
 let failTheme = false;
+let failAutostart = false;
 /** How long requestRefresh() takes, so the in-flight state can be observed. */
 let refreshDelay = 0;
 /**
@@ -618,7 +619,7 @@ let setupResult = { ok: false, message: '' };
  * Main's persisted preferences. 'dark' rather than 'system' so the suite's
  * baseline does not depend on whatever the machine running it is set to.
  */
-let prefs = { theme: 'dark', language: 'tr', resolvedLanguage: 'tr', formatLocale: 'tr-TR' };
+let prefs = { theme: 'dark', language: 'tr', resolvedLanguage: 'tr', formatLocale: 'tr-TR', autostart: true };
 let prefsCb = null;
 /**
  * When true, setLanguage persists and answers {ok:true} but HOLDS the
@@ -723,6 +724,17 @@ contextBridge.exposeInMainWorld('usageNotch', {
     if (prefsCb) prefsCb({ ...prefs });
     return { ok: true };
   },
+  /** Same shape as setTheme: persist, push, answer; `failAutostart` refuses. */
+  setAutostart: async (enabled) => {
+    calls.setAutostart.push(enabled);
+    if (failAutostart) {
+      await new Promise((r) => setTimeout(r, 300));
+      return { ok: false };
+    }
+    prefs = { ...prefs, autostart: enabled };
+    if (prefsCb) prefsCb({ ...prefs });
+    return { ok: true };
+  },
   /**
    * Main's order of events for a language change (contract.ts SET_LANGUAGE):
    * persist, re-resolve, push PREFERENCES. The suite pins Turkish as its
@@ -807,6 +819,14 @@ contextBridge.exposeInMainWorld('__probe', {
   },
   setFailTheme: (v) => {
     failTheme = v;
+  },
+  setFailAutostart: (v) => {
+    failAutostart = v;
+  },
+  /** Main's value moved by the TRAY menu: a push with no request behind it. */
+  setAutostartDirect: (v) => {
+    prefs = { ...prefs, autostart: !!v };
+    if (prefsCb) prefsCb({ ...prefs });
   },
   /** Hold the next language PREFERENCES push until flushPrefs(). */
   setDeferPrefs: (v) => {

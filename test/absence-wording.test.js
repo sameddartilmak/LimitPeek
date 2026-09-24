@@ -84,23 +84,24 @@ test.describe('the refresh bubble no longer contradicts the row', () => {
     );
   });
 
-  test('the replacement is calm and scoped to still-valid readings', () => {
-    assert.match(src, /Antigravity açık değil/, 'still names the closed tool');
-    assert.match(src, /bir sorun yok/, 'still reassures nothing is broken');
-    assert.match(src, /yalnızca hâlâ geçerli olan son ölçümler/, 'only valid readings are shown');
-    assert.match(src, /süresi dolmuş/, 'it names the expired-window case');
-    assert.match(
-      src,
-      /güncel oranı için/,
-      'an expired window is told to open the tool — matching the row it sits above',
-    );
+  test('the toast is short, calm, and promises only what is always true', () => {
+    // REWRITTEN 2026-09-24 at the owner's ask: the four-line paragraph became a
+    // titled toast. The claim was narrowed further rather than dropped: it no
+    // longer says what the row below shows at all, so it cannot contradict a
+    // row whose expired window shows no figure. It says the tool is closed,
+    // that opening it updates the numbers, and that nothing is wrong.
+    const title = catalog('tr', 'renderer.json')['provider.antigravity.notRunning.title'];
+    assert.equal(title, 'Antigravity kapalı');
+    assert.match(src, /Açtığınızda/, 'opening the tool is the remedy');
+    assert.match(src, /Bir sorun yok/, 'still reassures nothing is broken');
+    assert.ok(src.length <= 80, `one short line, not a paragraph: ${src.length} chars`);
+    assert.ok(panelSrc.includes("t('provider.antigravity.notRunning.title')"), 'panel.ts prints the title key');
   });
 
-  test('the English makes the same scoped claim', () => {
+  test('the English makes the same claim', () => {
     const en = catalog('en', 'renderer.json')['provider.antigravity.notRunning'];
-    assert.match(en, /Antigravity is not open/);
-    assert.match(en, /nothing is wrong/);
-    assert.match(en, /Only the last measurements that are still valid/);
-    assert.match(en, /windows that have expired/);
+    assert.equal(catalog('en', 'renderer.json')['provider.antigravity.notRunning.title'], 'Antigravity is closed');
+    assert.match(en, /when you open it/);
+    assert.match(en, /Nothing is wrong/);
   });
 });

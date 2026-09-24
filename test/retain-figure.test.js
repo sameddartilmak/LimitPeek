@@ -169,6 +169,7 @@ function collectorFor(dir) {
     rateLimitsFile: path.join(dir, 'claude-rate-limits.json'),
     // An empty Codex home, so the rollout scan never reads the developer's own ~/.codex.
     codexHome: path.join(dir, 'codex'),
+    antigravityUsageHome: path.join(dir, 'antigravity-home'),
     rateLimitsDir: dir,
     antigravityQuotaFile: path.join(dir, 'antigravity-quota.json'),
     // An empty dir, so the IDE reader resolves no install and reads nothing off

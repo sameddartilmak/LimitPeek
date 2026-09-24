@@ -44,6 +44,8 @@ let failOrder = false;
 let failEnabled = false;
 /** Same, for setTheme(): `{ok:false}` must put the previous palette back. */
 let failTheme = false;
+/** Same, for setAutostart(): `{ok:false}` must put the switch back. */
+let failAutostart = false;
 /** Same, for setPlanLabel(): `{ok:false}` must put the previous label back. */
 let failPlanLabel = false;
 /**
@@ -51,7 +53,13 @@ let failPlanLabel = false;
  * remount, so switching scenario does not silently reset the theme — which is
  * exactly what main's on-disk settings do.
  */
-let prefs: Preferences = { theme: 'system', language: 'system', resolvedLanguage: 'tr', formatLocale: 'tr-TR' };
+let prefs: Preferences = {
+  theme: 'system',
+  language: 'system',
+  resolvedLanguage: 'tr',
+  formatLocale: 'tr-TR',
+  autostart: true,
+};
 let prefsCb: ((p: Preferences) => void) | null = null;
 
 const logBox = el('div', { class: 'hx-log', role: 'log', 'aria-label': 'Köprü çağrıları' });
@@ -240,6 +248,20 @@ function makeBridge(scenario: Scenario): Bridge {
       prefs = { ...prefs, theme: next };
       prefsCb?.(prefs);
       log('setTheme() -> ok');
+      return true;
+    },
+
+    /** Mirrors setTheme: persist, then push; `failAutostart` refuses. */
+    async setAutostart(enabled: boolean): Promise<boolean> {
+      log(`setAutostart(${enabled})`);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      if (failAutostart) {
+        log('setAutostart() -> hata');
+        return false;
+      }
+      prefs = { ...prefs, autostart: enabled };
+      prefsCb?.(prefs);
+      log('setAutostart() -> ok');
       return true;
     },
 
@@ -462,8 +484,27 @@ on(themeFailToggle, 'click', () => {
   log(`setTheme hatası: ${failTheme}`);
 });
 
+const autostartFailToggle = el(
+  'button',
+  { type: 'button', class: 'hx-btn', 'aria-pressed': 'false' },
+  'Başlangıç hatası',
+) as HTMLButtonElement;
+on(autostartFailToggle, 'click', () => {
+  failAutostart = !failAutostart;
+  setAttr(autostartFailToggle, 'aria-pressed', failAutostart ? 'true' : 'false');
+  log(`setAutostart hatası: ${failAutostart}`);
+});
+
 controls.appendChild(
-  group('Önizleme', driftToggle, motionToggle, orderFailToggle, enabledFailToggle, themeFailToggle),
+  group(
+    'Önizleme',
+    driftToggle,
+    motionToggle,
+    orderFailToggle,
+    enabledFailToggle,
+    themeFailToggle,
+    autostartFailToggle,
+  ),
 );
 controls.appendChild(logBox);
 

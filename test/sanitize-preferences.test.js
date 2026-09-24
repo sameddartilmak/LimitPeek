@@ -41,7 +41,7 @@ function withNavigatorLanguage(tag, body) {
   }
 }
 
-const GOOD = { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB' };
+const GOOD = { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true };
 
 test.describe('sanitizePreferences: the language fields', () => {
   test('a well-formed payload passes through unchanged', () => {
@@ -110,6 +110,25 @@ test.describe('fallbackLanguage: tr* is the primary subtag, as in main', () => {
   test("'trv' (Taroko), 'tru' and everything else are English", () => {
     for (const tag of ['trv', 'tru-TR', 'en-US', 'de', '', undefined, null, 42]) {
       assert.equal(s.fallbackLanguage(tag), 'en', String(tag));
+    }
+  });
+});
+
+test.describe('sanitizePreferences: autostart', () => {
+  test('a real boolean passes through, false included', () => {
+    assert.equal(s.sanitizePreferences({ ...GOOD, autostart: false }).autostart, false);
+    assert.equal(s.sanitizePreferences({ ...GOOD, autostart: true }).autostart, true);
+  });
+
+  test('absent or not a boolean is the shipped default, true, and costs nothing else', () => {
+    // Coerced like the language fields, never a gate like the theme: refusing
+    // the payload would throw away a good theme for a switch's sake. And never
+    // by truthiness: 'false' is a truthy string.
+    for (const bad of [undefined, null, 'false', 'true', 0, 1, {}, []]) {
+      const out = s.sanitizePreferences({ ...GOOD, autostart: bad });
+      assert.ok(out, JSON.stringify(bad));
+      assert.equal(out.autostart, true, JSON.stringify(bad));
+      assert.equal(out.theme, 'dark', JSON.stringify(bad));
     }
   });
 });

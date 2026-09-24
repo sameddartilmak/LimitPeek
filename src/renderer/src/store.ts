@@ -134,6 +134,16 @@ export interface PanelState {
   languagePending: boolean;
   /** Set briefly when main refused a language change and the radio went back. */
   languageReverted: boolean;
+  /**
+   * "Start with Windows", as the settings switch shows it. Optimistic, exactly
+   * like `theme`: the switch moves on the gesture and main is asked afterwards.
+   * The tray menu's checkbox is the same value; main rebuilds it on a change.
+   */
+  autostart: boolean;
+  /** True while a setAutostart call is in flight. */
+  autostartPending: boolean;
+  /** Set briefly when main refused the change and the switch went back. */
+  autostartReverted: boolean;
 }
 
 const INITIAL: PanelState = {
@@ -161,6 +171,9 @@ const INITIAL: PanelState = {
   planReverted: null,
   languagePending: false,
   languageReverted: false,
+  autostart: true,
+  autostartPending: false,
+  autostartReverted: false,
 };
 
 type Listener = (state: PanelState) => void;

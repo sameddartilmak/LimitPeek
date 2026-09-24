@@ -59,11 +59,11 @@
               `wpad` to a loopback proxy. Runnable here.
     -Case B   A real key stored (owner only; needs a fine-grained GitHub PAT).
               Asserts that every non-loopback event is either UDP/53 to a
-              configured DNS server or TCP/443 to an address currently resolved
-              for the allowlisted host (src/core/keys/registry.js:83
-              api.github.com), that no other remote endpoint appears at all, and
+              configured DNS server or TCP/443 to an address of the allowlisted
+              host (src/core/keys/registry.js:83 api.github.com), that no other
+              remote endpoint appears at all, and
               that the number of distinct TCP/443 connection attempts is at most
-              ceil(Minutes / 15) + 1 — the MIN_GAP_MS floor of
+              ceil(Minutes / 5) + 1 — the MIN_GAP_MS floor of
               src/core/keys/schedule.js:37 plus the one request at startup.
     -Case C   Starts with a key stored, waits for the secret record to disappear
               (the owner removes the key from the panel), then asserts ZERO
@@ -181,7 +181,8 @@ $RUN_KEY = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $RUN_VALUE = 'electron.app.Usage Notch'
 $SECRETS_DIR = Join-Path $env:LOCALAPPDATA 'UsageNotch\secrets'
 $ALLOWED_HOST = 'api.github.com'
-$MIN_GAP_MINUTES = 15
+# Must match MIN_GAP_MS in src/core/keys/schedule.js (5 min since 2026-09-24).
+$MIN_GAP_MINUTES = 5
 
 function Say([string]$m) { Write-Host ("[audit] " + $m) }
 function Fail([string]$m) { Write-Host ("[audit] FAIL " + $m) -ForegroundColor Red; exit 1 }
@@ -229,6 +230,21 @@ switch ($Case) {
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $userData = Join-Path $OutDir 'user-data'
 New-Item -ItemType Directory -Force -Path $userData | Out-Null
+# A key is polled only while Copilot is in the panel (K16), and a fresh
+# user-data-dir starts with it switched off. Without this seed Case B and C
+# would see no request at all and pass for the wrong reason.
+if ($Case -ne 'A') {
+  [System.IO.File]::WriteAllText((Join-Path $userData 'settings.json'),
+    '{"enabledProviders":{"copilot":true}}', (New-Object System.Text.UTF8Encoding($false)))
+  # The key record is sealed with Electron safeStorage, whose key lives in
+  # "Local State" INSIDE the user-data-dir. A fresh dir gets a fresh key, so the
+  # audited app cannot open the record, answers 'unreadable' and sends nothing.
+  # First Case B run (2026-09-24) measured exactly that: 0 events. The owner's
+  # Local State is copied in for the run and deleted in the finally block.
+  $ownerLocalState = Join-Path (Join-Path $env:APPDATA 'usage-notch') 'Local State'
+  if (-not (Test-Path -LiteralPath $ownerLocalState)) { Fail "no Local State at $ownerLocalState; the stored key could not be opened" }
+  Copy-Item -LiteralPath $ownerLocalState -Destination (Join-Path $userData 'Local State') -Force
+}
 $etl = Join-Path $OutDir 'kernel-network.etl'
 
 Say "case=$Case minutes=$Minutes"
@@ -279,6 +295,46 @@ if ($Case -ne 'A') {
   $allowedIps = @(Resolve-DnsName -Name $ALLOWED_HOST -ErrorAction SilentlyContinue |
     Where-Object { $_.IPAddress } | ForEach-Object { $_.IPAddress } | Sort-Object -Unique)
   Say ("allowlisted host " + $ALLOWED_HOST + " resolves to: " + ($allowedIps -join ', '))
+}
+# ONE resolution is not "the host's addresses". api.github.com answers from
+# several front ends, and the first full Case B run (2026-09-24 15:18) failed
+# on it: three polls, five minutes apart, went to 140.82.121.6, 140.82.121.5
+# and 20.199.39.228, and only the first had been resolved here. All three are in
+# the "api" list of GitHub's own https://api.github.com/meta. That list is
+# fetched once here (by this script, not by the app) and an address inside it
+# counts as the allowlisted host. It covers api.github.com only, not
+# github.com's web or git ranges, except where GitHub lists a range under both.
+$apiCidrs = @()
+if ($Case -ne 'A') {
+  try {
+    $meta = Invoke-RestMethod -Uri 'https://api.github.com/meta' -TimeoutSec 20 -ErrorAction Stop
+    $apiCidrs = @($meta.api | Where-Object { $_ -match '/' })
+    Say ("GitHub meta: " + $apiCidrs.Count + " published api ranges")
+  } catch {
+    Say "GitHub meta could not be fetched; only the resolved addresses count"
+  }
+}
+
+function Test-InCidr([string]$ip, [string]$cidr) {
+  $parts = $cidr.Split('/')
+  $a = $null; $n = $null
+  if (-not [System.Net.IPAddress]::TryParse($ip, [ref]$a)) { return $false }
+  if (-not [System.Net.IPAddress]::TryParse($parts[0], [ref]$n)) { return $false }
+  if ($a.AddressFamily -ne $n.AddressFamily) { return $false }
+  $ab = $a.GetAddressBytes(); $nb = $n.GetAddressBytes(); $bits = [int]$parts[1]
+  for ($i = 0; $i -lt $ab.Length; $i++) {
+    $take = [Math]::Min(8, [Math]::Max(0, $bits - 8 * $i))
+    if ($take -eq 0) { break }
+    $mask = [byte]((0xFF -shl (8 - $take)) -band 0xFF)
+    if (($ab[$i] -band $mask) -ne ($nb[$i] -band $mask)) { return $false }
+  }
+  return $true
+}
+
+function Test-ApiAddress([string]$ip) {
+  if ($allowedIps -contains $ip) { return $true }
+  foreach ($c in $apiCidrs) { if (Test-InCidr $ip $c) { return $true } }
+  return $false
 }
 
 $pids = [System.Collections.Generic.HashSet[int]]::new()
@@ -426,6 +482,11 @@ finally {
     $p = Get-CimInstance Win32_Process -Filter "ProcessId = $id" -ErrorAction SilentlyContinue
     # Only ever our own unpacked exe: never the installed build, never anything else.
     if ($p -and $p.ExecutablePath -eq $exe) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+  }
+  if ($Case -ne 'A') {
+    # The copied key wrapper is not left lying in %TEMP%.
+    Start-Sleep -Milliseconds 500
+    Remove-Item -LiteralPath (Join-Path $userData 'Local State') -Force -ErrorAction SilentlyContinue
   }
   if (-not $SkipEtw) {
     # Read the session's own counters BEFORE stopping it: a dropped buffer could
@@ -619,7 +680,7 @@ switch ($Case) {
     foreach ($o in $offenders) {
       $peer = if (Test-Loopback $o.saddr) { $o.daddr } elseif (Test-Loopback $o.daddr) { $o.saddr } else { $o.daddr }
       $okDns = ($o.proto -eq 'udp' -and ($o.dport -eq '53' -or $o.sport -eq '53') -and ($dnsServers -contains $peer -or $dnsServers -contains $o.saddr -or $dnsServers -contains $o.daddr))
-      $okApi = ($o.proto -eq 'tcp' -and ($o.dport -eq '443' -or $o.sport -eq '443') -and ($allowedIps -contains $o.saddr -or $allowedIps -contains $o.daddr))
+      $okApi = ($o.proto -eq 'tcp' -and ($o.dport -eq '443' -or $o.sport -eq '443') -and ((Test-ApiAddress $o.saddr) -or (Test-ApiAddress $o.daddr)))
       if (-not ($okDns -or $okApi)) {
         $verdict = 'FAIL'
         # NAME the peer. A TCP/80 contact to a certificate authority is the known
@@ -635,7 +696,14 @@ switch ($Case) {
     }
     if ($connects.Count -gt $budget) {
       $verdict = 'FAIL'
-      $null = $reasons.Add("$($connects.Count) tcp connection attempts, budget $budget (MIN_GAP_MS 15 min + one at startup)")
+      $null = $reasons.Add("$($connects.Count) tcp connection attempts, budget $budget (MIN_GAP_MS $MIN_GAP_MINUTES min + one at startup)")
+    }
+    # A window with no request proves nothing about the request it exists to
+    # measure: the provider switched off, a stale schedule, another instance
+    # spending the shared slots. Say so rather than pass.
+    if ($connects.Count -eq 0) {
+      $verdict = 'FAIL'
+      $null = $reasons.Add('no tcp connection attempt was observed, so the keyed request was never measured')
     }
     Say ("connection attempts: " + $connects.Count + " / budget " + $budget)
   }
@@ -673,7 +741,7 @@ $summary = [pscustomobject]@{
   etwEvents = $events.Count; nonLoopbackEvents = $offenders.Count
   samplerRows = $samples.Count; samplerNonLoopbackTcp = $sampledRemote.Count
   etwUsed = (-not $SkipEtw); elevated = $isAdmin
-  dnsServers = $dnsServers; allowedIps = $allowedIps
+  dnsServers = $dnsServers; allowedIps = $allowedIps; apiRanges = $apiCidrs
   outDir = $OutDir
 }
 $summary | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $OutDir 'summary.json')

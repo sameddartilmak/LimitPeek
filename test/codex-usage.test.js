@@ -823,6 +823,7 @@ test.describe('the collector runs the Codex scan in a worker (ADR-002 A3.11)', (
       antigravityQuotaFile: path.join(dir, 'antigravity-quota.json'),
       ideAppDataDir: path.join(dir, 'ide'),
       codexHome: path.join(dir, 'codex'),
+      antigravityUsageHome: path.join(dir, 'antigravity-home'),
     });
   }
 
