@@ -216,6 +216,13 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     const action = provider?.setupAction ?? null;
     if (!action) return;
 
+    // A key-sourced row's "Add" is the key flow itself. That flow asks for
+    // consent in its own window, so no second confirmation is shown here.
+    if (action.kind === 'add-api-key') {
+      void bridge.requestKeyEntry(providerId);
+      return;
+    }
+
     if (needsConsent(action)) {
       awaitingConsent = providerId;
       store.set({

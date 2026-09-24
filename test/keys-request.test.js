@@ -542,7 +542,7 @@ test('the IPC surface answers {ok} and nothing else, and only to the panel (K3)'
 
   // The panel's token-page button opens the one hard-coded URL.
   assert.deepEqual(await ipcMain.invoke(IPC.KEY_TOKEN_PAGE, panelEvent, 'copilot'), { ok: true });
-  assert.deepEqual(electron.openedExternally, ['https://github.com/settings/personal-access-tokens/new']);
+  assert.deepEqual(electron.openedExternally, ['https://github.com/settings/personal-access-tokens/new?name=Usage+Notch&description=Reads+Copilot+AI+credits+for+Usage+Notch&expires_in=30&plan=read']);
   // A provider that is not key-capable is refused, and opens nothing.
   assert.deepEqual(await ipcMain.invoke(IPC.KEY_TOKEN_PAGE, panelEvent, 'gemini'), { ok: false });
   assert.equal(electron.openedExternally.length, 1);

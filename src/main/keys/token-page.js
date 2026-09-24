@@ -18,25 +18,26 @@ const { isKeyCapable } = require('../../core/keys/registry');
  * is not a browser. There is no variable in the call below, by construction:
  * the provider id chooses a BRANCH, and the branch contains the whole URL.
  *
- * WHY NO PREFILL PARAMETERS
- * -------------------------
- * The brief allows query parameters that prefill the token name, expiry or the
- * Plan permission for FINE-GRAINED tokens, but only against a citable doc. This
- * lane has no network access and could not read GitHub's documentation, so the
- * bare page URL is used. An invented `?name=…&…` that GitHub ignores would be
- * harmless; one it half-honours would put the user on a screen whose fields do
- * not match the instructions beside the button. Whoever can cite the doc may add
- * them here, in the literal.
+ * PREFILLED FROM GITHUB'S TEMPLATE URL
+ * -------------------------------------
+ * GitHub documents query parameters that prefill the fine-grained token page
+ * (docs.github.com, "Managing your personal access tokens", pre-filling
+ * details; changelog 2025-08-26, checked 2026-09-24): `name` (<= 40 chars),
+ * `description`, `expires_in` (1-366 days) and one `<permission>=<level>` per
+ * permission, where the account permission "Plan" read-only is `plan=read`.
+ * So the page opens with the name, a 30-day expiry and Plan: Read-only already
+ * set, and the user only presses "Generate token". The owner's first real try
+ * without it got a 403, because the Plan permission is easy to miss on that
+ * page. `target_name` is left out: it defaults to the signed-in user, who is the
+ * only account a Plan permission can be granted on.
  */
 function openTokenPage(providerId) {
   if (!isKeyCapable(providerId)) return { ok: false };
 
   if (providerId === 'copilot') {
     try {
-      // GitHub's fine-grained personal access token creation page. The consent
-      // copy tells the user which permission to grant (User -> Plan: read); the
-      // URL itself asks for nothing.
-      const opened = shell.openExternal('https://github.com/settings/personal-access-tokens/new');
+      // GitHub's fine-grained token page, prefilled: name, 30 days, Plan: read.
+      const opened = shell.openExternal('https://github.com/settings/personal-access-tokens/new?name=Usage+Notch&description=Reads+Copilot+AI+credits+for+Usage+Notch&expires_in=30&plan=read');
       if (opened && typeof opened.catch === 'function') {
         opened.catch((err) => log.warn(`token page could not be opened: code=${(err && err.code) || 'UNKNOWN'}`));
       }

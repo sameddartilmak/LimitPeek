@@ -91,7 +91,8 @@ const PROVIDERS = [
     // GitHub, but the item fields are only as good as GitHub's documentation.
     experimental: true,
     get setupAction() {
-      return setup('not-installed', 'provider.setup.add', 'provider.notSupportedYet', { provider: 'GitHub Copilot' });
+      // Its source is a key the user adds, so "Add" opens the key window.
+      return setup('add-api-key', 'provider.setup.add', 'provider.copilot.keyDetail');
     },
   },
   {

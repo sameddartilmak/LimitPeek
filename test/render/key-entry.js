@@ -187,9 +187,13 @@ app.whenReady().then(async () => {
       // token that could never return a number on their network.
       && consent.facts.some((f) => /vekil sunucusunu kullanmaz/.test(f) && /gösterilemez/.test(f)),
     consent.facts);
-  check('the least-privilege instruction names the fine-grained token, Plan: read and a short expiry',
-    /fine-grained/.test(shape.createText || '') && /Plan: read/.test(shape.createText || '')
-      && /son kullanma/.test(shape.createText || ''), shape.createText);
+  const steps = await js(`[...document.querySelectorAll('.entry__steps li')].map((li) => li.textContent)`);
+  check('the key is explained as four numbered steps: the one permission, the GitHub button, copy once, paste here',
+    steps.length === 4
+      && /Plan: Read-only/.test(steps[0]) && /30 günlük/.test(steps[0])
+      && /Generate token/.test(steps[1]) && /izin eklemeyin/.test(steps[1])
+      && /github_pat_/.test(steps[2]) && /yalnızca bir kez/.test(steps[2])
+      && /kullanıcı adınızı/.test(steps[3]) && /Kaydet/.test(steps[3]), steps);
   check('the "create the key on GitHub" button sits in that same step, described by it',
     shape.createInSameSection === true && shape.createDescribesExisting === true
       && shape.createLabel === 'GitHub’da anahtar oluştur', shape);

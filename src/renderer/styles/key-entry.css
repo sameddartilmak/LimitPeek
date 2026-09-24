@@ -70,6 +70,9 @@ body {
   border-radius: 6px;
 }
 .entry__create-text { margin: 0; }
+.entry__steps-title { margin: 0 0 4px; color: var(--ink-100); font-weight: 600; }
+.entry__steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.entry__steps li { overflow-wrap: break-word; }
 .entry__create-back { margin: 0; color: var(--ink-400); font-size: var(--fs-micro); }
 .entry__create-back[hidden] { display: none !important; }
 

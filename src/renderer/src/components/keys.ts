@@ -71,7 +71,9 @@ export function createKeyBlock(providerId: string, ctx: KeyBlockContext): KeyBlo
     setAttr(root, 'data-key-state', keys.keyState);
 
     const none = keys.keyState === 'none';
-    add.hidden = !none;
+    // When the row's own "Add" button already opens the key window, a second
+    // offer under the name would be the same action twice.
+    add.hidden = !none || provider.setupAction?.kind === 'add-api-key';
     setAttr(add, 'title', none ? t('key.addDetail') : null);
     setAttr(add, 'aria-label', none ? t('key.addLabel', { provider: provider.displayName }) : null);
 

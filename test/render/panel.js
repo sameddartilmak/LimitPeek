@@ -827,21 +827,19 @@ app.whenReady().then(async () => {
   // Rows are not uniform (measured as [44, 92, 145, 44, 44, 44] with Kimi on
   // top), so the distance is derived from the measured layout, never assumed.
   //
-  // The rule is reorder.ts `targetIndexFor` since b1d4470: a row gives way at
-  // the LATER of "my centre passed its midpoint" and "my leading edge reached
-  // its far edge". With reach = min(myHeight, theirHeight) / 2 that is one
-  // threshold for either direction — see `passDown` / `passUp` below. For equal
-  // heights it is the midpoint; for a short row passing a tall one it is edge
-  // alignment. The previous midpoint-only distance (195px here) stopped one
-  // slot short under that rule: the row needs 237px to cover a 145px row.
+  // The rule is reorder.ts `targetIndexFor` (2026-09-24): a row gives way
+  // when my leading edge reaches its far edge, i.e. once it is covered or I
+  // have been carried all the way over it. See `passDown` / `passUp` below.
+  // For equal heights that is the midpoint. For a short row passing a tall one
+  // it is later; for a tall row passing a short one it is earlier.
   //
   // Everything is in ONE coordinate system, the list as drawn at pick-up —
   // not the compacted list with the dragged row lifted out, which is the
   // confusion that produced the original `targetIndex` bug.
   const passDown = (t, h, from, k) =>
-    t[k] + h[k] - Math.min(h[from], h[k]) / 2 - (t[from] + h[from] / 2);
+    t[k] + h[k] - h[from] / 2 - (t[from] + h[from] / 2);
   const passUp = (t, h, from, k) =>
-    t[from] + h[from] / 2 - (t[k] + Math.min(h[from], h[k]) / 2);
+    t[from] + h[from] / 2 - (t[k] + h[from] / 2);
   // +8 past the threshold: clear of rounding, well short of the next row.
   const drop = Math.round(passDown(geom.t, geom.h, 0, 2)) + 8;
   say('drag down: ' + JSON.stringify({ ids: geom.ids, t: geom.t, h: geom.h, drop }));
@@ -948,8 +946,8 @@ app.whenReady().then(async () => {
 
   // Now the reported gesture: the second row, dragged up over the first.
   // The distance follows the same covered/leading-edge rule as the drag down
-  // (`passUp`): the midpoint when the dragged row is at least as tall as the
-  // one above it, edge alignment when it is shorter. It is derived from the
+  // (`passUp`): edge alignment, the moment the dragged row's top edge meets
+  // the top edge of the row above. It is derived from the
   // rows measured HERE, so it holds whichever order the sections above left
   // behind — a short row under a tall one needs the full height of the tall one.
   const up = Math.round(passUp(shape.t, shape.h, 1, 0)) + 8;

@@ -446,7 +446,10 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // above promises "only the local copy is deleted"; this is what is shown
     // when that did not happen.
     { file: 'renderer.json', key: 'app.keyRemoveFailed', en: [/\bcould not be deleted\b/i, /\brevoke the token at GitHub\b/i], tr: [/silinemedi/, /GitHub'dan iptal/] },
-    { file: 'renderer.json', key: 'keyEntry.leastPrivilege', en: [/fine-grained/i, /Plan: read/], tr: [/fine-grained/i, /Plan: read/] },
+    // The steps name the one permission and the GitHub button by their on-screen labels.
+    { file: 'renderer.json', key: 'keyEntry.steps.1', en: [/Plan: Read-only/, /30-day/], tr: [/Plan: Read-only/, /30 günlük/] },
+    { file: 'renderer.json', key: 'keyEntry.steps.2', en: [/Generate token/, /add permissions/i], tr: [/Generate token/, /izin eklemeyin/] },
+    { file: 'renderer.json', key: 'keyEntry.steps.3', en: [/github_pat_/, /only once/], tr: [/github_pat_/, /yalnızca bir kez/] },
     { file: 'renderer.json', key: 'keyEntry.keyHint', en: [/\bnever shown\b/i, /\bnever written to logs\b/i], tr: [/gösterilmez/, /günlüklere yazılmaz/] },
     // The row's figures are COUNTS of credits GitHub reported, never a share of
     // an allowance (guarded below: no percentage, limit or quota word).

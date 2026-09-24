@@ -142,9 +142,17 @@ function main(): void {
   );
 
   // --- step 2: how to create a least-privilege key, with the way to do it -
-  // The instruction and the button are one step, so the user does not have to
-  // hold the instruction in their head while hunting for the page.
-  const createHint = el('p', { class: 'entry__create-text', id: 'entry-create' }, t('keyEntry.leastPrivilege'));
+  // Numbered steps a non-technical user can follow, with the button between
+  // the first step and the rest. The page the button opens is prefilled with
+  // the name, a 30-day expiry and Plan: Read-only (token-page.js), so the steps
+  // describe what the user sees, not a form they have to fill in.
+  const stepKeys: MessageKey[] = ['keyEntry.steps.1', 'keyEntry.steps.2', 'keyEntry.steps.3', 'keyEntry.steps.4'];
+  const createHint = el(
+    'div',
+    { class: 'entry__create-text', id: 'entry-create' },
+    el('p', { class: 'entry__steps-title' }, t('keyEntry.steps.title')),
+    el('ol', { class: 'entry__steps' }, ...stepKeys.map((key) => el('li', {}, t(key)))),
+  );
   const createButton = el(
     'button',
     { type: 'button', class: 'entry__secondary', 'aria-describedby': 'entry-create' },

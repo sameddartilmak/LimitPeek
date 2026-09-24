@@ -107,8 +107,11 @@ test('shell.openExternal exists once, with a quoted literal, and nowhere else (A
   const calls = code.match(/shell\.openExternal\([^)]*\)/g) || [];
   assert.equal(calls.length, 1, 'one call, not two');
   // A literal, single-quoted https URL. No variable, no template, no concatenation.
-  assert.match(calls[0], /^shell\.openExternal\('https:\/\/[A-Za-z0-9./_-]+'\)$/);
-  assert.equal(calls[0], "shell.openExternal('https://github.com/settings/personal-access-tokens/new')");
+  // `?`, `=`, `&` and `+` are allowed for GitHub's documented prefill query;
+  // quotes, backticks, `$`, `{` and spaces still are not, so nothing can be
+  // interpolated into it.
+  assert.match(calls[0], /^shell\.openExternal\('https:\/\/[A-Za-z0-9./_?=&+-]+'\)$/);
+  assert.equal(calls[0], "shell.openExternal('https://github.com/settings/personal-access-tokens/new?name=Usage+Notch&description=Reads+Copilot+AI+credits+for+Usage+Notch&expires_in=30&plan=read')");
 });
 
 test('nothing in main or core touches the clipboard (K6)', () => {
