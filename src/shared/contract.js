@@ -38,6 +38,7 @@ const IPC = {
   KEY_ENTRY: 'keys:request-entry',
   KEY_REMOVE: 'keys:remove',
   KEY_TOKEN_PAGE: 'keys:open-token-page',
+  KEY_REFRESH: 'keys:refresh',
 };
 
 /**

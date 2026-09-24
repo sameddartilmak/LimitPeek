@@ -80,6 +80,7 @@ function makeBridge(scenario: Scenario): Bridge {
     requestKeyEntry: async () => false,
     removeKey: async () => false,
     openTokenPage: async () => false,
+    refreshKey: async () => false,
 
     initialSnapshot: () => base,
 

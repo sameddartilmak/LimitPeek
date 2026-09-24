@@ -259,7 +259,7 @@ gösterir.
   kabuk olmadan, zaman aşımlı. Zamanlayıcıyla ya da sizden habersiz asla çalışmaz.
 - **Onaya bağlı istisna 2: isteğe bağlı Copilot anahtarı.** Copilot satırında anahtar
   eklemeyi seçerseniz — ki hiçbir satır bunu gerektirmez — istekler yalnızca
-  `api.github.com` adresine, yalnızca o satır açıkken ve en sık 15 dakikada bir yapılır.
+  `api.github.com` adresine, yalnızca o satır açıkken ve kendiliğinden en sık 5 dakikada bir yapılır (satırdaki Yenile ile en sık dakikada bir).
   Okunan tek şey bu ayın AI kredisi kullanımıdır (harcanan / plana dahil olan /
   faturalanan). **Yüzde gösterilmez:** GitHub yanıtında bir üst sınır yok, biz de
   uydurmayız. Anahtar yalnızca `Authorization` başlığında gider, hiçbir adreste ya da

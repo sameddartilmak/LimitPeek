@@ -177,6 +177,34 @@ function toContractShape(usage) {
 }
 
 /**
+ * A figure read back from disk, reduced to the contract shape or null. The
+ * file is ours, but it is still input: a hand-edited or truncated one must not
+ * put a negative count, a missing period or a reading from the future on
+ * screen.
+ *
+ * @param {unknown} raw
+ * @param {number} now
+ */
+function sanitizeFigure(raw, now) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (!usable(raw.grossCredits) || !usable(raw.includedCredits) || !usable(raw.billedCredits)) return null;
+  const start = instantOf(raw.periodStart);
+  const end = instantOf(raw.periodEnd);
+  const fetched = instantOf(raw.fetchedAt);
+  if (start === null || end === null || fetched === null || start > end) return null;
+  // A reading dated in the future is a clock that moved or a tampered file.
+  if (Number.isFinite(now) && fetched > now + 60 * 1000) return null;
+  return {
+    grossCredits: raw.grossCredits,
+    includedCredits: raw.includedCredits,
+    billedCredits: raw.billedCredits,
+    periodStart: new Date(start).toISOString(),
+    periodEnd: new Date(end).toISOString(),
+    fetchedAt: new Date(fetched).toISOString(),
+  };
+}
+
+/**
  * HTTP status -> the fixed `keyState` code the contract allows (A8, K19).
  *
  * Provider text never travels: not the body, not a header, not a URL, not an
@@ -223,6 +251,7 @@ function keyStateForStatus(status, retryAfterMs, rateLimitRemaining) {
 module.exports = {
   creditUsageFrom,
   toContractShape,
+  sanitizeFigure,
   keyStateForStatus,
   utcMonthBounds,
   MAX_USAGE_ITEMS,

@@ -114,6 +114,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       });
     },
     onOpenTokenPage: (providerId) => void bridge.openTokenPage(providerId),
+    onRefreshKey: (providerId) => bridge.refreshKey(providerId),
     onRefresh: () => void runRefresh(null),
     onPinToggle: () => {
       // Main owns pinned mode and answers by pushing a new anchor — mode:'pin'

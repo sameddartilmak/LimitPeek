@@ -31,7 +31,19 @@ export interface KeyBlockContext {
   onAddKey(providerId: string): void;
   /** Ask main to open GitHub's token page in the default browser. */
   onOpenTokenPage(providerId: string): void;
+  /** Ask main to read the figure now. Resolves to whether main asked. */
+  onRefreshKey(providerId: string): Promise<boolean>;
 }
+
+/**
+ * How long the refresh button stays disabled after a press. Main refuses a
+ * second request inside a minute anyway (`schedule.mayStartManual`); this only
+ * keeps the button from looking pressable when it would do nothing.
+ */
+const REFRESH_COOLDOWN_MS = 60 * 1000;
+
+/** The states in which a request can bring a figure: a key that works. */
+const REFRESHABLE = new Set(['stored', 'unreachable']);
 
 export interface KeyBlockHandle {
   el: HTMLElement;
@@ -58,7 +70,32 @@ export function createKeyBlock(providerId: string, ctx: KeyBlockContext): KeyBlo
   ) as HTMLButtonElement;
   on(tokenPage, 'click', () => ctx.onOpenTokenPage(providerId));
 
-  const root = el('div', { class: 'key' }, add, figure, split, asOfLine, sentence, tokenPage);
+  const refresh = el(
+    'button',
+    { type: 'button', class: 'key__refresh' },
+    t('key.refresh'),
+  ) as HTMLButtonElement;
+  let cooldown: ReturnType<typeof setTimeout> | null = null;
+  on(refresh, 'click', () => {
+    if (cooldown !== null) return;
+    refresh.disabled = true;
+    setText(refresh, t('key.refreshing'));
+    setAttr(refresh, 'title', null);
+    cooldown = setTimeout(() => {
+      cooldown = null;
+      refresh.disabled = false;
+      setAttr(refresh, 'title', null);
+    }, REFRESH_COOLDOWN_MS);
+    void ctx.onRefreshKey(providerId).then(() => {
+      setText(refresh, t('key.refresh'));
+      if (cooldown !== null) setAttr(refresh, 'title', t('key.refreshWait'));
+    });
+  });
+
+  // The age of the reading and the way to renew it, on one line.
+  const when = el('div', { class: 'key__when' }, asOfLine, refresh);
+
+  const root = el('div', { class: 'key' }, add, figure, split, sentence, when, tokenPage);
   root.hidden = true;
 
   function update(provider: ProviderSnapshot): void {
@@ -118,6 +155,10 @@ export function createKeyBlock(providerId: string, ctx: KeyBlockContext): KeyBlo
     // rendered as visible text in Settings, beside the Remove button. This
     // title is the hover shortcut to it, never the only place it exists.
     setAttr(sentence, 'title', keys.keyState === 'unreachable' ? t('key.unreachable.cause') : null);
+
+    refresh.hidden = !REFRESHABLE.has(keys.keyState);
+    setAttr(refresh, 'aria-label', refresh.hidden ? null : t('key.refreshLabel', { provider: provider.displayName }));
+    when.hidden = asOfLine.hidden && refresh.hidden;
 
     // Only where a new key is the fix, and only with a key stored.
     tokenPage.hidden = !offersTokenPage(keys.keyState);

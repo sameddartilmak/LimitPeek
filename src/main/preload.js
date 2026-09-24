@@ -32,6 +32,7 @@ const CH = {
   KEY_ENTRY: 'keys:request-entry',
   KEY_REMOVE: 'keys:remove',
   KEY_TOKEN_PAGE: 'keys:open-token-page',
+  KEY_REFRESH: 'keys:refresh',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -243,6 +244,15 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   openTokenPage: (providerId) => ipcRenderer.invoke(CH.KEY_TOKEN_PAGE, String(providerId)),
+
+  /**
+   * "Refresh now" for the credit figure. Main's schedule decides whether a
+   * request is made; the answer carries nothing but that.
+   *
+   * @param {string} providerId
+   * @returns {Promise<{ok:boolean}>}
+   */
+  refreshKey: (providerId) => ipcRenderer.invoke(CH.KEY_REFRESH, String(providerId)),
 
   close: () => ipcRenderer.send(CH.PANEL_CLOSE),
   pin: () => ipcRenderer.send(CH.PANEL_PIN),

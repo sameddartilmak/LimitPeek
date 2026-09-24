@@ -924,7 +924,8 @@
 /* The offer. A quiet, text-weight control: an outlined or filled button here
  * would compete with the row's own reading for attention. */
 .key__add,
-.key__token {
+.key__token,
+.key__refresh {
   align-self: flex-start;
   padding: 0;
   border: 0;
@@ -937,9 +938,21 @@
   cursor: pointer;
 }
 .key__add:hover,
-.key__token:hover { color: var(--ink-100); }
+.key__token:hover,
+.key__refresh:hover:not(:disabled) { color: var(--ink-100); }
+.key__refresh:disabled { cursor: default; opacity: 0.6; }
 .key__add[hidden],
-.key__token[hidden] { display: none !important; }
+.key__token[hidden],
+.key__refresh[hidden],
+.key__when[hidden] { display: none !important; }
+
+/* "09:56 itibarıyla · Yenile" on one line. */
+.key__when {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+}
 
 .key__figure {
   color: var(--ink-100);

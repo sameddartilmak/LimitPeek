@@ -82,6 +82,8 @@ export interface RowContext {
   onAddKey(providerId: string): void;
   /** The user asked for the vendor's token page (owner's A8 addendum). */
   onOpenTokenPage(providerId: string): void;
+  /** "Refresh now" for the credit figure. Resolves to whether main asked. */
+  onRefreshKey(providerId: string): Promise<boolean>;
   isBusy(providerId: string): boolean;
   /**
    * Wire this row's grip to the reorder controller. Called on every update so
@@ -731,6 +733,7 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
   refs.keys = createKeyBlock(provider.id, {
     onAddKey: (id) => ctx.onAddKey(id),
     onOpenTokenPage: (id) => ctx.onOpenTokenPage(id),
+    onRefreshKey: (id) => ctx.onRefreshKey(id),
   });
 
   root.appendChild(refs.grip);

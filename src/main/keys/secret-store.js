@@ -327,11 +327,13 @@ function remove(provider) {
   const target = recordPath(dir, provider);
   ok = unlinkIfPresent(target) && ok;
   ok = unlinkIfPresent(path.join(dir, `${provider}.state.json`)) && ok;
+  ok = unlinkIfPresent(path.join(dir, `${provider}.usage.json`)) && ok;
   // Temporaries carry the writing process's pid, so a crash during a store can
   // leave one behind under a pid we no longer know.
   try {
     for (const name of fs.readdirSync(dir)) {
-      if ((name.startsWith(`${provider}.json.`) || name.startsWith(`${provider}.state.json.`))
+      if ((name.startsWith(`${provider}.json.`) || name.startsWith(`${provider}.state.json.`)
+        || name.startsWith(`${provider}.usage.json.`))
         && name.endsWith('.tmp')) {
         ok = unlinkIfPresent(path.join(dir, name)) && ok;
       }
@@ -387,6 +389,50 @@ function writeSchedule(provider, state) {
   ) === null;
 }
 
+/* ----------------------------------------------------------------- figure */
+
+/**
+ * The last credit reading, beside the secret, so a restart does not blank the
+ * row until the next request (owner request, 2026-09-24). It holds the six
+ * contract fields and nothing else: no key, no username, no provider text. It
+ * is deleted with the key, and replaced or deleted when the key changes.
+ * Validation belongs to the caller (`credits.sanitizeFigure`); a file that
+ * does not parse reads as "no figure".
+ */
+function readFigure(provider) {
+  if (!isKeyCapable(provider)) return null;
+  const dir = secretsDirSafe(false);
+  if (dir === null) return null;
+  try {
+    const file = path.join(dir, `${provider}.usage.json`);
+    const st = fs.statSync(file);
+    if (!st.isFile() || st.size === 0 || st.size > MAX_RECORD_BYTES) return null;
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!raw || typeof raw !== 'object' || raw.provider !== provider) return null;
+    return raw.usage && typeof raw.usage === 'object' ? raw.usage : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeFigure(provider, usage) {
+  if (!isKeyCapable(provider)) return false;
+  const dir = secretsDirSafe(true);
+  if (dir === null) return false;
+  return writeAtomic(
+    path.join(dir, `${provider}.usage.json`),
+    `${JSON.stringify({ v: SECRET_VERSION, provider, usage })}
+`,
+  ) === null;
+}
+
+function removeFigure(provider) {
+  if (!isKeyCapable(provider)) return true;
+  const dir = secretsDirSafe(false);
+  if (dir === null) return true;
+  return unlinkIfPresent(path.join(dir, `${provider}.usage.json`));
+}
+
 /** Test seam: forget the remembered directory refusal. */
 function _resetForTests() {
   dirRefused = false;
@@ -402,6 +448,9 @@ module.exports = {
   remove,
   readSchedule,
   writeSchedule,
+  readFigure,
+  writeFigure,
+  removeFigure,
   secretsDirSafe,
   writeAtomic,
   tmpPath,

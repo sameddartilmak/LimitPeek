@@ -161,7 +161,10 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // as `ProviderSnapshot.planLabel`, not from a getter here. The count stays
   // asserted so a key getter still cannot arrive unnoticed (K3).
   assert.ok(declared.has('setPlanLabel'), 'contract.ts should declare setPlanLabel()');
-  assert.equal(declared.size, 19, `expected the 19 declared methods, saw ${[...declared].join(',')}`);
+  // 20 since refreshKey() (2026-09-24): "refresh now" for the credit figure.
+  // It answers {ok} only; the figure arrives on the snapshot.
+  assert.ok(declared.has('refreshKey'), 'contract.ts should declare refreshKey()');
+  assert.equal(declared.size, 20, `expected the 20 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const STATE_THRESHOLDS = { ... } as const;`. */

@@ -1317,6 +1317,13 @@ export const IPC = {
    * call naming a provider that is not key-capable is refused.
    */
   KEY_TOKEN_PAGE: 'keys:open-token-page',
+  /**
+   * renderer -> main invoke(providerId). "Refresh now": asks main to read the
+   * credit figure early. Main's schedule still decides; it refuses within a
+   * minute of the last request, after a 401, and during a backoff or a
+   * Retry-After wait. Returns `{ok}`, and the figure arrives in the snapshot.
+   */
+  KEY_REFRESH: 'keys:refresh',
 } as const;
 
 /**
@@ -1508,6 +1515,8 @@ export interface UsageNotchApi {
   removeKey(providerId: string): Promise<{ ok: boolean }>;
   /** Open the provider's token page in the default browser. See IPC.KEY_TOKEN_PAGE. */
   openTokenPage(providerId: string): Promise<{ ok: boolean }>;
+  /** Read the credit figure early, if the schedule allows. See IPC.KEY_REFRESH. */
+  refreshKey(providerId: string): Promise<{ ok: boolean }>;
   /** Tell main the panel opened, so it can raise its refresh cadence. */
   panelOpened(): void;
   close(): void;
