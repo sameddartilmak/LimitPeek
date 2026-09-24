@@ -164,7 +164,11 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // 20 since refreshKey() (2026-09-24): "refresh now" for the credit figure.
   // It answers {ok} only; the figure arrives on the snapshot.
   assert.ok(declared.has('refreshKey'), 'contract.ts should declare refreshKey()');
-  assert.equal(declared.size, 20, `expected the 20 declared methods, saw ${[...declared].join(',')}`);
+  // 21 since setAutostart() (2026-09-24): "start with Windows" in the settings
+  // screen, the value the tray checkbox already had. A setter; it comes back on
+  // `Preferences.autostart`.
+  assert.ok(declared.has('setAutostart'), 'contract.ts should declare setAutostart()');
+  assert.equal(declared.size, 21, `expected the 21 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const STATE_THRESHOLDS = { ... } as const;`. */

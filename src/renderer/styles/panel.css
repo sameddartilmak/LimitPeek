@@ -865,6 +865,11 @@
 .settings__item[data-revert="true"] {
   animation: settings-revert 1600ms ease-out 1;
 }
+/* "Start with Windows" reuses the provider item, minus the mark. Its hint is
+ * a whole sentence rather than a status word, so it wraps instead of being cut
+ * off at the switch. */
+.settings__item--autostart .settings__meta { white-space: normal; }
+
 @keyframes settings-revert {
   0%, 45% { background: color-mix(in srgb, var(--watch) 22%, transparent); }
   100% { background: transparent; }

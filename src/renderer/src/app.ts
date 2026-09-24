@@ -81,7 +81,11 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const initialPrefs = bridge.initialPreferences();
   applyLocale(initialPrefs);
   const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
-  store.set({ theme: theme.choice(), language: initialPrefs?.language ?? 'system' });
+  store.set({
+    theme: theme.choice(),
+    language: initialPrefs?.language ?? 'system',
+    autostart: initialPrefs?.autostart ?? true,
+  });
   disposers.push(() => theme.destroy());
   let closing = false;
   /** Provider whose consent prompt is currently open, if any. */
@@ -128,6 +132,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onToggleProvider: (id, enabled) => void applyEnabled(id, enabled),
     onThemeChange: (choice) => void applyTheme(choice),
     onLanguageChange: (choice) => void applyLanguage(choice),
+    onAutostartChange: (enabled) => void applyAutostart(enabled),
     coachDismissed: false,
     onReorder: (ids) => void applyOrder(ids),
     onKeepAlive: () => bridge.panelOpened(),
@@ -535,6 +540,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    */
   function acceptPreferences(prefs: Preferences): void {
     acceptLanguage(prefs);
+    acceptAutostart(prefs);
     const choice = prefs.theme;
     // A push is main's persisted state, so it confirms even while a pick is in
     // flight and is not yet drawn.
@@ -543,6 +549,57 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     if (choice === store.get().theme) return;
     theme.apply(choice);
     store.set({ theme: choice });
+  }
+
+  // --- start with Windows ---------------------------------------------------
+
+  /** The newest autostart value asked of main. Same shape as themeRequest. */
+  let autostartRequest: { enabled: boolean; at: number } | null = null;
+  /** Same role as `confirmedTheme`: what main is known to hold. */
+  let confirmedAutostart: boolean = store.get().autostart;
+
+  /**
+   * Optimistic, then reconciled, exactly like applyTheme: the switch moves on
+   * the gesture and main is asked afterwards. `{ok:false}` means nothing
+   * changed anywhere, so the switch goes back to what main holds, flashes, and
+   * the notice says so. Main also rebuilds the tray menu, so its checkbox and
+   * this switch cannot disagree.
+   */
+  async function applyAutostart(next: boolean): Promise<void> {
+    if (next === store.get().autostart) return;
+
+    const request = { enabled: next, at: Date.now() };
+    autostartRequest = request;
+    store.set({ autostart: next, autostartPending: true, autostartReverted: false, notice: null });
+
+    const ok = await bridge.setAutostart(next);
+    if (ok) confirmedAutostart = next;
+
+    // A newer press owns the switch from here on; this call must not undo it.
+    if (autostartRequest !== request) return;
+    autostartRequest = null;
+    store.set({ autostartPending: false });
+    if (ok) return;
+
+    store.set({
+      autostart: confirmedAutostart,
+      autostartReverted: true,
+      notice: t('app.autostartNotSaved'),
+    });
+    window.setTimeout(() => {
+      if (store.get().autostartReverted) store.set({ autostartReverted: false });
+    }, 1_600);
+  }
+
+  /**
+   * Main's value, pushed — after this panel's own change, or after the tray
+   * menu's checkbox moved it. Adopted unless a press is still in flight, for
+   * the reason acceptPreferences gives for the theme.
+   */
+  function acceptAutostart(prefs: Preferences): void {
+    confirmedAutostart = prefs.autostart;
+    if (autostartRequest !== null) return;
+    if (prefs.autostart !== store.get().autostart) store.set({ autostart: prefs.autostart });
   }
 
   // --- language -----------------------------------------------------------

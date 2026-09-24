@@ -69,6 +69,8 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onThemeChange(theme: ThemeChoice): void;
   /** The user picked a language in settings. The app waits for main's push. */
   onLanguageChange(language: LanguageChoice): void;
+  /** The user flipped "start with Windows" in settings. Optimistic. */
+  onAutostartChange(enabled: boolean): void;
   /**
    * Whether the first-run tray coach was dismissed. Held by the app, not the
    * panel, because a language change rebuilds the panel and a tip the user
@@ -160,6 +162,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onOpenTokenPage: (id) => ctx.onOpenTokenPage(id),
     onTheme: (theme) => ctx.onThemeChange(theme),
     onLanguage: (choice) => ctx.onLanguageChange(choice),
+    onAutostart: (enabled) => ctx.onAutostartChange(enabled),
     onBack: () => ctx.onSettingsToggle(),
   });
 

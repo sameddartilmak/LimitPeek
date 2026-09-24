@@ -26,6 +26,7 @@ const {
   createApplyLanguage,
   createPreferences,
 } = require('./language-ipc');
+const { createSetAutostartHandler } = require('./autostart-ipc');
 const { createRefreshHandler } = require('./refresh-ipc');
 const { buildTrayImage } = require('./tray-icon');
 const { KeyService } = require('./keys/service');
@@ -407,6 +408,20 @@ function registerIpc() {
     log,
   }));
 
+  // Persist, apply, rebuild the tray menu, then push; rollback on a failed
+  // write. The handler lives in autostart-ipc.js so the unit tests run this
+  // exact function rather than a copy of it. The tray's own checkbox writes the
+  // same `settings.autostart` (trayMenuOptions), so both controls show one value.
+  ipcMain.handle(IPC.SET_AUTOSTART, createSetAutostartHandler({
+    fromPanel,
+    getSettings: () => settings,
+    save: (s) => settingsStore.save(userDataDir(), s),
+    apply: applyAutostart,
+    rebuildTrayMenu: () => { if (tray) tray.setMenu(trayMenuOptions()); },
+    push: pushPreferences,
+    log,
+  }));
+
   // The probe is started BEFORE the scan so the two overlap: `tasklist` costs
   // about half a second on this machine, and the refresh must not visibly wait
   // for it. The reply is read from the collector AFTER the probe wait, and the
@@ -535,6 +550,9 @@ function trayMenuOptions() {
       settings.autostart = Boolean(checked);
       settingsStore.save(userDataDir(), settings);
       applyAutostart(settings.autostart);
+      // An open settings screen shows the same value on its own switch; without
+      // the push it would keep the old one until the panel was reloaded.
+      pushPreferences();
     },
     onQuit: () => {
       isQuitting = true;

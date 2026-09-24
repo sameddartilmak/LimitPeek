@@ -26,6 +26,7 @@ const {
   osLocale, createSetLanguageHandler, createLocaleResolver, createApplyLanguage, createPreferences,
 } = require('../src/main/language-ipc');
 const { createSetPlanLabelHandler } = require('../src/main/plan-label-ipc');
+const { createSetAutostartHandler } = require('../src/main/autostart-ipc');
 const { createRefreshHandler } = require('../src/main/refresh-ipc');
 const settingsStore = require('../src/main/settings');
 const security = require('../src/main/security');
@@ -146,6 +147,18 @@ app.whenReady().then(async () => {
     getSettings: () => langSettings,
     save: (next) => settingsStore.save(langDir, next),
     apply: (id, label) => { planApplies.push(`${id}=${label}`); },
+    log: { warn: (m) => say(`warn: ${m}`) },
+  }));
+  // "Start with Windows" runs the REAL handler from autostart-ipc.js, against
+  // the smoke's temp settings dir. The login item is NEVER touched here: apply
+  // is a no-op, so a smoke run cannot register a Run key on this machine.
+  ipcMain.handle(IPC.SET_AUTOSTART, createSetAutostartHandler({
+    fromPanel: ours,
+    getSettings: () => langSettings,
+    save: (next) => settingsStore.save(langDir, next),
+    apply: () => {},
+    rebuildTrayMenu: () => {}, // no tray in the smoke
+    push: () => panel.send(IPC.PREFERENCES, currentPrefs()),
     log: { warn: (m) => say(`warn: ${m}`) },
   }));
   ipcMain.handle(IPC.SET_THEME, (_event, value) => {

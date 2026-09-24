@@ -1,6 +1,7 @@
 'use strict';
 const { isLanguage, resolveLanguage } = require('../core/language');
 const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
+const { sanitizeAutostart, DEFAULT_AUTOSTART } = require('./autostart-ipc');
 
 /**
  * The main-process half of the language preference that talks to Electron and
@@ -159,6 +160,9 @@ function createApplyLanguage({ refreshLocale, getTray, trayMenuOptions, resetToo
  * stays `en-GB` — so the panel formats exactly as the tray does. Before the
  * first resolve (no current locale yet) it resolves on the spot.
  *
+ * `autostart` is re-sanitised for the same reason the theme is: a switch
+ * handed `"yes"` would show whatever its truthiness said, not the file.
+ *
  * @param {object} deps
  * @param {() => object|null} deps.getSettings
  * @param {() => object|null} deps.currentLocale
@@ -173,6 +177,7 @@ function createPreferences({ getSettings, currentLocale, readOs }) {
       language: lang.language,
       resolvedLanguage: lang.resolvedLanguage,
       formatLocale: lang.formatLocale,
+      autostart: settings ? sanitizeAutostart(settings.autostart) : DEFAULT_AUTOSTART,
     };
   };
 }
