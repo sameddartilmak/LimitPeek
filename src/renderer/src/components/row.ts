@@ -799,10 +799,11 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     setAttr(refs.grip, 'aria-label', t('row.gripLabel', { name: p.displayName }));
     // The tray consequence is stated on the control that causes it, and it is
     // stated honestly: a provider with no five-hour window drives an empty
-    // ring, not a donut.
+    // ring, not a donut. Being connected is not enough: a Copilot row with a
+    // key is connected and still has no five-hour window.
     const title = t('row.gripTitle', { name: p.displayName });
     const trayNote = tray
-      ? p.connected
+      ? p.connected && p.fiveHour != null
         ? t('row.gripTray')
         : t('row.gripTrayNoData')
       : '';

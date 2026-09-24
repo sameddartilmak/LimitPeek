@@ -50,6 +50,18 @@ test('a reply in the documented shape is read as CREDITS, never dollars', () => 
   assert.equal(usage.periodEnd, '2026-10-01T00:00:00.000Z');
 });
 
+test('the REAL reply envelope, as GitHub returned it on 2026-09-24, reads as zero credits for September', () => {
+  // Captured by the owner with a fine-grained PAT carrying Plan: read, on an
+  // account with no Copilot usage: top-level fields exactly `timePeriod`,
+  // `user`, `usageItems`; the month stated; an empty list. The item fields are
+  // still docs-only, since no item was returned.
+  const usage = creditUsageFrom({ timePeriod: { year: 2026, month: 9 }, user: 'someone', usageItems: [] }, AT);
+  assert.ok(usage);
+  assert.deepEqual([usage.grossCredits, usage.includedCredits, usage.billedCredits], [0, 0, 0]);
+  assert.equal(usage.periodStart, '2026-09-01T00:00:00.000Z');
+  assert.equal(usage.periodEnd, '2026-10-01T00:00:00.000Z');
+});
+
 test('the dollar triple alone is NOT read: dollars would print under the word credits', () => {
   assert.equal(creditUsageFrom(reply([AMOUNT_ITEM]), AT), null);
 });
