@@ -417,7 +417,7 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // stored Copilot key adds requests (ADR-003 A5 K21, A8). The consent detail
     // still names what runs, from where, with whose consent — and now states the
     // key exception itself, with the host and the interval.
-    { file: 'main.json', key: 'dialog.agyInstall.detail', en: [/install\.ps1/, /antigravity\.google/, /PowerShell/, /\bwith your consent\b/i, /\bno network requests of its own\b/, /api\.github\.com/, /15 minutes/], tr: [/install\.ps1/, /antigravity\.google/, /PowerShell/, /onayınızla/, /hiçbir ağ isteği yapmaz/, /api\.github\.com/, /15 dakikada bir/] },
+    { file: 'main.json', key: 'dialog.agyInstall.detail', en: [/install\.ps1/, /antigravity\.google/, /PowerShell/, /\bwith your consent\b/i, /\bno network requests of its own\b/, /api\.github\.com/, /5 minutes/, /once a minute/], tr: [/install\.ps1/, /antigravity\.google/, /PowerShell/, /onayınızla/, /hiçbir ağ isteği yapmaz/, /api\.github\.com/, /5 dakikada bir/, /en sık dakikada bir/] },
     // The optional Copilot key (ADR-003 A5 K21, A8). Consent copy first: what is
     // sent, to which single host, what is kept, what the storage does NOT
     // protect against, that removal is not revocation, and that declining costs
@@ -431,7 +431,7 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     { file: 'renderer.json', key: 'keyEntry.what', en: [/\ba single request\b/i, /api\.github\.com/, /\bno other address\b/i, /Windows DNS/], tr: [/tek bir istek/, /api\.github\.com/, /Başka hiçbir adrese/, /Windows'un kendi DNS/] },
     // There is no `keyEntry.host` key: the page states the single host inside
     // `keyEntry.what` and its interval in `keyEntry.frequency`, both pinned here.
-    { file: 'renderer.json', key: 'keyEntry.frequency', en: [/15 minutes/], tr: [/15 dakikada bir/] },
+    { file: 'renderer.json', key: 'keyEntry.frequency', en: [/5 minutes/, /once a minute/], tr: [/5 dakikada bir/, /en sık dakikada bir/] },
     // The proxy limit, stated BEFORE the user creates a credential that could
     // never return a number. Our own limit, conditional, and it says what still
     // works — never a diagnosis of the reader's network.

@@ -260,7 +260,7 @@
   "keyEntry.title": "GitHub Copilot API anahtarı",
   "keyEntry.optional": "Bu tamamen isteğe bağlı. Vazgeçerseniz hiçbir şey değişmez; satırdaki diğer bilgiler aynı kalır.",
   "keyEntry.what": "Anahtarı verirseniz uygulama tek bir istek yapar: api.github.com üzerinden bu ayki Copilot AI kredilerinizi okur. Başka hiçbir adrese istek yapmaz; bu adın çözümü Windows'un kendi DNS ayarlarıyla yapılır.",
-  "keyEntry.frequency": "Bu istek en sık 15 dakikada bir yapılır.",
+  "keyEntry.frequency": "Bu istek kendiliğinden en sık 5 dakikada bir, Yenile ile en sık dakikada bir yapılır.",
   "keyEntry.proxy": "Usage Notch sistem vekil sunucusunu kullanmaz; vekil gerektiren bir ağda bu istek tamamlanamaz ve kredi sayısı gösterilemez. Satırdaki diğer bilgiler yerel dosyalardan okunur.",
   "keyEntry.kept": "Yanıttan yalnızca sayılar tutulur: bu ayki kredi sayıları ve okuma zamanı.",
   "keyEntry.storage": "Anahtar bu bilgisayarda, bu Windows kullanıcısına özel olarak şifrelenip saklanır. Bu, diğer kullanıcı hesaplarına ve dosyanın başka bir yere kopyalanmasına karşı korur; bu kullanıcı olarak çalışan programlara karşı korumaz.",

@@ -281,7 +281,7 @@
   "keyEntry.title": "GitHub Copilot API key",
   "keyEntry.optional": "This is entirely optional. If you decline, nothing changes; everything else on the row stays the same.",
   "keyEntry.what": "If you provide a key, the app makes a single request: it reads this month’s Copilot AI credits from api.github.com. It requests no other address; resolving that name uses your Windows DNS settings.",
-  "keyEntry.frequency": "That request is made at most once every 15 minutes.",
+  "keyEntry.frequency": "That request is made on its own at most once every 5 minutes, and at most once a minute with Refresh.",
   "keyEntry.proxy": "Usage Notch does not use a system proxy, so on a network that requires one this request cannot complete and the credit figure stays unavailable. Everything else on the row is read from local files.",
   "keyEntry.kept": "Only numbers are kept from the reply: this month’s credit counts and the time of the reading.",
   "keyEntry.storage": "The key is stored on this computer, encrypted for this Windows user. That protects it from other user accounts and from the file being copied elsewhere; it does not protect it from programs running as this user.",
