@@ -1064,7 +1064,7 @@ app.whenReady().then(async () => {
   await sleep(150);
   const split = await js(`(() => ({
     settingsIds: [...document.querySelectorAll('#settings-view li.settings__item')].map(i => i.dataset.provider),
-    checked: [...document.querySelectorAll('#settings-view button.switch')].map(s => s.getAttribute('aria-checked')),
+    checked: [...document.querySelectorAll('#settings-view li.settings__item button.switch')].map(s => s.getAttribute('aria-checked')),
     metas: [...document.querySelectorAll('#settings-view .settings__meta')].map(m => m.textContent),
   }))()`);
   check('settings still lists all six after four are removed', split.settingsIds.length === 6, split.settingsIds);

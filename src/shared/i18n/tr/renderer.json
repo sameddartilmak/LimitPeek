@@ -185,7 +185,7 @@
   "settings.notConnected": "henüz bağlı değil",
   "settings.section.models": "Model Yönetimi",
   "settings.section.usage": "Toplam Kullanım",
-  "settings.section.appearance": "Görünüm ve dil",
+  "settings.section.appearance": "Genel",
   "settings.models.help": "Ana panelde hangi araçların görüneceğini seçin. Kaldırılan araç yalnızca listeden çıkar — bağlantısı kesilmez, hiçbir veri silinmez.",
   "settings.scanning": "Araçlar taranıyor…",
   "settings.theme.legend": "Görünüm",

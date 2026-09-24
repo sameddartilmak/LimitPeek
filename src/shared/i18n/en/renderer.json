@@ -206,7 +206,7 @@
   "settings.notConnected": "not connected yet",
   "settings.section.models": "Model management",
   "settings.section.usage": "Total usage",
-  "settings.section.appearance": "Appearance and language",
+  "settings.section.appearance": "General",
   "settings.models.help": "Choose which tools appear on the main panel. Removing a tool only takes it off the list — it stays connected and no data is deleted.",
   "settings.scanning": "Scanning for tools…",
   "settings.theme.legend": "Appearance",
