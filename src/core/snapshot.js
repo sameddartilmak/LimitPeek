@@ -11,6 +11,8 @@ const geminiUsage = require('./gemini/usage');
 const geminiPricing = require('./gemini/pricing');
 const kimiUsage = require('./kimi/usage');
 const kimiCostMod = require('./kimi/cost');
+const antigravityUsage = require('./antigravity/usage');
+const antigravityCostMod = require('./antigravity/cost');
 const { RETENTION_DAYS, DAY_MS } = require('./scan/scanner');
 const { isKeyCapable } = require('./keys/registry');
 const { sanitizePlanLabels } = require('./plan-labels');
@@ -725,10 +727,11 @@ function buildSnapshot(input) {
    * are presented exactly as what they are: two windows, separately sourced,
    * each labelled with the field it came from.
    *
-   * No local corpus at all for this provider, so `tokens`, `burnRatePerHour`
-   * and `weeklyCost` stay null. ADR-001 Decision 1 rules out filling them from
-   * the percentage, and ADR-002's cost figure needs per-token records this app
-   * does not have here.
+   * Tokens and the notional cost come from a THIRD source, the per-conversation
+   * stores (antigravity/usage.js), read off-thread like Gemini CLI's chats; see
+   * the block after `agModelQuotas`. `burnRatePerHour` stays null, as on the
+   * other local-log rows. ADR-001 Decision 1 still rules out any percentage
+   * from those tokens.
    */
   const agq = input.antigravityQuota || { state: 'missing', fiveHour: null, sevenDay: null };
   const agIde = input.antigravityIde || { state: 'missing', fiveHour: null, sevenDay: null, groups: [] };
@@ -848,6 +851,38 @@ function buildSnapshot(input) {
     }
     : null;
 
+  // Tokens and notional API cost, from the conversation stores. The same shape
+  // as Codex's block below and the same null rules as the Gemini row: five-hour
+  // tokens anchored to the five-hour reset of the source `agFive` came from
+  // while that reset is ahead, a trailing five hours otherwise; the week
+  // anchored to the agy CLI's weekly reset while it is ahead, a trailing 7 days
+  // otherwise, which the block labels (windowAnchored). Null until the store
+  // scan first answers (Snapshot.pendingUsage), and while Antigravity has no
+  // conversation store on this machine.
+  const agUse = input.antigravityUsage;
+  const agScanned = Boolean(agUse && agUse.installed === true && Array.isArray(agUse.events));
+  const agEvents = agScanned ? agUse.events : EMPTY_EVENTS;
+  const agFiveRaw = agUseCliFive ? agq.fiveHour : agIde.fiveHour;
+  const agFiveResetsAtMs = agFiveRaw ? agFiveRaw.resetsAtMs : null;
+  const agFiveWin = agg.fiveHourWindow(now, Number.isFinite(agFiveResetsAtMs) && now < agFiveResetsAtMs ? agFiveResetsAtMs : null);
+  const agFiveUsage = antigravityUsage.sumAntigravityTokens(agEvents, agFiveWin.start, Math.min(agFiveWin.end, now));
+  const agSevenResetsAtMs = agq.sevenDay ? agq.sevenDay.resetsAtMs : null;
+  const agWeekWin = agg.sevenDayWindow(now, Number.isFinite(agSevenResetsAtMs) && now < agSevenResetsAtMs ? agSevenResetsAtMs : null);
+  const agWeeklyTokens = agScanned
+    ? antigravityUsage.sumAntigravityTokens(agEvents, agWeekWin.start, agWeekWin.end).tokens
+    : null;
+  const agUnread = agScanned
+    ? unreadRangesOf(agUse.unreadRange, agUse.readFailed === true, agUse.resultAtMs, now)
+    : [];
+  const agIncomplete = overlapsAny(agUnread, agWeekWin.start, agWeekWin.end);
+  let agWeeklyCost = agScanned
+    ? antigravityCostMod.antigravityCost(agEvents, agWeekWin.start, agWeekWin.end, agWeekWin.anchored)
+    : null;
+  if (agWeeklyCost) boundCost(agWeeklyCost).sourceIncomplete = agIncomplete;
+  else if (agIncomplete) {
+    agWeeklyCost = emptyWeeklyCost(agWeekWin.start, agWeekWin.end, agWeekWin.anchored, antigravityCostMod.PRICES_AS_OF);
+  }
+
   // --- Codex ------------------------------------------------------------
   // Server-computed figures Codex writes into its own session rollout: primary
   // (5h) and secondary (weekly), each a used_percent from OpenAI's headers.
@@ -959,14 +994,15 @@ function buildSnapshot(input) {
         planLabel: planOf(p.id),
         fiveHour: agFive,
         sevenDay: agSeven,
-        tokens: null,
-        // No local corpus for this provider at all, so there is nothing to
-        // count in either window (see the note above the Antigravity block).
-        weeklyTokens: null,
-        weeklyTokensWindowAnchored: null,
-        weeklyTokenFloorCauses: [],
+        // Same null rule as the Gemini row: a quiet five hours is null, a
+        // scanned week is present even at zero.
+        tokens: agFiveUsage.tokens.billable > 0 ? agFiveUsage.tokens : null,
+        weeklyTokens: agWeeklyTokens,
+        weeklyTokensWindowAnchored: agWeeklyTokens ? agWeekWin.anchored : null,
+        weeklyTokenFloorCauses: weeklyTokenFloorCausesFor('antigravity', agWeeklyTokens, agIncomplete, false),
         burnRatePerHour: null,
-        weeklyCost: null,
+        byModel: agFiveUsage.byModel.slice(0, 6),
+        weeklyCost: agWeeklyCost,
         modelQuotas: agModelQuotas,
         setupAction: agRow.setup ? { ...p.setupAction } : null,
         lastGoodAt: agLastGoodAt,
@@ -1107,6 +1143,7 @@ function buildSnapshot(input) {
       ...(Array.isArray(input.codexEvents) ? [] : ['codex']),
       ...(localPending(input.gemini) ? ['gemini'] : []),
       ...(localPending(input.kimi) ? ['kimi'] : []),
+      ...(localPending(input.antigravityUsage) ? ['antigravity'] : []),
     ],
   };
 }

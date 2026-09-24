@@ -78,6 +78,30 @@ function antigravitySettingsPath() {
 }
 
 /**
+ * The `.gemini` directory the Antigravity products keep their data under. NOT
+ * `antigravityHome()`: that is the CLI's own config directory, and the
+ * conversation stores sit beside it for all three products.
+ */
+function antigravityDataRoot() {
+  return path.join(os.homedir(), '.gemini');
+}
+
+/**
+ * The three conversation directories Antigravity writes one SQLite store per
+ * conversation into: the `agy` CLI, the IDE, and the older `antigravity`
+ * directory, which still holds stores written before the IDE's own directory
+ * name changed (its install directory was renamed too; see
+ * `antigravity/install.js`). All three are read. Only the
+ * `<uuid>.db` files inside are ever opened (`antigravity/usage.js`), never
+ * the encrypted `<uuid>.pb` files beside them, and nothing else under
+ * `.gemini` is listed. `root` is the `.gemini` directory itself (tests).
+ */
+function antigravityConversationDirs(root) {
+  const base = root || antigravityDataRoot();
+  return ['antigravity-cli', 'antigravity-ide', 'antigravity'].map((name) => path.join(base, name, 'conversations'));
+}
+
+/**
  * Where the `agy` CLI's official Windows installer drops the binary, per
  * https://antigravity.google/docs/cli/install :
  * `C:\\Users\\<user>\\AppData\\Local\\agy\\bin\\agy.exe`.
@@ -166,6 +190,8 @@ module.exports = {
   antigravityDefaultHome,
   antigravityHomeOverridden,
   antigravitySettingsPath,
+  antigravityDataRoot,
+  antigravityConversationDirs,
   agyBinDir,
   agyBinaryPath,
   localAppData,

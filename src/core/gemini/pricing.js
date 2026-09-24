@@ -67,6 +67,18 @@ const PRICES = Object.freeze({
   'gemini-2.5-pro': { input: 1.25, output: 10.00, cached: 0.125, long: { input: 2.50, output: 15.00, cached: 0.25 } },
   'gemini-2.5-flash': { input: 0.30, output: 2.50, cached: 0.03, long: null },
   'gemini-3.1-flash-lite': { input: 0.25, output: 1.50, cached: 0.025, long: null },
+  // Transcribed 2026-09-24 from https://ai.google.dev/gemini-api/docs/pricing
+  // (page last updated 2026-09-24), Standard paid tier; no >200k row. The page
+  // publishes a rate change: these rates apply through 2026-12-31 and `changes`
+  // holds the rates from 2027-01-01 (UTC). Each event is priced at the rate in
+  // effect at its own timestamp (`priceFor(model, atMs)`).
+  'gemini-3.8-flash': {
+    input: 0.75,
+    output: 3.75,
+    cached: 0.075,
+    long: null,
+    changes: [{ from: '2027-01-01', input: 1.50, output: 7.50, cached: 0.15 }],
+  },
 });
 
 function round(x) {
@@ -77,10 +89,21 @@ function cost1M(tokens, rate) {
   return (tokens * rate) / 1e6;
 }
 
-/** The price row for an EXACT model id, or null. */
-function priceFor(model) {
+/**
+ * The price row for an EXACT model id at the instant `atMs`, or null. A row
+ * with published `changes` answers with the latest change whose UTC start
+ * date is at or before `atMs`; with no instant, the row's first rates.
+ */
+function priceFor(model, atMs) {
   if (typeof model !== 'string' || model.length === 0) return null;
-  return Object.prototype.hasOwnProperty.call(PRICES, model) ? PRICES[model] : null;
+  if (!Object.prototype.hasOwnProperty.call(PRICES, model)) return null;
+  const row = PRICES[model];
+  if (!Array.isArray(row.changes) || !Number.isFinite(atMs)) return row;
+  let rates = row;
+  for (const change of row.changes) {
+    if (atMs >= Date.parse(`${change.from}T00:00:00.000Z`)) rates = change;
+  }
+  return rates === row ? row : { input: rates.input, output: rates.output, cached: rates.cached, long: row.long };
 }
 
 /**
@@ -114,7 +137,7 @@ function geminiCostDetail(events, startMs, endMs, anchored) {
     seenAny = true;
     const n = Number.isSafeInteger(ev.count) && ev.count > 0 ? ev.count : 1;
     const noModel = ev.noModel === true;
-    const price = noModel ? null : priceFor(ev.model);
+    const price = noModel ? null : priceFor(ev.model, ev.ts);
     const speed = noModel ? SPEED_NO_MODEL : SPEED_STANDARD;
     const key = `${ev.model}|${speed}`;
     let group = groups.get(key);

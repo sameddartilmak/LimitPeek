@@ -58,6 +58,11 @@ const PRICES = Object.freeze({
   'claude-opus-5|standard': { input: 5.00, output: 25.00 },
   'claude-opus-5|fast': { input: 10.00, output: 50.00 },
   'claude-opus-4-8|standard': { input: 5.00, output: 25.00 },
+  // Source: platform.claude.com/docs/en/about-claude/pricing, checked
+  // 2026-09-24: $5 / $25, cache hits $0.50 (the standard 0.1x), 5m write
+  // $6.25 (1.25x), 1h write $10 (2x); the 1M context is billed at the standard
+  // rate, and there is no fast mode, so no `|fast` row.
+  'claude-opus-4-6|standard': { input: 5.00, output: 25.00 },
   'claude-opus-4-7|standard': { input: 5.00, output: 25.00 },
   'claude-sonnet-5|standard': { input: 2.00, output: 10.00 },
   'claude-haiku-4-5|standard': { input: 1.00, output: 5.00 },

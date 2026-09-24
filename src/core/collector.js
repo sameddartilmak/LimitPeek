@@ -21,6 +21,7 @@ const { LocalUsageChannel } = require('./usage-channel');
 const { sameEvents } = require('./same-events');
 const { geminiTmpDir } = require('./gemini/usage');
 const { kimiHome } = require('./kimi/usage');
+const { antigravityUsageInstallDir } = require('./antigravity/usage');
 
 /**
  * Owns the scan lifecycle. Imports nothing from `electron` on purpose
@@ -184,6 +185,17 @@ class Collector extends EventEmitter {
     this._kimi = channel('kimi', 'kimi sessions', this.kimiHome,
       options.kimiWorkerPath || path.join(__dirname, 'kimi', 'scan-worker.js'),
       () => kimiHome(this.kimiHome || undefined));
+    /**
+     * Antigravity token usage, from its per-conversation stores: the same kind
+     * of channel. `antigravityUsageHome` overrides the `.gemini` directory the
+     * three conversation directories sit under (tests); null is the OS home.
+     * A seam for the same reason as `ideAppDataDir`: without it every test
+     * that builds a Collector would read the developer's own conversations.
+     */
+    this.antigravityUsageHome = options.antigravityUsageHome || null;
+    this._antigravityUsage = channel('antigravity', 'antigravity conversations', this.antigravityUsageHome,
+      options.antigravityUsageWorkerPath || path.join(__dirname, 'antigravity', 'scan-worker.js'),
+      () => antigravityUsageInstallDir(this.antigravityUsageHome || undefined));
     /** Last IDE reading, for callers that must not re-open the database. */
     this.antigravityIde = null;
     this.workerPath = options.workerPath || path.join(__dirname, 'scan', 'worker.js');
@@ -250,6 +262,7 @@ class Collector extends EventEmitter {
     // Same for the Gemini / Kimi scans, for a tool that is installed.
     this._gemini.auto = true;
     this._kimi.auto = true;
+    this._antigravityUsage.auto = true;
     this._localTick(Date.now());
     this.store = store.load(this.userDataDir);
     this._claudeSettled = this.store.events.length > 0 || Boolean(this.store.builtAt);
@@ -279,6 +292,7 @@ class Collector extends EventEmitter {
     this._stopCodexWorker();
     this._gemini.stop();
     this._kimi.stop();
+    this._antigravityUsage.stop();
     if (this._ideDebounce) clearTimeout(this._ideDebounce);
     if (this._throttle) clearTimeout(this._throttle);
     if (this._sweep) clearTimeout(this._sweep);
@@ -415,6 +429,7 @@ class Collector extends EventEmitter {
       codexUnreadRange: this._codexUnreadRange,
       gemini: this._gemini.snapshotInput(),
       kimi: this._kimi.snapshotInput(),
+      antigravityUsage: this._antigravityUsage.snapshotInput(),
       scanOk: this.scanOk,
       scanGoodAtMs: this.scanGoodAtMs,
       scanUnreadRange: this.scanUnreadRange,
@@ -928,11 +943,12 @@ class Collector extends EventEmitter {
     if (!this._stopped && this._claudeSettled && this._codexEvents !== null) this.rebuild();
   }
 
-  /** Keeps the Gemini / Kimi scans fresh (no-op for a tool not installed). */
+  /** Keeps the Gemini / Kimi / Antigravity usage scans fresh (no-op for a tool not installed). */
   _localTick(now) {
     const ttl = this.panelOpen ? LOCAL_FULL_TTL_OPEN_MS : LOCAL_FULL_TTL_IDLE_MS;
     this._gemini.tick(now, ttl);
     this._kimi.tick(now, ttl);
+    this._antigravityUsage.tick(now, ttl);
   }
 
   /** Tools whose local usage is not read yet (Snapshot.pendingUsage). */
@@ -940,6 +956,7 @@ class Collector extends EventEmitter {
     const out = this._codexEvents === null ? ['codex'] : [];
     if (this._gemini.pending()) out.push('gemini');
     if (this._kimi.pending()) out.push('kimi');
+    if (this._antigravityUsage.pending()) out.push('antigravity');
     return out;
   }
 

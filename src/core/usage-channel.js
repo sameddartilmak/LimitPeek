@@ -7,7 +7,8 @@ const { sameEvents } = require('./same-events');
 
 /**
  * One tool's off-thread local usage scan, as the collector sees it (ADR-003 A6,
- * ADR-002 A3.11-12). Used for Gemini CLI and Kimi Code.
+ * ADR-002 A3.11-12). Used for Gemini CLI, Kimi Code and
+ * Antigravity's conversation stores.
  *
  * It follows the Codex arrangement in collector.js (long-lived worker holding
  * the per-file cache, a minimum gap between dispatches, a full-scan TTL, a
@@ -34,7 +35,7 @@ const SCAN_TIMEOUT_MS = 15 * 60 * 1000;
 class LocalUsageChannel {
   /**
    * @param {object} o
-   * @param {string} o.id              provider id ('gemini' | 'kimi')
+   * @param {string} o.id              provider id ('gemini' | 'kimi' | 'antigravity')
    * @param {string} o.label           fixed path-guard label, never a path
    * @param {string} o.workerPath
    * @param {string|null} o.home       override passed to the reader (tests), or null

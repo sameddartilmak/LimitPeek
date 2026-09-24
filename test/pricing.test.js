@@ -153,6 +153,7 @@ test.describe('the price table is a lookup, never a branch', () => {
   test('the price table contains exactly the sourced rows', () => {
     assert.deepEqual(Object.keys(pricing.PRICES).sort(), [
       'claude-haiku-4-5|standard',
+      'claude-opus-4-6|standard',
       'claude-opus-4-7|standard',
       'claude-opus-4-8|standard',
       'claude-opus-5-5|fast',
