@@ -72,7 +72,6 @@
   "panel.coach": "The tray icon may be in the hidden icons area: open the arrow on the taskbar and drag the icon out. The panel now opens when you click the icon, not when you hover over it.",
   "panel.coachDismiss": "Got it",
   "panel.coachDismissLabel": "Close this tip",
-  "panel.bubbleDismiss": "OK",
   "panel.bubbleDismissLabel": "Close this message",
   "panel.empty.noneAdded": "No tools are on the main panel.",
   "panel.empty.noneDetail": "A supported tool appears here once you install it.",
@@ -88,7 +87,8 @@
   "panel.modePinnedTitle": "The panel is pinned: it stays open even if you switch to another app.",
   "panel.modeHoverTitle": "The panel is not pinned: it closes when the pointer leaves it. The pin button in the header keeps it on screen.",
   "providers.noneFound": "No supported AI tool was found on this machine.",
-  "provider.antigravity.notRunning": "Antigravity is not open, so its values are not updating — nothing is wrong. Only the last measurements that are still valid are shown below; open Antigravity for the current figures of windows that have expired.",
+  "provider.antigravity.notRunning.title": "Antigravity is closed",
+  "provider.antigravity.notRunning": "Its numbers update on their own when you open it. Nothing is wrong.",
 
   "meter.window5h.label": "5-hour window",
   "meter.window5h.spoken": "Five-hour window",

@@ -31,6 +31,7 @@ import { language, t } from '../i18n.js';
 import { createReorder, type ReorderHandle } from '../reorder.js';
 import { enabledOf, type PanelState, type PanelView } from '../store.js';
 import { createHeader, type HeaderHandle } from './header.js';
+import { providerMark } from './logo.js';
 import { createSettings, type SettingsHandle } from './settings.js';
 import {
   createRow,
@@ -43,6 +44,9 @@ import {
 /** Placeholder rows shown before the first snapshot lands. Enough to fill the
  *  panel without pretending to know how many tools this machine has. */
 const SKELETON_ROWS = 3;
+
+/** How long the "tool is closed" toast stays before it leaves on its own. */
+const TOAST_MS = 8000;
 
 /**
  * `attachGrip` and `isTrayRow` are supplied by the panel itself, not the app:
@@ -367,26 +371,39 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   // ONLY where the last reading is still valid, and an expired window needs the
   // IDE open. That matches the row in every case, expired or not.
   //
-  // It borrows the coach's bubble chrome so the two read as one friendly-notice
-  // idiom, and it is shown ONLY on an explicit refresh reply carrying the
-  // notice, never on a push (app.ts reads it off the invoke reply alone).
+  // 2026-09-24, owner's ask: the first version was a four-line paragraph with
+  // an "OK" button, and read like an error report. It is now a small toast: the
+  // tool's own mark, a two-word title, one plain sentence, a close cross, and it
+  // leaves on its own after TOAST_MS. The sentence claims only what is true in
+  // every case — opening the tool updates the numbers — so it cannot
+  // contradict a row whose expired window shows no figure.
+  //
+  // It is shown ONLY on an explicit refresh reply carrying the notice, never
+  // on a push (app.ts reads it off the invoke reply alone).
   const refreshBubbleDismiss = el(
     'button',
-    { type: 'button', class: 'btn', 'aria-label': t('panel.bubbleDismissLabel') },
-    t('panel.bubbleDismiss'),
+    { type: 'button', class: 'toast__close', 'aria-label': t('panel.bubbleDismissLabel') },
+    svg(
+      'svg',
+      { viewBox: '0 0 12 12', width: '12', height: '12', 'aria-hidden': 'true' },
+      svg('path', { d: 'M3 3l6 6M9 3l-6 6', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round' }),
+    ),
   ) as HTMLButtonElement;
   const refreshBubble = el(
     'div',
-    { class: 'coach coach--calm', role: 'status' },
+    { class: 'toast', role: 'status' },
+    providerMark('antigravity', true),
     el(
-      'span',
-      { class: 'coach__text' },
-      t('provider.antigravity.notRunning'),
+      'div',
+      { class: 'toast__body' },
+      el('p', { class: 'toast__title' }, t('provider.antigravity.notRunning.title')),
+      el('p', { class: 'toast__text' }, t('provider.antigravity.notRunning')),
     ),
-    el('div', { class: 'coach__actions' }, refreshBubbleDismiss),
+    refreshBubbleDismiss,
   );
   refreshBubble.hidden = true;
   on(refreshBubbleDismiss, 'click', () => ctx.onRefreshNoticeDismiss());
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   const footBand = el(
     'div',
@@ -812,7 +829,18 @@ export function createPanel(ctx: PanelContext): PanelHandle {
 
     // Driven purely by the store flag, which app.ts sets only from a refresh
     // reply and clears at the next refresh or on dismissal — never from a push.
-    refreshBubble.hidden = state.refreshNotice !== 'ANTIGRAVITY_NOT_RUNNING';
+    const showToast = state.refreshNotice === 'ANTIGRAVITY_NOT_RUNNING';
+    if (showToast && refreshBubble.hidden) {
+      if (toastTimer !== null) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toastTimer = null;
+        ctx.onRefreshNoticeDismiss();
+      }, TOAST_MS);
+    } else if (!showToast && toastTimer !== null) {
+      clearTimeout(toastTimer);
+      toastTimer = null;
+    }
+    refreshBubble.hidden = !showToast;
 
     // Moving focus onto the affirmative control would be a trap for anyone
     // pressing Enter twice; focus the cancel side and let them choose.

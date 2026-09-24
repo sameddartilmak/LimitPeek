@@ -1697,55 +1697,48 @@ app.whenReady().then(async () => {
   // Only on an explicit refresh whose reply carries the notice, never on a
   // push, and calm rather than the error row.
   check('no refresh bubble on a normal load',
-    (await js(`document.querySelector('.coach--calm').hidden`)) === true);
+    (await js(`document.querySelector('.toast').hidden`)) === true);
 
   await js(`window.__probe.push()`);
   await sleep(120);
   check('a background push never raises it',
-    (await js(`document.querySelector('.coach--calm').hidden`)) === true);
+    (await js(`document.querySelector('.toast').hidden`)) === true);
 
   await js(`window.__probe.setRefreshNotices(['ANTIGRAVITY_NOT_RUNNING'])`);
   await js(`[...document.querySelectorAll('.foot button')].pop().click()`);
   await sleep(220);
   const bubble = await js(`(() => {
-    const b = document.querySelector('.coach--calm');
-    const plain = document.querySelector('.coach:not(.coach--calm)');
-    const text = (b.querySelector('.coach__text') || {}).textContent || '';
-    const calmAccent = getComputedStyle(b).borderLeftColor;
+    const b = document.querySelector('.toast');
+    const r = b.getBoundingClientRect();
     return {
       hidden: b.hidden,
       role: b.getAttribute('role'),
-      text,
-      dismiss: (b.querySelector('button') || {}).textContent,
-      calmAccent,
-      plainAccent: plain ? getComputedStyle(plain).borderLeftColor : null,
-      accentReal: /^rgb/.test(calmAccent) && calmAccent !== 'rgba(0, 0, 0, 0)',
+      title: (b.querySelector('.toast__title') || {}).textContent || '',
+      text: (b.querySelector('.toast__text') || {}).textContent || '',
+      mark: !!b.querySelector('.mark[data-logo="antigravity"]'),
+      close: (b.querySelector('.toast__close') || {}).getAttribute
+        ? b.querySelector('.toast__close').getAttribute('aria-label') : null,
+      height: r.height, right: r.right,
     };
   })()`);
-  say('refresh bubble: ' + JSON.stringify(bubble));
-  check('an explicit refresh with the IDE closed raises the bubble',
-    bubble.hidden === false && /Antigravity açık değil/.test(bubble.text), bubble);
-  check('it is calm — nothing broke — and no longer promises values a rolled-over row cannot show',
-    !/hata|bozuk|sorun var/i.test(bubble.text)
-      && /hâlâ geçerli olan son ölçümler/.test(bubble.text)
-      && !/açtığınızdaki ölçüm/.test(bubble.text),
-    bubble.text);
+  say('refresh toast: ' + JSON.stringify(bubble));
+  check('an explicit refresh with the IDE closed raises the toast',
+    bubble.hidden === false && bubble.title === 'Antigravity kapalı' && /Açtığınızda/.test(bubble.text), bubble);
+  check('it is calm, short and carries the tool mark',
+    !/hata|bozuk|sorun var/i.test(bubble.text) && bubble.mark === true && bubble.height <= 90, bubble);
   check('it is a polite status region, not an alarm', bubble.role === 'status', bubble.role);
-  check('it can be dismissed', bubble.dismiss === 'Tamam', bubble.dismiss);
-  check('its left accent is a real colour and distinct from the neutral coach note',
-    bubble.accentReal === true && bubble.calmAccent !== bubble.plainAccent,
-    [bubble.calmAccent, bubble.plainAccent]);
+  check('it has a labelled close control', bubble.close === 'Bu mesajı kapat', bubble.close);
 
-  await js(`document.querySelector('.coach--calm button').click()`);
+  await js(`document.querySelector('.toast__close').click()`);
   await sleep(120);
   check('dismiss clears the bubble',
-    (await js(`document.querySelector('.coach--calm').hidden`)) === true);
+    (await js(`document.querySelector('.toast').hidden`)) === true);
 
   await js(`window.__probe.setRefreshNotices(null)`);
   await js(`[...document.querySelectorAll('.foot button')].pop().click()`);
   await sleep(220);
   check('a clean refresh leaves it down',
-    (await js(`document.querySelector('.coach--calm').hidden`)) === true);
+    (await js(`document.querySelector('.toast').hidden`)) === true);
 
   // ---- item 4: nothing assumed the window was activated on open ----------
   // The core lane opens the window inactive (showInactive, no focus()). The

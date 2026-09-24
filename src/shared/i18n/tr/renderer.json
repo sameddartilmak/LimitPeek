@@ -72,7 +72,6 @@
   "panel.coach": "Tepsi simgesi gizli simgeler alanında olabilir: görev çubuğundaki ok işaretini açıp simgeyi dışarı sürükleyin. Panel artık üzerine gelince değil, tıklayınca açılır.",
   "panel.coachDismiss": "Anladım",
   "panel.coachDismissLabel": "Bu ipucunu kapat",
-  "panel.bubbleDismiss": "Tamam",
   "panel.bubbleDismissLabel": "Bu mesajı kapat",
   "panel.empty.noneAdded": "Ana panelde hiç araç yok.",
   "panel.empty.noneDetail": "Desteklenen bir araç kurduğunuzda burada görünür.",
@@ -85,7 +84,8 @@
   "panel.modePinnedTitle": "Panel sabitlendi: başka bir uygulamaya geçseniz de açık kalır.",
   "panel.modeHoverTitle": "Panel sabit değil: imleç panelden ayrılınca kapanır. Başlıktaki raptiye düğmesi ekranda tutar.",
   "providers.noneFound": "Bu makinede tanınan bir yapay zekâ aracı bulunamadı.",
-  "provider.antigravity.notRunning": "Antigravity açık değil, değerleri güncellenmiyor — bir sorun yok. Aşağıda yalnızca hâlâ geçerli olan son ölçümler görünür; süresi dolmuş pencerelerin güncel oranı için Antigravity’yi açın.",
+  "provider.antigravity.notRunning.title": "Antigravity kapalı",
+  "provider.antigravity.notRunning": "Açtığınızda değerleri kendiliğinden güncellenir. Bir sorun yok.",
 
   "meter.window5h.label": "5 saatlik pencere",
   "meter.window5h.spoken": "Beş saatlik pencere",
