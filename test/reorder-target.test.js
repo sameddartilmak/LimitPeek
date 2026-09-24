@@ -104,7 +104,15 @@ const LIVE = [64, 64, 44, 44, 44, 44];
 const UNIFORM = [64, 64];
 /** A passive row above a connected one — reachable by reordering. */
 const MIXED_TOP = [44, 64, 44, 64];
-const SHAPES = { LIVE, UNIFORM, MIXED_TOP, TALL_LAST: [44, 44, 64], SINGLE_TALL: [120, 44, 44] };
+const SHAPES = {
+  LIVE,
+  UNIFORM,
+  MIXED_TOP,
+  TALL_LAST: [44, 44, 64],
+  SINGLE_TALL: [120, 44, 44],
+  // A tall connected row between short ones, as with Claude's row under Copilot.
+  TALL_MIDDLE: [64, 139, 44, 44],
+};
 
 // -------------------------------------------------------------------------
 // 1. The invariant that actually broke
@@ -164,11 +172,11 @@ test.describe('a drag up crosses one boundary at a time', () => {
   });
 
   test('and a drag down does too, at a comparable distance', () => {
-    // Unchanged from the midpoint rule: dragging DOWN past a row that is not
-    // taller than you, you have already covered it at the midpoint, so asking
-    // for more travel would mean overshooting the slot being aimed at.
-    assert.equal(at(LIVE, 1, 55), 2);
-    assert.equal(at(LIVE, 1, 54), 1);
+    // UPDATED 2026-09-24. Row 1 is 64 tall and row 2 is 44. Row 2 gives way
+    // when row 1's bottom edge reaches row 2's bottom edge, i.e. after 44px:
+    // the moment row 2 is fully covered. The midpoint rule waited until 55.
+    assert.equal(at(LIVE, 1, 45), 2);
+    assert.equal(at(LIVE, 1, 44), 1);
     assert.equal(at(LIVE, 2, 45), 3);
     assert.equal(at(LIVE, 2, 44), 2);
   });
@@ -187,13 +195,29 @@ test.describe('a drag up crosses one boundary at a time', () => {
     assert.equal(at(SHORT_OVER_TALL, 1, -91), 1, 'the old midpoint commit point');
   });
 
-  test('but a tall row over a short one is not made to overshoot', () => {
-    // The mirror case, and the reason the rule takes min() rather than always
-    // demanding full coverage: a 139px row has already swallowed a 42px one by
-    // the midpoint. Requiring more would drag it past where it will land.
+  test('a tall row over a short one takes its slot the moment it covers it', () => {
+    // REVERSED 2026-09-24. This used to keep the midpoint (91px here) so that
+    // a tall row would not "overshoot". But paint() clamps the dragged row at
+    // the list's top edge, which is at 42px of travel, so the midpoint lay
+    // beyond where the row can be drawn. The owner dragged Claude to the top,
+    // the row stopped there, and the row behind it did not move. The short
+    // row now gives way when the tall row's top edge reaches its top edge.
     const TALL_OVER_SHORT = [42, 139];
-    assert.equal(at(TALL_OVER_SHORT, 1, -91), 0);
-    assert.equal(at(TALL_OVER_SHORT, 1, -90), 1);
+    assert.equal(at(TALL_OVER_SHORT, 1, -43), 0);
+    assert.equal(at(TALL_OVER_SHORT, 1, -42), 1);
+  });
+
+  test('the reported case: a tall row reaches slot 0 within the drawn list', () => {
+    // paint() stops the dragged row at dy = tops[0] - tops[from]. One pixel
+    // past that clamp must already mean slot 0; the row may not need travel
+    // the user cannot see.
+    for (const heights of [[64, 139, 44], [44, 139, 64, 44], [44, 44, 120], [20, 200]]) {
+      const tops = topsOf(heights);
+      for (let from = 1; from < heights.length; from++) {
+        const clamp = tops[0] - tops[from];
+        assert.equal(at(heights, from, clamp - 1), 0, `${JSON.stringify(heights)} row ${from}`);
+      }
+    }
   });
 
   test('a long drag up reaches the top from anywhere', () => {
@@ -253,19 +277,16 @@ test.describe('the two directions cost roughly the same', () => {
     }
   });
 
-  test('each threshold is half my height plus as much of theirs as I can cover', () => {
-    // UPDATED. The old closed form was "half mine plus half theirs" — the
-    // midpoint rule. The commit point is now the LATER of the midpoint and
-    // leading-edge alignment, which is the same arithmetic with `theirs / 2`
-    // replaced by `theirs - min(mine, theirs) / 2`:
+  test('each threshold is exactly the neighbour\'s height', () => {
+    // UPDATED 2026-09-24. The commit point is leading-edge alignment in both
+    // directions, so the travel is the neighbour's height:
     //
-    //   equal heights      -> identical to before (their half)
-    //   they are taller    -> more of them must be covered
-    //   they are shorter   -> unchanged, because they are already covered
+    //   equal heights      -> identical to the midpoint rule
+    //   they are taller    -> I must be carried all the way over them
+    //   they are shorter   -> they give way as soon as I cover them
     //
-    // Still not a magic number: it is the distance at which my leading edge
-    // reaches theirs, or my centre reaches their middle, whichever is later.
-    const depth = (mine, theirs) => theirs - Math.min(mine, theirs) / 2;
+    // `mine / 2 + depth` below therefore reduces to `theirs`.
+    const depth = (mine, theirs) => theirs - mine / 2;
     for (const [name, heights] of Object.entries(SHAPES)) {
       for (let from = 0; from < heights.length; from++) {
         const { down, up } = thresholds(heights, from);
@@ -345,7 +366,7 @@ test.describe('a committed swap does not come undone by a tremor', () => {
     // it transitions at the plain commit point; only a row that has already
     // given way asks for more. A symmetric deadband would have pushed the
     // first commit past the natural landing point, which is overshoot.
-    const depth = (mine, theirs) => theirs - Math.min(mine, theirs) / 2;
+    const depth = (mine, theirs) => theirs - mine / 2;
     for (const [name, heights] of Object.entries(SHAPES)) {
       for (let from = 1; from < heights.length; from++) {
         const swap = firstSwap(heights, from, -1);

@@ -96,8 +96,7 @@ export interface ReorderHandle {
  * always a real distance on screen and never wider than the smaller row can
  * afford. At 0.25 it is ~10px between two passive rows and ~35px between two
  * connected ones: comfortably more than a hand tremor, comfortably less than a
- * deliberate move. Kept at half of `reach` so a threshold can never leave the
- * row it belongs to — see the prefix note in `targetIndexFor`.
+ * deliberate move.
  */
 export const STICK = 0.25;
 
@@ -140,16 +139,20 @@ export const STICK = 0.25;
  *    all: a 42px row passing a 139px one swapped after 91px having covered
  *    less than a third of it.
  *
- *    The commit point is now the LATER of the two readings — midpoint crossing
- *    or leading-edge alignment. It reduces to the midpoint when the heights
- *    match, comes later when the dragged row is shorter, and deliberately does
- *    NOT come later when the dragged row is taller: the neighbour is already
- *    fully covered by then, and asking for more travel would mean dragging
- *    PAST the slot being aimed at, which is worse feel than arriving early.
+ *    The commit point is now leading-edge alignment: upward when my top edge
+ *    reaches the neighbour's top edge, downward when my bottom edge reaches
+ *    its bottom edge. Either way the travel is exactly the neighbour's height.
+ *    It reduces to the midpoint when the heights match and comes later when
+ *    the dragged row is shorter.
  *
- *    With `reach = min(myHeight, theirHeight) / 2`, the neighbour is passed
- *    downward at `theirTop + theirHeight - reach` and upward at
- *    `theirTop + reach`. Equal heights put both at the midpoint.
+ *    It comes EARLIER when the dragged row is taller, and that is the second
+ *    correction (2026-09-24). This used to keep the midpoint there, claiming
+ *    that arriving early beat overshooting. The claim was wrong. A tall row
+ *    dragged up into slot 0 is clamped by `paint()` at the list's top edge,
+ *    and the neighbour's midpoint lies BEYOND that edge. The owner saw the
+ *    row stop at the top while the neighbour stayed behind it, as if the drag
+ *    had failed. The neighbour must give way the moment it is covered, and
+ *    for a taller row that moment is edge alignment.
  *
  * 2. Undoing a swap must cost more than making it.
  *
@@ -192,22 +195,30 @@ export function targetIndexFor(
     if (i === from) continue;
     const top = tops[i] as number;
     const height = heights[i] as number;
-    const shared = Math.min(myHeight, height);
-    const reach = shared / 2;
-    const stick = STICK * shared;
+    const stick = STICK * Math.min(myHeight, height);
 
-    // Both thresholds stay strictly inside row i's own band — `stick` is half
-    // of `reach`, so neither can escape it. Row bands are disjoint and
-    // ordered, which is what keeps the counted set a PREFIX and therefore
-    // makes counting a valid index rather than a tally of unrelated tests.
+    // `up`: my top edge has reached row i's top edge. `down`: my bottom edge
+    // has reached row i's bottom edge. Both are "row i is now fully covered,
+    // or I have fully taken its slot", and each is monotone in `top`, so the
+    // thresholds stay ordered row by row and the counted set stays a PREFIX —
+    // which is what makes counting a valid index rather than a tally of
+    // unrelated tests. The sweeps in test/reorder-target.test.js hold that.
+    const up = top + myHeight / 2;
+    const down = top + height - myHeight / 2;
+
     const rank = i < from ? i : i - 1;
     const isAbove = rank < current; // where this row sits right now
     const wasAbove = i < from; // where it sat before the gesture began
-    const gaveWay = isAbove !== wasAbove ? stick : 0;
 
-    const above = isAbove
-      ? centre >= top + reach - gaveWay
-      : centre > top + height - reach + gaveWay;
+    let above: boolean;
+    if (isAbove && wasAbove) above = centre >= up;
+    else if (!isAbove && !wasAbove) above = centre > down;
+    // A row that has already given way comes back only past the FURTHER of
+    // the two edges plus `stick`. For a tall row passing a short one `down`
+    // lies above `up`, so reusing the opposite edge alone would undo the swap
+    // on the very next frame.
+    else if (isAbove) above = centre >= Math.min(up, down) - stick;
+    else above = centre > Math.max(up, down) + stick;
     if (above) to++;
   }
   return to;
