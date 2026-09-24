@@ -92,6 +92,8 @@ const THEME_TITLE_ID = 'settings-theme-title';
 const THEME_HELP_ID = 'settings-theme-help';
 const LANGUAGE_TITLE_ID = 'settings-language-title';
 const LANGUAGE_HELP_ID = 'settings-language-help';
+const AUTOSTART_NAME_ID = 'settings-autostart-name';
+const AUTOSTART_HELP_ID = 'settings-autostart-help';
 
 /** The grain the usage section is showing. */
 type UsageGrain = 'week' | 'month';
@@ -113,6 +115,8 @@ export interface SettingsContext {
    * and the app rebuilds the panel from that push (ADR-004).
    */
   onLanguage(language: LanguageChoice): void;
+  /** The user flipped "start with Windows". Optimistic; the app owns the revert. */
+  onAutostart(enabled: boolean): void;
   /** Leave settings and go back to the usage list. */
   onBack(): void;
   /**
@@ -670,6 +674,59 @@ function createLanguageControl(ctx: SettingsContext): LanguageHandleLocal {
   }
 
   return { el: root, update, focusChecked };
+}
+
+/**
+ * "Start with Windows".
+ *
+ * The same `button[role=switch]` and the same item layout as the provider
+ * switches above, for the same reasons (a switch is announced as one, and
+ * Space/Enter already operate a button). The name comes from the label, the
+ * state from aria-checked. It is the value the tray menu's checkbox shows:
+ * main rebuilds that menu when this changes, and pushes PREFERENCES when the
+ * menu changes it, so the two never disagree for longer than one round trip.
+ */
+interface AutostartHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+}
+
+function createAutostartControl(ctx: SettingsContext): AutostartHandleLocal {
+  const name = el('span', { class: 'settings__name', id: AUTOSTART_NAME_ID }, t('settings.autostart.label'));
+  const hint = el('span', { class: 'settings__meta', id: AUTOSTART_HELP_ID }, t('settings.autostart.help'));
+  const control = el('button', {
+    type: 'button',
+    class: 'switch',
+    role: 'switch',
+    'aria-checked': 'false',
+    'aria-labelledby': AUTOSTART_NAME_ID,
+    'aria-describedby': AUTOSTART_HELP_ID,
+  }) as HTMLButtonElement;
+  control.appendChild(el('span', { class: 'switch__track', 'aria-hidden': 'true' }));
+
+  const root = el(
+    'div',
+    { class: 'settings__item settings__item--autostart' },
+    el('span', { class: 'settings__text' }, name, hint),
+    control,
+  );
+
+  on(control, 'click', () => {
+    // The rendered state, not a captured one, as the provider switch does.
+    ctx.onAutostart(control.getAttribute('aria-checked') !== 'true');
+  });
+
+  function update(state: PanelState): void {
+    setAttr(control, 'aria-checked', state.autostart ? 'true' : 'false');
+    setAttr(root, 'data-enabled', state.autostart ? 'true' : 'false');
+    // In flight, and refused: the provider switch's two attributes, so the
+    // same CSS draws the wait and the revert flash.
+    setAttr(control, 'aria-busy', state.autostartPending ? 'true' : null);
+    setAttr(root, 'data-pending', state.autostartPending ? 'true' : null);
+    setAttr(root, 'data-revert', state.autostartReverted ? 'true' : null);
+  }
+
+  return { el: root, update };
 }
 
 /**
@@ -1410,14 +1467,17 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   // One section for both: they are the two preferences about how the panel
   // presents itself, and a fourth accordion section would push the list down
   // in a 360px panel. The id stays 'theme' so existing hooks keep working.
+  // "Start with Windows" sits here too, last, for the same reason: it is the
+  // one app-wide preference left, and it did not earn a section of its own.
   const theme = createThemeControl(ctx);
   const languageControl = createLanguageControl(ctx);
+  const autostart = createAutostartControl(ctx);
   const themeSection = createAccordionSection(
     'theme',
     THEME_HEADER_ID,
     THEME_REGION_ID,
     t('settings.section.appearance'),
-    [theme.el, languageControl.el],
+    [theme.el, languageControl.el, autostart.el],
   );
 
   const sections = [modelsSection, usageSection, themeSection];
@@ -1491,6 +1551,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     // history.
     theme.update(state);
     languageControl.update(state);
+    autostart.update(state);
     // The FULL snapshot list, not the added subset: a model row names its tool
     // even when that tool's row was removed from the main panel.
     usage.update(

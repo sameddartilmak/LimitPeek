@@ -1284,6 +1284,14 @@ export const IPC = {
    * the new language only when the push arrives. Returns { ok: boolean }.
    */
   SET_LANGUAGE: 'prefs:set-language',
+  /**
+   * renderer -> main invoke(enabled). Persists "start with Windows", then main
+   * updates the Windows login item, rebuilds the tray menu (its checkbox shows
+   * the same value) and pushes PREFERENCES. `enabled` must be a real boolean;
+   * anything else is refused, not coerced. Returns { ok: boolean }; on false
+   * nothing changed and the renderer reverts its switch.
+   */
+  SET_AUTOSTART: 'prefs:set-autostart',
   SET_PLAN_LABEL: 'prefs:set-plan-label',
   /**
    * renderer -> main invoke(providerId). Asks main to START the optional-key
@@ -1386,6 +1394,14 @@ export interface Preferences {
    * otherwise en-US. Resolved in main for the same reason as resolvedLanguage.
    */
   formatLocale: string;
+  /**
+   * "Start with Windows": whether Windows starts the app in the tray at sign-in.
+   * The same `settings.autostart` the tray menu's checkbox reads, so the
+   * settings screen and the menu are two views of one value. Re-sanitised on
+   * the way out of main; anything that is not a boolean reaches the renderer as
+   * the default, `true`.
+   */
+  autostart: boolean;
 }
 
 /**
@@ -1485,6 +1501,8 @@ export interface UsageNotchApi {
   setTheme(theme: ThemeChoice): Promise<{ ok: boolean }>;
   /** Persist the language choice. See IPC.SET_LANGUAGE. */
   setLanguage(language: LanguageChoice): Promise<{ ok: boolean }>;
+  /** Persist "start with Windows". See IPC.SET_AUTOSTART. */
+  setAutostart(enabled: boolean): Promise<{ ok: boolean }>;
   /**
    * Persist the plan the user says they are on for ONE tool, or clear it. See
    * IPC.SET_PLAN_LABEL and `ProviderSnapshot.planLabel`.

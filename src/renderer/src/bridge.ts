@@ -94,6 +94,12 @@ export interface Bridge {
    */
   setLanguage(language: LanguageChoice): Promise<boolean>;
   /**
+   * Persist "start with Windows" (IPC.SET_AUTOSTART). Same all-or-nothing
+   * promise as setTheme: `false` means main wrote NOTHING, so the caller puts
+   * the switch back where it was.
+   */
+  setAutostart(enabled: boolean): Promise<boolean>;
+  /**
    * ADR-003 A8 (Phase B): ask main to open the key-entry window for a provider
    * (IPC `keys:request-entry`). Write-only, like every key channel: the answer
    * is only whether main accepted the request, never anything about a key.
@@ -140,6 +146,7 @@ function nullBridge(): Bridge {
     onPreferences: () => () => {},
     setTheme: async () => false,
     setLanguage: async () => false,
+    setAutostart: async () => false,
     requestKeyEntry: async () => false,
     removeKey: async () => false,
     openTokenPage: async () => false,
@@ -410,6 +417,20 @@ export function createBridge(): Bridge {
       }
       try {
         const result = await api.setLanguage(language);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** Mirrors setTheme: any failure is a real instruction to revert. */
+    async setAutostart(enabled: boolean): Promise<boolean> {
+      if (typeof api.setAutostart !== 'function') {
+        missing('setAutostart');
+        return false;
+      }
+      try {
+        const result = await api.setAutostart(enabled);
         return !!result && result.ok === true;
       } catch {
         return false;

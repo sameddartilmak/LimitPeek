@@ -1072,7 +1072,8 @@ function navigatorLanguage(): string | undefined {
  * exactly as before. The language fields are COERCED rather than refused,
  * because refusing them would also throw away a good theme and flash the other
  * palette. Coercion follows the same rule main applies, so a coerced value is
- * one main could have sent.
+ * one main could have sent. `autostart` is coerced the same way: anything that
+ * is not a boolean is the shipped default, `true`, as main's own load() says.
  */
 export function sanitizePreferences(raw: unknown): Preferences | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -1088,7 +1089,8 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   const formatLocale = isUsableLocale(source.formatLocale)
     ? source.formatLocale
     : defaultFormatLocale(resolvedLanguage);
-  return { theme, language, resolvedLanguage, formatLocale };
+  const autostart = typeof source.autostart === 'boolean' ? source.autostart : true;
+  return { theme, language, resolvedLanguage, formatLocale, autostart };
 }
 
 /** Returns null when the payload is not a usable Snapshot at all. */

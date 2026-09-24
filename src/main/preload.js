@@ -26,6 +26,7 @@ const CH = {
   PREFERENCES: 'prefs:changed',
   SET_THEME: 'prefs:set-theme',
   SET_LANGUAGE: 'prefs:set-language',
+  SET_AUTOSTART: 'prefs:set-autostart',
   SET_PLAN_LABEL: 'prefs:set-plan-label',
   INITIAL_SNAPSHOT: 'usage:initial-snapshot',
   INITIAL_PREFERENCES: 'prefs:initial',
@@ -187,6 +188,21 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   setLanguage: (language) => ipcRenderer.invoke(CH.SET_LANGUAGE, String(language)),
+
+  /**
+   * Persists "start with Windows".
+   *
+   * Passed as `enabled === true`, the way `setEnabled` passes its flag, so a
+   * stray value cannot reach main as something it has to guess about; main
+   * checks `typeof 'boolean'` again rather than trusting it.
+   *
+   * `{ok:false}` means nothing changed anywhere and the renderer must revert
+   * its switch.
+   *
+   * @param {boolean} enabled
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setAutostart: (enabled) => ipcRenderer.invoke(CH.SET_AUTOSTART, enabled === true),
 
   /**
    * Persists the plan the user says they are on for ONE tool, or clears it.
