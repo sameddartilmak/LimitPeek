@@ -434,9 +434,16 @@ function registerIpc() {
     }
     const provider = getProvider(providerId);
 
-    // The four passive providers: never throws, never writes anything.
+    // A tool that is not on this machine: nothing to set up, and it IS
+    // supported, so the answer says so instead of "not supported". Never
+    // throws, never writes anything.
     if (provider.setupAction.kind === 'not-installed') {
-      return { ok: false, message: i18n.t('provider.notSupportedYet', { provider: provider.displayName }) };
+      return { ok: false, message: i18n.t('provider.notInstalledHint', { provider: provider.displayName }) };
+    }
+    // A key-sourced row: the renderer opens the key window itself
+    // (requestKeyEntry). Reaching here means an older renderer; nothing runs.
+    if (provider.setupAction.kind === 'add-api-key') {
+      return { ok: false, message: provider.setupAction.detail };
     }
 
     if (provider.id === 'claude') {

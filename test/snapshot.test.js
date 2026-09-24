@@ -288,7 +288,9 @@ test.describe('provider registry shape', () => {
       assert.equal(p.sevenDay, null);
       assert.equal(p.tokens, null);
       assert.equal(p.burnRatePerHour, null);
-      assert.equal(p.setupAction.kind, 'not-installed');
+      // Copilot's source is a key the user adds, so its "Add" opens the key
+      // window ('add-api-key'); the other two are simply not on this machine.
+      assert.equal(p.setupAction.kind, p.id === 'copilot' ? 'add-api-key' : 'not-installed', p.id);
       assert.equal(p.planLabel, null);
     }
   });
