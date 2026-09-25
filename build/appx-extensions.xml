@@ -1,0 +1,3 @@
+        <desktop:Extension Category="windows.startupTask" Executable="app\Usage Notch.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="UsageNotchStartup" Enabled="true" DisplayName="Usage Notch" />
+        </desktop:Extension>

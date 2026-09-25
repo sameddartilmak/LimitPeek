@@ -196,6 +196,7 @@
   "settings.language.helpSystem": "Windows dili izleniyor — şu anda {language}.",
   "settings.autostart.label": "Windows açılışında başlat",
   "settings.autostart.help": "Bilgisayar açıldığında Usage Notch tepside başlar.",
+  "settings.autostart.byWindows": "Microsoft Store sürümünde bunu Windows yönetir: Ayarlar → Uygulamalar → Başlangıç.",
   "settings.plan.label": "Bulunduğunuz plan",
   "settings.plan.placeholder": "Belirtilmedi",
   "settings.plan.hint": "Kendi notunuz; bunu araçtan okuyamıyoruz.",

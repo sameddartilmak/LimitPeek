@@ -12,6 +12,7 @@ const { installAgy, isAgyInstalled } = require('../core/antigravity/cli-install'
 const { claudeSettingsPath, antigravitySettingsPath } = require('../core/paths');
 const messages = require('../core/setup/messages');
 const log = require('../core/log');
+const { isStoreBuild, bridgeDirFor } = require('./packaging');
 const { t } = require('../core/i18n');
 
 /**
@@ -21,7 +22,9 @@ const { t } = require('../core/i18n');
  * Why the copy: when packaged, `bridge/claude-statusline.mjs` lives inside
  * `app.asar`, which `node` cannot execute. A copy under userData is a real
  * file on disk in both dev and packaged builds, and it stays valid if the app
- * directory later moves.
+ * directory later moves. A Microsoft Store build keeps it under the home
+ * directory instead, because MSIX redirects a fresh userData into a private
+ * folder Claude Code cannot see (packaging.js).
  */
 const BRIDGE_SCRIPTS = {
   claude: 'claude-statusline.mjs',
@@ -33,7 +36,7 @@ function bridgeSourcePath(script = BRIDGE_SCRIPTS.claude) {
 }
 
 function bridgeInstallPath(script = BRIDGE_SCRIPTS.claude) {
-  return path.join(app.getPath('userData'), 'bridge', script);
+  return path.join(bridgeDirFor({ store: isStoreBuild(), userData: app.getPath('userData') }), script);
 }
 
 /**

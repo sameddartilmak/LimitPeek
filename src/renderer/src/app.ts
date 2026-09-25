@@ -85,6 +85,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     theme: theme.choice(),
     language: initialPrefs?.language ?? 'system',
     autostart: initialPrefs?.autostart ?? true,
+    autostartByWindows: initialPrefs?.autostartByWindows ?? false,
   });
   disposers.push(() => theme.destroy());
   let closing = false;
@@ -597,6 +598,9 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    * the reason acceptPreferences gives for the theme.
    */
   function acceptAutostart(prefs: Preferences): void {
+    if (prefs.autostartByWindows !== store.get().autostartByWindows) {
+      store.set({ autostartByWindows: prefs.autostartByWindows });
+    }
     confirmedAutostart = prefs.autostart;
     if (autostartRequest !== null) return;
     if (prefs.autostart !== store.get().autostart) store.set({ autostart: prefs.autostart });

@@ -1402,6 +1402,14 @@ export interface Preferences {
    * the default, `true`.
    */
   autostart: boolean;
+  /**
+   * True in a Microsoft Store (MSIX) package. Windows owns start-at-sign-in
+   * there (a manifest StartupTask, switched in Settings → Apps → Startup), so
+   * the settings screen shows a sentence instead of the switch and the tray
+   * menu has no checkbox. `autostart` is then not applied by main. Anything
+   * that is not `true` reaches the renderer as `false`.
+   */
+  autostartByWindows: boolean;
 }
 
 /**

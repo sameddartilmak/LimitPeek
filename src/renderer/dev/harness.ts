@@ -59,6 +59,7 @@ let prefs: Preferences = {
   resolvedLanguage: 'tr',
   formatLocale: 'tr-TR',
   autostart: true,
+  autostartByWindows: false,
 };
 let prefsCb: ((p: Preferences) => void) | null = null;
 

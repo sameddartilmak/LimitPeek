@@ -717,6 +717,9 @@ function createAutostartControl(ctx: SettingsContext): AutostartHandleLocal {
   });
 
   function update(state: PanelState): void {
+    // A Store package: Windows owns the setting, so the row only says where.
+    control.hidden = state.autostartByWindows;
+    setText(hint, t(state.autostartByWindows ? 'settings.autostart.byWindows' : 'settings.autostart.help'));
     setAttr(control, 'aria-checked', state.autostart ? 'true' : 'false');
     setAttr(root, 'data-enabled', state.autostart ? 'true' : 'false');
     // In flight, and refused: the provider switch's two attributes, so the

@@ -144,6 +144,8 @@ export interface PanelState {
   autostartPending: boolean;
   /** Set briefly when main refused the change and the switch went back. */
   autostartReverted: boolean;
+  /** A Store package: Windows owns the setting, so there is no switch. */
+  autostartByWindows: boolean;
 }
 
 const INITIAL: PanelState = {
@@ -174,6 +176,7 @@ const INITIAL: PanelState = {
   autostart: true,
   autostartPending: false,
   autostartReverted: false,
+  autostartByWindows: false,
 };
 
 type Listener = (state: PanelState) => void;

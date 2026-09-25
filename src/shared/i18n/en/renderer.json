@@ -217,6 +217,7 @@
   "settings.language.helpSystem": "Following the Windows language — currently {language}.",
   "settings.autostart.label": "Start with Windows",
   "settings.autostart.help": "Usage Notch starts in the tray when you sign in.",
+  "settings.autostart.byWindows": "In the Microsoft Store version, Windows manages this: Settings → Apps → Startup.",
   "settings.plan.label": "Plan you are on",
   "settings.plan.placeholder": "Not set",
   "settings.plan.hint": "Your own note; we cannot read it from the tool.",

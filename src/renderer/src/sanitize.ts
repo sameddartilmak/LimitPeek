@@ -1090,7 +1090,8 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
     ? source.formatLocale
     : defaultFormatLocale(resolvedLanguage);
   const autostart = typeof source.autostart === 'boolean' ? source.autostart : true;
-  return { theme, language, resolvedLanguage, formatLocale, autostart };
+  const autostartByWindows = source.autostartByWindows === true;
+  return { theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows };
 }
 
 /** Returns null when the payload is not a usable Snapshot at all. */

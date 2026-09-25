@@ -1,4 +1,5 @@
 'use strict';
+const fs = require('node:fs');
 const path = require('node:path');
 const { app, ipcMain, dialog, nativeTheme } = require('electron');
 
@@ -34,8 +35,10 @@ const {
   runClaudeSetup,
   runAntigravitySetup,
   materialiseBridge,
+  bridgeInstallPath,
   BRIDGE_SCRIPTS,
 } = require('./bridge-install');
+const { isStoreBuild } = require('./packaging');
 
 // Must run before `ready`: some of it is command-line switches.
 security.applyAll();
@@ -142,6 +145,7 @@ const preferences = createPreferences({
   // osLocale(): which Electron APIs report the OS language, and which one is
   // deliberately not used, is documented where it is measured (language-ipc.js).
   readOs: () => osLocale(app),
+  storeBuild: () => isStoreBuild(),
 });
 
 // Re-resolves the language and hands it to main's t(), so the tray, the dialogs
@@ -526,6 +530,9 @@ function applyAutostart(enabled) {
     log.info(`autostart ${enabled ? 'requested' : 'disabled'}; skipped in a dev run`);
     return;
   }
+  // A Store package's Run entry would be redirected into the package and never
+  // read; its StartupTask is Windows' to switch (packaging.js).
+  if (isStoreBuild()) return;
   try {
     app.setLoginItemSettings({
       openAtLogin: Boolean(enabled),
@@ -546,6 +553,7 @@ function applyAutostart(enabled) {
 function trayMenuOptions() {
   return {
     autostart: settings.autostart,
+    autostartByWindows: isStoreBuild(),
     onToggleAutostart: (checked) => {
       settings.autostart = Boolean(checked);
       settingsStore.save(userDataDir(), settings);
@@ -595,7 +603,11 @@ function bootstrap() {
   // skipping it would leave a wired user's script frozen at whatever version
   // was current the day they pressed the button. It writes only inside this
   // app's own userData, so it wires nothing and creates nothing in ~/.gemini.
-  for (const script of Object.values(BRIDGE_SCRIPTS)) {
+  //
+  // A Store build keeps the bridge under the home directory, which is not this
+  // app's own folder: there it is refreshed only once a setup has created it.
+  const bridgeWired = !isStoreBuild() || fs.existsSync(path.dirname(bridgeInstallPath()));
+  for (const script of bridgeWired ? Object.values(BRIDGE_SCRIPTS) : []) {
     if (!materialiseBridge(script)) log.warn(`bridge could not be refreshed on this launch: ${script}`);
   }
 

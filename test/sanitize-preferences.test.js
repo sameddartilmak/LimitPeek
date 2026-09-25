@@ -41,7 +41,7 @@ function withNavigatorLanguage(tag, body) {
   }
 }
 
-const GOOD = { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true };
+const GOOD = { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false };
 
 test.describe('sanitizePreferences: the language fields', () => {
   test('a well-formed payload passes through unchanged', () => {
