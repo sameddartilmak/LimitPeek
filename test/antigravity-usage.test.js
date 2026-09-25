@@ -476,3 +476,45 @@ test.describe('the collector reads Antigravity usage off the main thread', () =>
     assert.equal(r.weeklyCost.byModel[0].pricedAs, 'gemini-3.8-flash');
   });
 });
+
+test.describe('Antigravity joins the Settings usage history (Toplam Kullanım)', () => {
+  const history = require('../src/core/history');
+  const agCostMod = require('../src/core/antigravity/cost');
+  const events = [
+    { ts: NOW - HOUR, model: 'gemini-3.8-flash', input: 11675, cacheWrite: 0, cacheRead: 0, output: 169, longPrompt: false },
+    { ts: NOW - 40 * DAY, model: 'claude-opus-4-6-thinking', input: 1000, cacheWrite: 0, cacheRead: 0, output: 2000, longPrompt: false },
+    { ts: NOW - 2 * HOUR, model: 'unknown', input: 100, cacheWrite: 0, cacheRead: 0, output: 1, longPrompt: false },
+  ];
+
+  test('each period carries its own Antigravity cost, tokens and models, with the price date named', () => {
+    const out = history.usageHistory([], NOW, { antigravityEvents: events });
+    assert.deepEqual(out.usageProviders, ['antigravity']);
+    assert.equal(out.pricesAsOfByProvider.antigravity, agCostMod.PRICES_AS_OF);
+    const month = out.months[0];
+    const expected = antigravityCost(events, history.monthStartMs(NOW), NOW + DAY, false);
+    assert.equal(month.costUsd, expected.totalUsd);
+    assert.ok(month.costUsd > 0);
+    assert.equal(month.tokensByProvider.antigravity.input, 11775);
+    assert.deepEqual(month.unpricedModels, ['unknown']);
+    assert.equal(month.isFloor, true, 'an unpriced model makes the figure a floor, never a silent $0');
+    assert.deepEqual(out.floorCausesByProvider.antigravity, ['unpriced']);
+    const models = month.byModel.filter((m) => m.provider === 'antigravity').map((m) => m.model).sort();
+    assert.deepEqual(models, ['gemini-3.8-flash', 'unknown']);
+    // The Opus call 40 days back lands in an older month, priced as Opus 4.6.
+    const older = out.months.find((m) => m.byModel.some((e) => e.model === 'claude-opus-4-6-thinking'));
+    assert.ok(older && older.costUsd > 0 && older.key !== month.key);
+  });
+
+  test('the snapshot passes the scanned events and their unread ranges through', () => {
+    _resetHistoryMemoForTests();
+    const snap = buildSnapshot({
+      now: NOW, events: [], scanOk: true,
+      antigravityUsage: { installed: true, events, readFailed: false, resultAtMs: NOW, unreadRange: { fromMs: NOW - DAY, throughMs: NOW - DAY } },
+    });
+    assert.ok(snap.usageHistory.usageProviders.includes('antigravity'));
+    assert.ok(snap.usageHistory.incompleteProviders.includes('antigravity'));
+    _resetHistoryMemoForTests();
+    const none = buildSnapshot({ now: NOW, events: [], scanOk: true, antigravityUsage: { installed: false, events: null } });
+    assert.equal(none.usageHistory.usageProviders.includes('antigravity'), false);
+  });
+});
