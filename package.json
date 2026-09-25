@@ -16,7 +16,8 @@
     "audit:needed": "node scripts/audit-needed.js",
     "typecheck": "tsc -p src/renderer/tsconfig.json --noEmit",
     "dist:dir": "npm run typecheck && npm run build && node scripts/write-build-info.js && electron-builder --win --dir --publish never",
-    "dist": "npm run typecheck && npm run build && node scripts/write-build-info.js && electron-builder --win nsis --publish never"
+    "dist": "npm run typecheck && npm run build && node scripts/write-build-info.js && electron-builder --win nsis --publish never",
+    "store:assets": "electron scripts/make-store-assets.js"
   },
   "devDependencies": {
     "electron": "44.2.0",
