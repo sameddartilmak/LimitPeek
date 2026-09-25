@@ -635,6 +635,7 @@ let mode = 'hover';
 /** Every key-channel ask the panel made (ADR-003 A8). Ids only: no key ever
  *  crosses this boundary in either direction. */
 const keyCalls = { requestKeyEntry: [], removeKey: [], openTokenPage: [], refreshKey: [] };
+const disconnectCalls = [];
 
 /** Geometry good enough to place the panel inside the 420x700 test window. */
 function anchorPayload(mode, anchorSource) {
@@ -776,6 +777,10 @@ contextBridge.exposeInMainWorld('usageNotch', {
   refreshKey: async (id) => {
     keyCalls.refreshKey.push(id);
     return { ok: true };
+  },
+  disconnectProvider: async (id) => {
+    disconnectCalls.push(id);
+    return { ok: true, message: 'Claude Code bağlantısı kaldırıldı.' };
   },
   /**
    * A real TOGGLE, as main is. Pressing while pinned unpins and pushes
@@ -968,6 +973,14 @@ contextBridge.exposeInMainWorld('__probe', {
   /** What the panel asked of the key channels, so a check can prove a control
    *  actually reached main rather than only looking pressed. */
   keyCalls: () => JSON.parse(JSON.stringify(keyCalls)),
+  disconnectCalls: () => disconnectCalls.slice(),
+  /** ProviderSnapshot.hookInstalled for one row, pushed as main would. */
+  setHookDirect: (id, installed) => {
+    snapshot.providers = snapshot.providers.map((p) => (p.id === id ? { ...p, hookInstalled: installed } : p));
+    snapshot.generatedAt = new Date().toISOString();
+    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
+    return true;
+  },
   /** Set `usageHistory.incompleteProviders` (ADR-002 A3.20), and push. */
   setHistoryIncompleteDirect: (ids) => {
     snapshot.usageHistory = { ...snapshot.usageHistory, incompleteProviders: Array.isArray(ids) ? ids.slice() : [] };

@@ -125,6 +125,11 @@ export interface SettingsContext {
    */
   onRemoveKey(providerId: string): void;
   /**
+   * Take our statusLine hook out of this tool's settings (Claude Code, agy).
+   * Main asks natively before it writes anything.
+   */
+  onDisconnect(providerId: string): void;
+  /**
    * The user told us which plan they are on, or picked "Belirtilmedi" (the
    * empty string) to clear it.
    * Persist-then-apply: the app writes through main and puts the control back
@@ -338,6 +343,17 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
   });
   on(keyToken, 'click', () => ctx.onOpenTokenPage(provider.id));
 
+  // The way back from the setup's hook, offered only while main reports the
+  // hook is in the tool's settings (ProviderSnapshot.hookInstalled). Main
+  // raises the confirmation, so one button is enough here.
+  const disconnect = el(
+    'button',
+    { type: 'button', class: 'settings__disconnect' },
+    t('settings.disconnect'),
+  ) as HTMLButtonElement;
+  disconnect.hidden = true;
+  on(disconnect, 'click', () => ctx.onDisconnect(provider.id));
+
   /**
    * Committed on `change`: one write per choice, the empty value clearing it.
    * Main still sanitises what arrives (it cannot tell a select from a file
@@ -379,7 +395,7 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     'li',
     { class: 'settings__item', role: 'listitem', 'data-provider': provider.id },
     mark,
-    el('span', { class: 'settings__text' }, title, meta, keyBlock),
+    el('span', { class: 'settings__text' }, title, meta, disconnect, keyBlock),
     control,
     // AFTER the switch, deliberately, and this is a keyboard decision rather
     // than a layout one. The switch decides whether the tool appears at all;
@@ -445,6 +461,8 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     setAttr(root, 'data-enabled', isEnabled ? 'true' : 'false');
     setAttr(root, 'data-connected', next.connected ? 'true' : 'false');
     root.style.setProperty('--accent', next.accent);
+    disconnect.hidden = next.hookInstalled !== true;
+    setAttr(disconnect, 'aria-label', t('settings.disconnectLabel', { provider: next.displayName }));
 
     // In flight. The switch stays operable — a control that goes dead under
     // the pointer for one round trip is worse than one that accepts a second

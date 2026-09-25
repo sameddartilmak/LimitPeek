@@ -56,6 +56,8 @@ const TOAST_MS = 8000;
 export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow'> {
   /** ADR-003 A8: the user asked to remove the LOCAL copy of a provider's key. */
   onRemoveKey(providerId: string): void;
+  /** Take our statusLine hook out of a tool's settings. */
+  onDisconnect(providerId: string): void;
   /** The user stated the plan they are on for this tool, or cleared it. */
   onPlanLabel(providerId: string, label: string): void;
   onPinToggle(pinned: boolean): void;
@@ -158,6 +160,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   const settings: SettingsHandle = createSettings({
     onToggle: (id, enabled) => ctx.onToggleProvider(id, enabled),
     onRemoveKey: (id) => ctx.onRemoveKey(id),
+    onDisconnect: (id) => ctx.onDisconnect(id),
     onPlanLabel: (id, label) => ctx.onPlanLabel(id, label),
     onOpenTokenPage: (id) => ctx.onOpenTokenPage(id),
     onTheme: (theme) => ctx.onThemeChange(theme),

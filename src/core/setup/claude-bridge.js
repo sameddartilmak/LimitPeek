@@ -238,4 +238,111 @@ function statusLineState(settingsPath) {
   return 'foreign';
 }
 
-module.exports = { installClaudeStatusLine, statusLineState, statusLineEntry, backupName, chainFileFor, CHAIN_FILE_NAME };
+/** The bridge path inside our own statusLine command, or null. */
+function bridgePathFromCommand(cmd) {
+  const m = typeof cmd === 'string' ? /"([^"]*claude-statusline\.mjs)"/.exec(cmd) : null;
+  return m ? m[1] : null;
+}
+
+/**
+ * The way back: takes our statusLine out of Claude Code's settings.
+ *
+ * Only a statusLine that is OURS is touched. If the setup kept the user's own
+ * line (CHAIN_FILE beside the bridge), that entry is put back exactly as it
+ * was; otherwise the key is removed and Claude Code shows no status line, as
+ * before Usage Notch. A timestamped backup first, tmp+rename, and the same
+ * moved-under-us check as the install. The kept file is deleted only after
+ * the settings write succeeded, so a failure leaves nothing lost.
+ *
+ * @param {{settingsPath?:string, chainFile?:string, now?:number}} [opts]
+ * @returns {{ok:boolean, code:string, message:string}}
+ */
+function removeClaudeStatusLine(opts = {}) {
+  const now = opts.now ?? Date.now();
+  const settingsFile = opts.settingsPath || claudeSettingsPath();
+
+  let original;
+  let readStamp;
+  try {
+    original = fs.readFileSync(settingsFile, 'utf8');
+    const st = fs.statSync(settingsFile);
+    readStamp = { size: st.size, mtimeMs: st.mtimeMs };
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return { ok: true, code: 'ALREADY_ABSENT', message: t('setup.alreadyAbsent') };
+    return { ok: false, code: 'SETTINGS_UNREADABLE', message: t('setup.settingsUnreadableShort', { tool: 'Claude Code' }) };
+  }
+  let settings;
+  try {
+    settings = JSON.parse(original);
+  } catch {
+    return { ok: false, code: 'SETTINGS_INVALID', message: t('setup.settingsInvalidJsonShort', { tool: 'Claude Code' }) };
+  }
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return { ok: false, code: 'SETTINGS_INVALID', message: t('setup.settingsUnexpected', { tool: 'Claude Code' }) };
+  }
+  if (settings.statusLine == null) return { ok: true, code: 'ALREADY_ABSENT', message: t('setup.alreadyAbsent') };
+  const cmd = settings.statusLine.command;
+  if (typeof cmd !== 'string' || !cmd.includes('claude-statusline.mjs')) {
+    return { ok: false, code: 'STATUSLINE_FOREIGN', message: t('setup.statusLineForeign') };
+  }
+
+  const bridgePath = bridgePathFromCommand(cmd);
+  const chainFile = opts.chainFile || (bridgePath ? chainFileFor(bridgePath) : null);
+  let kept = null;
+  if (chainFile) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(chainFile, 'utf8'));
+      const line = parsed && parsed.statusLine;
+      if (line && typeof line === 'object' && !Array.isArray(line)) kept = line;
+    } catch { /* no kept line: the key is removed */ }
+  }
+
+  const backupFile = backupName(settingsFile, now);
+  try {
+    fs.writeFileSync(backupFile, original, { encoding: 'utf8', flag: 'wx' });
+  } catch {
+    return { ok: false, code: 'BACKUP_FAILED', message: t('setup.backupFailed') };
+  }
+  const discardBackup = () => { try { fs.unlinkSync(backupFile); } catch { /* best effort */ } };
+
+  if (kept) settings.statusLine = kept;
+  else delete settings.statusLine;
+
+  const tmp = `${settingsFile}.${process.pid}.usagenotch.tmp`;
+  try {
+    const now2 = fs.statSync(settingsFile);
+    if (now2.size !== readStamp.size || now2.mtimeMs !== readStamp.mtimeMs) {
+      discardBackup();
+      return { ok: false, code: 'SETTINGS_CHANGED', message: t('setup.changedDuringWrite') };
+    }
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeFileSync(fd, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, settingsFile);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch { /* best effort */ }
+    discardBackup();
+    log.warn(`claude statusline removal failed: code=${(err && err.code) || 'UNKNOWN'}`);
+    return { ok: false, code: 'WRITE_FAILED', message: t('setup.writeFailed') };
+  }
+  if (kept) {
+    try { fs.unlinkSync(chainFile); } catch { /* the line is restored; a stale copy is harmless */ }
+    return { ok: true, code: 'RESTORED', message: t('setup.claude.restored') };
+  }
+  return { ok: true, code: 'REMOVED', message: t('setup.claude.removed') };
+}
+
+module.exports = {
+  installClaudeStatusLine,
+  removeClaudeStatusLine,
+  statusLineState,
+  statusLineEntry,
+  backupName,
+  chainFileFor,
+  bridgePathFromCommand,
+  CHAIN_FILE_NAME,
+};

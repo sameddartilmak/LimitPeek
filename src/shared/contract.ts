@@ -1140,6 +1140,12 @@ export interface ProviderSnapshot {
    * Snapshot.generatedAt when this is absent.
    */
   lastGoodAt?: string | null;
+  /**
+   * Claude Code and Antigravity only: our statusLine hook is in that tool's
+   * settings right now, so the settings screen offers to disconnect it.
+   * Absent on every other row, and read as false.
+   */
+  hookInstalled?: boolean;
 }
 
 /**
@@ -1332,6 +1338,14 @@ export const IPC = {
    * Retry-After wait. Returns `{ok}`, and the figure arrives in the snapshot.
    */
   KEY_REFRESH: 'keys:refresh',
+  /**
+   * renderer -> main invoke(providerId): take our statusLine hook out of the
+   * tool's settings (Claude Code, agy), putting the user's own line back when
+   * the setup kept one. Main asks natively first; a declined dialog changes
+   * nothing. Returns { ok, message }; the row's `hookInstalled` follows on the
+   * next snapshot.
+   */
+  DISCONNECT_PROVIDER: 'provider:disconnect',
 } as const;
 
 /**
@@ -1543,6 +1557,8 @@ export interface UsageNotchApi {
   openTokenPage(providerId: string): Promise<{ ok: boolean }>;
   /** Read the credit figure early, if the schedule allows. See IPC.KEY_REFRESH. */
   refreshKey(providerId: string): Promise<{ ok: boolean }>;
+  /** Remove our statusLine hook from a tool's settings. See IPC.DISCONNECT_PROVIDER. */
+  disconnectProvider(providerId: string): Promise<{ ok: boolean; message: string }>;
   /** Tell main the panel opened, so it can raise its refresh cadence. */
   panelOpened(): void;
   close(): void;

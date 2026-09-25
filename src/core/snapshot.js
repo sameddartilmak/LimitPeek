@@ -102,6 +102,17 @@ function boundCost(cost) {
   return cost;
 }
 
+/**
+ * `hookInstalled` on the two rows whose setup writes a statusLine hook into
+ * another tool's settings, when main says (input.hooks); absent otherwise.
+ */
+function withHooks(providers, hooks) {
+  if (!hooks || typeof hooks !== 'object') return providers;
+  return providers.map((p) => (p.id === 'claude' || p.id === 'antigravity'
+    ? { ...p, hookInstalled: hooks[p.id] === true }
+    : p));
+}
+
 /** Test seam: forget the memoised history. */
 function _resetHistoryMemoForTests() {
   historyMemo = null;
@@ -1120,7 +1131,7 @@ function buildSnapshot(input) {
 
   return {
     generatedAt: new Date(now).toISOString(),
-    providers: applyOrder(providers, input.order),
+    providers: applyOrder(withHooks(providers, input.hooks), input.order),
     // Week/month notional cost from the SAME deduped local corpus every other
     // figure uses — so the 115.3% resume-replay inflation cannot land on the
     // history any more than it can on the weekly total. Codex joins it from the

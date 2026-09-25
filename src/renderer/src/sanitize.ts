@@ -939,6 +939,7 @@ function provider(raw: unknown): ProviderSnapshot | null {
     setupAction: setupAction(source.setupAction),
     errorCode: text(source.errorCode, 48) ?? undefined,
     lastGoodAt: isoInstant(source.lastGoodAt),
+    hookInstalled: source.hookInstalled === true ? true : undefined,
   };
 }
 

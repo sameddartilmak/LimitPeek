@@ -146,6 +146,11 @@ function makeBridge(scenario: Scenario): Bridge {
       return { ok: true, message: 'Köprü kuruldu. İlk ölçüm birkaç saniye içinde gelecek.' };
     },
 
+    async disconnectProvider(providerId: string): Promise<SetupResult> {
+      log(`disconnectProvider("${providerId}")`);
+      return { ok: true, message: 'Claude Code bağlantısı kaldırıldı.' };
+    },
+
     /**
      * Mirrors what main promises: persist the order, then re-emit an ordered
      * snapshot. `failOrder` lets the harness exercise the revert path, which

@@ -197,6 +197,8 @@
   "settings.autostart.label": "Windows açılışında başlat",
   "settings.autostart.help": "Bilgisayar açıldığında Usage Notch tepside başlar.",
   "settings.autostart.byWindows": "Microsoft Store sürümünde bunu Windows yönetir: Ayarlar → Uygulamalar → Başlangıç.",
+  "settings.disconnect": "Bağlantıyı kaldır",
+  "settings.disconnectLabel": "{provider}: bağlantıyı kaldır",
   "settings.plan.label": "Bulunduğunuz plan",
   "settings.plan.placeholder": "Belirtilmedi",
   "settings.plan.hint": "Kendi notunuz; bunu araçtan okuyamıyoruz.",

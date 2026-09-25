@@ -247,6 +247,9 @@ class Collector extends EventEmitter {
      * service necessarily does.
      */
     this.keysInput = typeof options.keysInput === 'function' ? options.keysInput : () => null;
+    // Whether our statusLine hook is in Claude Code's / agy's settings; read on
+    // every build so the settings screen can offer "Bağlantıyı kaldır".
+    this.hooksInput = typeof options.hooksInput === 'function' ? options.hooksInput : () => null;
     /** A watcher event arrived while the panel was closed. */
     this._missedChange = false;
     this._watchers = [];
@@ -437,6 +440,7 @@ class Collector extends EventEmitter {
       order: this.order,
       enabled: this.enabled,
       keys: this.keysInput(),
+      hooks: this.hooksInput(),
     });
     this.emit('snapshot', this.snapshot);
     return this.snapshot;
