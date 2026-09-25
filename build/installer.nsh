@@ -116,6 +116,15 @@
 ; generated `isUpdated` macro clobbers via ${StdUtils.TestParameter}.
 !macro customUnInstall
   ${ifNot} ${isUpdated}
+    ; Take our statusLine hooks out of Claude Code's and agy's settings (the
+    ; user's own line comes back if the setup kept one), while the app's files
+    ; are still here to do it. Bounded: a hung run must not hold the uninstall.
+    ; An update skips this, so a reinstall keeps the user connected.
+    ${if} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+      nsExec::ExecToLog /TIMEOUT=15000 '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --cleanup-integrations'
+      Pop $0
+    ${endIf}
+
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "electron.app.Usage Notch"
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "electron.app.Usage Notch"
 

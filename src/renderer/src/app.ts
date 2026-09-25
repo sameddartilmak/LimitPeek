@@ -119,6 +119,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       });
     },
     onOpenTokenPage: (providerId) => void bridge.openTokenPage(providerId),
+    onDisconnect: (providerId) => void disconnectProvider(providerId),
     onRefreshKey: (providerId) => bridge.refreshKey(providerId),
     onRefresh: () => void runRefresh(null),
     onPinToggle: () => {
@@ -738,6 +739,22 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
         const snapshot = await bridge.requestRefresh();
         if (snapshot) acceptSnapshot(snapshot);
       }
+    } finally {
+      store.markBusy(providerId, false);
+    }
+  }
+
+  /** Same busy guard and notice as runSetup; main raises the confirmation. */
+  async function disconnectProvider(providerId: string): Promise<void> {
+    if (store.get().busy.includes(providerId)) return;
+    store.markBusy(providerId, true);
+    store.set({ notice: null });
+    try {
+      const result = await bridge.disconnectProvider(providerId);
+      const message = trimMessage(result.message);
+      if (message) store.set({ notice: message });
+      const snapshot = await bridge.requestRefresh();
+      if (snapshot) acceptSnapshot(snapshot);
     } finally {
       store.markBusy(providerId, false);
     }

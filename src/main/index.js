@@ -36,12 +36,24 @@ const {
   runAntigravitySetup,
   materialiseBridge,
   bridgeInstallPath,
+  runDisconnect,
+  hookInstalled,
+  cleanupIntegrations,
   BRIDGE_SCRIPTS,
 } = require('./bridge-install');
 const { isStoreBuild } = require('./packaging');
 
 // Must run before `ready`: some of it is command-line switches.
 security.applyAll();
+
+// Uninstall (build/installer.nsh): take our hooks out of Claude Code's and
+// agy's settings, putting the user's own status line back, then exit. Before
+// the single-instance lock: the uninstaller has already closed the app.
+if (process.argv.includes('--cleanup-integrations')) {
+  cleanupIntegrations();
+  app.exit(0);
+  return;
+}
 
 // A second instance would fight over the tray icon and the store file.
 if (!app.requestSingleInstanceLock()) {
@@ -518,6 +530,23 @@ function registerIpc() {
 
     return { ok: false, message: i18n.t('ipc.actionUnsupported') };
   });
+
+  // The way back from RUN_SETUP for the two hook-writing rows. Pinned only on
+  // the path that raises the native confirmation, as RUN_SETUP is.
+  ipcMain.handle(IPC.DISCONNECT_PROVIDER, async (event, providerId) => {
+    if (!fromPanel(event)) return { ok: false, message: i18n.t('ipc.invalidRequest') };
+    if (providerId !== 'claude' && providerId !== 'antigravity') {
+      return { ok: false, message: i18n.t('ipc.actionUnsupported') };
+    }
+    try {
+      const result = await runDisconnect({ providerId, parentWindow: panel.win, beforePrompt: () => openPinned() });
+      collector.rebuild();
+      return result;
+    } catch (err) {
+      log.warn(`disconnect failed: code=${(err && err.code) || 'UNKNOWN'}`);
+      return { ok: false, message: i18n.t('setup.failed') };
+    }
+  });
 }
 
 /* ------------------------------------------------------------------ boot */
@@ -649,6 +678,7 @@ function bootstrap() {
     kimiWorkerPath: path.join(__dirname, '..', 'core', 'kimi', 'scan-worker.js'),
     // Read on every build; see `Collector.keysInput`.
     keysInput: () => keys.snapshotInput(),
+    hooksInput: () => ({ claude: hookInstalled('claude'), antigravity: hookInstalled('antigravity') }),
   });
 
   collector.on('snapshot', (snapshot) => {

@@ -40,6 +40,7 @@ const IPC = {
   KEY_REMOVE: 'keys:remove',
   KEY_TOKEN_PAGE: 'keys:open-token-page',
   KEY_REFRESH: 'keys:refresh',
+  DISCONNECT_PROVIDER: 'provider:disconnect',
 };
 
 /**

@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, dialog } = require('electron');
-const { installClaudeStatusLine, statusLineState } = require('../core/setup/claude-bridge');
+const { installClaudeStatusLine, removeClaudeStatusLine, statusLineState } = require('../core/setup/claude-bridge');
 const {
   installAntigravityStatusLine,
   removeAntigravityStatusLine,
@@ -309,8 +309,74 @@ async function runAntigravityDisconnect({ confirmed }) {
   return { ok: result.ok, message: result.message };
 }
 
+const DISCONNECT = {
+  claude: { tool: 'Claude Code', state: () => statusLineState(), remove: () => removeClaudeStatusLine() },
+  antigravity: {
+    tool: 'Antigravity',
+    state: () => antigravityStatusLineState(),
+    remove: () => removeAntigravityStatusLine({ settingsPath: antigravitySettingsPath() }),
+  },
+};
+
+/**
+ * Whether our hook is in the tool's settings right now: what decides if the
+ * settings screen offers "Bağlantıyı kaldır". Read-only, and false on any
+ * doubt (unreadable or invalid settings, a line that is not ours).
+ */
+function hookInstalled(providerId) {
+  const d = DISCONNECT[providerId];
+  if (!d) return false;
+  try { return d.state() === 'ours'; } catch { return false; }
+}
+
+/**
+ * The DISCONNECT_PROVIDER implementation: behind a native confirmation, takes
+ * our line out of the tool's settings (and puts the user's own line back when
+ * the setup kept one). A declined dialog changes nothing.
+ */
+async function runDisconnect({ providerId, parentWindow, beforePrompt }) {
+  const d = DISCONNECT[providerId];
+  if (!d) return { ok: false, message: t('ipc.actionUnsupported') };
+  if (!hookInstalled(providerId)) return { ok: true, message: t('setup.alreadyAbsent') };
+  if (typeof beforePrompt === 'function') beforePrompt();
+  const choice = await dialog.showMessageBox(parentWindow || undefined, {
+    type: 'question',
+    buttons: [t('dialog.cancel'), t('dialog.disconnect.confirm')],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: t('dialog.disconnect.title', { tool: d.tool }),
+    message: t('dialog.disconnect.message', { tool: d.tool }),
+    detail: t('dialog.disconnect.detail', { tool: d.tool }),
+  });
+  if (choice.response !== 1) return { ok: false, message: t('setup.cancelled') };
+  const result = d.remove();
+  return { ok: result.ok, message: result.message };
+}
+
+/**
+ * Uninstall: the NSIS uninstaller runs the app once with
+ * `--cleanup-integrations` before it deletes the files, so no tool is left
+ * running a bridge that belongs to an app that is gone. Removing the app is the
+ * user's consent; nothing is asked. Each tool is independent and best effort.
+ */
+function cleanupIntegrations() {
+  const out = {};
+  for (const id of Object.keys(DISCONNECT)) {
+    try {
+      out[id] = hookInstalled(id) ? DISCONNECT[id].remove().code : 'NOT_OURS';
+    } catch (err) {
+      out[id] = `FAILED:${(err && err.code) || 'UNKNOWN'}`;
+    }
+  }
+  return out;
+}
+
 module.exports = {
   runClaudeSetup,
+  runDisconnect,
+  hookInstalled,
+  cleanupIntegrations,
   runAntigravitySetup,
   runAntigravityInstall,
   runAntigravityDisconnect,

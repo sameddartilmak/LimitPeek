@@ -777,6 +777,20 @@
   font-size: var(--fs-micro);
   cursor: pointer;
 }
+.settings__disconnect {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dashed var(--ink-600);
+  background: transparent;
+  color: var(--ink-300);
+  font: inherit;
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+.settings__disconnect:hover { color: var(--ink-100); }
+.settings__disconnect[hidden] { display: none !important; }
 .settings__key-token:hover,
 .settings__key-remove:hover,
 .settings__key-confirm-yes:hover,

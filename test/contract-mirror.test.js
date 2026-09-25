@@ -168,7 +168,10 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // screen, the value the tray checkbox already had. A setter; it comes back on
   // `Preferences.autostart`.
   assert.ok(declared.has('setAutostart'), 'contract.ts should declare setAutostart()');
-  assert.equal(declared.size, 21, `expected the 21 declared methods, saw ${[...declared].join(',')}`);
+  // 22 since disconnectProvider() (2026-09-25): the way back from the setup's
+  // statusLine hook. Main raises the confirmation and answers {ok, message}.
+  assert.ok(declared.has('disconnectProvider'), 'contract.ts should declare disconnectProvider()');
+  assert.equal(declared.size, 22, `expected the 22 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const STATE_THRESHOLDS = { ... } as const;`. */

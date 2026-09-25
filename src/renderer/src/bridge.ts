@@ -51,6 +51,8 @@ export interface Bridge {
    * a confirm control that showed `SetupAction.detail` first.
    */
   runSetup(providerId: string, confirmed: boolean): Promise<SetupResult>;
+  /** Remove our statusLine hook from a tool's settings (IPC.DISCONNECT_PROVIDER). */
+  disconnectProvider(providerId: string): Promise<SetupResult>;
   /**
    * Persist the user's provider order (IPC.SET_ORDER, 'providers:set-order').
    * Resolves false on any failure, including a preload that does not expose
@@ -139,6 +141,7 @@ function nullBridge(): Bridge {
     panelOpened: () => {},
     requestRefresh: async () => null,
     runSetup: async () => ({ ok: false, message: t('bridge.unreachable') }),
+    disconnectProvider: async () => ({ ok: false, message: t('bridge.unreachable') }),
     setOrder: async () => false,
     setEnabled: async () => false,
     setPlanLabel: async () => false,
@@ -274,6 +277,18 @@ export function createBridge(): Bridge {
             ok: result.ok === true,
             message: typeof result.message === 'string' ? result.message : '',
           };
+        }
+      } catch {
+        /* fall through */
+      }
+      return { ok: false, message: t('app.setupFailed') };
+    },
+
+    async disconnectProvider(providerId: string): Promise<SetupResult> {
+      try {
+        const result = await api.disconnectProvider(providerId);
+        if (result && typeof result === 'object') {
+          return { ok: result.ok === true, message: typeof result.message === 'string' ? result.message : '' };
         }
       } catch {
         /* fall through */

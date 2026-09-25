@@ -34,6 +34,7 @@ const CH = {
   KEY_REMOVE: 'keys:remove',
   KEY_TOKEN_PAGE: 'keys:open-token-page',
   KEY_REFRESH: 'keys:refresh',
+  DISCONNECT_PROVIDER: 'provider:disconnect',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -269,6 +270,8 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   refreshKey: (providerId) => ipcRenderer.invoke(CH.KEY_REFRESH, String(providerId)),
+  /** Takes our statusLine hook out of a tool's settings; main confirms natively. */
+  disconnectProvider: (providerId) => ipcRenderer.invoke(CH.DISCONNECT_PROVIDER, String(providerId)),
 
   close: () => ipcRenderer.send(CH.PANEL_CLOSE),
   pin: () => ipcRenderer.send(CH.PANEL_PIN),
