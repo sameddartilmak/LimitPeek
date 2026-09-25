@@ -103,6 +103,7 @@ const pricing = require('./pricing');
 const codexPricing = require('./codex/pricing');
 const geminiPricing = require('./gemini/pricing');
 const kimiCostMod = require('./kimi/cost');
+const antigravityCostMod = require('./antigravity/cost');
 
 /** How many of the most recent periods to surface. Bounds both the compute
  *  (one price pass over the corpus per bucket) and the list length in a narrow
@@ -116,7 +117,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LIST = 24;
 
 /** Tools whose local usage feeds the history, in the order they are listed. */
-const INCOMPLETE_ORDER = ['claude', 'codex', 'gemini', 'kimi'];
+const INCOMPLETE_ORDER = ['claude', 'codex', 'gemini', 'antigravity', 'kimi'];
 
 /**
  * `UsageHistory.floorCausesByProvider` codes, in the order they are listed.
@@ -508,7 +509,8 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   const cxCost = cxDetail.cost;
   const gmCost = geminiPricing.geminiCost(more.geminiEvents || [], startMs, endExclusiveMs, false);
   const kmCost = kimiCostMod.kimiCost(more.kimiEvents || [], startMs, endExclusiveMs, false);
-  if (!cost && !cxCost && !gmCost && !kmCost) {
+  const agCost = antigravityCostMod.antigravityCost(more.antigravityEvents || [], startMs, endExclusiveMs, false);
+  if (!cost && !cxCost && !gmCost && !kmCost && !agCost) {
     return {
       ...base,
       costUsd: 0,
@@ -548,6 +550,7 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   const isFloor = floorOf(cost) || floorOf(cxCost) || cxDetail.writeFloorEvents > 0
     || cxDetail.assumedTierEvents > 0 || cxDetail.fastRequestedEvents > 0
     || floorOf(gmCost) || Boolean(gmCost && gmCost.unrecordedCalls) || floorOf(kmCost)
+    || floorOf(agCost) || Boolean(agCost && agCost.longPromptFloorEvents > 0)
     || incomplete.size > 0;
 
   // Per-tool causes for UsageHistory.floorCausesByProvider.
@@ -574,6 +577,11 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
       if (gmCost.longPromptFloorEvents > 0) add('gemini', 'long-prompt');
       if (gmCost.toolTokenEvents > 0) add('gemini', 'tool-tokens');
     }
+    if (agCost) {
+      if (unpriced(agCost)) add('antigravity', 'unpriced');
+      if (agCost.fallbackWriteEvents > 0) add('antigravity', 'cache-write-ttl-fallback');
+      if (agCost.longPromptFloorEvents > 0) add('antigravity', 'long-prompt');
+    }
     if (kmCost) add('kimi', 'unpriced');
   }
 
@@ -581,7 +589,7 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   const byClass = emptyByClass();
   for (const k of Object.keys(byClass)) {
     byClass[k] = round((cost ? cost.byClass[k] : 0) + (cxCost ? cxCost.byClass[k] : 0)
-      + (gmCost ? gmCost.byClass[k] : 0));
+      + (gmCost ? gmCost.byClass[k] : 0) + (agCost ? agCost.byClass[k] : 0));
   }
 
   // ...and here is the same rule from the other side: one entry PER TOOL, so a
@@ -590,7 +598,7 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   // pricer returned a cost at all. Each entry folds only that tool's own rows
   // (`sumRowTokens`), so nothing here can add Claude's cacheRead to Codex's.
   const tokensByProvider = {};
-  for (const [provider, c] of [['claude', cost], ['codex', cxCost], ['gemini', gmCost], ['kimi', kmCost]]) {
+  for (const [provider, c] of [['claude', cost], ['codex', cxCost], ['gemini', gmCost], ['antigravity', agCost], ['kimi', kmCost]]) {
     if (c) tokensByProvider[provider] = sumRowTokens(c.byModel);
   }
 
@@ -624,6 +632,7 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
     ...(cost ? byModelUsageFrom(events, startMs, endExclusiveMs) : []),
     ...codexByModelFrom(cxDetail),
     ...localByModelFrom('gemini', gmCost),
+    ...localByModelFrom('antigravity', agCost),
     ...localByModelFrom('kimi', kmCost),
   ]
     // A tool with usage known unread in this period: each of its figures is a floor.
@@ -634,12 +643,14 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
     ...(cost ? cost.unpricedModels : []),
     ...(cxCost ? cxCost.unpricedModels : []),
     ...(gmCost ? gmCost.unpricedModels : []),
+    ...(agCost ? agCost.unpricedModels : []),
     ...(kmCost ? kmCost.unpricedModels : []),
   ])].sort();
 
   return {
     ...base,
-    costUsd: round((cost ? cost.totalUsd : 0) + (cxCost ? cxCost.totalUsd : 0) + (gmCost ? gmCost.totalUsd : 0)),
+    costUsd: round((cost ? cost.totalUsd : 0) + (cxCost ? cxCost.totalUsd : 0) + (gmCost ? gmCost.totalUsd : 0)
+      + (agCost ? agCost.totalUsd : 0)),
     byClass,
     // Uncapped on purpose, unlike `byModel`: this is what a per-tool subtotal
     // must be read from, because adding up a list truncated at MAX_LIST would
@@ -775,15 +786,19 @@ function usageHistory(events, now, opts) {
   const kimiList = opts && Array.isArray(opts.kimiEvents) ? opts.kimiEvents : [];
   const geminiUsed = usedIn(geminiList);
   const kimiUsed = usedIn(kimiList);
+  const antigravityList = opts && Array.isArray(opts.antigravityEvents) ? opts.antigravityEvents : [];
+  const antigravityUsed = usedIn(antigravityList);
 
   const pricesAsOfByProvider = {};
   if (claudeUsed) pricesAsOfByProvider.claude = pricing.PRICES_AS_OF;
   if (codexUsed) pricesAsOfByProvider.codex = codexPricing.PRICES_AS_OF;
   if (geminiUsed) pricesAsOfByProvider.gemini = geminiPricing.PRICES_AS_OF;
+  // Antigravity prices from two tables; the older date is the one it can stand behind.
+  if (antigravityUsed) pricesAsOfByProvider.antigravity = antigravityCostMod.PRICES_AS_OF;
   // Kimi has no price table, so it never has a date here.
   const usageProviders = INCOMPLETE_ORDER.filter((id) => (
     (id === 'claude' && claudeUsed) || (id === 'codex' && codexUsed)
-    || (id === 'gemini' && geminiUsed) || (id === 'kimi' && kimiUsed)
+    || (id === 'gemini' && geminiUsed) || (id === 'antigravity' && antigravityUsed) || (id === 'kimi' && kimiUsed)
   ));
 
   const unread = [];
@@ -807,7 +822,7 @@ function usageHistory(events, now, opts) {
   };
 
   const causes = new Map();
-  const more = { geminiEvents: geminiList, kimiEvents: kimiList, causes };
+  const more = { geminiEvents: geminiList, kimiEvents: kimiList, antigravityEvents: antigravityList, causes };
   const weeks = bucketsOf(list, firstMs, when, maxWeeks, 'week', codexList, incompleteIn, more);
   const months = bucketsOf(list, firstMs, when, maxMonths, 'month', codexList, incompleteIn, more);
   const floorCausesByProvider = {};

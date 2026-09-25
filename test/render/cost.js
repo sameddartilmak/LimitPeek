@@ -799,6 +799,16 @@ app.whenReady().then(async () => {
     keyFigure.lines.every((n) => n >= 1 && n <= 2) && keyFigure.clipped.every((v) => v === false),
     [keyFigure.lines, keyFigure.clipped]);
 
+  // 2b. a month with no usage: "0 AI kredisi" alone, no "Plan kapsamında 0 · faturalanan 0".
+  await js(`window.__probe.setKeyDirect('copilot', ${CREDITS.replace('grossCredits: 1234, includedCredits: 900, billedCredits: 334', 'grossCredits: 0, includedCredits: 0, billedCredits: 0')})`);
+  await sleep(250);
+  const keyZero = await js(readKeyRow('copilot'));
+  check('[tr] an all-zero month shows the zero once, without the 0 · 0 split',
+    keyZero.figure === 'Bu ay 0 AI kredisi kullanıldı' && keyZero.split === null && /itibarıyla/.test(keyZero.asof || ''),
+    [keyZero.figure, keyZero.split, keyZero.asof]);
+  await js(`window.__probe.setKeyDirect('copilot', ${CREDITS})`);
+  await sleep(250);
+
   // "Yenile" (2026-09-24): on the same line as the reading's time, a real
   // button, and after one press it cannot be pressed again for a while.
   const refreshInfo = await js(`(() => {

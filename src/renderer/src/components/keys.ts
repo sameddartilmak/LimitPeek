@@ -125,7 +125,9 @@ export function createKeyBlock(providerId: string, ctx: KeyBlockContext): KeyBlo
     const stale = hasFigure && keys.keyState !== 'stored';
     setAttr(root, 'data-stale', stale ? 'true' : null);
     figure.hidden = !hasFigure;
-    split.hidden = !hasFigure;
+    // "Plan kapsamında 0 · faturalanan 0" under "0 AI kredisi" repeats the zero
+    // twice more; the split only says something once either side is non-zero.
+    split.hidden = !hasFigure || (usage.includedCredits === 0 && usage.billedCredits === 0);
     asOfLine.hidden = !hasFigure;
     if (usage) {
       setText(figure, t('key.credits.used', { count: usage.grossCredits, credits: integer(usage.grossCredits) }));

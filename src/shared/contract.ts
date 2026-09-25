@@ -705,7 +705,7 @@ export interface UsageHistory {
   pricesAsOfByProvider: Partial<Record<ProviderSnapshot['id'], string>>;
   /**
    * Every tool whose usage is part of this history, in the fixed order
-   * claude, codex, gemini, kimi — including a tool with no price table (Kimi),
+   * claude, codex, gemini, antigravity, kimi — including a tool with no price table (Kimi),
    * which therefore has no entry in `pricesAsOfByProvider`. Always present;
    * empty when there is no usage. With `pricesAsOfByProvider` and
    * `floorCausesByProvider` it is everything a composed price note needs:
@@ -995,7 +995,7 @@ export interface ProviderSnapshot {
    * NULL MEANS "WE HAVE NOT LOOKED", AND NOTHING ELSE — uniformly, on every
    * provider. It is present, POSSIBLY ALL-ZERO, whenever that provider's local
    * corpus was scanned; it is null only when there is no corpus at all
-   * (Antigravity and every passive row) or the scan has not produced its first
+   * (every passive row, or Antigravity with no conversation store) or the scan has not produced its first
    * result yet (`Snapshot.pendingUsage`).
    *
    * So a measured zero is present and reads as a measurement: a user who did not
@@ -1196,7 +1196,7 @@ export interface Snapshot {
    * present a history that leaves the tool out as complete.
    *
    * Listed: 'codex' until its rollout scan worker's first result, and
-   * 'gemini' / 'kimi' (ADR-003 A6) until their scan workers' first result —
+   * 'gemini' / 'kimi' (ADR-003 A6) / 'antigravity' until their scan workers' first result —
    * but only while that tool is INSTALLED (its data directory exists); a tool
    * that is not on this machine is a passive "not installed" row and is never
    * pending. Claude is not listed —

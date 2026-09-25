@@ -76,13 +76,14 @@ function memoUsageHistory(rawClaude, dedupedAll, now, opts) {
     codex: opts.codexEvents,
     gemini: opts.geminiEvents,
     kimi: opts.kimiEvents,
+    antigravity: opts.antigravityEvents,
     unread: JSON.stringify(opts.unreadRanges),
     week: history.weekStartMs(now),
     month: history.monthStartMs(now),
   };
   const prev = historyMemo && historyMemo.key;
   if (prev && prev.future === key.future && prev.claude === key.claude && prev.codex === key.codex && prev.gemini === key.gemini
-    && prev.kimi === key.kimi && prev.unread === key.unread && prev.week === key.week && prev.month === key.month) {
+    && prev.kimi === key.kimi && prev.antigravity === key.antigravity && prev.unread === key.unread && prev.week === key.week && prev.month === key.month) {
     return historyMemo.value;
   }
   const value = history.usageHistory(deduped, now, opts);
@@ -1132,7 +1133,8 @@ function buildSnapshot(input) {
       codexEvents: cxEvents,
       geminiEvents: gm.events,
       kimiEvents: km.events,
-      unreadRanges: { claude: claudeUnread, codex: codexUnread, gemini: gm.unread, kimi: km.unread },
+      antigravityEvents: agEvents,
+      unreadRanges: { claude: claudeUnread, codex: codexUnread, gemini: gm.unread, kimi: km.unread, antigravity: agUnread },
     }),
     // ADR-002 A3.12. The collector passes `codexEvents: null` until the Codex
     // worker's first result, so its empty figures above read as NOT READ YET.
