@@ -85,7 +85,7 @@ class TrayController {
     this.handlers.onToggle(this.bounds());
   }
 
-  create({ autostart, onToggleAutostart, onQuit }) {
+  create({ autostart, autostartByWindows, onToggleAutostart, onQuit }) {
     this.tray = new Tray(createTrayIcon());
     this.tray.setToolTip('Usage Notch');
 
@@ -136,17 +136,16 @@ class TrayController {
     this.tray.on('mouse-enter', () => log.trace('tray.mouse-enter'));
     this.tray.on('mouse-leave', () => log.trace('tray.mouse-leave'));
 
-    this.setMenu({ autostart, onToggleAutostart, onQuit });
+    this.setMenu({ autostart, autostartByWindows, onToggleAutostart, onQuit });
     return this.tray;
   }
 
   // Labels are translated when the menu is BUILT; Electron keeps no reference
   // to our strings. So a language change rebuilds it (`applyLanguage()` in
   // index.js) rather than expecting the open menu to follow.
-  setMenu({ autostart, onToggleAutostart, onQuit }) {
-    const menu = Menu.buildFromTemplate([
-      { label: versionLabel(app.getVersion(), BUILD_INFO), enabled: false },
-      { type: 'separator' },
+  setMenu({ autostart, autostartByWindows, onToggleAutostart, onQuit }) {
+    // A Store package has no checkbox: Windows owns its StartupTask (packaging.js).
+    const autostartItems = autostartByWindows ? [] : [
       {
         label: t('tray.menu.autostart'),
         type: 'checkbox',
@@ -154,6 +153,11 @@ class TrayController {
         click: (item) => onToggleAutostart(item.checked),
       },
       { type: 'separator' },
+    ];
+    const menu = Menu.buildFromTemplate([
+      { label: versionLabel(app.getVersion(), BUILD_INFO), enabled: false },
+      { type: 'separator' },
+      ...autostartItems,
       { label: t('tray.menu.quit'), click: () => onQuit() },
     ]);
     // Left click must open the panel, so the menu is bound to right click only.

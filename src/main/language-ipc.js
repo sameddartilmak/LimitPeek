@@ -168,7 +168,7 @@ function createApplyLanguage({ refreshLocale, getTray, trayMenuOptions, resetToo
  * @param {() => object|null} deps.currentLocale
  * @param {() => {preferredLanguages?: string[], systemLocale?: string|null}} deps.readOs
  */
-function createPreferences({ getSettings, currentLocale, readOs }) {
+function createPreferences({ getSettings, currentLocale, readOs, storeBuild = () => false }) {
   return () => {
     const settings = getSettings();
     const lang = currentLocale() || resolveLanguage(settings && settings.language, readOs());
@@ -178,6 +178,8 @@ function createPreferences({ getSettings, currentLocale, readOs }) {
       resolvedLanguage: lang.resolvedLanguage,
       formatLocale: lang.formatLocale,
       autostart: settings ? sanitizeAutostart(settings.autostart) : DEFAULT_AUTOSTART,
+      // A Store package: Windows owns start-at-sign-in (packaging.js).
+      autostartByWindows: storeBuild() === true,
     };
   };
 }

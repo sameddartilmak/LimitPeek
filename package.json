@@ -69,6 +69,15 @@
     "directories": {
       "output": "dist",
       "buildResources": "build"
+    },
+    "appx": {
+      "customExtensionsPath": "build/appx-extensions.xml",
+      "displayName": "Usage Notch",
+      "publisherDisplayName": "Usage Notch",
+      "languages": [
+        "en-US",
+        "tr-TR"
+      ]
     }
   }
 }
