@@ -681,6 +681,32 @@ test.describe('the Claude statusline bridge is language-neutral', () => {
     assert.equal(r.stdout, '5h 24% · 7d 41%');
   });
 
+  test('model first, then elapsed time, the two windows and the context fill', () => {
+    const r = run({
+      model: { display_name: 'Opus 5.5' },
+      cost: { total_duration_ms: 65 * 60000 + 59000 },
+      context_window: { used_percentage: 41.6 },
+      rate_limits: { five_hour: { used_percentage: 12.2 }, seven_day: { used_percentage: 34 } },
+    });
+    assert.equal(r.stdout, 'Opus 5.5 · 1h05m · 5h 12% · 7d 34% · ctx 42%');
+    const short = run({ cost: { total_duration_ms: 12 * 60000 }, context_window: { used_percentage: 3 } });
+    assert.equal(short.stdout, '12m · ctx 3%');
+  });
+
+  test('the extra fields are printed only, never written to the snapshot', () => {
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-notch-lang-bridge-snap-'));
+    try {
+      spawnSync(process.execPath, [BRIDGE], {
+        input: JSON.stringify({ model: { display_name: 'Opus 5.5' }, cost: { total_duration_ms: 1 }, context_window: { used_percentage: 9 } }),
+        encoding: 'utf8', env: { ...process.env, LOCALAPPDATA: out },
+      });
+      const text = fs.readFileSync(path.join(out, 'UsageNotch', 'claude-rate-limits.json'), 'utf8');
+      for (const leak of ['Opus', 'total_duration_ms":', 'used_percentage":9']) assert.equal(text.includes(leak), false, leak);
+    } finally {
+      fs.rmSync(out, { recursive: true, force: true });
+    }
+  });
+
   test('no rate limits falls back to the product name alone', () => {
     const r = run({ model: 'x' });
     assert.equal(r.stdout, 'Usage Notch');

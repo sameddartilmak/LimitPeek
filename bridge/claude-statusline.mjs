@@ -13,6 +13,11 @@
  *   - never writes prompt/response text, cwd, file paths or credentials
  *   - never opens a network connection
  *   - never throws: a crash here would break the user's status line
+ *
+ * The status line text also shows the model, the session's elapsed time and
+ * how full the context window is. All three come from the same stdin payload
+ * (model.display_name, cost.total_duration_ms, context_window.used_percentage)
+ * and are only printed, never written to OUT_FILE.
  */
 import { mkdirSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -81,6 +86,19 @@ function pickWindow(w) {
   return { usedPercentage: num(w.used_percentage), resetsAt: num(w.resets_at) };
 }
 
+/**
+ * Elapsed session time as "12m" or "1h05m", from the payload's own
+ * cost.total_duration_ms. Language-neutral like the rest of the line.
+ */
+function durationLabel(ms) {
+  const v = num(ms);
+  if (v == null || v < 0) return null;
+  const totalMin = Math.floor(v / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h${String(m).padStart(2, '0')}m` : `${m}m`;
+}
+
 try {
   const raw = await readStdin();
   let payload = null;
@@ -110,9 +128,17 @@ try {
   // languages, and the fallback is the product name, which is not translated.
   const f = snapshot.fiveHour?.usedPercentage;
   const d = snapshot.sevenDay?.usedPercentage;
+  const model = typeof payload?.model?.display_name === 'string' && payload.model.display_name.trim().length > 0
+    ? payload.model.display_name.trim()
+    : null;
+  const duration = durationLabel(payload?.cost?.total_duration_ms);
+  const ctx = num(payload?.context_window?.used_percentage);
   const parts = [];
+  if (model != null) parts.push(model);
+  if (duration != null) parts.push(duration);
   if (f != null) parts.push(`5h ${f.toFixed(0)}%`);
   if (d != null) parts.push(`7d ${d.toFixed(0)}%`);
+  if (ctx != null) parts.push(`ctx ${ctx.toFixed(0)}%`);
   process.stdout.write(parts.length ? parts.join(' · ') : 'Usage Notch');
 } catch {
   process.stdout.write('');
