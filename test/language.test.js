@@ -682,15 +682,48 @@ test.describe('the Claude statusline bridge is language-neutral', () => {
   });
 
   test('model first, then elapsed time, the two windows and the context fill', () => {
+    // Each run() gets its own fresh LOCALAPPDATA, so the (session_id,
+    // prompt_id) pair below has never been seen: the turn timer's first
+    // render of a new prompt always reads '0s', same instant it started.
     const r = run({
       model: { display_name: 'Opus 5.5' },
-      cost: { total_duration_ms: 65 * 60000 + 59000 },
+      session_id: 's1',
+      prompt_id: 'p1',
       context_window: { used_percentage: 41.6 },
       rate_limits: { five_hour: { used_percentage: 12.2 }, seven_day: { used_percentage: 34 } },
     });
-    assert.equal(r.stdout, 'Opus 5.5 · 1h05m · 5h 12% · 7d 34% · ctx 42%');
-    const short = run({ cost: { total_duration_ms: 12 * 60000 }, context_window: { used_percentage: 3 } });
-    assert.equal(short.stdout, '12m · ctx 3%');
+    assert.equal(r.stdout, 'Opus 5.5 · 0s · 5h 12% · 7d 34% · ctx 42%');
+    const short = run({ session_id: 's2', prompt_id: 'p1', context_window: { used_percentage: 3 } });
+    assert.equal(short.stdout, '0s · ctx 3%');
+  });
+
+  test('the turn timer persists across renders of the same prompt and resets on the next one', () => {
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-notch-lang-bridge-turn-'));
+    const stateFile = path.join(out, 'UsageNotch', 'claude-turn-state.json');
+    const spawn = (payload) => spawnSync(process.execPath, [BRIDGE], {
+      input: JSON.stringify(payload), encoding: 'utf8', env: { ...process.env, LOCALAPPDATA: out },
+    });
+    try {
+      const first = spawn({ session_id: 'sess', prompt_id: 'turn-1', context_window: { used_percentage: 1 } });
+      assert.equal(first.stdout, '0s · ctx 1%');
+
+      // Back-date the recorded start by 5s so the next render, whatever its
+      // real wall-clock cost, deterministically reports elapsed >= 5s rather
+      // than depending on how fast this process happens to spawn.
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      state.entries[0].startedAt -= 5000;
+      fs.writeFileSync(stateFile, JSON.stringify(state), 'utf8');
+
+      const second = spawn({ session_id: 'sess', prompt_id: 'turn-1', context_window: { used_percentage: 1 } });
+      // Same prompt_id: the clock kept running rather than resetting to 0s.
+      assert.match(second.stdout, /^(?:[5-9]|[1-9]\d+)s · ctx 1%$/, second.stdout);
+
+      const nextTurn = spawn({ session_id: 'sess', prompt_id: 'turn-2', context_window: { used_percentage: 1 } });
+      // A new prompt_id for the same session resets the clock.
+      assert.equal(nextTurn.stdout, '0s · ctx 1%');
+    } finally {
+      fs.rmSync(out, { recursive: true, force: true });
+    }
   });
 
   test('the extra fields are printed only, never written to the snapshot', () => {
