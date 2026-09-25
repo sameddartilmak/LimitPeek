@@ -57,6 +57,7 @@
   "dialog.writeSettings.title": "Write to your {tool} settings?",
   "dialog.writeSettings.message": "Add the Usage Notch bridge to the {tool} status line?",
   "dialog.writeSettings.file": "This file will be updated:\n{file}",
+  "dialog.claude.keepsYours": "Your own status line is kept: it keeps showing in Claude Code exactly as before. The bridge only records the limits in the background.",
   "dialog.claude.promise": "A timestamped backup is taken first. The bridge reads only the usage percentage and the reset time; it records no text, file paths or credentials, and opens no network connection.",
   "dialog.agy.promise": "A timestamped backup is taken first. The bridge reads only the remaining quota fraction and the reset time; it records no text, file paths, email addresses or credentials, and opens no network connection.",
   "dialog.agyInstall.title": "Install Antigravity CLI?",

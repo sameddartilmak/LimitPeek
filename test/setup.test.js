@@ -57,6 +57,33 @@ test('refuses to clobber an existing statusLine and tells the user how to chain'
   assert.deepEqual(backupsIn(s.dir), [], 'no backup, because nothing was going to be written');
 });
 
+test('with chainExisting, keeps the user\'s own statusLine beside the bridge and wires ours in', () => {
+  const s = sandbox();
+  const own = { type: 'command', command: 'bash ~/.claude/my-line.sh', padding: 2 };
+  fs.writeFileSync(s.settings, JSON.stringify({ model: 'opus', statusLine: own }));
+
+  const res = installClaudeStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, chainExisting: true });
+  assert.equal(res.ok, true, res.message);
+  const written = JSON.parse(fs.readFileSync(s.settings, 'utf8'));
+  assert.equal(written.model, 'opus', 'every other key kept');
+  assert.match(written.statusLine.command, /claude-statusline\.mjs/);
+  const kept = JSON.parse(fs.readFileSync(path.join(s.dir, 'claude-chain.json'), 'utf8'));
+  assert.deepEqual(kept.statusLine, own, 'the user\'s entry, exactly as it was');
+  assert.equal(backupsIn(s.dir).length, 1, 'and a backup of the original settings');
+  assert.equal(statusLineState(s.settings), 'ours');
+});
+
+test('a chain that cannot finish leaves no kept line behind', () => {
+  const s = sandbox();
+  fs.writeFileSync(s.settings, JSON.stringify({ statusLine: { type: 'command', command: 'x' } }));
+  // A directory where the settings temp file would go makes the write fail.
+  fs.mkdirSync(`${s.settings}.${process.pid}.usagenotch.tmp`);
+  const res = installClaudeStatusLine({ confirmed: true, bridgePath: s.bridge, settingsPath: s.settings, chainExisting: true });
+  assert.equal(res.ok, false);
+  assert.equal(fs.existsSync(path.join(s.dir, 'claude-chain.json')), false);
+  assert.equal(JSON.parse(fs.readFileSync(s.settings, 'utf8')).statusLine.command, 'x', 'settings untouched');
+});
+
 test('installs into a settings file that has no statusLine, keeping every other key', () => {
   const s = sandbox();
   fs.writeFileSync(s.settings, JSON.stringify({ model: 'opus[1m]', theme: 'dark', permissions: { deny: ['Read(**/.env)'] } }));

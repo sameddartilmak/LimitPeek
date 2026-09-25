@@ -13,9 +13,11 @@ const log = require('../log');
  * so it obeys three rules from ADR-001 ("consent, not clobbering"):
  *
  *   1. It never runs without an explicit confirmation flag from the caller.
- *   2. If a `statusLine` already exists it REFUSES. Chaining another user's
- *      status line command correctly is not something we can do blind, and
- *      silently replacing it would take away a feature they configured.
+ *   2. If a `statusLine` already exists it REFUSES, unless the caller passes
+ *      `chainExisting: true` (the user was told their own line is kept). Then
+ *      that entry is saved as-is in CHAIN_FILE beside the bridge, which runs it
+ *      with the same stdin and prints its output, so the user's line looks
+ *      exactly as before. It is never silently replaced.
  *   3. It takes a timestamped backup and writes tmp+rename, so a failure
  *      cannot leave a half-written settings.json — which would break the
  *      user's Claude Code entirely.
@@ -24,6 +26,13 @@ const log = require('../log');
 function backupName(file, now) {
   const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
   return `${file}.usagenotch-backup-${stamp}`;
+}
+
+/** The user's own status line, kept beside the bridge that runs it. */
+const CHAIN_FILE_NAME = 'claude-chain.json';
+
+function chainFileFor(bridgePath) {
+  return path.join(path.dirname(bridgePath), CHAIN_FILE_NAME);
 }
 
 function statusLineEntry(bridgePath) {
@@ -39,6 +48,7 @@ function statusLineEntry(bridgePath) {
  * @param {boolean} opts.confirmed   must be strictly true
  * @param {string}  opts.bridgePath  absolute path to claude-statusline.mjs
  * @param {string} [opts.settingsPath]
+ * @param {boolean} [opts.chainExisting] keep an existing statusLine by chaining it
  * @returns {{ok:boolean, message:string, code:string}}
  */
 function installClaudeStatusLine(opts) {
@@ -97,7 +107,7 @@ function installClaudeStatusLine(opts) {
         message: t('setup.settingsUnexpected', { tool: 'Claude Code' }),
       };
     }
-    if (settings.statusLine != null) {
+    if (settings.statusLine != null && opts.chainExisting !== true) {
       const cmd = statusLineEntry(bridgePath).command;
       // The full command also goes to the log. This notice measured 194
       // characters with a real packaged bridge path against a 160-character
@@ -140,6 +150,25 @@ function installClaudeStatusLine(opts) {
     try { fs.unlinkSync(backupFile); } catch { /* best effort */ }
   };
 
+  // The user's own line, kept before ours replaces it in settings.json.
+  const chainFile = chainFileFor(bridgePath);
+  let chained = false;
+  if (existed && settings.statusLine != null) {
+    try {
+      fs.writeFileSync(chainFile, `${JSON.stringify({ schemaVersion: 1, statusLine: settings.statusLine }, null, 2)}
+`, 'utf8');
+      chained = true;
+    } catch (err) {
+      discardBackup();
+      log.warn(`statusline chain could not be kept: code=${(err && err.code) || 'UNKNOWN'}`);
+      return { ok: false, code: 'WRITE_FAILED', message: t('setup.writeFailed') };
+    }
+  }
+  const discardChain = () => {
+    if (!chained) return;
+    try { fs.unlinkSync(chainFile); } catch { /* best effort */ }
+  };
+
   settings.statusLine = statusLineEntry(bridgePath);
 
   const tmp = `${settingsFile}.${process.pid}.usagenotch.tmp`;
@@ -155,6 +184,7 @@ function installClaudeStatusLine(opts) {
         // unchanged. Leaving it would litter ~/.claude with a stale copy of
         // the user's settings on every aborted attempt.
         discardBackup();
+        discardChain();
         return {
           ok: false,
           code: 'SETTINGS_CHANGED',
@@ -174,6 +204,7 @@ function installClaudeStatusLine(opts) {
   } catch (err) {
     try { fs.unlinkSync(tmp); } catch { /* best effort */ }
     discardBackup();
+    discardChain();
     log.warn(`statusline install failed: code=${(err && err.code) || 'UNKNOWN'}`);
     return {
       ok: false,
@@ -207,4 +238,4 @@ function statusLineState(settingsPath) {
   return 'foreign';
 }
 
-module.exports = { installClaudeStatusLine, statusLineState, statusLineEntry, backupName };
+module.exports = { installClaudeStatusLine, statusLineState, statusLineEntry, backupName, chainFileFor, CHAIN_FILE_NAME };

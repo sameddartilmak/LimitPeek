@@ -563,11 +563,17 @@ const NETWORK_NEEDLES = [
  * installer by ABSOLUTE PATH through `execFile` (ADR-003 Amendment 2 C3-C5):
  * no shell, no PATH lookup, no network. They are named one by one so a third
  * `child_process` import anywhere is a failure.
+ *
+ * `bridge/claude-statusline.mjs` runs the user's OWN status line command, the
+ * one Claude Code was already running before the setup kept it (claude-chain
+ * .json), so the user's line keeps showing. It runs inside Claude Code's
+ * process tree, not the app's, and adds no network of its own.
  */
 const NEEDLE_EXCEPTIONS = {
   child_process: [
     'src/core/antigravity/cli-install.js',
     'src/core/antigravity/process.js',
+    'bridge/claude-statusline.mjs',
   ],
 };
 const NETWORK_EXEMPT_FILES = ['src/main/keys/keyed-net.js'];

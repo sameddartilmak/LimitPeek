@@ -86,12 +86,8 @@ async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
       message: t('setup.alreadyInstalled', { tool: 'Claude Code' }),
     };
   }
-  if (state === 'foreign') {
-    const bridgePath = bridgeInstallPath();
-    const cmd = `node "${bridgePath.split(path.sep).join('/')}"`;
-    log.info(`claude statusLine already set; chain manually: ${cmd}`);
-    return { ok: false, message: messages.statusLineExists(cmd) };
-  }
+  // A status line of the user's own is kept and chained, and the dialog says so.
+  const chainExisting = state === 'foreign';
   if (state === 'unreadable' || state === 'invalid') {
     return {
       ok: false,
@@ -113,7 +109,8 @@ async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
     noLink: true,
     title: t('dialog.writeSettings.title', { tool: 'Claude Code' }),
     message: t('dialog.writeSettings.message', { tool: 'Claude Code' }),
-    detail: `${t('dialog.writeSettings.file', { file: settingsFile })}\n\n${t('dialog.claude.promise')}`,
+    detail: `${t('dialog.writeSettings.file', { file: settingsFile })}\n\n${t('dialog.claude.promise')}`
+      + (chainExisting ? `\n\n${t('dialog.claude.keepsYours')}` : ''),
   });
   if (choice.response !== 1) {
     return { ok: false, message: t('setup.cancelled') };
@@ -124,7 +121,7 @@ async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
     return { ok: false, message: t('setup.bridgePrepareFailed') };
   }
 
-  const result = installClaudeStatusLine({ confirmed: true, bridgePath, settingsPath: settingsFile });
+  const result = installClaudeStatusLine({ confirmed: true, bridgePath, settingsPath: settingsFile, chainExisting });
   return { ok: result.ok, message: result.message };
 }
 

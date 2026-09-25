@@ -119,7 +119,9 @@ for (const bridge of BRIDGES) {
       assert.equal(r.renameCalls, 4, 'three refusals, then the rename that succeeded');
       assert.equal(bridge.figure(JSON.parse(fs.readFileSync(r.file, 'utf8'))), 70, 'this writer\'s capture, whole');
       assert.deepEqual(r.leftovers, []);
-      assert.notEqual(r.stdout, '', 'the status line is not blanked by a lock that cleared');
+      // The Claude bridge prints nothing of its own (the line is the user's), so
+      // only the Antigravity bridge has a line a lock could blank.
+      if (bridge.name !== 'claude') assert.notEqual(r.stdout, '', 'the status line is not blanked by a lock that cleared');
     });
 
     test('a refusal that never clears gives up quickly, keeps the old capture whole, and litters nothing', () => {

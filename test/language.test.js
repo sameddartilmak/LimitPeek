@@ -662,87 +662,69 @@ test.describe('what can only be read off index.js (it requires electron), commen
 
 /* ------------------------------------------------ the bridges speak no language */
 
-test.describe('the Claude statusline bridge is language-neutral', () => {
+test.describe('the Claude statusline bridge shows nothing of its own', () => {
   const BRIDGE = path.join(ROOT, 'bridge', 'claude-statusline.mjs');
-  function run(payload) {
+  const PAYLOAD = {
+    model: { display_name: 'Opus 5.5' },
+    context_window: { used_percentage: 41 },
+    rate_limits: { five_hour: { used_percentage: 24.4 }, seven_day: { used_percentage: 41 } },
+  };
+  /** Runs a copy of the bridge in its own folder, optionally with a kept line. */
+  function run(payload, chain) {
     const out = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-notch-lang-bridge-'));
     try {
-      return spawnSync(process.execPath, [BRIDGE], {
+      const dir = path.join(out, 'bridge');
+      fs.mkdirSync(dir);
+      const script = path.join(dir, 'claude-statusline.mjs');
+      fs.copyFileSync(BRIDGE, script);
+      if (chain !== undefined) fs.writeFileSync(path.join(dir, 'claude-chain.json'), JSON.stringify(chain));
+      const r = spawnSync(process.execPath, [script], {
         input: JSON.stringify(payload), encoding: 'utf8', env: { ...process.env, LOCALAPPDATA: out },
       });
+      const snap = path.join(out, 'UsageNotch', 'claude-rate-limits.json');
+      return { ...r, snapshot: fs.existsSync(snap) ? JSON.parse(fs.readFileSync(snap, 'utf8')) : null };
     } finally {
       fs.rmSync(out, { recursive: true, force: true });
     }
   }
+  const echoLine = (text) => ({ statusLine: { type: 'command', command: `node -e "process.stdin.resume();process.stdin.on('end',()=>process.stdout.write('${text}'))"` } });
 
-  test('both windows render as 5h / 7d with a trailing percent', () => {
-    const r = run({ rate_limits: { five_hour: { used_percentage: 24.4 }, seven_day: { used_percentage: 41 } } });
+  test('with no line of its own the user sees nothing, and the limits are still captured', () => {
+    const r = run(PAYLOAD);
     assert.equal(r.status, 0);
-    assert.equal(r.stdout, '5h 24% · 7d 41%');
+    assert.equal(r.stdout, '');
+    assert.equal(r.snapshot.fiveHour.usedPercentage, 24.4);
+    assert.equal(r.snapshot.sevenDay.usedPercentage, 41);
   });
 
-  test('model first, then elapsed time, the two windows and the context fill', () => {
-    // Each run() gets its own fresh LOCALAPPDATA, so the (session_id,
-    // prompt_id) pair below has never been seen: the turn timer's first
-    // render of a new prompt always reads '0s', same instant it started.
-    const r = run({
-      model: { display_name: 'Opus 5.5' },
-      session_id: 's1',
-      prompt_id: 'p1',
-      context_window: { used_percentage: 41.6 },
-      rate_limits: { five_hour: { used_percentage: 12.2 }, seven_day: { used_percentage: 34 } },
-    });
-    assert.equal(r.stdout, 'Opus 5.5 · 0s · 5h 12% · 7d 34% · ctx 42%');
-    const short = run({ session_id: 's2', prompt_id: 'p1', context_window: { used_percentage: 3 } });
-    assert.equal(short.stdout, '0s · ctx 3%');
+  test('the kept line of the user is run and printed unchanged', () => {
+    const r = run(PAYLOAD, echoLine('my own line'));
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, 'my own line');
+    assert.equal(r.snapshot.fiveHour.usedPercentage, 24.4, 'the capture still happens');
   });
 
-  test('the turn timer persists across renders of the same prompt and resets on the next one', () => {
-    const out = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-notch-lang-bridge-turn-'));
-    const stateFile = path.join(out, 'UsageNotch', 'claude-turn-state.json');
-    const spawn = (payload) => spawnSync(process.execPath, [BRIDGE], {
-      input: JSON.stringify(payload), encoding: 'utf8', env: { ...process.env, LOCALAPPDATA: out },
-    });
-    try {
-      const first = spawn({ session_id: 'sess', prompt_id: 'turn-1', context_window: { used_percentage: 1 } });
-      assert.equal(first.stdout, '0s · ctx 1%');
+  test('the kept line receives the same payload Claude Code sent', () => {
+    const r = run(PAYLOAD, { statusLine: { type: 'command', command: `node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).model.display_name))"` } });
+    assert.equal(r.stdout, 'Opus 5.5');
+  });
 
-      // Back-date the recorded start by 5s so the next render, whatever its
-      // real wall-clock cost, deterministically reports elapsed >= 5s rather
-      // than depending on how fast this process happens to spawn.
-      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-      state.entries[0].startedAt -= 5000;
-      fs.writeFileSync(stateFile, JSON.stringify(state), 'utf8');
-
-      const second = spawn({ session_id: 'sess', prompt_id: 'turn-1', context_window: { used_percentage: 1 } });
-      // Same prompt_id: the clock kept running rather than resetting to 0s.
-      assert.match(second.stdout, /^(?:[5-9]|[1-9]\d+)s · ctx 1%$/, second.stdout);
-
-      const nextTurn = spawn({ session_id: 'sess', prompt_id: 'turn-2', context_window: { used_percentage: 1 } });
-      // A new prompt_id for the same session resets the clock.
-      assert.equal(nextTurn.stdout, '0s · ctx 1%');
-    } finally {
-      fs.rmSync(out, { recursive: true, force: true });
+  test('a kept line that names the bridge itself, or is not a command, is ignored', () => {
+    for (const chain of [
+      { statusLine: { type: 'command', command: 'node "C:/x/claude-statusline.mjs"' } },
+      { statusLine: { type: 'static', command: 'echo hi' } },
+      { statusLine: { type: 'command', command: '   ' } },
+      'not json at all',
+    ]) {
+      const r = run(PAYLOAD, chain);
+      assert.equal(r.status, 0);
+      assert.equal(r.stdout, '', JSON.stringify(chain));
     }
   });
 
-  test('the extra fields are printed only, never written to the snapshot', () => {
-    const out = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-notch-lang-bridge-snap-'));
-    try {
-      spawnSync(process.execPath, [BRIDGE], {
-        input: JSON.stringify({ model: { display_name: 'Opus 5.5' }, cost: { total_duration_ms: 1 }, context_window: { used_percentage: 9 } }),
-        encoding: 'utf8', env: { ...process.env, LOCALAPPDATA: out },
-      });
-      const text = fs.readFileSync(path.join(out, 'UsageNotch', 'claude-rate-limits.json'), 'utf8');
-      for (const leak of ['Opus', 'total_duration_ms":', 'used_percentage":9']) assert.equal(text.includes(leak), false, leak);
-    } finally {
-      fs.rmSync(out, { recursive: true, force: true });
-    }
-  });
-
-  test('no rate limits falls back to the product name alone', () => {
-    const r = run({ model: 'x' });
-    assert.equal(r.stdout, 'Usage Notch');
+  test('nothing from the payload but the limits reaches the snapshot', () => {
+    const text = JSON.stringify(run(PAYLOAD).snapshot);
+    for (const leak of ['Opus', 'used_percentage":41,']) assert.equal(text.includes(leak), false, leak);
   });
 
   test('neither bridge source carries the old Turkish tokens', () => {
