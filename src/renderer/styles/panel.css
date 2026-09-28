@@ -1112,30 +1112,55 @@
   gap: 2px;
 }
 
-/* range + amount on one line, the magnitude bar spanning the width below. Keeps
- * a period legible in a ~360px panel without truncating the money. */
+/* The chosen period: ‹ dates › and the amount on one line. The magnitude is
+ * the chart's job now, so the row carries no bar of its own. */
 .usage__row {
   display: grid;
   grid-template-columns: 1fr auto;
-  grid-template-areas: "range amount" "bar bar";
-  align-items: baseline;
+  grid-template-areas: "range amount";
+  align-items: center;
   column-gap: var(--s-2);
   row-gap: 3px;
   padding: var(--s-1) 0;
 }
 /* The per-model disclosure is auto-placed on its own implicit rows below the
- * named areas; each spans the whole width. (The bar already spans via its
- * "bar bar" named area, so it is not listed here.) */
+ * named area; each spans the whole width. */
 .usage__toggle,
 .usage__models { grid-column: 1 / -1; }
-.usage__range {
+.usage__nav {
   grid-area: range;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.usage__range {
   font-size: var(--fs-meta);
-  color: var(--ink-300);
+  font-weight: 600;
+  color: var(--ink-200);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
+.usage__step {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px; height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-400);
+  cursor: pointer;
+  transition: background-color 120ms linear, color 120ms linear;
+}
+.usage__step svg { width: 13px; height: 13px; display: block; }
+.usage__step--prev svg { transform: rotate(180deg); }
+.usage__step:hover { background: var(--ink-700); color: var(--ink-100); }
+.usage__step:focus-visible { outline: 2px solid var(--ink-100); outline-offset: 1px; }
+.usage__step[disabled] { visibility: hidden; }
 .usage__amount {
   grid-area: amount;
   font-size: var(--fs-meta);
@@ -1143,28 +1168,65 @@
   color: var(--ink-100);
   white-space: nowrap;
 }
-/* An empty period is stated, quietly: dimmed, no bar. */
+/* An empty period is stated, quietly: dimmed. */
 .usage__row[data-empty="true"] .usage__range,
 .usage__row[data-empty="true"] .usage__amount {
   color: var(--ink-500);
   font-weight: 500;
 }
 
-.usage__bar {
-  grid-area: bar;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--ink-800);
+/* The period chooser: one column per period, height by cost, oldest left.
+ * Fixed height, so the section does not grow with the months of use. */
+.usage__chart {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  height: 64px;
+  margin: var(--s-2) var(--s-4) var(--s-1);
+}
+.usage__chart[hidden] { display: none; }
+.usage__col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.usage__col-track {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--ink-700);
+}
+.usage__col-bar {
+  display: block;
+  width: 100%;
+  height: calc(var(--h, 0) * 100%);
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  background: var(--ink-600);
+  transition: background-color 120ms linear;
+}
+.usage__col[data-empty="true"] .usage__col-bar { min-height: 0; height: 0; }
+.usage__col-label {
+  font-size: var(--fs-micro);
+  line-height: 1;
+  color: var(--ink-500);
+  text-align: center;
+  white-space: nowrap;
   overflow: hidden;
 }
-.usage__fill {
-  display: block;
-  height: 100%;
-  width: calc(var(--w, 0) * 100%);
-  min-width: 2px;
-  border-radius: 2px;
-  background: var(--ink-400);
-}
+.usage__col:hover .usage__col-bar { background: var(--ink-400); }
+.usage__col:hover .usage__col-label { color: var(--ink-300); }
+.usage__col[aria-pressed="true"] .usage__col-bar { background: var(--ink-100); }
+.usage__col[aria-pressed="true"] .usage__col-label { color: var(--ink-100); font-weight: 600; }
+.usage__col:focus-visible { outline: 2px solid var(--ink-100); outline-offset: 2px; }
 
 /* Per-model disclosure. Collapsed by default so a dozen periods stay short; the
  * toggle counts models and carries no figure (the period amount above already

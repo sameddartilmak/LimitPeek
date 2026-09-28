@@ -167,11 +167,12 @@ function read(hist, histOver) {
 }
 
 test.describe('a period with counts shows them even when its model list is unusable', () => {
-  test('control: with a model list, the counts exist and sit behind the disclosure', () => {
+  test('control: with a model list, the counts exist and sit inside the disclosure', () => {
     const out = read(history());
     assert.equal(out.present, true);
     assert.equal(out.toggles, 1, 'a period with models offers its per-model disclosure');
-    assert.equal(out.hidden, true, 'collapsed by default, with the rows it summarises');
+    // Open by default since only the chosen period is on screen (owner, 2026-09-28).
+    assert.equal(out.hidden, false, 'open by default, with the rows it summarises');
     assert.deepEqual(out.counts, [['claude', fmt.tokens(10_480_000)], ['codex', fmt.tokens(2_050_000)]]);
   });
 
