@@ -1191,6 +1191,22 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 120));
     view.querySelector('.acc__trigger[data-acc="usage"]').click();
     await new Promise((r) => setTimeout(r, 80));
+    // One period is on screen at a time (owner, 2026-09-28): visit each through
+    // its chart column, newest first like the history, read the row, and
+    // leave the newest chosen again.
+    const eachPeriod = async (read) => {
+      const out = [];
+      const count = view.querySelectorAll('.usage__col').length;
+      for (let i = Math.max(count, 1) - 1; i >= 0; i -= 1) {
+        const col = view.querySelectorAll('.usage__col')[i];
+        if (col) { col.click(); await new Promise((r) => setTimeout(r, 20)); }
+        const row = view.querySelector('.usage__row');
+        if (row) out.push(read(row));
+      }
+      const cols = view.querySelectorAll('.usage__col');
+      if (cols.length) cols[cols.length - 1].click();
+      return out;
+    };
     const note = view.querySelector('.usage__pending');
     const out = {
       meta: (row.querySelector('.row__meta') || {}).textContent || '',
@@ -1203,7 +1219,7 @@ app.whenReady().then(async () => {
       costText,
       note: note && !note.hidden ? note.textContent : null,
       noteRole: note ? note.getAttribute('role') : null,
-      amounts: [...view.querySelectorAll('.usage__row')].map((r) => ({
+      amounts: await eachPeriod((r) => ({
         text: r.querySelector('.usage__amount').textContent,
         pending: r.getAttribute('data-pending'),
       })),
@@ -1452,10 +1468,26 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 120));
     view.querySelector('.acc__trigger[data-acc="usage"]').click();
     await new Promise((r) => setTimeout(r, 80));
+    // One period is on screen at a time (owner, 2026-09-28): visit each through
+    // its chart column, newest first like the history, read the row, and
+    // leave the newest chosen again.
+    const eachPeriod = async (read) => {
+      const out = [];
+      const count = view.querySelectorAll('.usage__col').length;
+      for (let i = Math.max(count, 1) - 1; i >= 0; i -= 1) {
+        const col = view.querySelectorAll('.usage__col')[i];
+        if (col) { col.click(); await new Promise((r) => setTimeout(r, 20)); }
+        const row = view.querySelector('.usage__row');
+        if (row) out.push(read(row));
+      }
+      const cols = view.querySelectorAll('.usage__col');
+      if (cols.length) cols[cols.length - 1].click();
+      return out;
+    };
     const e = view.querySelector('.usage__empty');
     const inc = view.querySelector('.usage__incomplete');
     const out = {
-      amounts: [...view.querySelectorAll('.usage__row')].map((r) => ({
+      amounts: await eachPeriod((r) => ({
         text: r.querySelector('.usage__amount').textContent,
         incomplete: r.getAttribute('data-incomplete'),
         empty: r.getAttribute('data-empty'),

@@ -764,12 +764,18 @@ function createAutostartControl(ctx: SettingsContext): AutostartHandleLocal {
  *
  * PER-MODEL BREAKDOWN
  * -------------------
- * Under each period sits a disclosure (collapsed by default) that expands to a
- * per-model list — which models were used in that period and how much each
- * cost. It reuses the cost block's disclosure idiom because the hover panel is
- * narrow: an always-open list under a dozen periods would be a scroll tunnel,
- * so the summary line just counts the models (no figure, like the quota block)
- * and the figures appear on expand. The per-model list is itself a bounded
+ * ONE PERIOD AT A TIME (owner, 2026-09-28: "sayfalarca kullanım kısmı olacak").
+ * Listing every period with its models grew by a screen per month of use. A
+ * small bar chart of all the periods sits on top instead — one column each,
+ * oldest left, height by cost — and only the chosen period is shown below it,
+ * with ‹ › beside its dates. The section is the same height after a month of
+ * use as after a year. The newest period is chosen until the user picks
+ * another, and a pick survives the snapshot pushes that rebuild the section.
+ *
+ * Under the chosen period sits its per-model disclosure, OPEN by default now
+ * that it is the only one on screen; closing it is remembered per period. The
+ * summary line counts the models (no figure, like the quota block). The
+ * per-model list is itself a bounded
  * scroller (`.usage__models` max-height + overflow), so a period with many
  * models scrolls WITHIN its disclosure instead of pushing the panel off screen.
  * Each model amount is framed exactly like the period amount — "fiyatlanamadı"
@@ -1001,6 +1007,10 @@ function createUsageSection(): UsageHandleLocal {
     toggle.appendChild(label);
   }
 
+  // The period chooser: one column per period, oldest on the left. A group of
+  // toggle buttons with a roving tab stop, so the chart is ONE stop in the tab
+  // order and the arrow keys move along it.
+  const chart = el('div', { class: 'usage__chart', role: 'group', 'aria-label': t('settings.usage.chart') });
   const list = el('ul', { class: 'usage__list', role: 'list' });
   const empty = el('p', { class: 'usage__empty' }, '');
   // --- the price note (ADR-003 A6, ADR-004 A3) -----------------------------
@@ -1008,18 +1018,24 @@ function createUsageSection(): UsageHandleLocal {
   const noteSources = el('ul', { class: 'usage__sources' });
   const note = el('div', { class: 'usage__note' }, noteSources);
 
-  // Which per-period disclosures the user has opened. The list below is rebuilt
-  // from scratch on every snapshot (every 15 s while the panel is open), so a
-  // disclosure that kept its state only in its own DOM node snapped shut on the
-  // next push, under the user's cursor. Keyed by grain + period key + start so
-  // it survives the rebuild and a new week sliding in at the top (the rows'
-  // INDEX shifts then; the key does not).
-  const openPeriods = new Set<string>();
+  // Which per-period disclosures the user has CLOSED (they start open). The
+  // section is rebuilt from scratch on every snapshot (every 15 s while the
+  // panel is open), so a disclosure that kept its state only in its own DOM
+  // node snapped back on the next push, under the user's cursor. Keyed by
+  // grain + period key + start so it survives the rebuild and a new week
+  // sliding in at the top (the periods' INDEX shifts then; the key does not).
+  const closedPeriods = new Set<string>();
   const periodOpenKey = (period: PeriodUsage): string => `${grain}|${period.key}|${period.startsAt}`;
+  // The period the user chose, per grain, by the same stable key. Absent: the
+  // newest, which a new week or month then takes over. Choosing the newest
+  // clears it, so "the current period" keeps following the calendar.
+  const chosen = new Map<UsageGrain, string>();
   // The toggles of the CURRENT list, by the same key, so focus can move to a
   // replacement without querying the DOM (the node-level test shim does not
   // implement selectors, and a component those tests cannot mount is untested).
   let toggleByKey = new Map<string, HTMLElement>();
+  // The chooser's controls of the current render, by role, for the same reason.
+  let focusable: Partial<Record<'col' | 'prev' | 'next', HTMLElement>> = {};
   function renderNote(): void {
     const model = noteModel(current, known);
     replaceChildrenWith(
@@ -1045,6 +1061,7 @@ function createUsageSection(): UsageHandleLocal {
     toggle,
     pendingNote,
     incompleteNote,
+    chart,
     list,
     empty,
     note,
@@ -1126,7 +1143,7 @@ function createUsageSection(): UsageHandleLocal {
     subtotals: HTMLElement | null,
   ): readonly HTMLElement[] {
     const openKey = periodOpenKey(period);
-    const startOpen = openPeriods.has(openKey);
+    const startOpen = !closedPeriods.has(openKey);
     const chev = el('span', { class: 'usage__chev', 'aria-hidden': 'true' }, chevronIcon());
     const label = el(
       'span',
@@ -1161,8 +1178,8 @@ function createUsageSection(): UsageHandleLocal {
       setAttr(toggle, 'aria-expanded', open ? 'false' : 'true');
       models.hidden = open;
       if (subtotals) subtotals.hidden = open;
-      if (open) openPeriods.delete(openKey);
-      else openPeriods.add(openKey);
+      if (open) closedPeriods.add(openKey);
+      else closedPeriods.delete(openKey);
     });
     toggleByKey.set(openKey, toggle);
 
@@ -1207,19 +1224,44 @@ function createUsageSection(): UsageHandleLocal {
     return el('ul', { class: 'usage__tokens', role: 'list' }, ...rows) as HTMLElement;
   }
 
-  function renderRow(period: PeriodUsage, maxCost: number, index: number): HTMLElement {
+  /** One step button of the chooser; `older` points left. Hidden when there is nowhere to go. */
+  function stepButton(older: boolean, target: number | null): HTMLElement {
+    const label = t(older ? 'settings.usage.prev' : 'settings.usage.next');
+    const btn = el(
+      'button',
+      {
+        type: 'button',
+        class: `usage__step usage__step--${older ? 'prev' : 'next'}`,
+        'aria-label': label,
+        title: label,
+      },
+      chevronIcon(),
+    ) as HTMLElement;
+    if (target === null) {
+      // Kept in place (so the dates do not shift), but inert and invisible.
+      setAttr(btn, 'disabled', '');
+      setAttr(btn, 'aria-hidden', 'true');
+      setAttr(btn, 'tabindex', '-1');
+    } else {
+      on(btn, 'click', () => choose(target, older ? 'prev' : 'next'));
+      focusable[older ? 'prev' : 'next'] = btn;
+    }
+    return btn;
+  }
+
+  function renderRow(period: PeriodUsage, index: number, count: number): HTMLElement {
     const range = el('span', { class: 'usage__range' }, dayRange(period.startsAt, period.endsAt) || '—');
     const pending = pendingIds.length > 0;
     const amount = el('span', { class: 'usage__amount u-num' }, amountText(period, pending));
-    const bar = el('span', { class: 'usage__bar', 'aria-hidden': 'true' });
-    if (maxCost > 0 && period.costUsd > 0) {
-      const fill = el('i', { class: 'usage__fill' });
-      fill.style.setProperty('--w', (period.costUsd / maxCost).toFixed(4));
-      bar.appendChild(fill);
-    } else {
-      bar.hidden = true;
-    }
-    const row = el('li', { class: 'usage__row', role: 'listitem' }, range, amount, bar) as HTMLElement;
+    // Periods run newest first, so "older" is the next index.
+    const nav = el(
+      'span',
+      { class: 'usage__nav' },
+      stepButton(true, index + 1 < count ? index + 1 : null),
+      range,
+      stepButton(false, index > 0 ? index - 1 : null),
+    );
+    const row = el('li', { class: 'usage__row', role: 'listitem' }, nav, amount) as HTMLElement;
     const incomplete = isIncompleteAmount(period, pending);
     setAttr(row, 'data-empty', period.hasUsage || pending || incomplete ? null : 'true');
     setAttr(row, 'data-incomplete', incomplete ? 'true' : null);
@@ -1290,6 +1332,7 @@ function createUsageSection(): UsageHandleLocal {
     );
 
     if (!hasData) {
+      chart.hidden = true;
       list.hidden = true;
       note.hidden = true;
       empty.hidden = false;
@@ -1299,6 +1342,7 @@ function createUsageSection(): UsageHandleLocal {
 
     const periods = periodsFor();
     if (periods.length === 0) {
+      chart.hidden = true;
       list.hidden = true;
       note.hidden = true;
       // "No records found" is a claim about the corpus; with a tool still
@@ -1313,26 +1357,115 @@ function createUsageSection(): UsageHandleLocal {
 
     empty.hidden = true;
     list.hidden = false;
-    const maxCost = periods.reduce((max, p) => (p.costUsd > max ? p.costUsd : max), 0);
     // The rebuild replaces every node, so a keyboard user sitting on a toggle
-    // would lose focus on each push. Remember which toggle held it, by the
-    // same stable key, and put focus back on its replacement.
+    // or on the chooser would lose focus on each push. Remember which control
+    // held it and put focus back on its replacement.
     const active = typeof document !== 'undefined' ? document.activeElement : null;
     let focusedKey: string | null = null;
     for (const [k, node] of toggleByKey) if (node === active) focusedKey = k;
+    let focusedRole: keyof typeof focusable | null = null;
+    for (const [role, node] of Object.entries(focusable)) if (node === active) focusedRole = role as keyof typeof focusable;
+    renderPeriods(periods, focusedKey, focusedRole);
+
+    note.hidden = false;
+    renderNote();
+  }
+
+  /** The chosen period's index in `periods`: the user's pick, else the newest. */
+  function chosenIndex(periods: readonly PeriodUsage[]): number {
+    const want = chosen.get(grain);
+    if (want === undefined) return 0;
+    const i = periods.findIndex((p) => periodOpenKey(p) === want);
+    return i < 0 ? 0 : i;
+  }
+
+  /** Choose period `index` of the current grain, keeping focus on the control that did it. */
+  function choose(index: number, via: keyof typeof focusable): void {
+    const periods = periodsFor();
+    const target = periods[index];
+    if (!target) return;
+    if (index === 0) chosen.delete(grain);
+    else chosen.set(grain, periodOpenKey(target));
+    renderPeriods(periods, null, via);
+  }
+
+  /** A column's short label: the month's abbreviation, or a week's first day. */
+  function columnLabel(period: PeriodUsage): string {
+    const d = new Date(period.startsAt);
+    if (Number.isNaN(d.getTime())) return '';
+    if (grain === 'week') return String(d.getDate());
+    try {
+      return new Intl.DateTimeFormat(currentLanguage(), { month: 'short' }).format(d).replace(/\.$/, '');
+    } catch {
+      return String(d.getMonth() + 1);
+    }
+  }
+
+  function renderPeriods(
+    periods: readonly PeriodUsage[],
+    focusedKey: string | null,
+    focusedRole: keyof typeof focusable | null,
+  ): void {
+    const index = chosenIndex(periods);
+    const pending = pendingIds.length > 0;
+    const maxCost = periods.reduce((max, p) => (p.costUsd > max ? p.costUsd : max), 0);
     toggleByKey = new Map();
+    focusable = {};
 
     // Forget periods of THIS grain that are no longer listed (a week that
     // rolled off the end); the other grain's entries are left alone.
     const listed = new Set(periods.map(periodOpenKey));
-    for (const k of openPeriods) if (k.startsWith(`${grain}|`) && !listed.has(k)) openPeriods.delete(k);
+    for (const k of closedPeriods) if (k.startsWith(`${grain}|`) && !listed.has(k)) closedPeriods.delete(k);
 
-    replaceChildrenWith(list, periods.map((p, i) => renderRow(p, maxCost, i)));
+    // Oldest on the left, like any timeline.
+    const columns: HTMLElement[] = [];
+    for (let i = periods.length - 1; i >= 0; i -= 1) {
+      const p = periods[i];
+      const selected = i === index;
+      const range = dayRange(p.startsAt, p.endsAt) || '—';
+      const name = t('settings.usage.column', { range, amount: amountText(p, pending) });
+      const bar = el('span', { class: 'usage__col-bar' });
+      bar.style.setProperty('--h', maxCost > 0 && p.costUsd > 0 ? (p.costUsd / maxCost).toFixed(4) : '0');
+      const col = el(
+        'button',
+        {
+          type: 'button',
+          class: 'usage__col',
+          'aria-pressed': selected ? 'true' : 'false',
+          'aria-label': name,
+          title: name,
+          tabindex: selected ? '0' : '-1',
+        },
+        el('span', { class: 'usage__col-track', 'aria-hidden': 'true' }, bar),
+        el('span', { class: 'usage__col-label', 'aria-hidden': 'true' }, columnLabel(p)),
+      ) as HTMLElement;
+      setAttr(col, 'data-empty', p.hasUsage && p.costUsd > 0 ? null : 'true');
+      setAttr(col, 'data-incomplete', isIncompleteAmount(p, pending) ? 'true' : null);
+      const at = i;
+      on(col, 'click', () => choose(at, 'col'));
+      on(col, 'keydown', (e) => {
+        const key = e.key;
+        // Left is older (a higher index), right is newer.
+        const next = key === 'ArrowLeft' ? at + 1
+          : key === 'ArrowRight' ? at - 1
+            : key === 'Home' ? periods.length - 1
+              : key === 'End' ? 0
+                : null;
+        if (next === null) return;
+        e.preventDefault();
+        if (next >= 0 && next < periods.length) choose(next, 'col');
+      });
+      if (selected) focusable.col = col;
+      columns.push(col);
+    }
+    replaceChildrenWith(chart, columns);
+    // One period: there is nothing to choose between.
+    chart.hidden = periods.length < 2;
 
-    if (focusedKey) toggleByKey.get(focusedKey)?.focus();
+    replaceChildrenWith(list, [renderRow(periods[index], index, periods.length)]);
 
-    note.hidden = false;
-    renderNote();
+    if (focusedKey && toggleByKey.has(focusedKey)) toggleByKey.get(focusedKey)?.focus();
+    else if (focusedRole) (focusable[focusedRole] ?? focusable.col)?.focus();
   }
 
   function update(
