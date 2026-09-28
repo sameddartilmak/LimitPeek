@@ -47,7 +47,9 @@
 /* The identity mark is the provider's REAL brand logo, shipped as a build-time
  * asset (assets/logos/) and painted here — never fetched, never innerHTML'd.
  * See components/logo.ts. Each is a multi-colour SVG shown as a
- * background-image (claude/codex/gemini/antigravity/kimi).
+ * background-image (claude/codex/antigravity/kimi). Qwen Code and Grok Build
+ * get a neutral monogram in the same treatment instead: there is no permission
+ * to use either vendor's logo.
  * Grey vs brand-colour is the connected/unconnected treatment; see below. */
 .mark {
   width: 24px; height: 24px;
@@ -59,9 +61,10 @@
 
 .mark[data-logo="claude"]      { background-image: url(../assets/logos/claude-color.svg); }
 .mark[data-logo="codex"]       { background-image: url(../assets/logos/codex-color.svg); }
-.mark[data-logo="gemini"]      { background-image: url(../assets/logos/gemini-color.svg); }
 .mark[data-logo="antigravity"] { background-image: url(../assets/logos/antigravity-color.svg); }
 .mark[data-logo="kimi"]        { background-image: url(../assets/logos/kimi-color.svg); }
+.mark[data-logo="qwen"]        { background-image: url(../assets/logos/qwen-mono.svg); }
+.mark[data-logo="grok"]        { background-image: url(../assets/logos/grok-mono.svg); }
 
 /* An id with no shipped asset: a neutral ring, never a broken image or a
  * letter. logo.ts adds this class; today every provider has art, so it is

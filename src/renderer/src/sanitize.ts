@@ -59,6 +59,7 @@ const HISTORY_FLOOR_CAUSES = new Set<HistoryFloorCause>([
   'unrecorded-calls',
   'long-prompt',
   'tool-tokens',
+  'partial-usage',
 ]);
 
 /**
@@ -80,14 +81,16 @@ const TOKEN_FLOOR_CAUSES = new Set<HistoryFloorCause>([
   'unread-range',
   'unrecorded-calls',
   'unrecorded-writes',
+  'partial-usage',
 ]);
 
 const PROVIDER_IDS = new Set<ProviderSnapshot['id']>([
   'claude',
   'codex',
-  'gemini',
   'antigravity',
   'kimi',
+  'qwen',
+  'grok',
 ]);
 const ROW_STATUSES = new Set<RowStatus>(['loading', 'ok', 'stale', 'error', 'passive']);
 const CERTAINTIES = new Set<Certainty>(['known', 'estimated', 'unknown']);
@@ -539,11 +542,13 @@ function weeklyCost(raw: unknown): WeeklyCost | null {
     // only a non-negative integer is one; anything else reads as 0.
     assumedTierEvents: eventCount(source.assumedTierEvents),
     fastRequestedEvents: eventCount(source.fastRequestedEvents),
-    // ADR-003 A6, Gemini floor causes. Only a literal true is the claim that
-    // calls went unrecorded; the counts are non-negative integers, else 0.
+    // ADR-003 A6, the local tools' floor causes (Qwen Code, Antigravity, Grok
+    // Build). Only a literal true is the claim that calls went unrecorded; the
+    // counts are non-negative integers, else 0.
     unrecordedCalls: source.unrecordedCalls === true,
     longPromptFloorEvents: eventCount(source.longPromptFloorEvents),
     toolTokenEvents: eventCount(source.toolTokenEvents),
+    partialUsageEvents: eventCount(source.partialUsageEvents),
     // ADR-002 A3.15: the reader KNOWS it missed events in the window. Only a
     // literal true is that claim; anything else (absent on an older main,
     // "true", 1) is not, and reads as false rather than inventing a floor
@@ -615,12 +620,12 @@ function periodModelCost(raw: unknown): PeriodModelCost | null {
  * only in what they may CHARGE for it. Only events missing from the count
  * itself make the count a floor.
  *
- * Deciding that needs per-provider knowledge (Gemini's unrecorded utility
- * calls, Codex's unrecorded cache writes) that main holds and the renderer must
+ * Deciding that needs per-provider knowledge (Qwen Code's unrecorded side
+ * queries, Codex's unrecorded cache writes) that main holds and the renderer must
  * not: the next surface to show a token count would not carry the rule with it,
  * and nothing would fail when it forgot. And it arrives as CAUSES rather than a
  * boolean because ADR-002 A3.16 forbids printing a floor with no visible
- * reason, and there is a real state with no cost cause to borrow — a Gemini
+ * reason, and there is a real state with no cost cause to borrow — a Qwen
  * week where nothing could be priced sets the token floor while
  * `unrecordedCalls` stays false. So main states the causes and this validator
  * only carries them, for both fields that hold them:
@@ -882,6 +887,8 @@ function provider(raw: unknown): ProviderSnapshot | null {
     errorCode: text(source.errorCode, 48) ?? undefined,
     lastGoodAt: isoInstant(source.lastGoodAt),
     hookInstalled: source.hookInstalled === true ? true : undefined,
+    // Qwen Code with no usage log at all: only a literal true is that claim.
+    usageLogAbsent: source.usageLogAbsent === true ? true : undefined,
   };
 }
 

@@ -203,17 +203,18 @@ test.describe("'unread-range' is a token cause and is never emitted as a cost ca
   });
 
   test('no tool ever carries the code on the cost side, whichever tool has the gap', () => {
-    for (const id of ['claude', 'codex', 'gemini', 'kimi']) {
+    for (const id of ['claude', 'codex', 'kimi', 'qwen', 'grok']) {
       const out = history.usageHistory(priced(), LOCAL_NOW, {
         codexEvents: [{ ts: AT, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 1000, cachedInput: 0, cacheWrite: 0, output: 100 }],
-        geminiEvents: [{ ts: AT, model: 'gemini-2.5-pro', input: 1000, cached: 0, output: 100, thoughts: 0, tool: 0, longPrompt: false }],
         kimiEvents: [{ ts: AT, model: 'kimi-code/kimi-for-coding', input: 1000, output: 100, cacheRead: 0, cacheWrite: 0 }],
+        qwenEvents: [{ ts: AT, model: 'qwen3-coder-plus', tier: 0, input: 1000, cached: 0, output: 100 }],
+        grokEvents: [{ ts: AT, model: 'grok-4.6', input: 1000, cacheRead: 0, cacheWrite: 0, output: 100, usd: 0.01, partial: false, incomplete: false }],
         unreadRanges: { [id]: [range(AT, AT)] },
       });
       for (const [tool, causes] of Object.entries(out.floorCausesByProvider)) {
         assert.equal(causes.includes('unread-range'), false, `${tool} carries it while ${id} has the gap`);
       }
-      // `includes`, not a deep equal: Gemini also carries its unconditional
+      // `includes`, not a deep equal: Qwen also carries its unconditional
       // 'unrecorded-calls' (ADR-003 A6), which is correct and unrelated.
       assert.equal(
         (out.weeks[0].tokenFloorCausesByProvider[id] || []).includes('unread-range'),

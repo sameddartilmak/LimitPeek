@@ -231,13 +231,17 @@
                   </div>
                 </li>
 
-                <li class="row row--passive" data-id="gemini" data-name="Gemini" hidden>
-                  <span class="grip grip--static"><img class="mark" src="assets/logos/gemini-color.svg" alt="" width="20" height="20"></span>
-                  <div class="row__body"><span class="row__name">Gemini</span><div class="row__meta"><span class="l-tr" lang="tr">Deneysel: yalnızca yerel token ve maliyet.</span><span class="l-en" lang="en">Experimental: local tokens and cost only.</span></div></div>
-                </li>
                 <li class="row row--passive" data-id="kimi" data-name="Kimi" hidden>
                   <span class="grip grip--static"><img class="mark" src="assets/logos/kimi-color.svg" alt="" width="20" height="20"></span>
                   <div class="row__body"><span class="row__name">Kimi</span><div class="row__meta"><span class="l-tr" lang="tr">Deneysel: yalnızca yerel token.</span><span class="l-en" lang="en">Experimental: local tokens only.</span></div></div>
+                </li>
+                <li class="row row--passive" data-id="qwen" data-name="Qwen Code" hidden>
+                  <span class="grip grip--static"><img class="mark" src="assets/logos/qwen-mono.svg" alt="" width="20" height="20"></span>
+                  <div class="row__body"><span class="row__name">Qwen Code</span><div class="row__meta"><span class="l-tr" lang="tr">Deneysel: yalnızca yerel token ve maliyet.</span><span class="l-en" lang="en">Experimental: local tokens and cost only.</span></div></div>
+                </li>
+                <li class="row row--passive" data-id="grok" data-name="Grok Build" hidden>
+                  <span class="grip grip--static"><img class="mark" src="assets/logos/grok-mono.svg" alt="" width="20" height="20"></span>
+                  <div class="row__body"><span class="row__name">Grok Build</span><div class="row__meta"><span class="l-tr" lang="tr">Deneysel: yalnızca yerel token ve xAI'nin bildirdiği maliyet.</span><span class="l-en" lang="en">Experimental: local tokens and the cost xAI reports.</span></div></div>
                 </li>
               </ul>
               <div class="empty" id="demo-empty" hidden>
@@ -269,8 +273,9 @@
                       <li class="settings__item" data-for="claude" data-connected="true"><span class="settings__mark tile--claude"><img src="assets/logos/claude-color.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-claude">Claude Code</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="demo-sw-claude"><span class="switch__track" aria-hidden="true"></span></button></li>
                       <li class="settings__item" data-for="codex" data-connected="true"><span class="settings__mark tile--codex"><img src="assets/logos/codex-color.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-codex">Codex</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="demo-sw-codex"><span class="switch__track" aria-hidden="true"></span></button></li>
                       <li class="settings__item" data-for="antigravity" data-connected="true"><span class="settings__mark tile--antigravity"><img src="assets/logos/antigravity-color.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-antigravity">Antigravity</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="true" aria-labelledby="demo-sw-antigravity"><span class="switch__track" aria-hidden="true"></span></button></li>
-                      <li class="settings__item" data-for="gemini" data-connected="experimental"><span class="settings__mark"><img src="assets/logos/gemini-color.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-gemini">Gemini</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="demo-sw-gemini"><span class="switch__track" aria-hidden="true"></span></button></li>
                       <li class="settings__item" data-for="kimi" data-connected="experimental"><span class="settings__mark"><img src="assets/logos/kimi-color.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-kimi">Kimi</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="demo-sw-kimi"><span class="switch__track" aria-hidden="true"></span></button></li>
+                      <li class="settings__item" data-for="qwen" data-connected="experimental"><span class="settings__mark"><img src="assets/logos/qwen-mono.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-qwen">Qwen Code</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="demo-sw-qwen"><span class="switch__track" aria-hidden="true"></span></button></li>
+                      <li class="settings__item" data-for="grok" data-connected="experimental"><span class="settings__mark"><img src="assets/logos/grok-mono.svg" alt="" width="20" height="20"></span><span class="settings__text"><span class="settings__name" id="demo-sw-grok">Grok Build</span><span class="settings__meta"></span></span><button type="button" class="switch" role="switch" aria-checked="false" aria-labelledby="demo-sw-grok"><span class="switch__track" aria-hidden="true"></span></button></li>
                     </ul>
                   </div>
                 </div>
@@ -530,7 +535,7 @@
 <!-- ============================================================= TOOLS -->
 <section class="sec band" id="tools" aria-labelledby="h-tools">
   <div class="wrap">
-    <h2 class="h2 rise" id="h-tools"><span class="h2__a"><span class="l-tr" lang="tr">Beş araç, yerelden.</span><span class="l-en" lang="en">Five tools, read locally.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Ağa hiç çıkmadan.</span><span class="l-en" lang="en">Without going online.</span></span></h2>
+    <h2 class="h2 rise" id="h-tools"><span class="h2__a"><span class="l-tr" lang="tr">Altı araç, yerelden.</span><span class="l-en" lang="en">Six tools, read locally.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Ağa hiç çıkmadan.</span><span class="l-en" lang="en">Without going online.</span></span></h2>
     <ul class="tools">
       <li class="tool rise">
         <span class="tool__tile tile--claude"><img src="assets/logos/claude-color.svg" alt="" width="22" height="22"></span>
@@ -551,16 +556,22 @@
         <p class="tool__need"><span class="l-tr" lang="tr">5 saatlik IDE deposundan (belgelenmemiş); haftalık isteğe bağlı CLI köprüsünden.</span><span class="l-en" lang="en">5-hour from the IDE store (undocumented); weekly from an optional CLI bridge.</span></p>
       </li>
       <li class="tool rise">
-        <span class="tool__tile tile--gemini"><img src="assets/logos/gemini-color.svg" alt="" width="22" height="22"></span>
-        <h3 class="tool__name">Gemini</h3>
-        <span class="status status--exp"><span class="status__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Deneysel</span><span class="l-en" lang="en">Experimental</span></span>
-        <p class="tool__need"><span class="l-tr" lang="tr">Token ve maliyet, Gemini CLI’ın kendi sohbet kayıtlarından. Limit yayımlanmadığı için yüzde yok.</span><span class="l-en" lang="en">Tokens and cost from the Gemini CLI’s own chat records. No limit is published, so no percentage.</span></p>
-      </li>
-      <li class="tool rise">
         <span class="tool__tile tile--kimi"><img src="assets/logos/kimi-color.svg" alt="" width="22" height="22"></span>
         <h3 class="tool__name">Kimi</h3>
         <span class="status status--exp"><span class="status__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Deneysel</span><span class="l-en" lang="en">Experimental</span></span>
         <p class="tool__need"><span class="l-tr" lang="tr">Yalnızca token, Kimi Code oturum kayıtlarından. Fiyat listesi yok, maliyet yok.</span><span class="l-en" lang="en">Tokens only, from Kimi Code session logs. There is no price list, so no cost.</span></p>
+      </li>
+      <li class="tool rise">
+        <span class="tool__tile tile--qwen"><img src="assets/logos/qwen-mono.svg" alt="" width="22" height="22"></span>
+        <h3 class="tool__name">Qwen Code</h3>
+        <span class="status status--exp"><span class="status__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Deneysel</span><span class="l-en" lang="en">Experimental</span></span>
+        <p class="tool__need"><span class="l-tr" lang="tr">Token ve maliyet, Qwen Code’un kendi kullanım kaydından (0.18.4 ve sonrası). Limit yayımlanmadığı için yüzde yok.</span><span class="l-en" lang="en">Tokens and cost from Qwen Code’s own usage log (0.18.4 and later). No limit is published, so no percentage.</span></p>
+      </li>
+      <li class="tool rise">
+        <span class="tool__tile tile--grok"><img src="assets/logos/grok-mono.svg" alt="" width="22" height="22"></span>
+        <h3 class="tool__name">Grok Build</h3>
+        <span class="status status--exp"><span class="status__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Deneysel</span><span class="l-en" lang="en">Experimental</span></span>
+        <p class="tool__need"><span class="l-tr" lang="tr">Token ve xAI’nin bildirdiği maliyet, Grok Build’in oturum kullanım dosyalarından. Limit yayımlanmadığı için yüzde yok.</span><span class="l-en" lang="en">Tokens and the cost xAI reports, from Grok Build’s session usage files. No limit is published, so no percentage.</span></p>
       </li>
     </ul>
     <p class="fine rise"><span class="l-tr" lang="tr">Ürün ve şirket adları yalnızca uyumluluğu belirtmek için kullanılır; Usage Notch’un bu ürünlerin sahipleriyle resmî bir bağı yoktur ve onlar tarafından onaylanmamıştır.</span><span class="l-en" lang="en">Product and company names are used only to state compatibility; Usage Notch has no official affiliation with, or endorsement from, the owners of these products.</span></p>

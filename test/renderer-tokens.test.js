@@ -70,7 +70,7 @@ test.describe('counts are read one tool at a time and never merged', () => {
     tokensByProvider: {
       claude: tk({ billable: 1000, cacheRead: 90_000 }),
       codex: tk({ billable: 250 }),
-      gemini: tk(),
+      qwen: tk(),
     },
     tokenFloorCausesByProvider: {},
   };
@@ -84,16 +84,16 @@ test.describe('counts are read one tool at a time and never merged', () => {
     assert.equal(m.tokensFor(period, 'kimi'), null, 'no entry: nothing to show');
     // A counted zero is a measurement and must survive to the screen. Treating
     // it as absent is the defect this rule exists to prevent.
-    assert.notEqual(m.tokensFor(period, 'gemini'), null);
-    assert.equal(m.tokensFor(period, 'gemini').billable, 0);
+    assert.notEqual(m.tokensFor(period, 'qwen'), null);
+    assert.equal(m.tokensFor(period, 'qwen').billable, 0);
   });
 
   test('providersWithTokens returns IDS, in the order main listed the tools', () => {
-    const ids = m.providersWithTokens(period, ['claude', 'codex', 'gemini', 'kimi']);
-    // Gemini is listed: it has a counted zero, which is a figure, not an absence.
-    assert.deepEqual(ids, ['claude', 'codex', 'gemini']);
+    const ids = m.providersWithTokens(period, ['claude', 'codex', 'kimi', 'qwen']);
+    // Qwen is listed: it has a counted zero, which is a figure, not an absence.
+    assert.deepEqual(ids, ['claude', 'codex', 'qwen']);
     // A tool main forgot to list is still shown rather than silently dropped.
-    assert.deepEqual(m.providersWithTokens(period, ['codex']), ['codex', 'claude', 'gemini']);
+    assert.deepEqual(m.providersWithTokens(period, ['codex']), ['codex', 'claude', 'qwen']);
   });
 
   test('the module exposes no function that turns a period into one number', () => {

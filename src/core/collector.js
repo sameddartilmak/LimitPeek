@@ -19,8 +19,9 @@ const { sanitizePlanLabels, withPlanLabel } = require('./plan-labels');
 const { sanitizeEnabled } = require('./enabled');
 const { LocalUsageChannel } = require('./usage-channel');
 const { sameEvents } = require('./same-events');
-const { geminiTmpDir } = require('./gemini/usage');
 const { kimiHome } = require('./kimi/usage');
+const { qwenHome } = require('./qwen/usage');
+const { grokHome } = require('./grok/usage');
 const { antigravityUsageInstallDir } = require('./antigravity/usage');
 
 /**
@@ -60,7 +61,7 @@ const CODEX_FULL_TTL_MS = 60 * 1000;
 const CODEX_SCAN_TIMEOUT_MS = 15 * 60 * 1000;
 
 /**
- * Gemini CLI / Kimi Code usage scan TTL (ADR-003 A6). No watcher feeds these
+ * Local-log usage scan TTL (Kimi Code, Qwen Code, Grok Build, Antigravity). No watcher feeds these
  * scans, so a full walk (cheap over an unchanged tree: one lstat per file, in
  * the worker) is asked for on this TTL from `rebuild()` — which the sweep
  * drives every SWEEP_OPEN_MS / SWEEP_IDLE_MS.
@@ -165,10 +166,10 @@ class Collector extends EventEmitter {
      */
     this._claudeSettled = true;
     /**
-     * Gemini CLI and Kimi Code usage (ADR-003 A6): one off-thread channel each,
-     * spawning its worker only when the tool is on this machine. Overrides for
-     * the `.gemini` directory and the Kimi Code home are for tests; null lets
-     * the readers resolve GEMINI_CLI_HOME / KIMI_CODE_HOME / the OS home.
+     * Kimi Code, Qwen Code and Grok Build usage (ADR-003 A6): one off-thread
+     * channel each, spawning its worker only when the tool is on this machine.
+     * The home overrides are for tests; null lets the readers resolve
+     * KIMI_CODE_HOME / QWEN_HOME / GROK_HOME / the OS home.
      */
     const channel = (id, label, home, workerPath, installDir) => new LocalUsageChannel({
       id,
@@ -181,14 +182,18 @@ class Collector extends EventEmitter {
       rebuild: () => this.rebuild(),
       emit: (name, payload) => this.emit(name, payload),
     });
-    this.geminiHome = options.geminiHome || null;
     this.kimiHome = options.kimiHome || null;
-    this._gemini = channel('gemini', 'gemini chats', this.geminiHome,
-      options.geminiWorkerPath || path.join(__dirname, 'gemini', 'scan-worker.js'),
-      () => geminiTmpDir(this.geminiHome || undefined));
+    this.qwenHome = options.qwenHome || null;
+    this.grokHome = options.grokHome || null;
     this._kimi = channel('kimi', 'kimi sessions', this.kimiHome,
       options.kimiWorkerPath || path.join(__dirname, 'kimi', 'scan-worker.js'),
       () => kimiHome(this.kimiHome || undefined));
+    this._qwen = channel('qwen', 'qwen usage', this.qwenHome,
+      options.qwenWorkerPath || path.join(__dirname, 'qwen', 'scan-worker.js'),
+      () => qwenHome(this.qwenHome || undefined));
+    this._grok = channel('grok', 'grok sessions', this.grokHome,
+      options.grokWorkerPath || path.join(__dirname, 'grok', 'scan-worker.js'),
+      () => grokHome(this.grokHome || undefined));
     /**
      * Antigravity token usage, from its per-conversation stores: the same kind
      * of channel. `antigravityUsageHome` overrides the `.gemini` directory the
@@ -257,10 +262,8 @@ class Collector extends EventEmitter {
     // Codex's first scan starts NOW, off-thread, instead of waiting for the
     // first rebuild — which on a cold start waits for Claude's scan (review F12).
     this._codexTick(Date.now());
-    // Same for the Gemini / Kimi scans, for a tool that is installed.
-    this._gemini.auto = true;
-    this._kimi.auto = true;
-    this._antigravityUsage.auto = true;
+    // Same for the local-log scans, for a tool that is installed.
+    for (const ch of this._localChannels()) ch.auto = true;
     this._localTick(Date.now());
     this.store = store.load(this.userDataDir);
     this._claudeSettled = this.store.events.length > 0 || Boolean(this.store.builtAt);
@@ -288,9 +291,7 @@ class Collector extends EventEmitter {
     if (this._codexFollowUp) clearTimeout(this._codexFollowUp);
     this._codexFollowUp = null;
     this._stopCodexWorker();
-    this._gemini.stop();
-    this._kimi.stop();
-    this._antigravityUsage.stop();
+    for (const ch of this._localChannels()) ch.stop();
     if (this._ideDebounce) clearTimeout(this._ideDebounce);
     if (this._throttle) clearTimeout(this._throttle);
     if (this._sweep) clearTimeout(this._sweep);
@@ -426,8 +427,9 @@ class Collector extends EventEmitter {
       codexReadFailed: this._codexReadFailed,
       codexReadGoodAtMs: this._codexResultAtMs,
       codexUnreadRange: this._codexUnreadRange,
-      gemini: this._gemini.snapshotInput(),
       kimi: this._kimi.snapshotInput(),
+      qwen: this._qwen.snapshotInput(),
+      grok: this._grok.snapshotInput(),
       antigravityUsage: this._antigravityUsage.snapshotInput(),
       scanOk: this.scanOk,
       scanGoodAtMs: this.scanGoodAtMs,
@@ -877,7 +879,7 @@ class Collector extends EventEmitter {
 
   _ensureCodexWorker() {
     if (this._codexWorker) return this._codexWorker;
-    // Same bound as the Gemini / Kimi workers (security F4).
+    // Same bound as the local-log usage workers (security F4).
     const worker = new Worker(this.codexWorkerPath, { resourceLimits: { maxOldGenerationSizeMb: 512 } });
     // Never keeps the process alive on its own; `stop()` terminates it.
     if (typeof worker.unref === 'function') worker.unref();
@@ -946,20 +948,21 @@ class Collector extends EventEmitter {
     if (!this._stopped && this._claudeSettled && this._codexEvents !== null) this.rebuild();
   }
 
-  /** Keeps the Gemini / Kimi / Antigravity usage scans fresh (no-op for a tool not installed). */
+  /** Every local-log usage channel, in `Snapshot.pendingUsage` order. */
+  _localChannels() {
+    return [this._antigravityUsage, this._kimi, this._qwen, this._grok];
+  }
+
+  /** Keeps the local-log usage scans fresh (no-op for a tool not installed). */
   _localTick(now) {
     const ttl = this.panelOpen ? LOCAL_FULL_TTL_OPEN_MS : LOCAL_FULL_TTL_IDLE_MS;
-    this._gemini.tick(now, ttl);
-    this._kimi.tick(now, ttl);
-    this._antigravityUsage.tick(now, ttl);
+    for (const ch of this._localChannels()) ch.tick(now, ttl);
   }
 
   /** Tools whose local usage is not read yet (Snapshot.pendingUsage). */
   _pendingUsage() {
     const out = this._codexEvents === null ? ['codex'] : [];
-    if (this._gemini.pending()) out.push('gemini');
-    if (this._kimi.pending()) out.push('kimi');
-    if (this._antigravityUsage.pending()) out.push('antigravity');
+    for (const ch of this._localChannels()) if (ch.pending()) out.push(ch.id);
     return out;
   }
 

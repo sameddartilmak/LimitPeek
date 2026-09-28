@@ -7,7 +7,7 @@ const { sameEvents } = require('./same-events');
 
 /**
  * One tool's off-thread local usage scan, as the collector sees it (ADR-003 A6,
- * ADR-002 A3.11-12). Used for Gemini CLI, Kimi Code and
+ * ADR-002 A3.11-12). Used for Kimi Code, Qwen Code, Grok Build and
  * Antigravity's conversation stores.
  *
  * It follows the Codex arrangement in collector.js (long-lived worker holding
@@ -35,7 +35,7 @@ const SCAN_TIMEOUT_MS = 15 * 60 * 1000;
 class LocalUsageChannel {
   /**
    * @param {object} o
-   * @param {string} o.id              provider id ('gemini' | 'kimi' | 'antigravity')
+   * @param {string} o.id              provider id ('kimi' | 'qwen' | 'grok' | 'antigravity')
    * @param {string} o.label           fixed path-guard label, never a path
    * @param {string} o.workerPath
    * @param {string|null} o.home       override passed to the reader (tests), or null
@@ -106,6 +106,9 @@ class LocalUsageChannel {
       readFailed: this.readFailed,
       resultAtMs: this.resultAtMs,
       unreadRange: this.unreadRange,
+      // Qwen Code only (qwen/usage.js): the tool is here but has written no
+      // usage log at all. Every other reader leaves the stat unset.
+      usageLogAbsent: this.events !== null && Boolean(this.stats) && this.stats.usageLogAbsent === true,
     };
   }
 

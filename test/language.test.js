@@ -775,13 +775,13 @@ test.describe('every main-process surface speaks the resolved language (ADR-004 
     const build = () => buildSnapshot({
       now: Date.parse('2026-09-08T12:00:00Z'), events: [], rateLimits: { state: 'missing' }, scanOk: true,
     });
-    const trRow = build().providers.find((p) => p.id === 'gemini');
+    const trRow = build().providers.find((p) => p.id === 'qwen');
     let enRow = null;
-    inEnglish(() => { enRow = build().providers.find((p) => p.id === 'gemini'); });
+    inEnglish(() => { enRow = build().providers.find((p) => p.id === 'qwen'); });
     assert.equal(trRow.setupAction.label, 'Ekle');
     assert.equal(enRow.setupAction.label, 'Add');
-    assert.equal(enRow.setupAction.detail, 'Gemini CLI was not found on this computer.');
-    assert.equal(trRow.setupAction.detail, 'Gemini CLI bu bilgisayarda bulunamadı.');
+    assert.equal(enRow.setupAction.detail, 'Qwen Code was not found on this computer.');
+    assert.equal(trRow.setupAction.detail, 'Qwen Code bu bilgisayarda bulunamadı.');
     assert.equal(enRow.setupAction.kind, trRow.setupAction.kind, 'kind is not text and never changes');
   });
 

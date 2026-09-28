@@ -100,7 +100,7 @@ const prov = (id, displayName) => ({
   burnRatePerHour: null, byModel: [], weeklyCost: null, setupAction: null, lastGoodAt: null,
 });
 
-const PROVIDERS = [prov('claude', 'Claude Code'), prov('codex', 'Codex'), prov('gemini', 'Gemini'), prov('kimi', 'Kimi')];
+const PROVIDERS = [prov('claude', 'Claude Code'), prov('codex', 'Codex'), prov('kimi', 'Kimi'), prov('qwen', 'Qwen Code')];
 
 /** Mount the component and read the subtotal list of the first period. */
 function subtotalsOf(hist, providers = PROVIDERS) {
@@ -184,9 +184,9 @@ test.describe('one row per tool, and no row that is a total', () => {
 
   test('four tools produce four separate rows and still no total', () => {
     const s = subtotalsOf(history({
-      usageProviders: ['claude', 'codex', 'gemini', 'kimi'],
+      usageProviders: ['claude', 'codex', 'kimi', 'qwen'],
       months: [period({
-        tokensByProvider: { claude: tk(1000), codex: tk(1000), gemini: tk(1000), kimi: tk(1000) },
+        tokensByProvider: { claude: tk(1000), codex: tk(1000), kimi: tk(1000), qwen: tk(1000) },
         byModel: [modelEntry('claude', 'claude-opus-5', 1000)],
       })],
     }));

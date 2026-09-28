@@ -62,6 +62,7 @@ function kimiCost(events, startMs, endMs, anchored) {
     unrecordedCalls: false,
     longPromptFloorEvents: 0,
     toolTokenEvents: 0,
+    partialUsageEvents: 0,
     sourceIncomplete: false,
     // No price table exists, so no date can be stated.
     pricesAsOf: '',

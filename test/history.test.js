@@ -579,7 +579,7 @@ test.describe('per-period token counts stay per tool and per class', () => {
   const endEx = history.nextWeekStartMs(wStart);
   const at = wStart + HOUR;
   const cx = (over) => ({ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 0, cachedInput: 0, cacheWrite: 0, output: 0, ...over });
-  const gm = (over) => ({ ts: at, model: 'gemini-2.5-pro', input: 0, cached: 0, output: 0, thoughts: 0, tool: 0, longPrompt: false, ...over });
+  const qw = (over) => ({ ts: at, model: 'qwen3-coder-plus', tier: 0, input: 0, cached: 0, output: 0, ...over });
   const km = (over) => ({ ts: at, model: 'kimi-code/k2', input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...over });
 
   test('two tools in one period keep two entries and are never added together', () => {
@@ -619,14 +619,14 @@ test.describe('per-period token counts stay per tool and per class', () => {
   test('all four tools each get their own entry, and cacheRead never enters billable', () => {
     const { weeks } = history.usageHistory([ev({ ts: at, key: 'o1', output: 11, cacheRead: 9000000 })], NOW, {
       codexEvents: [cx({ output: 22, cachedInput: 8000000 })],
-      geminiEvents: [gm({ output: 33, cached: 7000000 })],
+      qwenEvents: [qw({ output: 33, cached: 7000000 })],
       kimiEvents: [km({ output: 44, cacheRead: 6000000 })],
     });
     const t = weeks[0].tokensByProvider;
-    assert.deepEqual(Object.keys(t).sort(), ['claude', 'codex', 'gemini', 'kimi']);
-    assert.deepEqual([t.claude.billable, t.codex.billable, t.gemini.billable, t.kimi.billable], [11, 22, 33, 44]);
+    assert.deepEqual(Object.keys(t).sort(), ['claude', 'codex', 'kimi', 'qwen']);
+    assert.deepEqual([t.claude.billable, t.codex.billable, t.qwen.billable, t.kimi.billable], [11, 22, 33, 44]);
     assert.deepEqual(
-      [t.claude.cacheRead, t.codex.cacheRead, t.gemini.cacheRead, t.kimi.cacheRead],
+      [t.claude.cacheRead, t.codex.cacheRead, t.qwen.cacheRead, t.kimi.cacheRead],
       [9000000, 8000000, 7000000, 6000000],
       'reported per tool, and out of every billable above',
     );
@@ -737,7 +737,7 @@ test.describe('tokenFloorCausesByProvider marks missing counts, with causes, not
   const wStart = history.weekStartMs(NOW);
   const at = wStart + HOUR;
   const cx = (over) => ({ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 0, cachedInput: 0, cacheWrite: 0, output: 0, ...over });
-  const gm = (over) => ({ ts: at, model: 'gemini-2.5-pro', input: 0, cached: 0, output: 0, thoughts: 0, tool: 0, longPrompt: false, ...over });
+  const qw = (over) => ({ ts: at, model: 'qwen3-coder-plus', tier: 0, input: 0, cached: 0, output: 0, ...over });
   const km = (over) => ({ ts: at, model: 'kimi-code/k2', input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...over });
 
   test('a fully read, fully priced Claude week marks nothing', () => {
@@ -753,16 +753,16 @@ test.describe('tokenFloorCausesByProvider marks missing counts, with causes, not
     assert.equal(weeks[0].tokensByProvider.claude.output, 1000);
   });
 
-  test('Gemini is marked whenever it has usage, priced or not', () => {
-    const priced = history.usageHistory([], NOW, { geminiEvents: [gm({ output: 100 })] });
-    assert.deepEqual(priced.weeks[0].tokenFloorCausesByProvider, { gemini: ['unrecorded-calls'] });
+  test('Qwen is marked whenever it has usage, priced or not', () => {
+    const priced = history.usageHistory([], NOW, { qwenEvents: [qw({ output: 100 })] });
+    assert.deepEqual(priced.weeks[0].tokenFloorCausesByProvider, { qwen: ['unrecorded-calls'] });
     // Nothing priced: floorCausesByProvider carries no 'unrecorded-calls', and
     // the mark must not be derived from it.
     const unpriced = history.usageHistory([], NOW, {
-      geminiEvents: [gm({ model: 'unknown', noModel: true, output: 100 })],
+      qwenEvents: [qw({ model: 'glm-5', output: 100 })],
     });
-    assert.equal((unpriced.floorCausesByProvider.gemini || []).includes('unrecorded-calls'), false);
-    assert.deepEqual(unpriced.weeks[0].tokenFloorCausesByProvider, { gemini: ['unrecorded-calls'] },
+    assert.equal((unpriced.floorCausesByProvider.qwen || []).includes('unrecorded-calls'), false);
+    assert.deepEqual(unpriced.weeks[0].tokenFloorCausesByProvider, { qwen: ['unrecorded-calls'] },
       'the cost note has no cause to lend, so the token side states its own');
   });
 
@@ -827,31 +827,31 @@ test.describe('tokenFloorCausesByProvider marks missing counts, with causes, not
     assert.deepEqual(weeks[1].tokenFloorCausesByProvider, {});
   });
 
-  test('several tools marked at once keep the fixed claude, codex, gemini, kimi order', () => {
+  test('several tools marked at once keep the fixed claude, codex, kimi, qwen order', () => {
     // Codex is marked by its own unread range: the zero-write pattern is no
     // longer a token cause (2026-09-23), so the cached-read turn adds nothing.
     const { weeks, usageProviders } = history.usageHistory([ev({ ts: at, key: 'o1', output: 1000 })], NOW, {
       codexEvents: [cx({ output: 10, cachedInput: 5000 })],
-      geminiEvents: [gm({ output: 100 })],
+      qwenEvents: [qw({ output: 100 })],
       kimiEvents: [km({ output: 5 })],
       unreadRanges: {
         kimi: [{ fromMs: at, throughMs: at }], codex: [{ fromMs: at, throughMs: at }], claude: [{ fromMs: at, throughMs: at }],
       },
     });
-    assert.deepEqual(Object.keys(weeks[0].tokenFloorCausesByProvider), ['claude', 'codex', 'gemini', 'kimi']);
+    assert.deepEqual(Object.keys(weeks[0].tokenFloorCausesByProvider), ['claude', 'codex', 'kimi', 'qwen']);
     assert.deepEqual(Object.keys(weeks[0].tokenFloorCausesByProvider), usageProviders, 'same order as usageProviders');
     // Each tool states its OWN causes, in HistoryFloorCause order.
     assert.deepEqual(weeks[0].tokenFloorCausesByProvider, {
       claude: ['unread-range'],
       codex: ['unread-range'],
-      gemini: ['unrecorded-calls'],
       kimi: ['unread-range'],
+      qwen: ['unrecorded-calls'],
     });
   });
 
   test('the months list carries it too', () => {
-    const { months } = history.usageHistory([], NOW, { geminiEvents: [gm({ output: 100 })] });
-    assert.deepEqual(months[0].tokenFloorCausesByProvider, { gemini: ['unrecorded-calls'] });
+    const { months } = history.usageHistory([], NOW, { qwenEvents: [qw({ output: 100 })] });
+    assert.deepEqual(months[0].tokenFloorCausesByProvider, { qwen: ['unrecorded-calls'] });
   });
 });
 
@@ -879,7 +879,7 @@ test.describe('the panel row and the history period agree about every tool', () 
     });
     const period = snap.usageHistory.weeks[0];
     const out = {};
-    for (const id of ['claude', 'codex', 'gemini', 'kimi']) {
+    for (const id of ['claude', 'codex', 'kimi', 'qwen', 'grok']) {
       const row = snap.providers.find((p) => p.id === id);
       out[id] = {
         row: row.weeklyTokenFloorCauses,
@@ -890,13 +890,13 @@ test.describe('the panel row and the history period agree about every tool', () 
     return out;
   }
 
-  test('Gemini: both sides say unrecorded-calls, and neither says anything else', () => {
+  test('Qwen: both sides say unrecorded-calls, and neither says anything else', () => {
     const sides = bothSides({
-      gemini: installed([{ ts: at, model: 'gemini-2.5-pro', input: 500, cached: 0, output: 100, thoughts: 0, tool: 0, longPrompt: false }]),
+      qwen: installed([{ ts: at, model: 'qwen3-coder-plus', tier: 0, input: 500, cached: 0, output: 100 }]),
     });
-    assert.equal(sides.gemini.counted, true, 'the fixture has to reach both windows or this proves nothing');
-    assert.deepEqual(sides.gemini.row, ['unrecorded-calls']);
-    assert.deepEqual(sides.gemini.period, sides.gemini.row);
+    assert.equal(sides.qwen.counted, true, 'the fixture has to reach both windows or this proves nothing');
+    assert.deepEqual(sides.qwen.row, ['unrecorded-calls']);
+    assert.deepEqual(sides.qwen.period, sides.qwen.row);
   });
 
   test('Codex: neither side says unrecorded-writes off the zero-recorded-write pattern', () => {
@@ -924,20 +924,31 @@ test.describe('the panel row and the history period agree about every tool', () 
     assert.deepEqual(sides.kimi.period, []);
   });
 
+  test('Grok: an incomplete turn is partial-usage on both sides; a partial cost alone is on neither', () => {
+    const turn = (over) => ({ ts: at, model: 'grok-4.6', input: 100, cacheRead: 0, cacheWrite: 0, output: 50, usd: 0.01, partial: false, incomplete: false, ...over });
+    const incomplete = bothSides({ grok: installed([turn({ partial: true, incomplete: true })]) });
+    assert.equal(incomplete.grok.counted, true);
+    assert.deepEqual(incomplete.grok.row, ['partial-usage']);
+    assert.deepEqual(incomplete.grok.period, incomplete.grok.row);
+    const costOnly = bothSides({ grok: installed([turn({ partial: true })]) });
+    assert.deepEqual(costOnly.grok.row, []);
+    assert.deepEqual(costOnly.grok.period, []);
+  });
+
   test('all four at once: every tool matches its own row, and none borrows another tool’s cause', () => {
     const sides = bothSides({
       events: [ev({ ts: at, key: 'o1', output: 1000 })],
       codexEvents: [{ ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 5000, cacheWrite: 0, output: 20 }],
-      gemini: installed([{ ts: at, model: 'gemini-2.5-pro', input: 500, cached: 0, output: 100, thoughts: 0, tool: 0, longPrompt: false }]),
+      qwen: installed([{ ts: at, model: 'qwen3-coder-plus', tier: 0, input: 500, cached: 0, output: 100 }]),
       kimi: installed([{ ts: at, model: 'kimi-code/k2', input: 100, output: 50, cacheRead: 0, cacheWrite: 0 }]),
     });
-    for (const id of ['claude', 'codex', 'gemini', 'kimi']) {
+    for (const id of ['claude', 'codex', 'kimi', 'qwen']) {
       assert.equal(sides[id].counted, true, id);
       assert.deepEqual(sides[id].period, sides[id].row, `${id}: the two producers disagree`);
     }
     assert.deepEqual(sides.claude.row, []);
     assert.deepEqual(sides.codex.row, []);
-    assert.deepEqual(sides.gemini.row, ['unrecorded-calls']);
+    assert.deepEqual(sides.qwen.row, ['unrecorded-calls']);
     assert.deepEqual(sides.kimi.row, []);
   });
 
@@ -945,11 +956,11 @@ test.describe('the panel row and the history period agree about every tool', () 
     // There is no input by which a caller could pass "unpriced" or a tier cause
     // in: the function takes three source-behaviour facts and nothing else.
     assert.deepEqual(history.tokenFloorCauses('claude', { hasCount: true, sourceIncomplete: true }), ['unread-range']);
-    assert.deepEqual(history.tokenFloorCauses('gemini', { hasCount: true }), ['unrecorded-calls']);
+    assert.deepEqual(history.tokenFloorCauses('qwen', { hasCount: true }), ['unrecorded-calls']);
     assert.deepEqual(history.tokenFloorCauses('codex', { hasCount: true, unrecordedWrites: true }), ['unrecorded-writes']);
     assert.deepEqual(history.tokenFloorCauses('claude', { hasCount: true, unrecordedWrites: true }), [],
       'the Codex write pattern is Codex-only');
-    assert.deepEqual(history.tokenFloorCauses('gemini', { hasCount: false, sourceIncomplete: true }), [],
+    assert.deepEqual(history.tokenFloorCauses('qwen', { hasCount: false, sourceIncomplete: true }), [],
       'no amount, no bound — whatever the facts');
     assert.deepEqual(
       history.tokenFloorCauses('codex', { hasCount: true, sourceIncomplete: true, unrecordedWrites: true }),
@@ -986,9 +997,9 @@ test('every byModel entry main emits carries a real count, never null', () => {
         { ts: at, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 0, cacheWrite: 0, output: 20 },
         { ts: at, model: 'gpt-9-imaginary', tier: 'standard', inputUncached: 5, cachedInput: 0, cacheWrite: 0, output: 5 },
       ],
-      geminiEvents: [
-        { ts: at, model: 'gemini-2.5-pro', input: 10, cached: 0, output: 1, thoughts: 0, tool: 0, longPrompt: false },
-        { ts: at, model: 'unknown', noModel: true, input: 3, cached: 0, output: 1, thoughts: 0, tool: 0, longPrompt: false },
+      qwenEvents: [
+        { ts: at, model: 'qwen3-coder-plus', tier: 0, input: 10, cached: 0, output: 1 },
+        { ts: at, model: 'glm-5', tier: 0, input: 3, cached: 0, output: 1 },
       ],
       kimiEvents: [{ ts: at, model: 'kimi-code/k2', input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }],
     },

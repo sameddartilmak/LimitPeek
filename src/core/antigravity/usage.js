@@ -2,7 +2,7 @@
 /**
  * Antigravity TOKEN usage, read from the per-conversation SQLite stores the
  * products write themselves. Rung 1 only: no credential, no network. The same
- * design as the Gemini CLI reader (gemini/usage.js), held in a long-lived
+ * design as the Kimi Code reader (kimi/usage.js), held in a long-lived
  * worker (antigravity/scan-worker.js) behind the same LocalUsageChannel.
  *
  * WHERE THE FILES ARE (verified on a live machine, 2026-09-24)
@@ -74,7 +74,7 @@ const { childFiles } = require('../scan/local-tree');
 const { capModels } = require('../scan/model-cap');
 const { decodeMessage, all, WireError, WIRE } = require('./protobuf');
 const { loadSqlite } = require('./sqlite');
-const { LONG_PROMPT_TOKENS } = require('../gemini/pricing');
+const { LONG_PROMPT_TOKENS } = require('./gemini-pricing');
 
 const LABEL = 'antigravity conversations';
 const DAY_MS = 24 * 60 * 60 * 1000;

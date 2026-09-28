@@ -7,10 +7,12 @@ const agg = require('./aggregate');
 const history = require('./history');
 const codexUsage = require('./codex/usage');
 const codexPricing = require('./codex/pricing');
-const geminiUsage = require('./gemini/usage');
-const geminiPricing = require('./gemini/pricing');
 const kimiUsage = require('./kimi/usage');
 const kimiCostMod = require('./kimi/cost');
+const qwenUsage = require('./qwen/usage');
+const qwenPricing = require('./qwen/pricing');
+const grokUsage = require('./grok/usage');
+const grokCostMod = require('./grok/cost');
 const antigravityUsage = require('./antigravity/usage');
 const antigravityCostMod = require('./antigravity/cost');
 const { RETENTION_DAYS, DAY_MS } = require('./scan/scanner');
@@ -49,16 +51,17 @@ function memoUsageHistory(rawClaude, dedupedAll, now, opts, archive) {
     claude: rawClaude,
     archive,
     codex: opts.codexEvents,
-    gemini: opts.geminiEvents,
     kimi: opts.kimiEvents,
+    qwen: opts.qwenEvents,
+    grok: opts.grokEvents,
     antigravity: opts.antigravityEvents,
     unread: JSON.stringify(opts.unreadRanges),
     week: history.weekStartMs(now),
     month: history.monthStartMs(now),
   };
   const prev = historyMemo && historyMemo.key;
-  if (prev && prev.future === key.future && prev.claude === key.claude && prev.archive === key.archive && prev.codex === key.codex && prev.gemini === key.gemini
-    && prev.kimi === key.kimi && prev.antigravity === key.antigravity && prev.unread === key.unread && prev.week === key.week && prev.month === key.month) {
+  if (prev && prev.future === key.future && prev.claude === key.claude && prev.archive === key.archive && prev.codex === key.codex && prev.kimi === key.kimi
+    && prev.qwen === key.qwen && prev.grok === key.grok && prev.antigravity === key.antigravity && prev.unread === key.unread && prev.week === key.week && prev.month === key.month) {
     return historyMemo.value;
   }
   // Before the archive's frontier the archive's per-day rows stand in for the
@@ -343,10 +346,11 @@ function emptyWeeklyCost(startMs, endMs, anchored, pricesAsOf) {
     unrecordedWriteEvents: 0,
     assumedTierEvents: 0,
     fastRequestedEvents: 0,
-    // Nothing was read, so there is no amount for a Gemini cause to qualify.
+    // Nothing was read, so there is no amount for any cause to qualify.
     unrecordedCalls: false,
     longPromptFloorEvents: 0,
     toolTokenEvents: 0,
+    partialUsageEvents: 0,
     sourceIncomplete: true,
     pricesAsOf,
     windowStart: new Date(startMs).toISOString(),
@@ -363,11 +367,12 @@ function emptyWeeklyCost(startMs, endMs, anchored, pricesAsOf) {
  * history period is the window arithmetic, not what makes a count a lower bound.
  * All this does is reduce this row's window to the booleans that function takes.
  */
-function weeklyTokenFloorCausesFor(providerId, weeklyTokens, sourceIncomplete, unrecordedWrites) {
+function weeklyTokenFloorCausesFor(providerId, weeklyTokens, sourceIncomplete, unrecordedWrites, partialUsage = false) {
   return history.tokenFloorCauses(providerId, {
     hasCount: history.hasAnyTokens(weeklyTokens),
     sourceIncomplete,
     unrecordedWrites,
+    partialUsage,
   });
 }
 
@@ -434,9 +439,9 @@ function codexRowState(cx, anyFigure, fresh, rolledOver) {
 }
 
 /**
- * A row for a tool whose ONLY source is its own local usage log: Gemini CLI and
- * Kimi Code (ADR-003 Amendment 6). Neither writes a 5-hour or weekly limit
- * figure anywhere this app may read, so both windows are `not-supplied`
+ * A row for a tool whose ONLY source is its own local usage log: Kimi Code,
+ * Qwen Code and Grok Build (ADR-003 Amendment 6). None writes a 5-hour or
+ * weekly limit figure anywhere this app may read, so both windows are `not-supplied`
  * ("bildirilmiyor"): the tool does not publish them to us, which is not the
  * same claim as "unknown", and no window is invented.
  *
@@ -448,13 +453,18 @@ function codexRowState(cx, anyFigure, fresh, rolledOver) {
  *    is pending, `tokens`/`weeklyCost` are null because they are NOT READ YET
  *    and `Snapshot.pendingUsage` says so. A known-incomplete scan marks the cost
  *    `sourceIncomplete` (A3.15) and never touches the row status.
+ *  - Installed but no usage log written at all (`src.usageLogAbsent`, Qwen
+ *    Code): connected with no figures, and `usageLogAbsent: true` so the row
+ *    says why instead of claiming a measured zero.
  *
  * @param {object} p        registry entry
  * @param {boolean} enabled
  * @param {{installed?:boolean, events?:Array|null, readFailed?:boolean,
  *          resultAtMs?:number|null, unreadRange?:object|null}|undefined} src
  * @param {number} now
- * @param {{sum: Function, cost: Function, pricesAsOf: string}} reader
+ * @param {{sum: Function, cost: Function, pricesAsOf: string,
+ *          partialUsage?: Function}} reader  `partialUsage(events, startMs, endMs)`
+ *        is the Grok Build token-floor fact (xAI marked usage incomplete)
  * @param {string|null} [planLabel] the plan the user typed for THIS tool, or
  *        null. Passed in rather than looked up here so this function keeps no
  *        opinion about a value it only forwards.
@@ -493,6 +503,29 @@ function localUsageRow(p, enabled, src, now, reader, planLabel) {
   }
   const events = Array.isArray(src.events) ? src.events : null;
   const list = events || EMPTY_EVENTS;
+  if (events && src.usageLogAbsent === true && list.length === 0) {
+    return {
+      row: {
+        ...base,
+        connected: true,
+        status: 'ok',
+        fiveHour: unknownWindow('not-supplied'),
+        sevenDay: unknownWindow('not-supplied'),
+        tokens: null,
+        // No log exists, so there is no week to measure: null, not a zero.
+        weeklyTokens: null,
+        weeklyTokensWindowAnchored: null,
+        weeklyTokenFloorCauses: [],
+        byModel: [],
+        weeklyCost: null,
+        usageLogAbsent: true,
+        setupAction: null,
+        lastGoodAt: Number.isFinite(src.resultAtMs) ? new Date(src.resultAtMs).toISOString() : null,
+      },
+      unread: [],
+      events: EMPTY_EVENTS,
+    };
+  }
   const fiveWin = agg.fiveHourWindow(now, null);
   const five = reader.sum(list, fiveWin.start, Math.min(fiveWin.end, now));
   const weekWin = agg.sevenDayWindow(now, null);
@@ -532,9 +565,13 @@ function localUsageRow(p, enabled, src, now, reader, planLabel) {
       // so `weekWin` can only ever be trailing. Stated rather than left to be
       // inferred, and readable even when nothing priced and `weeklyCost` is null.
       weeklyTokensWindowAnchored: weekTokens ? weekWin.anchored : null,
-      // Gemini's unrecorded utility calls and Kimi's known-unread ranges are
-      // both decided by the shared rule; neither reads a cost cause.
-      weeklyTokenFloorCauses: weeklyTokenFloorCausesFor(p.id, weekTokens, incomplete, false),
+      // Qwen Code's unrecorded calls, Grok Build's incomplete turns and every
+      // tool's known-unread ranges are decided by the shared rule; none reads
+      // a cost cause.
+      weeklyTokenFloorCauses: weeklyTokenFloorCausesFor(
+        p.id, weekTokens, incomplete, false,
+        Boolean(events && reader.partialUsage && reader.partialUsage(list, weekWin.start, weekWin.end)),
+      ),
       byModel: five.byModel.slice(0, 6),
       weeklyCost,
       setupAction: null,
@@ -718,7 +755,7 @@ function buildSnapshot(input) {
    * each labelled with the field it came from.
    *
    * Tokens and the notional cost come from a THIRD source, the per-conversation
-   * stores (antigravity/usage.js), read off-thread like Gemini CLI's chats; see
+   * stores (antigravity/usage.js), read off-thread like Kimi Code's journals; see
    * the block after `agModelQuotas`. `burnRatePerHour` stays null, as on the
    * other local-log rows. ADR-001 Decision 1 still rules out any percentage
    * from those tokens.
@@ -842,7 +879,7 @@ function buildSnapshot(input) {
     : null;
 
   // Tokens and notional API cost, from the conversation stores. The same shape
-  // as Codex's block below and the same null rules as the Gemini row: five-hour
+  // as Codex's block below and the same null rules as the local-log rows: five-hour
   // tokens anchored to the five-hour reset of the source `agFive` came from
   // while that reset is ahead, a trailing five hours otherwise; the week
   // anchored to the agy CLI's weekly reset while it is ahead, a trailing 7 days
@@ -950,23 +987,31 @@ function buildSnapshot(input) {
     cxWeeklyCost = emptyWeeklyCost(cxWeekWin.start, cxWeekWin.end, cxWeekWin.anchored, codexPricing.PRICES_AS_OF);
   }
 
-  // --- Gemini CLI / Kimi Code (ADR-003 A6) ----------------------------------
-  const gm = localUsageRow(PROVIDERS.find((p) => p.id === 'gemini'), enabled.gemini === true, input.gemini, now, {
-    sum: geminiUsage.sumGeminiTokens,
-    cost: geminiPricing.geminiCost,
-    pricesAsOf: geminiPricing.PRICES_AS_OF,
-  }, planOf('gemini'));
+  // --- Kimi Code / Qwen Code / Grok Build (ADR-003 A6) ---------------------
   const km = localUsageRow(PROVIDERS.find((p) => p.id === 'kimi'), enabled.kimi === true, input.kimi, now, {
     sum: kimiUsage.sumKimiTokens,
     cost: kimiCostMod.kimiCost,
     // Kimi has no price table: an incomplete empty cost states no date either.
     pricesAsOf: '',
   }, planOf('kimi'));
+  const qw = localUsageRow(PROVIDERS.find((p) => p.id === 'qwen'), enabled.qwen === true, input.qwen, now, {
+    sum: qwenUsage.sumQwenTokens,
+    cost: qwenPricing.qwenCost,
+    pricesAsOf: qwenPricing.PRICES_AS_OF,
+  }, planOf('qwen'));
+  const gk = localUsageRow(PROVIDERS.find((p) => p.id === 'grok'), enabled.grok === true, input.grok, now, {
+    sum: grokUsage.sumGrokTokens,
+    cost: grokCostMod.grokCost,
+    // The amounts are xAI's own: no price list, so no date.
+    pricesAsOf: '',
+    partialUsage: grokUsage.grokUsageIncomplete,
+  }, planOf('grok'));
   const localPending = (src) => Boolean(src && src.installed === true && !Array.isArray(src.events));
 
   const providers = PROVIDERS.map((p) => {
-    if (p.id === 'gemini') return gm.row;
     if (p.id === 'kimi') return km.row;
+    if (p.id === 'qwen') return qw.row;
+    if (p.id === 'grok') return gk.row;
     if (p.id === 'antigravity') {
       const snap = {
         id: p.id,
@@ -983,7 +1028,7 @@ function buildSnapshot(input) {
         planLabel: planOf(p.id),
         fiveHour: agFive,
         sevenDay: agSeven,
-        // Same null rule as the Gemini row: a quiet five hours is null, a
+        // Same null rule as the local-log rows: a quiet five hours is null, a
         // scanned week is present even at zero.
         tokens: agFiveUsage.tokens.billable > 0 ? agFiveUsage.tokens : null,
         weeklyTokens: agWeeklyTokens,
@@ -1105,28 +1150,32 @@ function buildSnapshot(input) {
     // SAME scanned turn deltas its row's tokens and weekly cost are built from,
     // priced by its own table; the settings section names both sources.
     // Periods overlapping a known-unread range are floors (A3.20).
-    // Gemini and Kimi join it from their own scans (ADR-003 A6), each priced by
-    // its own rules (Kimi: unpriced).
+    // Kimi Code, Qwen Code and Grok Build join it from their own scans
+    // (ADR-003 A6), each priced by its own rules (Kimi: unpriced; Grok: the
+    // amount xAI reported).
     usageHistory: memoUsageHistory(Array.isArray(input.events) ? input.events : EMPTY_EVENTS, deduped, now, {
       codexEvents: cxEvents,
-      geminiEvents: gm.events,
       kimiEvents: km.events,
+      qwenEvents: qw.events,
+      grokEvents: gk.events,
       antigravityEvents: agEvents,
       unreadRanges: {
         claude: claudeArchive && claudeArchive.unread ? claudeUnread.concat([claudeArchive.unread]) : claudeUnread,
-        codex: codexUnread, gemini: gm.unread, kimi: km.unread, antigravity: agUnread,
+        codex: codexUnread, antigravity: agUnread, kimi: km.unread, qwen: qw.unread, grok: gk.unread,
       },
     }, claudeArchive),
     // ADR-002 A3.12. The collector passes `codexEvents: null` until the Codex
     // worker's first result, so its empty figures above read as NOT READ YET.
     // Claude never needs an entry: before its first scan the collector sends
     // `loadingSnapshot` instead of this, and afterwards its store is real.
-    // Gemini / Kimi are pending only when installed and not yet scanned.
+    // The local-log tools are pending only when installed and not yet
+    // scanned, in the registry's order.
     pendingUsage: [
       ...(Array.isArray(input.codexEvents) ? [] : ['codex']),
-      ...(localPending(input.gemini) ? ['gemini'] : []),
-      ...(localPending(input.kimi) ? ['kimi'] : []),
       ...(localPending(input.antigravityUsage) ? ['antigravity'] : []),
+      ...(localPending(input.kimi) ? ['kimi'] : []),
+      ...(localPending(input.qwen) ? ['qwen'] : []),
+      ...(localPending(input.grok) ? ['grok'] : []),
     ],
   };
 }

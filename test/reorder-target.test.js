@@ -543,9 +543,9 @@ test.describe('properties, over randomised mixed-height panels', () => {
 // -------------------------------------------------------------------------
 
 test.describe('the index means what moveId thinks it means', () => {
-  // LIVE is the six-row shape the bug was reported on, so one id stands in for
-  // the provider that has since been removed.
-  const IDS = ['antigravity', 'claude', 'codex', 'gemini', 'kimi', 'sixth'];
+  // LIVE is the six-row shape the bug was reported on (the providers have
+  // changed since; the shape is what matters).
+  const IDS = ['antigravity', 'claude', 'codex', 'kimi', 'qwen', 'grok'];
 
   test('a zero-travel drag is a no-op end to end', () => {
     for (let from = 0; from < LIVE.length; from++) {

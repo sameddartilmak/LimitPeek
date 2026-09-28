@@ -38,7 +38,7 @@
  * `tokenFloorCausesByProvider` says which of those counts is a lower bound and
  * WHY, per tool (A3.16: never a floor without a visible cause). It is NARROWER
  * than `isFloor`: a count is only ever a floor because the recorder did not
- * record something (Gemini's utility calls, Codex's cache writes) or the reader
+ * record something (Qwen Code's side queries, Codex's cache writes) or the reader
  * knows it could not read something. What a figure may be CHARGED at never
  * enters it. `tokenFloorCauses()` is that rule, and the panel row calls the
  * same function over its own window. Each figure is folded from the SAME pricer rows
@@ -86,13 +86,17 @@
  * (cumulative-total deltas; reasoning is a subset of output and is never added
  * twice).
  *
- * GEMINI CLI AND KIMI CODE (ADR-003 A6)
- * -------------------------------------
- * The same rule extends to four tools. Gemini messages (deduped by message id in
- * `gemini/usage.js`) are priced by `gemini/pricing.js` and are ALWAYS a floor
- * (unrecorded utility calls). Kimi usage (`kimi/usage.js`) has no price at all:
- * its models appear in `byModel` with `costUsd: null`, contribute no dollars,
- * and make the period a floor exactly as any other unpriced model does.
+ * THE LOCAL-LOG TOOLS (ADR-003 A6)
+ * --------------------------------
+ * The same rule extends to every tool. Antigravity is priced by the table of
+ * each model's vendor (`antigravity/cost.js`). Qwen Code responses
+ * (`qwen/usage.js`) are priced by `qwen/pricing.js` and are ALWAYS a floor
+ * (unrecorded failed calls and side queries). Grok Build turns
+ * (`grok/usage.js`, deduped across forked sessions) carry the amount xAI
+ * reported (`grok/cost.js`); a turn xAI marked partial makes the figure a
+ * floor. Kimi usage (`kimi/usage.js`) has no price at all: its models appear
+ * in `byModel` with `costUsd: null`, contribute no dollars, and make the
+ * period a floor exactly as any other unpriced model does.
  *
  * `usageProviders` and `floorCausesByProvider` exist so the renderer can compose
  * its price note for ANY set of tools ("dates + causes") instead of a sentence
@@ -101,9 +105,11 @@
 
 const pricing = require('./pricing');
 const codexPricing = require('./codex/pricing');
-const geminiPricing = require('./gemini/pricing');
 const kimiCostMod = require('./kimi/cost');
 const antigravityCostMod = require('./antigravity/cost');
+const qwenPricing = require('./qwen/pricing');
+const grokCostMod = require('./grok/cost');
+const { grokUsageIncomplete } = require('./grok/usage');
 
 /** How many of the most recent periods to surface. Bounds both the compute
  *  (one price pass over the corpus per bucket) and the list length in a narrow
@@ -117,7 +123,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LIST = 24;
 
 /** Tools whose local usage feeds the history, in the order they are listed. */
-const INCOMPLETE_ORDER = ['claude', 'codex', 'gemini', 'antigravity', 'kimi'];
+const INCOMPLETE_ORDER = ['claude', 'codex', 'antigravity', 'kimi', 'qwen', 'grok'];
 
 /**
  * `UsageHistory.floorCausesByProvider` codes, in the order they are listed.
@@ -130,14 +136,15 @@ const FLOOR_CAUSE_ORDER = [
   // (`UsageHistory.incompleteProviders`) and its own note, and where ADR-002
   // A3.20 rules that the price notes do not grow a clause for it.
   'unread-range',
-  'unpriced', // some usage has no price (unknown model, unpriced tier, no model, Kimi)
+  'unpriced', // some usage has no price (unknown model, unpriced tier, no model, Kimi, no xAI amount)
   'cache-write-ttl-fallback', // Claude: TTL split missing, writes priced at 1.25x
   'unrecorded-writes', // Codex: 0 recorded cache writes on a write-priced model (A3.3/A3.9)
   'assumed-tier', // Codex: no tier recorded yet, priced at Standard (A3.17)
   'fast-requested', // Codex: Fast requested, priced at Standard (A3.18)
-  'unrecorded-calls', // Gemini: utility calls and failed streams are never recorded
-  'long-prompt', // Gemini: prompt over 200k priced at the <=200k rate
-  'tool-tokens', // Gemini: tool-use prompt tokens not priced
+  'unrecorded-calls', // Qwen Code: failed calls and side queries are never recorded
+  'long-prompt', // Antigravity (Gemini models): prompt over 200k priced at the <=200k rate
+  'tool-tokens', // no producer since Gemini CLI was removed (2026-09-28); kept as a known code
+  'partial-usage', // Grok Build: xAI marked a turn's cost partial or its usage incomplete
 ];
 
 /**
@@ -171,12 +178,14 @@ function hasAnyTokens(t) {
  * is why this is narrower than `PeriodUsage.isFloor`.
  *
  * @param {string} providerId
- * @param {{hasCount: boolean, sourceIncomplete?: boolean, unrecordedWrites?: boolean}} facts
+ * @param {{hasCount: boolean, sourceIncomplete?: boolean, unrecordedWrites?: boolean,
+ *          partialUsage?: boolean}} facts
  *   hasCount           the count is not entirely zero (see `hasAnyTokens`)
  *   sourceIncomplete   a known-unread range overlaps this caller's window
  *   unrecordedWrites   Codex only: a turn recorded 0 cache writes although it
  *                      read cache or sent a cacheable prompt (A3.3/A3.9),
  *                      decided with no price lookup
+ *   partialUsage       Grok Build only: xAI marked a turn's usage incomplete
  * @returns {string[]} fresh array, safe for the caller to keep
  */
 function tokenFloorCauses(providerId, facts) {
@@ -187,13 +196,14 @@ function tokenFloorCauses(providerId, facts) {
   if (f.hasCount !== true) return [];
   const hit = new Set();
   if (f.sourceIncomplete === true) hit.add('unread-range');
-  // Unconditional while Gemini CLI has a count (ADR-003 A6): its utility calls
-  // and failed streams are NEVER recorded, so tokens are missing whether or not
-  // the recorded ones could be priced. Never derived from
-  // `WeeklyCost.unrecordedCalls`, which is a cost cause and goes false when
-  // nothing in the window priced.
-  if (providerId === 'gemini') hit.add('unrecorded-calls');
+  // Unconditional while Qwen Code has a count: its failed calls, retries and
+  // internal side queries are NEVER written to its usage log, so tokens are
+  // missing whether or not the recorded ones could be priced. Never derived
+  // from `WeeklyCost.unrecordedCalls`, which is a cost cause and goes false
+  // when nothing in the window priced.
+  if (providerId === 'qwen') hit.add('unrecorded-calls');
   if (providerId === 'codex' && f.unrecordedWrites === true) hit.add('unrecorded-writes');
+  if (providerId === 'grok' && f.partialUsage === true) hit.add('partial-usage');
   return FLOOR_CAUSE_ORDER.filter((c) => hit.has(c));
 }
 
@@ -443,15 +453,18 @@ function codexByModelFrom(detail) {
 }
 
 /**
- * Gemini or Kimi per-model entries of a period's cost, grouped by raw model id.
+ * Per-model entries of a local-log tool's period cost, grouped by raw model id.
  *   costUsd  the model's priced total, or null when none of it could be priced
- *            (Kimi always; Gemini for an unknown id or tokens with no model).
- *   isFloor  Gemini: true for every priced entry, since utility calls and failed
- *            streams are never recorded, whatever the model. Kimi: false (a null
+ *            (Kimi always; Qwen for an id not in its table; Grok for turns xAI
+ *            reported no amount for).
+ *   isFloor  Qwen: true for every priced entry, since failed calls and side
+ *            queries are never recorded, whatever the model. Grok: true for
+ *            every priced entry when any turn in the period was marked
+ *            partial (over-marking is allowed, A3.9). Kimi: false (a null
  *            figure has no bound to be lower than).
  *   tokens   the model's four raw counts, from the rows the cost was built
  *            from. This is the one place a Kimi entry carries a real figure:
- *            it has no price, but it has usage. Gemini's counts are a LOWER
+ *            it has no price, but it has usage. Qwen's counts are a LOWER
  *            BOUND for the same reason its cost is — the unrecorded calls are
  *            missing from the count too, not merely from the price.
  */
@@ -468,7 +481,7 @@ function localByModelFrom(provider, cost) {
     provider,
     model,
     costUsd: e.anyPriced ? round(e.priced) : null,
-    isFloor: provider === 'gemini' && e.anyPriced,
+    isFloor: e.anyPriced && (provider === 'qwen' || (provider === 'grok' && cost.partialUsageEvents > 0)),
     tokens: sumRowTokens(e.rows),
   }));
 }
@@ -507,10 +520,11 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   const cost = pricing.weeklyCost(events, startMs, endExclusiveMs, false);
   const cxDetail = codexPricing.codexCostDetail(codexEvents || [], startMs, endExclusiveMs, false);
   const cxCost = cxDetail.cost;
-  const gmCost = geminiPricing.geminiCost(more.geminiEvents || [], startMs, endExclusiveMs, false);
   const kmCost = kimiCostMod.kimiCost(more.kimiEvents || [], startMs, endExclusiveMs, false);
   const agCost = antigravityCostMod.antigravityCost(more.antigravityEvents || [], startMs, endExclusiveMs, false);
-  if (!cost && !cxCost && !gmCost && !kmCost && !agCost) {
+  const qwCost = qwenPricing.qwenCost(more.qwenEvents || [], startMs, endExclusiveMs, false);
+  const gkCost = grokCostMod.grokCost(more.grokEvents || [], startMs, endExclusiveMs, false);
+  if (!cost && !cxCost && !kmCost && !agCost && !qwCost && !gkCost) {
     return {
       ...base,
       costUsd: 0,
@@ -545,12 +559,15 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   // a cacheable (>= 1,024-token) uncached prompt.
   // A3.17-18: turns priced at Standard although their tier was only assumed or
   // was Fast REQUESTED. A3.20: a known-unread range overlaps the period.
-  // Gemini (ADR-003 A6): always a floor while it has usage (unrecorded calls),
-  // plus its own counted causes. Kimi: every model is unpriced, so floorOf holds.
+  // Qwen Code: always a floor while it has an amount (unrecorded calls). Grok
+  // Build: a floor when xAI marked a turn partial. Kimi: every model is
+  // unpriced, so floorOf holds.
   const isFloor = floorOf(cost) || floorOf(cxCost) || cxDetail.writeFloorEvents > 0
     || cxDetail.assumedTierEvents > 0 || cxDetail.fastRequestedEvents > 0
-    || floorOf(gmCost) || Boolean(gmCost && gmCost.unrecordedCalls) || floorOf(kmCost)
+    || floorOf(kmCost)
     || floorOf(agCost) || Boolean(agCost && agCost.longPromptFloorEvents > 0)
+    || floorOf(qwCost) || Boolean(qwCost && qwCost.unrecordedCalls)
+    || floorOf(gkCost) || Boolean(gkCost && gkCost.partialUsageEvents > 0)
     || incomplete.size > 0;
 
   // Per-tool causes for UsageHistory.floorCausesByProvider.
@@ -571,25 +588,29 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
       if (cxDetail.assumedTierEvents > 0) add('codex', 'assumed-tier');
       if (cxDetail.fastRequestedEvents > 0) add('codex', 'fast-requested');
     }
-    if (gmCost) {
-      if (unpriced(gmCost)) add('gemini', 'unpriced');
-      if (gmCost.unrecordedCalls) add('gemini', 'unrecorded-calls');
-      if (gmCost.longPromptFloorEvents > 0) add('gemini', 'long-prompt');
-      if (gmCost.toolTokenEvents > 0) add('gemini', 'tool-tokens');
-    }
     if (agCost) {
       if (unpriced(agCost)) add('antigravity', 'unpriced');
       if (agCost.fallbackWriteEvents > 0) add('antigravity', 'cache-write-ttl-fallback');
       if (agCost.longPromptFloorEvents > 0) add('antigravity', 'long-prompt');
     }
     if (kmCost) add('kimi', 'unpriced');
+    if (qwCost) {
+      if (unpriced(qwCost)) add('qwen', 'unpriced');
+      if (qwCost.unrecordedCalls) add('qwen', 'unrecorded-calls');
+    }
+    if (gkCost) {
+      if (unpriced(gkCost)) add('grok', 'unpriced');
+      if (gkCost.partialUsageEvents > 0) add('grok', 'partial-usage');
+    }
   }
 
   // Dollars are added across the tools, class by class; token counts never are.
   const byClass = emptyByClass();
   for (const k of Object.keys(byClass)) {
+    // Grok's byClass is all zero (xAI reports one amount per turn), so a
+    // period with Grok dollars has classes that sum to less than `costUsd`.
     byClass[k] = round((cost ? cost.byClass[k] : 0) + (cxCost ? cxCost.byClass[k] : 0)
-      + (gmCost ? gmCost.byClass[k] : 0) + (agCost ? agCost.byClass[k] : 0));
+      + (agCost ? agCost.byClass[k] : 0) + (qwCost ? qwCost.byClass[k] : 0) + (gkCost ? gkCost.byClass[k] : 0));
   }
 
   // ...and here is the same rule from the other side: one entry PER TOOL, so a
@@ -598,14 +619,14 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   // pricer returned a cost at all. Each entry folds only that tool's own rows
   // (`sumRowTokens`), so nothing here can add Claude's cacheRead to Codex's.
   const tokensByProvider = {};
-  for (const [provider, c] of [['claude', cost], ['codex', cxCost], ['gemini', gmCost], ['antigravity', agCost], ['kimi', kmCost]]) {
+  for (const [provider, c] of [['claude', cost], ['codex', cxCost], ['antigravity', agCost], ['kimi', kmCost], ['qwen', qwCost], ['grok', gkCost]]) {
     if (c) tokensByProvider[provider] = sumRowTokens(c.byModel);
   }
 
   /**
    * WHY each of those counts is a lower bound, per tool — not a bare flag,
    * because ADR-002 A3.16 forbids showing a floor without a visible cause, and
-   * a token floor cannot always borrow one from the cost side (a Gemini period
+   * a token floor cannot always borrow one from the cost side (a Qwen period
    * with nothing priced sets the token floor while `unrecordedCalls` is false).
    *
    * The rule itself lives in `tokenFloorCauses`, shared with the panel row, so
@@ -624,6 +645,7 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
       hasCount: hasAnyTokens(counted),
       sourceIncomplete: incomplete.has(id),
       unrecordedWrites: cxDetail.unrecordedWriteTokens === true,
+      partialUsage: id === 'grok' && grokUsageIncomplete(more.grokEvents, startMs, endExclusiveMs),
     });
     if (causes.length > 0) tokenFloorCausesByProvider[id] = causes;
   }
@@ -631,9 +653,10 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   const byModel = [
     ...(cost ? byModelUsageFrom(events, startMs, endExclusiveMs) : []),
     ...codexByModelFrom(cxDetail),
-    ...localByModelFrom('gemini', gmCost),
     ...localByModelFrom('antigravity', agCost),
     ...localByModelFrom('kimi', kmCost),
+    ...localByModelFrom('qwen', qwCost),
+    ...localByModelFrom('grok', gkCost),
   ]
     // A tool with usage known unread in this period: each of its figures is a floor.
     .map((entry) => (incomplete.has(entry.provider) && !entry.isFloor ? { ...entry, isFloor: true } : entry))
@@ -642,15 +665,16 @@ function periodUsageFrom(events, startMs, endExclusiveMs, key, codexEvents, know
   const unpricedModels = [...new Set([
     ...(cost ? cost.unpricedModels : []),
     ...(cxCost ? cxCost.unpricedModels : []),
-    ...(gmCost ? gmCost.unpricedModels : []),
     ...(agCost ? agCost.unpricedModels : []),
     ...(kmCost ? kmCost.unpricedModels : []),
+    ...(qwCost ? qwCost.unpricedModels : []),
+    ...(gkCost ? gkCost.unpricedModels : []),
   ])].sort();
 
   return {
     ...base,
-    costUsd: round((cost ? cost.totalUsd : 0) + (cxCost ? cxCost.totalUsd : 0) + (gmCost ? gmCost.totalUsd : 0)
-      + (agCost ? agCost.totalUsd : 0)),
+    costUsd: round((cost ? cost.totalUsd : 0) + (cxCost ? cxCost.totalUsd : 0)
+      + (agCost ? agCost.totalUsd : 0) + (qwCost ? qwCost.totalUsd : 0) + (gkCost ? gkCost.totalUsd : 0)),
     byClass,
     // Uncapped on purpose, unlike `byModel`: this is what a per-tool subtotal
     // must be read from, because adding up a list truncated at MAX_LIST would
@@ -782,24 +806,26 @@ function usageHistory(events, now, opts) {
     return used;
   };
   const codexUsed = usedIn(codexList);
-  const geminiList = opts && Array.isArray(opts.geminiEvents) ? opts.geminiEvents : [];
-  const kimiList = opts && Array.isArray(opts.kimiEvents) ? opts.kimiEvents : [];
-  const geminiUsed = usedIn(geminiList);
+  const listOf = (key) => (opts && Array.isArray(opts[key]) ? opts[key] : []);
+  const kimiList = listOf('kimiEvents');
+  const antigravityList = listOf('antigravityEvents');
+  const qwenList = listOf('qwenEvents');
+  const grokList = listOf('grokEvents');
   const kimiUsed = usedIn(kimiList);
-  const antigravityList = opts && Array.isArray(opts.antigravityEvents) ? opts.antigravityEvents : [];
   const antigravityUsed = usedIn(antigravityList);
+  const qwenUsed = usedIn(qwenList);
+  const grokUsed = usedIn(grokList);
 
   const pricesAsOfByProvider = {};
   if (claudeUsed) pricesAsOfByProvider.claude = pricing.PRICES_AS_OF;
   if (codexUsed) pricesAsOfByProvider.codex = codexPricing.PRICES_AS_OF;
-  if (geminiUsed) pricesAsOfByProvider.gemini = geminiPricing.PRICES_AS_OF;
   // Antigravity prices from two tables; the older date is the one it can stand behind.
   if (antigravityUsed) pricesAsOfByProvider.antigravity = antigravityCostMod.PRICES_AS_OF;
-  // Kimi has no price table, so it never has a date here.
-  const usageProviders = INCOMPLETE_ORDER.filter((id) => (
-    (id === 'claude' && claudeUsed) || (id === 'codex' && codexUsed)
-    || (id === 'gemini' && geminiUsed) || (id === 'antigravity' && antigravityUsed) || (id === 'kimi' && kimiUsed)
-  ));
+  if (qwenUsed) pricesAsOfByProvider.qwen = qwenPricing.PRICES_AS_OF;
+  // Kimi has no price table, and Grok's amounts are xAI's own: neither ever
+  // has a date here.
+  const used = { claude: claudeUsed, codex: codexUsed, antigravity: antigravityUsed, kimi: kimiUsed, qwen: qwenUsed, grok: grokUsed };
+  const usageProviders = INCOMPLETE_ORDER.filter((id) => used[id] === true);
 
   const unread = [];
   const rawRanges = opts && opts.unreadRanges && typeof opts.unreadRanges === 'object' ? opts.unreadRanges : {};
@@ -822,7 +848,7 @@ function usageHistory(events, now, opts) {
   };
 
   const causes = new Map();
-  const more = { geminiEvents: geminiList, kimiEvents: kimiList, antigravityEvents: antigravityList, causes };
+  const more = { kimiEvents: kimiList, antigravityEvents: antigravityList, qwenEvents: qwenList, grokEvents: grokList, causes };
   const weeks = bucketsOf(list, firstMs, when, maxWeeks, 'week', codexList, incompleteIn, more);
   const months = bucketsOf(list, firstMs, when, maxMonths, 'month', codexList, incompleteIn, more);
   const floorCausesByProvider = {};

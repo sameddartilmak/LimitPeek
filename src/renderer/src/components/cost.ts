@@ -115,11 +115,28 @@ function noPriceTable(cost: WeeklyCost): boolean {
   );
 }
 
-/** True when every unpriced row recorded no model (Gemini 'no-model'). */
+/** True when every unpriced row recorded no model ('no-model'). */
 function noModelOnly(cost: WeeklyCost): boolean {
   const rows = cost.byModel.filter((entry) => entry.usd === null);
   return rows.length > 0 && rows.every((row) => row.speed === 'no-model');
 }
+
+/** True when every unpriced row is a Grok Build turn xAI reported no amount for. */
+function noReportedCostOnly(cost: WeeklyCost): boolean {
+  const rows = cost.byModel.filter((entry) => entry.usd === null);
+  return rows.length > 0 && rows.every((row) => row.speed === 'no-reported-cost');
+}
+
+/**
+ * The tools whose figure is NOT "at published API prices" and so must name
+ * its own source wherever the figure is shown (review F11): Qwen Code at
+ * Alibaba Cloud Model Studio rates, Grok Build at the amount xAI itself
+ * reported. `undated`: the source has no price list, so no date is stated.
+ */
+const PRICE_SOURCE: Readonly<Record<string, { summary: MessageKey; toggleLabel: MessageKey; asOf: MessageKey; undated?: true }>> = {
+  qwen: { summary: 'cost.summaryQwen', toggleLabel: 'cost.toggleLabelQwen', asOf: 'cost.pricesAsOfQwen' },
+  grok: { summary: 'cost.summaryGrok', toggleLabel: 'cost.toggleLabelGrok', asOf: 'cost.pricesReportedGrok', undated: true },
+};
 
 /**
  * True when some usage in the window could not be priced. `unpricedModels` is
@@ -148,8 +165,8 @@ function windowLabel(cost: WeeklyCost, now: number): string {
 }
 
 export function createCost(providerId: string): CostHandle {
-  // ADR-003 A6: Gemini's figures are at Gemini API standard rates.
-  const gemini = providerId === 'gemini';
+  // Qwen Code and Grok Build name their own price source (PRICE_SOURCE).
+  const source = Object.prototype.hasOwnProperty.call(PRICE_SOURCE, providerId) ? PRICE_SOURCE[providerId] : null;
   const detailId = `cost-detail-${providerId}`;
 
   // --- collapsed ---------------------------------------------------------
@@ -308,9 +325,9 @@ export function createCost(providerId: string): CostHandle {
 
     if (hasFigure) {
       const amount = usd(cost.totalUsd);
-      // Review F11: Gemini is priced at Gemini API STANDARD rates (ADR-003 A6
-      // ruling), and the figure names that source where it is shown.
-      setText(summary, t(gemini ? 'cost.summaryGemini' : 'cost.summary', { amount }));
+      // Review F11: a figure not at published API prices names its source
+      // where it is shown.
+      setText(summary, t(source ? source.summary : 'cost.summary', { amount }));
       // The spoken name carries the whole frame plus the denial, because a
       // screen reader user gets the button label with no surrounding layout to
       // qualify it.
@@ -318,7 +335,7 @@ export function createCost(providerId: string): CostHandle {
       setAttr(
         toggle,
         'aria-label',
-        t(gemini ? 'cost.toggleLabelGemini' : 'cost.toggleLabel', {
+        t(source ? source.toggleLabel : 'cost.toggleLabel', {
           provider: providerName,
           amount: named,
         }),
@@ -330,14 +347,24 @@ export function createCost(providerId: string): CostHandle {
       // Review F2: the reason is chosen by what is true. A tool with no price
       // table has no list to be missing from; tokens with no model were never
       // priceable; only a model absent from a real list is "not in the list".
-      const reason = noPriceTable(cost) ? 'noTable' : noModelOnly(cost) ? 'noModel' : 'list';
+      // A Grok turn with no amount was not missing from a list either: xAI
+      // simply reported none.
+      const reason = noPriceTable(cost)
+        ? 'noTable'
+        : noModelOnly(cost)
+          ? 'noModel'
+          : noReportedCostOnly(cost)
+            ? 'noReport'
+            : 'list';
       setText(
         summary,
         reason === 'noTable'
           ? t('cost.unpricedSummaryNoTable', { provider: providerName })
           : reason === 'noModel'
             ? t('cost.unpricedSummaryNoModel')
-            : t('cost.unpricedSummary'),
+            : reason === 'noReport'
+              ? t('cost.unpricedSummaryNoReport', { provider: providerName })
+              : t('cost.unpricedSummary'),
       );
       setAttr(
         toggle,
@@ -346,7 +373,9 @@ export function createCost(providerId: string): CostHandle {
           ? t('cost.unpricedToggleLabelNoTable', { provider: providerName })
           : reason === 'noModel'
             ? t('cost.unpricedToggleLabelNoModel', { provider: providerName })
-            : t('cost.unpricedToggleLabel', { provider: providerName }),
+            : reason === 'noReport'
+              ? t('cost.unpricedToggleLabelNoReport', { provider: providerName })
+              : t('cost.unpricedToggleLabel', { provider: providerName }),
       );
     }
 
@@ -378,18 +407,23 @@ export function createCost(providerId: string): CostHandle {
     // When main did not tell us, SAYING SO discharges that obligation; quietly
     // dropping the line would leave a priced figure with no provenance at all
     // and nothing on screen to reveal the gap.
+    // Grok Build's amounts come from no list at all, so its line names the
+    // source and states no date — which is not a gap in what we were told.
+    const undated = Boolean(source?.undated);
     replaceChildrenWith(provenance, [
       el('span', {}, windowLabel(cost, Date.now())),
       el(
         'span',
-        cost.pricesAsOf ? {} : { class: 'cost__gap' },
-        cost.pricesAsOf
-          ? gemini
-            ? t('cost.pricesAsOfGemini', { date: priceDate(cost.pricesAsOf) })
-            : t('cost.pricesAsOf', { date: priceDate(cost.pricesAsOf) })
-          : noPriceTable(cost)
-            ? t('cost.pricesNotPublished', { provider: providerName })
-            : t('cost.pricesDateMissing'),
+        cost.pricesAsOf || undated ? {} : { class: 'cost__gap' },
+        undated && source
+          ? t(source.asOf)
+          : cost.pricesAsOf
+            ? source
+              ? t(source.asOf, { date: priceDate(cost.pricesAsOf) })
+              : t('cost.pricesAsOf', { date: priceDate(cost.pricesAsOf) })
+            : noPriceTable(cost)
+              ? t('cost.pricesNotPublished', { provider: providerName })
+              : t('cost.pricesDateMissing'),
       ),
     ]);
 

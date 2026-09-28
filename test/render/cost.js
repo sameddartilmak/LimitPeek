@@ -299,9 +299,9 @@ app.whenReady().then(async () => {
 
   // ---- a sub-cent total is not printed as $0,00 -------------------------
   check('a non-zero total under a cent is an upper bound, not "$0,00"',
-    framing.gemini && framing.gemini.summary.includes('<$0,01')
-      && !framing.gemini.summary.includes('$0,00'),
-    framing.gemini && framing.gemini.summary);
+    framing.qwen && framing.qwen.summary.includes('<$0,01')
+      && !framing.qwen.summary.includes('$0,00'),
+    framing.qwen && framing.qwen.summary);
 
   // ---- qa F1: an all-unpriced week shows NO currency figure -------------
   const unpricedWeek = framing.antigravity;
@@ -324,10 +324,10 @@ app.whenReady().then(async () => {
   // Supersedes code-reviewer F2. The row status says the rate-limit capture is
   // old; it says nothing about whether the token logs were read. Owner's
   // screenshot 2026-09-17: "veriler güncel değil" under a figure whose logs had
-  // all been read. The gemini row is stale with sourceIncomplete: false.
-  const staleRow = framing.gemini;
+  // all been read. The qwen row is stale with sourceIncomplete: false.
+  const staleRow = framing.qwen;
   const staleCost = await js(`(() => {
-    const row = ${q('gemini')};
+    const row = ${q('qwen')};
     const c = row.querySelector('.cost');
     return {
       rowStatus: row.getAttribute('data-status'),
@@ -336,7 +336,7 @@ app.whenReady().then(async () => {
     };
   })()`);
   say('stale row cost: ' + JSON.stringify(staleCost));
-  check('control: the gemini row really is stale, so the check below is not vacuous',
+  check('control: the qwen row really is stale, so the check below is not vacuous',
     staleCost.rowStatus === 'stale', staleCost.rowStatus);
   check('a stale row with sourceIncomplete false prints NO floor from its status',
     !/en az/.test(staleRow.summary), staleRow.summary);
@@ -406,12 +406,12 @@ app.whenReady().then(async () => {
   // Main derives both from one window object, so they always agree — but they
   // are two fields read by two components, and a row that says "kota haftası"
   // above "Son 7 gün" is a self-contradiction the user sees before we do. This
-  // is also the check the old fixture could not make: it gave the Gemini row an
+  // is also the check the old fixture could not make: it gave the local-log row an
   // anchored cost, a state main cannot produce for a tool that publishes no
   // weekly reset, so the contradiction was baked into the fixture itself.
   const windowAgreement = await js(`(() => {
     const out = {};
-    for (const id of ['claude', 'codex', 'gemini']) {
+    for (const id of ['claude', 'codex', 'qwen']) {
       const row = document.querySelector('li.row[data-provider="' + id + '"]');
       if (!row) continue;
       const meta = row.querySelector('.row__meta');
@@ -450,7 +450,7 @@ app.whenReady().then(async () => {
 
   // ---- the all-unpriced expanded state ---------------------------------
   await js(`${q('antigravity')}.querySelector('.cost__toggle').click()`);
-  await js(`${q('gemini')}.querySelector('.cost__toggle').click()`);
+  await js(`${q('qwen')}.querySelector('.cost__toggle').click()`);
   await sleep(150);
   const noPrice = await js(`(() => {
     const pick = (id) => {
@@ -466,7 +466,7 @@ app.whenReady().then(async () => {
         flag: c.dataset.unpriced || null,
       };
     };
-    return { anti: pick('antigravity'), gem: pick('gemini') };
+    return { anti: pick('antigravity'), gem: pick('qwen') };
   })()`);
   say('noPrice: ' + JSON.stringify(noPrice, null, 1));
   check('the expanded all-unpriced lead carries no figure',
@@ -595,8 +595,8 @@ app.whenReady().then(async () => {
   await js(`window.__probe.setCostDirect('codex', 'caveat')`);
   await sleep(250);
 
-  // ---- ADR-003 A6: Gemini CLI and Kimi Code rows --------------------------
-  const RAW_CODES_A6 = /no-model|no-published-price|other-model-alias|unknown-tier|unrecordedCalls|longPrompt|toolToken/;
+  // ---- ADR-003 A6: Qwen Code, Grok Build and Kimi Code rows --------------
+  const RAW_CODES_A6 = /no-model|no-published-price|other-model-alias|no-reported-cost|standard-long-context|unknown-tier|unrecordedCalls|longPrompt|toolToken|partialUsage/;
   const readLocalRow = (id) => `(async () => {
     const row = ${q(id)};
     const c = row.querySelector('.cost');
@@ -623,32 +623,60 @@ app.whenReady().then(async () => {
     return out;
   })()`;
   await js(`window.__probe.setPendingDirect([], {
-    gemini: { status: 'ok', connected: true, lastGoodAt: null,
+    qwen: { status: 'ok', connected: true, lastGoodAt: null,
       tokens: { input: 904000, output: 120800, cacheWrite: 0, cacheRead: 400000, billable: 1024800 } },
     kimi: { status: 'ok', connected: true, setupAction: null,
       tokens: { input: 320000, output: 45000, cacheWrite: 0, cacheRead: 120000, billable: 365000 } },
+    grok: { status: 'ok', connected: true, setupAction: null,
+      tokens: { input: 80000, output: 12000, cacheWrite: 6000, cacheRead: 300000, billable: 98000 } },
   })`);
-  await js(`window.__probe.setCostDirect('gemini', 'gemini')`);
+  await js(`window.__probe.setCostDirect('qwen', 'qwen')`);
   await js(`window.__probe.setCostDirect('kimi', 'kimi')`);
+  await js(`window.__probe.setCostDirect('grok', 'grok')`);
   await sleep(300);
-  const gemTr = await js(readLocalRow('gemini'));
-  say('gemini row (tr): ' + JSON.stringify(gemTr));
-  check('[tr] Gemini carries the calm "deneysel" pill with its explanation on hover and for a screen reader',
+  const gemTr = await js(readLocalRow('qwen'));
+  say('qwen row (tr): ' + JSON.stringify(gemTr));
+  check('[tr] Qwen carries the calm "deneysel" pill with its explanation on hover and for a screen reader',
     !!gemTr.pill && gemTr.pill.text === 'deneysel'
       && gemTr.pill.title === 'Bu aracın kayıt biçimi gerçek bir kurulumda henüz doğrulanmadı.'
       && /Bu aracın kayıt biçimi gerçek bir kurulumda henüz doğrulanmadı\./.test(gemTr.pill.spoken || '')
       && gemTr.pill.color !== gemTr.watch && gemTr.pill.border !== gemTr.watch, gemTr.pill);
-  check('[tr] Gemini shows its tokens like Codex does',
+  check('[tr] Qwen shows its tokens like Codex does',
     /token/.test(gemTr.meta) && !/Token bilgisi yok/.test(gemTr.meta), gemTr.meta);
-  check('[tr] the Gemini figure prints plainly: no "en az", no cause line, no "why"',
-    gemTr.summary === 'Gemini API standart fiyatlarıyla $12,34 tutardı' && gemTr.floorUi === 0
+  check('[tr] the Qwen figure prints plainly: no "en az", no cause line, no "why"',
+    gemTr.summary === 'Alibaba Cloud Model Studio fiyatlarıyla $12,34 tutardı' && gemTr.floorUi === 0
       && !/en az|Kaydedilmeyen|Uzun istem|Araç tokenları|Neden/.test(gemTr.text), [gemTr.summary, gemTr.floorUi]);
-  check('[tr] Gemini names its price source in the summary, the spoken name and the provenance line',
-    /Gemini API standart fiyatlarıyla \$?12,34 ABD doları tutardı/.test(gemTr.aria || '')
-      && gemTr.prov.includes('Gemini API standart fiyatları, 10 Eylül 2026 tarihli listeye göre')
+  check('[tr] Qwen names its price source in the summary, the spoken name and the provenance line',
+    /Alibaba Cloud Model Studio fiyatlarıyla \$?12,34 ABD doları tutardı/.test(gemTr.aria || '')
+      && gemTr.prov.includes('Alibaba Cloud Model Studio uluslararası fiyatları, 28 Eylül 2026 tarihli listeye göre')
       && gemTr.summaryLines <= 2 && gemTr.summaryClipped === false, [gemTr.aria, gemTr.prov, gemTr.summaryLines]);
-  check('[tr] no raw producer code reaches the Gemini row',
+  check('[tr] no raw producer code reaches the Qwen row',
     !RAW_CODES_A6.test(gemTr.text), gemTr.text);
+
+  const grokTr = await js(readLocalRow('grok'));
+  say('grok row (tr): ' + JSON.stringify(grokTr));
+  check('[tr] Grok carries the pill and names xAI as the source of its amount, with no date and no gap',
+    !!grokTr.pill && grokTr.pill.text === 'deneysel'
+      && grokTr.summary === "xAI'nin bildirdiğine göre $0,51 tutardı"
+      && /xAI'nin bildirdiğine göre \$?0,51 ABD doları tutardı/.test(grokTr.aria || '')
+      && grokTr.prov.includes("Tutarlar, xAI'nin oturum dosyalarında bildirdiği gibidir")
+      && !grokTr.prov.some((p) => /tarihi bildirilmedi|tarihli listeye/.test(p))
+      && grokTr.floorUi === 0 && !/en az/.test(grokTr.text),
+    [grokTr.summary, grokTr.aria, grokTr.prov]);
+  check('[tr] Grok\'s reported amount has no class split, so no composition bar or caption is drawn',
+    (await js(`(() => { const c = ${q('grok')}.querySelector('.cost'); return c.querySelector('.cost__bar').hidden && c.querySelector('.cost__caption').hidden; })()`)) === true);
+  check('[tr] no raw producer code reaches the Grok row', !RAW_CODES_A6.test(grokTr.text), grokTr.text);
+  await js(`window.__probe.setCostDirect('grok', 'grokNone')`);
+  await sleep(250);
+  const grokNone = await js(readLocalRow('grok'));
+  say('grok row, nothing reported (tr): ' + JSON.stringify(grokNone));
+  check('[tr] a Grok week xAI reported no cost for: no amount, never $0, and not "not in the price list"',
+    grokNone.summary === 'Grok Build bu kullanım için tutar bildirmedi; tutar yok.'
+      && !/\$/.test(grokNone.text) && !/fiyat listesinde/.test(grokNone.summary + ' ' + (grokNone.aria || ''))
+      && grokNone.aria === 'Grok Build: bu kullanım için tutar bildirilmedi, bu yüzden tutar yok. Ayrıntıları açmak için etkinleştirin.',
+    [grokNone.summary, grokNone.aria]);
+  await js(`window.__probe.setCostDirect('grok', 'grok')`);
+  await sleep(250);
 
   const kimiTr = await js(readLocalRow('kimi'));
   say('kimi row (tr): ' + JSON.stringify(kimiTr));
@@ -668,29 +696,49 @@ app.whenReady().then(async () => {
   for (const [lang, locale] of [['tr', 'tr-TR'], ['en', 'en-US'], ['en', 'en-GB']]) {
     await js(`window.__probe.setLocaleDirect('${lang}', '${locale}')`);
     await sleep(300);
-    const g = await js(readLocalRow('gemini'));
+    const g = await js(readLocalRow('qwen'));
     const k = await js(readLocalRow('kimi'));
-    say(`gemini/kimi (${locale}): ` + JSON.stringify([g.summary, k.summary]));
-    check(`[${locale}] neither row draws floor UI`,
-      g.floorUi === 0 && k.floorUi === 0, [g.floorUi, k.floorUi]);
-    check(`[${locale}] no raw code on either row`,
-      !RAW_CODES_A6.test(g.text) && !RAW_CODES_A6.test(k.text), [g.text, k.text]);
+    const x = await js(readLocalRow('grok'));
+    say(`qwen/kimi/grok (${locale}): ` + JSON.stringify([g.summary, k.summary, x.summary]));
+    check(`[${locale}] no local-log row draws floor UI`,
+      g.floorUi === 0 && k.floorUi === 0 && x.floorUi === 0, [g.floorUi, k.floorUi, x.floorUi]);
+    check(`[${locale}] no raw code on any of them`,
+      !RAW_CODES_A6.test(g.text) && !RAW_CODES_A6.test(k.text) && !RAW_CODES_A6.test(x.text), [g.text, k.text, x.text]);
     if (lang === 'en') {
       check(`[${locale}] the English pill, summaries and Kimi provenance`,
         g.pill && g.pill.text === 'experimental'
           && g.pill.title === "This tool's log format has not yet been verified on a real install."
           && k.prov.includes('Kimi does not publish prices')
           && k.summary === 'Kimi does not publish per-token prices, so there is no amount.'
-          && /^Would have cost (US)?\$12\.34 at Gemini API standard rates$/.test(g.summary)
-          && g.prov.some((p) => /^Gemini API standard rates, from the list dated /.test(p))
-          && g.summaryLines <= 2 && g.summaryClipped === false,
-        [g.pill, g.summary, k.summary, k.prov]);
+          && /^Would have cost (US)?\$12\.34 at Alibaba Cloud Model Studio rates$/.test(g.summary)
+          && g.prov.some((p) => /^Alibaba Cloud Model Studio international rates, from the list dated /.test(p))
+          && g.summaryLines <= 2 && g.summaryClipped === false
+          && /^Would have cost (US)?\$0\.51 as reported by xAI$/.test(x.summary)
+          && x.prov.includes('Amounts as reported by xAI in the session files'),
+        [g.pill, g.summary, k.summary, k.prov, x.summary, x.prov]);
     }
   }
   await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
   await sleep(300);
 
-  // Settings → Model Yönetimi carries the same pill for Gemini and Kimi only.
+  // Qwen Code installed with no usage log at all: one honest line, no figure.
+  await js(`window.__probe.setPendingDirect([], {
+    qwen: { usageLogAbsent: true, tokens: null, weeklyTokens: null, weeklyTokensWindowAnchored: null, weeklyCost: null },
+  })`);
+  await sleep(250);
+  const noLog = await js(`(() => {
+    const row = ${q('qwen')};
+    const hint = row.querySelector('.row__meta .row__hint');
+    const c = row.querySelector('.cost');
+    return { meta: row.querySelector('.row__meta').textContent, title: hint ? hint.getAttribute('title') : null,
+             costHidden: !c || c.hidden };
+  })()`);
+  say('qwen, no usage log (tr): ' + JSON.stringify(noLog));
+  check('[tr] a Qwen Code with no usage log says so, not "Token bilgisi yok", and shows no cost',
+    noLog.meta === 'Henüz kullanım kaydı yok' && /0\.18\.4/.test(noLog.title || '') && /Qwen Code/.test(noLog.title || '')
+      && noLog.costHidden === true, noLog);
+
+  // Settings → Model Yönetimi carries the same pill for Qwen, Grok and Kimi only.
   const settingsPills = await js(`(async () => {
     const view = document.getElementById('settings-view');
     document.querySelector('.iconbtn--settings').click();
@@ -706,9 +754,9 @@ app.whenReady().then(async () => {
     return out;
   })()`);
   say('settings pills: ' + JSON.stringify(settingsPills));
-  check('Settings → Model Yönetimi shows "deneysel" on Gemini and Kimi, and on no other tool',
-    settingsPills.length >= 5
-      && settingsPills.every((s) => (s.id === 'gemini' || s.id === 'kimi')
+  check('Settings → Model Yönetimi shows "deneysel" on Qwen, Grok and Kimi, and on no other tool',
+    settingsPills.length >= 6
+      && settingsPills.every((s) => (s.id === 'qwen' || s.id === 'kimi' || s.id === 'grok')
         ? s.pill === 'deneysel' && /doğrulanmadı/.test(s.title || '') && s.clipped === false
         : s.pill === null), settingsPills);
   check('the Claude row has no pill',
@@ -887,30 +935,31 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 120));
     return out;
   })()`;
-  const RAW_CAUSE_CODES = /unrecorded-calls|long-prompt|tool-tokens|cache-write-ttl-fallback|unrecorded-writes|assumed-tier|fast-requested|no-model|no-published-price|other-model-alias/;
+  const RAW_CAUSE_CODES = /unrecorded-calls|long-prompt|tool-tokens|partial-usage|cache-write-ttl-fallback|unrecorded-writes|assumed-tier|fast-requested|no-model|no-published-price|other-model-alias|no-reported-cost/;
   const ALL_TOOLS = [
-    `{ claude: '2026-08-01', codex: '2026-08-15', gemini: '2026-09-10' }`,
+    `{ claude: '2026-08-01', codex: '2026-08-15', qwen: '2026-09-28' }`,
     `'2026-08-01'`,
-    `['claude', 'codex', 'gemini', 'kimi']`,
-    `{ claude: ['unpriced', 'cache-write-ttl-fallback'], codex: ['unrecorded-writes', 'assumed-tier', 'fast-requested'], gemini: ['unrecorded-calls', 'long-prompt', 'tool-tokens'], kimi: ['unpriced'], bogus: ['unpriced'] }`,
+    `['claude', 'codex', 'qwen', 'kimi', 'grok']`,
+    `{ claude: ['unpriced', 'cache-write-ttl-fallback'], codex: ['unrecorded-writes', 'assumed-tier', 'fast-requested'], qwen: ['unrecorded-calls'], kimi: ['unpriced'], grok: ['unpriced', 'partial-usage'], bogus: ['unpriced'] }`,
   ].join(', ');
   await js(`window.__probe.setHistoryPricesDirect(${ALL_TOOLS})`);
   await sleep(200);
   const noteAll = await js(readNote);
-  say('compact note, four tools (tr): ' + JSON.stringify(noteAll));
+  say('compact note, five tools (tr): ' + JSON.stringify(noteAll));
   check('[tr] one short source line per tool, in order, and no lead, "why" or cause line',
     noteAll.floorUi === 0
       && JSON.stringify(noteAll.sources) === JSON.stringify([
         'Claude Code · 1 Ağu 2026 fiyatları',
         'Codex · 15 Ağu 2026 fiyatları',
-        'Gemini · Gemini API standart, 10 Eyl 2026',
+        'Qwen Code · Alibaba Cloud Model Studio fiyatları, 28 Eyl 2026',
         'Kimi · fiyat yayımlamıyor',
+        "Grok Build · xAI'nin bildirdiği tutar",
       ]) && !/en az|Neden|alt sınır/i.test(noteAll.text), [noteAll.floorUi, noteAll.sources]);
   check('[tr] each source is one line, never clipped',
     noteAll.sourceLines.every((n) => n === 1) && noteAll.sourcesClipped.every((v) => v === false),
     [noteAll.width, noteAll.sourceLines]);
   check('[tr] F1: the source sentence names the tools in the history, and keeps "only local"',
-    noteAll.introSources === 'Yalnızca bu bilgisayardaki Claude Code, Codex, Gemini ve Kimi kayıtlarından hesaplanır.',
+    noteAll.introSources === 'Yalnızca bu bilgisayardaki Claude Code, Codex, Qwen Code, Kimi ve Grok Build kayıtlarından hesaplanır.',
     noteAll.introSources);
   check('[tr] no raw cause code and no unknown tool anywhere in the note',
     !RAW_CAUSE_CODES.test(noteAll.text) && !/bogus/.test(noteAll.text), noteAll.text);
@@ -918,14 +967,15 @@ app.whenReady().then(async () => {
     await js(`window.__probe.setLocaleDirect('en', '${locale}')`);
     await sleep(300);
     const n = await js(readNote);
-    say(`compact note, four tools (${locale}): ` + JSON.stringify(n));
+    say(`compact note, five tools (${locale}): ` + JSON.stringify(n));
     const gb = locale === 'en-GB';
     check(`[${locale}] the note reads in English, one line per source, nothing clipped, nothing about bounds`,
       n.floorUi === 0
         && n.sources[0] === (gb ? 'Claude Code · 1 Aug 2026 prices' : 'Claude Code · Aug 1, 2026 prices')
-        && n.sources[2] === (gb ? 'Gemini · Gemini API standard, 10 Sept 2026' : 'Gemini · Gemini API standard, Sep 10, 2026')
+        && n.sources[2] === (gb ? 'Qwen Code · Alibaba Cloud Model Studio rates, 28 Sept 2026' : 'Qwen Code · Alibaba Cloud Model Studio rates, Sep 28, 2026')
         && n.sources[3] === 'Kimi · does not publish prices'
-        && n.introSources === 'Calculated only from local Claude Code, Codex, Gemini, and Kimi logs.'
+        && n.sources[4] === 'Grok Build · as reported by xAI'
+        && n.introSources === 'Calculated only from local Claude Code, Codex, Qwen Code, Kimi, and Grok Build logs.'
         && n.sourceLines.every((x) => x === 1) && n.sourcesClipped.every((v) => v === false)
         && !/at least|lower bound|Why/i.test(n.text) && !RAW_CAUSE_CODES.test(n.text),
       [n.sources, n.floorUi]);
@@ -933,13 +983,13 @@ app.whenReady().then(async () => {
   await js(`window.__probe.setLocaleDirect('tr', 'tr-TR')`);
   await sleep(300);
 
-  // Gemini only: its source line, nothing about Claude or Codex.
-  await js(`window.__probe.setHistoryPricesDirect({ gemini: '2026-09-10' }, '2026-08-01', ['gemini'], { gemini: ['unrecorded-calls'] })`);
+  // Qwen only: its source line, nothing about Claude or Codex.
+  await js(`window.__probe.setHistoryPricesDirect({ qwen: '2026-09-28' }, '2026-08-01', ['qwen'], { qwen: ['unrecorded-calls'] })`);
   await sleep(200);
   const noteGem = await js(readNote);
-  say('compact note, gemini only (tr): ' + JSON.stringify(noteGem));
-  check('[tr] a Gemini-only history: its source line only, nothing about Claude or Codex',
-    noteGem.floorUi === 0 && JSON.stringify(noteGem.sources) === JSON.stringify(['Gemini · Gemini API standart, 10 Eyl 2026'])
+  say('compact note, qwen only (tr): ' + JSON.stringify(noteGem));
+  check('[tr] a Qwen-only history: its source line only, nothing about Claude or Codex',
+    noteGem.floorUi === 0 && JSON.stringify(noteGem.sources) === JSON.stringify(['Qwen Code · Alibaba Cloud Model Studio fiyatları, 28 Eyl 2026'])
       && !/Claude|Codex/.test(noteGem.text), noteGem);
 
   // Kimi only.

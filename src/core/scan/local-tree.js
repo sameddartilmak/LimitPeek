@@ -1,17 +1,18 @@
 'use strict';
 /**
  * Directory listing for the local readers added under ADR-003 Amendment 3/6
- * (Gemini CLI chats, Kimi Code sessions).
+ * (Kimi Code sessions, Qwen Code usage logs, Grok Build sessions, Antigravity
+ * conversation stores).
  *
  * LINKS ARE FOLLOWED ONLY AT THE ROOT (ADR-003 A6, Phase A review rulings).
- * The root (`~/.gemini/tmp`, `~/.kimi-code/sessions`) is resolved once by the
+ * The root (`~/.kimi-code/sessions`, `~/.grok/sessions`) is resolved once by the
  * caller with the shared path guard (`codex/rollout.js` `resolveLocalDir`), so a
  * user who junctions a whole tree to another local drive still works. Below the
  * root:
  *  - only PLAIN directories are descended into. A symbolic link, a junction, or
  *    an entry whose type the platform did not report is skipped, never resolved:
- *    a junction inside `chats/` pointing at `~/.gemini` must not make the reader
- *    open `oauth_creds.json`.
+ *    a junction inside a session directory pointing at the tool's home must
+ *    not make the reader open a credentials file.
  *  - FILES must be regular files; links are skipped here and again by the
  *    caller's lstat before any open.
  *  - every path handed out is checked to lie inside the resolved root
