@@ -133,6 +133,36 @@ function runChained(command, input) {
   return res && typeof res.stdout === 'string' ? res.stdout : '';
 }
 
+/**
+ * Is `next` an OLDER reading than the capture already on disk?
+ *
+ * Every Claude Code session runs this hook with the rate limits of ITS OWN
+ * last request. A session left idle since early in the window re-renders its
+ * line with that old figure and, last writer wins, put 3% over the 37% an
+ * active session had just written (owner, 2026-09-28: the panel read %3 / %10
+ * while claude.ai read 30% / 15%). Within one window usage only ever grows,
+ * so a LOWER figure for the same window, or a figure for an EARLIER window,
+ * can only have come from an older request. Such a reading is not written.
+ * A later window (one that has reset) is always newer and always written.
+ */
+const SAME_WINDOW_S = 300;
+
+function olderThanStored(next) {
+  let stored;
+  try { stored = JSON.parse(readFileSync(OUT_FILE, 'utf8')); } catch { return false; }
+  if (!stored || typeof stored !== 'object') return false;
+  for (const key of ['fiveHour', 'sevenDay']) {
+    const s = stored[key];
+    const n = next[key];
+    if (!s || !n || num(s.resetsAt) === null || num(n.resetsAt) === null) continue;
+    if (n.resetsAt < s.resetsAt - SAME_WINDOW_S) return true;
+    const sameWindow = Math.abs(n.resetsAt - s.resetsAt) <= SAME_WINDOW_S;
+    if (sameWindow && num(s.usedPercentage) !== null && num(n.usedPercentage) !== null
+      && n.usedPercentage < s.usedPercentage) return true;
+  }
+  return false;
+}
+
 function pickWindow(w) {
   if (!w || typeof w !== 'object') return null;
   return { usedPercentage: num(w.used_percentage), resetsAt: num(w.resets_at) };
@@ -156,8 +186,10 @@ try {
   };
 
   try {
-    mkdirSync(OUT_DIR, { recursive: true });
-    writeWhole(OUT_FILE, JSON.stringify(snapshot, null, 2));
+    if (!olderThanStored(snapshot)) {
+      mkdirSync(OUT_DIR, { recursive: true });
+      writeWhole(OUT_FILE, JSON.stringify(snapshot, null, 2));
+    }
   } catch { /* a failed capture must not take the user's own line with it */ }
 
   // The user's own line, or nothing (see the header).
