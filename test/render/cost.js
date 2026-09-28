@@ -716,6 +716,36 @@ app.whenReady().then(async () => {
   await js(`window.__probe.restore()`);
   await sleep(300);
 
+  // ---- Settings: "Bağlantıyı kaldır" ------------------------------------
+  // "Bağlantıyı kaldır": offered only while main reports our hook is in.
+  const disc = await js(`(async () => {
+    const view = document.getElementById('settings-view');
+    const wasOpen = !view.hidden;
+    if (!wasOpen) document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 150));
+    const btn = () => view.querySelector('.settings__item[data-provider="claude"] .settings__disconnect');
+    const before = btn() ? btn().hidden : 'missing';
+    window.__probe.setHookDirect('claude', true);
+    await new Promise((r) => setTimeout(r, 200));
+    const shown = btn() && !btn().hidden;
+    const label = btn() ? btn().textContent : null;
+    const aria = btn() ? btn().getAttribute('aria-label') : null;
+    const others = [...view.querySelectorAll('.settings__disconnect')].filter((b) => !b.hidden).length;
+    btn().click();
+    await new Promise((r) => setTimeout(r, 200));
+    const calls = window.__probe.disconnectCalls();
+    window.__probe.setHookDirect('claude', false);
+    await new Promise((r) => setTimeout(r, 200));
+    const after = btn().hidden;
+    if (!wasOpen) document.querySelector('.iconbtn--settings').click();
+    await new Promise((r) => setTimeout(r, 150));
+    return { before, shown, label, aria, others, calls, after };
+  })()`);
+  check('[tr] "Bağlantıyı kaldır" appears only while the hook is in, and asks main with the id only',
+    disc.before === true && disc.shown === true && disc.label === 'Bağlantıyı kaldır'
+      && /Claude Code: bağlantıyı kaldır/.test(disc.aria || '') && disc.others === 1
+      && JSON.stringify(disc.calls) === '["claude"]' && disc.after === true, disc);
+
   // ---- pending: a tool whose first usage scan has not answered -----------
   //
   // ADR-002 A3.12. Codex's scan runs in a worker, so its first snapshot carries
