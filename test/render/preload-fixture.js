@@ -33,15 +33,9 @@ function p(id, name, accent, connected, status, extra) {
       accent,
       // ADR-003 A6.4: the registry fact main sends for every provider.
       experimental: id === 'gemini' || id === 'kimi',
-      // ADR-003 A8 (Phase B): only Copilot can use an optional key, and it
-      // starts with none stored — the state that shows the calm offer.
-      keyCapable: id === 'copilot',
-      keyState: 'none',
-      keyStoredAt: null,
-      creditUsage: null,
       // Every fixture row starts ADDED; the settings checks flip these at
       // runtime through __probe so the earlier structural checks still see
-      // all six rows.
+      // all five rows.
       enabled: true,
       connected,
       status,
@@ -294,6 +288,16 @@ const KIMI_COST = {
   windowEnd: iso(-1000),
   windowAnchored: false,
 };
+// An older or partly-broken main: the figure is there, everything ABOUT the
+// figure is missing. Must degrade, never vanish.
+const PARTIAL_COST = {
+  totalUsd: 41.5,
+  byModel: [],
+  unpricedModels: [],
+  fallbackWriteEvents: 0,
+  cacheWriteEvents: 0,
+  windowAnchored: true,
+};
 const NAMED_COSTS = {
   gemini: GEMINI_COST,
   kimi: KIMI_COST,
@@ -307,16 +311,7 @@ const NAMED_COSTS = {
   sourceIncomplete: SOURCE_INCOMPLETE_COST,
   owner: OWNER_CODEX_COST,
   allCauses: ALL_CAUSES_COST,
-};
-// An older or partly-broken main: the figure is there, everything ABOUT the
-// figure is missing. Must degrade, never vanish.
-const PARTIAL_COST = {
-  totalUsd: 41.5,
-  byModel: [],
-  unpricedModels: [],
-  fallbackWriteEvents: 0,
-  cacheWriteEvents: 0,
-  windowAnchored: true,
+  partial: PARTIAL_COST,
 };
 // qa F1. Every model unpriced: totalUsd is 0 and byClass is all zeros, which
 // is a truthful "nothing could be priced" — and used to render "en az $0,00".
@@ -396,34 +391,6 @@ const TINY_COST = {
 };
 
 /**
- * The Copilot row as main builds it for each key situation (snapshot.js, the
- * non-claude passive branch). A stored key is the row's source, so main drops
- * the setup offer; a reading makes the row connected; it stays 'passive'
- * because GitHub reports monthly AI credits, not a five-hour or weekly window.
- * Patches, merged onto the fixture's own Copilot row by `setCopilotKeyDirect`.
- */
-const COPILOT_KEY = {
-  // No key: exactly the fixture's own row — the unsupported passive row with
-  // its "Ekle" and the calm offer to add a key.
-  none: () => ({ keyState: 'none', keyStoredAt: null, creditUsage: null, connected: false, setupAction: ADD }),
-  credits: () => ({
-    keyState: 'stored',
-    keyStoredAt: '2026-09-20T09:15:00.000Z',
-    creditUsage: {
-      grossCredits: 1234, includedCredits: 900, billedCredits: 334,
-      periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-09-30T23:59:59.000Z',
-      fetchedAt: new Date(Date.now() - 12 * 60000).toISOString(),
-    },
-    connected: true,
-    setupAction: null,
-  }),
-  'key-rejected': () => ({
-    keyState: 'key-rejected', keyStoredAt: '2026-09-20T09:15:00.000Z', creditUsage: null,
-    connected: false, setupAction: null,
-  }),
-};
-
-/**
  * Two fixtures, selected by RENDER_FIXTURE.
  *
  * They are separate on purpose. The panel suite drives OS-level mouse input at
@@ -434,7 +401,7 @@ const COPILOT_KEY = {
  * do with dragging.
  */
 const FIXTURES = {
-  // Identity marks and reordering: two connected, four passive, no cost blocks.
+  // Identity marks and reordering: two connected, three passive, no cost blocks.
   panel: () => [
     p('claude', 'Claude Code', '#C96442', true, 'ok', {
       planLabel: 'Max 20x',
@@ -454,7 +421,6 @@ const FIXTURES = {
       burnRatePerHour: 90_000,
     }),
     p('gemini', 'Gemini', '#4386F5', false, 'passive', { setupAction: ADD }),
-    p('copilot', 'Copilot', '#8B5CF6', false, 'passive', { setupAction: ADD }),
     p('antigravity', 'Antigravity', '#E8B84B', false, 'passive', { setupAction: ADD }),
     p('kimi', 'Kimi', '#2B6BE8', false, 'passive', { setupAction: ADD }),
   ],
@@ -490,11 +456,6 @@ const FIXTURES = {
       // Gemini CLI is ALWAYS trailing (contract): it publishes no weekly reset.
       weeklyTokensWindowAnchored: false,
       lastGoodAt: new Date(Date.now() - 40 * 60_000).toISOString(),
-    }),
-    // A payload from a main process that produced the figure and nothing else.
-    p('copilot', 'Copilot', '#8B5CF6', false, 'passive', {
-      weeklyCost: PARTIAL_COST,
-      setupAction: ADD,
     }),
     // Nothing in the window could be priced at all.
     p('antigravity', 'Antigravity', '#E8B84B', true, 'ok', {
@@ -632,9 +593,6 @@ let deferPrefs = false;
 let heldPrefs = null;
 /** Main owns the mode; the renderer only asks. Mirrored here. */
 let mode = 'hover';
-/** Every key-channel ask the panel made (ADR-003 A8). Ids only: no key ever
- *  crosses this boundary in either direction. */
-const keyCalls = { requestKeyEntry: [], removeKey: [], openTokenPage: [], refreshKey: [] };
 const disconnectCalls = [];
 
 /** Geometry good enough to place the panel inside the 420x700 test window. */
@@ -756,27 +714,6 @@ contextBridge.exposeInMainWorld('usageNotch', {
   },
   close: () => {
     calls.close++;
-  },
-  /**
-   * ADR-003 A8: the three key channels. Write-only, and each answers only
-   * whether main accepted the ask — there is no getter to mirror, because
-   * there is none to expose (K3).
-   */
-  requestKeyEntry: async (id) => {
-    keyCalls.requestKeyEntry.push(id);
-    return { ok: true };
-  },
-  removeKey: async (id) => {
-    keyCalls.removeKey.push(id);
-    return { ok: true };
-  },
-  openTokenPage: async (id) => {
-    keyCalls.openTokenPage.push(id);
-    return { ok: true };
-  },
-  refreshKey: async (id) => {
-    keyCalls.refreshKey.push(id);
-    return { ok: true };
   },
   disconnectProvider: async (id) => {
     disconnectCalls.push(id);
@@ -943,36 +880,6 @@ contextBridge.exposeInMainWorld('__probe', {
     if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
     return true;
   },
-  /**
-   * ADR-003 A8: put a provider into a key state, with or without a reading,
-   * and push. `patch` is merged onto the row, so a check can drive one state
-   * at a time without rebuilding the fixture.
-   */
-  setKeyDirect: (id, patch) => {
-    snapshot.providers = snapshot.providers.map((x) =>
-      x.id === id ? { ...x, ...(patch || {}) } : x,
-    );
-    snapshot.generatedAt = new Date().toISOString();
-    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
-    return true;
-  },
-  /**
-   * Put the Copilot row into one of the COPILOT_KEY shapes above — the whole
-   * row as main builds it, setup offer and `connected` included — and push.
-   */
-  setCopilotKeyDirect: (name) => {
-    const make = COPILOT_KEY[name];
-    if (!make) return false;
-    snapshot.providers = snapshot.providers.map((x) =>
-      x.id === 'copilot' ? { ...x, ...make() } : x,
-    );
-    snapshot.generatedAt = new Date().toISOString();
-    if (snapshotCb) snapshotCb(JSON.parse(JSON.stringify(snapshot)));
-    return true;
-  },
-  /** What the panel asked of the key channels, so a check can prove a control
-   *  actually reached main rather than only looking pressed. */
-  keyCalls: () => JSON.parse(JSON.stringify(keyCalls)),
   disconnectCalls: () => disconnectCalls.slice(),
   /** ProviderSnapshot.hookInstalled for one row, pushed as main would. */
   setHookDirect: (id, installed) => {

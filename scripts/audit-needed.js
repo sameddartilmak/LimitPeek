@@ -14,7 +14,7 @@
  * Exit code 1 means an audit is needed, 0 means it is not, 2 means an error.
  *
  * NEEDS AN AUDIT: main-process and core code (sessions, windows, the security
- * filter, the one keyed request, the agy installer all live there), the
+ * filter, the agy installer all live there), the
  * installer script, and any change to what gets installed or bundled
  * (dependencies, the Electron version, electron-builder config).
  * DOES NOT: the renderer (it runs on a session that cannot reach the network,

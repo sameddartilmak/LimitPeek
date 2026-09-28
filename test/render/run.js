@@ -13,7 +13,7 @@
  *
  * WHAT THEY COVER THAT NOTHING ELSE DOES
  * --------------------------------------
- *   panel.js  the six identity marks, the connected/monochrome rule as
+ *   panel.js  the five identity marks, the connected/monochrome rule as
  *             RESOLVED colour and stroke weight, drag-and-drop, the Alt+Arrow
  *             keyboard path, focus surviving a row move, the optimistic
  *             reorder and its visible revert.
@@ -43,9 +43,6 @@ const ROOT = path.join(HERE, '..', '..');
 const SUITES = [
   { name: 'panel', file: 'panel.js', fixture: 'panel' },
   { name: 'cost', file: 'cost.js', fixture: 'cost' },
-  // The key-entry window (ADR-003 A8): its own document, its own preload, so
-  // it needs no provider fixture at all.
-  { name: 'key-entry', file: 'key-entry.js', fixture: 'cost' },
 ];
 
 function electronBin() {

@@ -67,7 +67,6 @@ const history = (periods) => ({
 
 const prov = {
   id: 'claude', displayName: 'Claude Code', accent: '#888', experimental: false,
-  keyCapable: false, keyState: 'none', keyStoredAt: null, creditUsage: null,
   enabled: true, connected: true, status: 'ok', planLabel: null,
   fiveHour: null, sevenDay: null, tokens: null,
   weeklyTokens: null, weeklyTokensWindowAnchored: null, weeklyTokenFloorCauses: [],
@@ -77,7 +76,7 @@ const prov = {
 function mount() {
   const handle = settingsMod.createSettings({
     onToggle() {}, onTheme() {}, onBack() {}, onLanguage() {}, onGrain() {},
-    onAddKey() {}, onOpenTokenPage() {}, onRemoveKey() {}, onPlanLabel() {},
+    onPlanLabel() {},
   });
   const store = new storeMod.Store();
   const push = (periods) => {

@@ -58,7 +58,6 @@ const tk = (billable) => ({
 function provider(over = {}) {
   return {
     id: 'codex', displayName: 'Codex', accent: '#10A37F', experimental: false,
-    keyCapable: false, keyState: 'none', keyStoredAt: null, creditUsage: null,
     enabled: true, connected: true, status: 'ok', planLabel: null,
     fiveHour: null, sevenDay: null,
     tokens: null, weeklyTokens: null, weeklyTokensWindowAnchored: null,
@@ -69,7 +68,7 @@ function provider(over = {}) {
 }
 
 const ctx = () => ({
-  onRetry() {}, onSetup() {}, onAddKey() {}, onOpenTokenPage() {},
+  onRetry() {}, onSetup() {},
   isBusy: () => false, attachGrip() {}, isTrayRow: () => false, isPending: () => false,
   generatedAt: new Date(NOW).toISOString(), staleOverride: false,
 });

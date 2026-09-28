@@ -230,7 +230,7 @@ test.describe('it fits in a buffer the shell truncates silently', () => {
     // Worst case on each axis at once: the longest display name, both windows
     // at three digits, and a multi-day countdown.
     const worst = row({
-      displayName: 'GitHub Copilot',
+      displayName: 'Antigravity',
       fiveHour: { usedPercentage: 100, certainty: 'known', resetsAt: new Date(NOW + 3 * 86400e3 + 3600e3).toISOString() },
       sevenDay: { usedPercentage: 100, certainty: 'known', resetsAt: null },
     });
@@ -258,7 +258,7 @@ test.describe('it fits in a buffer the shell truncates silently', () => {
         i18n.setLocale(language, locale);
         for (const fiveHour of states) {
           for (const sevenDay of states) {
-            const text = buildTooltip(snap([row({ displayName: 'GitHub Copilot', fiveHour, sevenDay })]), NOW);
+            const text = buildTooltip(snap([row({ displayName: 'Antigravity', fiveHour, sevenDay })]), NOW);
             assert.ok(text.length <= TOOLTIP_MAX, `${locale} ${text.length} chars: ${JSON.stringify(text)}`);
             assert.equal(text.split('\n').length, 3, `${locale}: a line was dropped: ${JSON.stringify(text)}`);
           }

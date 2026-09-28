@@ -372,7 +372,7 @@ test.describe('every setup notice fits the renderer cap', () => {
     // main.json in both languages, placeholders left as written (a `{tool}` is
     // shorter than any tool name, so entries that carry one are measured with
     // the longest real value substituted).
-    const LONGEST = { tool: 'Antigravity CLI', provider: 'GitHub Copilot' };
+    const LONGEST = { tool: 'Antigravity CLI', provider: 'Antigravity' };
     for (const language of ['tr', 'en']) {
       const catalog = JSON.parse(fs.readFileSync(
         path.join(__dirname, '..', 'src', 'shared', 'i18n', language, 'main.json'), 'utf8',

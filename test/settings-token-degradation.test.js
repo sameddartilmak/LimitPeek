@@ -96,7 +96,6 @@ function history(over = {}, histOver = {}) {
 
 const prov = (id, displayName) => ({
   id, displayName, accent: '#888', experimental: false,
-  keyCapable: false, keyState: 'none', keyStoredAt: null, creditUsage: null,
   enabled: true, connected: true, status: 'ok', planLabel: null,
   fiveHour: null, sevenDay: null, tokens: null,
   weeklyTokens: null, weeklyTokensWindowAnchored: null, weeklyTokenFloorCauses: [],
@@ -108,7 +107,6 @@ const PROVIDERS = [prov('claude', 'Claude Code'), prov('codex', 'Codex')];
 function mount(hist, providers = PROVIDERS) {
   const handle = settingsMod.createSettings({
     onToggle() {}, onTheme() {}, onBack() {}, onLanguage() {}, onGrain() {},
-    onAddKey() {}, onOpenTokenPage() {}, onRemoveKey() {},
   });
   const store = new storeMod.Store();
   store.set({
@@ -278,7 +276,7 @@ test.describe('the plan control is a closed list that makes no claim', () => {
   const itemsOf = (providers = PLAN_PROVIDERS, ctxOver = {}) => {
     const handle = settingsMod.createSettings({
       onToggle() {}, onTheme() {}, onBack() {}, onLanguage() {}, onGrain() {},
-      onAddKey() {}, onOpenTokenPage() {}, onRemoveKey() {}, onPlanLabel() {},
+      onPlanLabel() {},
       ...ctxOver,
     });
     const store = new storeMod.Store();

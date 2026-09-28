@@ -745,38 +745,6 @@
   overflow-wrap: break-word;
 }
 
-/* ADR-003 A8: the key section inside a settings item. State and times only —
- * never a character of the key, never its length, never a mask (K23). */
-.settings__key {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 4px;
-  font-size: var(--fs-micro);
-  color: var(--ink-400);
-}
-.settings__key[hidden] { display: none !important; }
-.settings__key p { margin: 0; overflow-wrap: break-word; white-space: normal; }
-/* The proxy cause behind 'unreachable'. Deliberately the SAME calm meta ink as
- * every other line here: no warning colour, no icon, no border. It is a stated
- * limit of this app, permanent on a network that requires a proxy, and styling
- * it as an alert would promise the user something they can clear. It wraps to
- * as many lines as it needs — honesty copy is never truncated (ADR-004 A2.3). */
-.settings__key-cause { color: var(--ink-400); }
-.settings__key-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
-.settings__key-token,
-.settings__key-remove,
-.settings__key-confirm-yes,
-.settings__key-confirm-no {
-  padding: 0;
-  border: 0;
-  border-bottom: 1px dashed var(--ink-600);
-  background: transparent;
-  color: var(--ink-300);
-  font: inherit;
-  font-size: var(--fs-micro);
-  cursor: pointer;
-}
 .settings__disconnect {
   align-self: flex-start;
   margin-top: 2px;
@@ -791,23 +759,6 @@
 }
 .settings__disconnect:hover { color: var(--ink-100); }
 .settings__disconnect[hidden] { display: none !important; }
-.settings__key-token:hover,
-.settings__key-remove:hover,
-.settings__key-confirm-yes:hover,
-.settings__key-confirm-no:hover { color: var(--ink-100); }
-.settings__key-token[hidden],
-.settings__key-state[hidden],
-.settings__key-cause[hidden],
-.settings__key-stored[hidden] { display: none !important; }
-.settings__key-confirm {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-left: var(--s-2);
-  border-left: 1px solid var(--ink-600);
-}
-.settings__key-confirm[hidden] { display: none !important; }
-.settings__key-confirm-actions { display: flex; gap: var(--s-2); }
 .settings__name {
   font-size: var(--fs-name);
   color: var(--ink-200);

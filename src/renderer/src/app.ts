@@ -99,28 +99,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     isPending: (id) => pendingUsageOf(store.get().snapshot).includes(id),
     onRetry: (providerId) => void runRefresh(providerId),
     onSetup: (providerId) => beginSetup(providerId),
-    // ADR-003 A8 (Phase B). All three are write-only asks: main owns the
-    // window, the local store and the URL. The renderer never holds a key and
-    // never builds a URL, so there is nothing to get wrong here.
-    onAddKey: (providerId) => void bridge.requestKeyEntry(providerId),
-    // The ONE of the three whose answer matters, so it is the one that is read.
-    // The confirm step promises "only the local copy is deleted", and until now
-    // the boolean saying whether that happened was dropped on the floor: a
-    // failed delete left a DPAPI credential on disk behind a dialog the user had
-    // just been shown, with nothing said. `callKeyChannel` never rejects — it
-    // returns false for a refusal and for a main that cannot do it — so one
-    // branch covers both. Revocation is named because it is the only remedy that
-    // works whether or not the file went, which is the same reason the
-    // uninstaller's message carries it.
     onPlanLabel: (providerId, label) => void applyPlanLabel(providerId, label),
-    onRemoveKey: (providerId) => {
-      void bridge.removeKey(providerId).then((ok) => {
-        if (!ok) store.set({ notice: t('app.keyRemoveFailed') });
-      });
-    },
-    onOpenTokenPage: (providerId) => void bridge.openTokenPage(providerId),
     onDisconnect: (providerId) => void disconnectProvider(providerId),
-    onRefreshKey: (providerId) => bridge.refreshKey(providerId),
     onRefresh: () => void runRefresh(null),
     onPinToggle: () => {
       // Main owns pinned mode and answers by pushing a new anchor — mode:'pin'
@@ -223,13 +203,6 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     const provider = findProvider(store.get().snapshot, providerId);
     const action = provider?.setupAction ?? null;
     if (!action) return;
-
-    // A key-sourced row's "Add" is the key flow itself. That flow asks for
-    // consent in its own window, so no second confirmation is shown here.
-    if (action.kind === 'add-api-key') {
-      void bridge.requestKeyEntry(providerId);
-      return;
-    }
 
     if (needsConsent(action)) {
       awaitingConsent = providerId;

@@ -23,9 +23,9 @@ function setup(kind, labelKey, detailKey, detailParams) {
  *
  * `claude` and `antigravity` are wired: both publish a server-computed
  * percentage through a documented statusline hook, which is the only source
- * ADR-001 Decision 1 accepts. The other four are present because the user
- * asked to see every tool with an "Ekle" affordance; they render as passive
- * rows with no meter and no fabricated number (ADR-001 Decision 3).
+ * ADR-001 Decision 1 accepts. The other three are read from the tools' own
+ * local files; a tool that is not on this machine renders as a passive row
+ * with no meter and no fabricated number (ADR-001 Decision 3).
  *
  * `enabledByDefault` is the shipped answer to "has the user ADDED this row to
  * the panel", used until they say otherwise (contract.ts,
@@ -78,21 +78,6 @@ const PROVIDERS = [
     experimental: true,
     get setupAction() {
       return setup('not-installed', 'provider.setup.add', 'provider.gemini.notFound');
-    },
-  },
-  {
-    id: 'copilot',
-    displayName: 'GitHub Copilot',
-    accent: '#8B5CF6',
-    live: false,
-    enabledByDefault: false,
-    // Experimental until a real, NON-EMPTY AI-credit reply has been read
-    // (2026-09-24). The reply envelope and the empty case are confirmed against
-    // GitHub, but the item fields are only as good as GitHub's documentation.
-    experimental: true,
-    get setupAction() {
-      // Its source is a key the user adds, so "Add" opens the key window.
-      return setup('add-api-key', 'provider.setup.add', 'provider.copilot.keyDetail');
     },
   },
   {

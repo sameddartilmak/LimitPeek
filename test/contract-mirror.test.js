@@ -109,16 +109,6 @@ test('every sendSync channel main serves sets returnValue on all paths', () => {
       `an early return in ${name} would leave returnValue unset and hang the renderer`,
     );
   }
-
-  // The key-entry window's sync channel lives in the key service, and the stake
-  // is the same: an unset `returnValue` would be a consent page that never
-  // paints, on the one screen where a secret is typed.
-  const service = fs.readFileSync(path.join(ROOT, 'src', 'main', 'keys', 'service.js'), 'utf8');
-  const start = service.indexOf('IPC_KEY_ENTRY.ENTRY_INFO');
-  assert.notEqual(start, -1, 'the entry-info listener is gone');
-  const body = service.slice(start, service.indexOf('});', start));
-  assert.ok(body.includes('event.returnValue ='), 'ENTRY_INFO must assign returnValue');
-  assert.equal(/return;/.test(body), false, 'an early return would hang the entry page');
 });
 
 test('the anchor channel now comes from the contract, not from our extension', () => {
@@ -146,32 +136,23 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   assert.ok(declared.has('setTheme'), 'contract.ts should declare setTheme()');
   assert.ok(declared.has('onPanelVisibility'), 'contract.ts should declare onPanelVisibility()');
   assert.ok(declared.has('setLanguage'), 'contract.ts should declare setLanguage()');
-  // ADR-003 Amendment 8 added the three optional-key channels. They are
-  // write-only by construction: there is no getter in this set, and a method
-  // that returned a key — or its length, or a mask of it — would be K3's
-  // violation, which is why the count is asserted rather than left open.
-  assert.ok(declared.has('requestKeyEntry'), 'contract.ts should declare requestKeyEntry()');
-  assert.ok(declared.has('removeKey'), 'contract.ts should declare removeKey()');
-  assert.ok(declared.has('openTokenPage'), 'contract.ts should declare openTokenPage()');
-  for (const forbidden of ['getKey', 'readKey', 'keyPreview', 'maskedKey']) {
-    assert.equal(declared.has(forbidden), false, `${forbidden}() would be a key getter (K3)`);
-  }
-  // 19 since setPlanLabel() joined the setters: the plan the user says they are
-  // on, per tool. Write-only like the rest; the value comes BACK on the snapshot
-  // as `ProviderSnapshot.planLabel`, not from a getter here. The count stays
-  // asserted so a key getter still cannot arrive unnoticed (K3).
+  // The plan the user says they are on, per tool. Write-only like the rest;
+  // the value comes BACK on the snapshot as `ProviderSnapshot.planLabel`, not
+  // from a getter here.
   assert.ok(declared.has('setPlanLabel'), 'contract.ts should declare setPlanLabel()');
-  // 20 since refreshKey() (2026-09-24): "refresh now" for the credit figure.
-  // It answers {ok} only; the figure arrives on the snapshot.
-  assert.ok(declared.has('refreshKey'), 'contract.ts should declare refreshKey()');
-  // 21 since setAutostart() (2026-09-24): "start with Windows" in the settings
-  // screen, the value the tray checkbox already had. A setter; it comes back on
-  // `Preferences.autostart`.
+  // "Start with Windows" in the settings screen, the value the tray checkbox
+  // already had. A setter; it comes back on `Preferences.autostart`.
   assert.ok(declared.has('setAutostart'), 'contract.ts should declare setAutostart()');
-  // 22 since disconnectProvider() (2026-09-25): the way back from the setup's
-  // statusLine hook. Main raises the confirmation and answers {ok, message}.
+  // The way back from the setup's statusLine hook. Main raises the
+  // confirmation and answers {ok, message}.
   assert.ok(declared.has('disconnectProvider'), 'contract.ts should declare disconnectProvider()');
-  assert.equal(declared.size, 22, `expected the 22 declared methods, saw ${[...declared].join(',')}`);
+  // 18 since the optional API key was removed (2026-09-28): its
+  // four methods are gone, and the count is asserted so a new channel — above
+  // all one that reaches the network — cannot arrive unnoticed.
+  for (const gone of ['requestKeyEntry', 'removeKey', 'openTokenPage', 'refreshKey']) {
+    assert.equal(declared.has(gone), false, `${gone}() belonged to the removed key feature`);
+  }
+  assert.equal(declared.size, 18, `expected the 18 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const STATE_THRESHOLDS = { ... } as const;`. */
@@ -332,7 +313,7 @@ test('Gemini and Kimi weekly costs have exactly the WeeklyCost shape, and their 
   assert.deepEqual([...new Set(emitted)].sort(), [...codes].sort(), 'every emitted non-tier code is declared');
 });
 
-test('every provider row declares experimental, true only for Gemini, Kimi and Copilot, and carries no undeclared key', () => {
+test('every provider row declares experimental, true only for Gemini and Kimi, and carries no undeclared key', () => {
   const { buildSnapshot, loadingSnapshot } = require('../src/core/snapshot');
   const fields = interfaceFields('ProviderSnapshot');
   assert.ok(fields.includes('experimental'), 'contract.ts declares ProviderSnapshot.experimental');
@@ -341,87 +322,8 @@ test('every provider row declares experimental, true only for Gemini, Kimi and C
   for (const s of [buildSnapshot({ now, events: [], rateLimits: null, scanOk: true, gemini: installed, kimi: installed }), loadingSnapshot(now)]) {
     for (const p of s.providers) {
       for (const key of Object.keys(p)) assert.ok(fields.includes(key), `${p.id}: undeclared key "${key}"`);
-      assert.equal(p.experimental, p.id === 'gemini' || p.id === 'kimi' || p.id === 'copilot', p.id);
+      assert.equal(p.experimental, p.id === 'gemini' || p.id === 'kimi', p.id);
     }
-  }
-});
-
-test('every provider row carries the key fields, and only Copilot is key-capable (A8, K24)', () => {
-  const { buildSnapshot, loadingSnapshot } = require('../src/core/snapshot');
-  const fields = interfaceFields('ProviderSnapshot');
-  for (const key of ['keyCapable', 'keyState', 'keyStoredAt', 'creditUsage']) {
-    assert.ok(fields.includes(key), `contract.ts declares ProviderSnapshot.${key}`);
-  }
-  assert.ok(contractSource().includes('export interface CreditUsage'), 'contract.ts declares CreditUsage');
-  assert.ok(contractSource().includes('export type KeyState'), 'contract.ts declares KeyState');
-
-  const now = new Date(2026, 8, 9, 12, 0, 0).getTime();
-  const installed = { installed: true, events: [], resultAtMs: now };
-  const keys = {
-    copilot: {
-      keyState: 'stored',
-      keyStoredAt: '2026-09-09T09:00:00.000Z',
-      creditUsage: {
-        grossCredits: 10,
-        includedCredits: 8,
-        billedCredits: 2,
-        periodStart: '2026-09-01T00:00:00.000Z',
-        periodEnd: '2026-10-01T00:00:00.000Z',
-        fetchedAt: '2026-09-09T11:00:00.000Z',
-      },
-    },
-  };
-  const creditFields = interfaceFields('CreditUsage');
-  // The reply carries no allowance, so the shape carries no denominator: there
-  // must be nothing here a percentage could be built from (A6.3).
-  for (const forbidden of ['usedPercentage', 'allowance', 'entitlement', 'remaining', 'limit']) {
-    assert.equal(creditFields.includes(forbidden), false, `CreditUsage must not declare ${forbidden}`);
-  }
-
-  for (const s of [
-    buildSnapshot({ now, events: [], rateLimits: null, scanOk: true, gemini: installed, kimi: installed, keys }),
-    loadingSnapshot(now, undefined, undefined, undefined, keys),
-  ]) {
-    for (const p of s.providers) {
-      for (const key of Object.keys(p)) assert.ok(fields.includes(key), `${p.id}: undeclared key "${key}"`);
-      assert.equal(p.keyCapable, p.id === 'copilot', p.id);
-      if (p.id === 'copilot') {
-        assert.equal(p.keyState, 'stored');
-        assert.equal(p.keyStoredAt, '2026-09-09T09:00:00.000Z');
-        assert.deepEqual(Object.keys(p.creditUsage).sort(), creditFields.slice().sort());
-      } else {
-        // A provider that is not key-capable reads as "no key", whatever a
-        // caller passes: the offer itself would be a claim that a key helps.
-        assert.equal(p.keyState, 'none', p.id);
-        assert.equal(p.keyStoredAt, null, p.id);
-        assert.equal(p.creditUsage, null, p.id);
-      }
-    }
-  }
-
-  // With no service at all (an older main, or a collector in a test) every row
-  // reads as "no key" rather than throwing or inventing a state.
-  for (const p of buildSnapshot({ now, events: [], rateLimits: null, scanOk: true }).providers) {
-    assert.equal(p.keyState, 'none', p.id);
-    assert.equal(p.creditUsage, null, p.id);
-  }
-});
-
-test('the key-entry window’s channels are mirrored exactly, and are not on the panel’s surface', () => {
-  const { IPC_KEY_ENTRY } = require('../src/shared/contract');
-  const src = contractSource();
-  const start = src.indexOf('export const IPC_KEY_ENTRY');
-  assert.notEqual(start, -1, 'contract.ts no longer declares IPC_KEY_ENTRY');
-  const block = src.slice(start, src.indexOf('} as const;', start));
-  const expected = {};
-  for (const m of block.matchAll(/^\s*([A-Z_]+):\s*'([^']+)'/gm)) expected[m[1]] = m[2];
-  assert.deepEqual(IPC_KEY_ENTRY, expected);
-  // Five channels, all under the same prefix, and none of them in `IPC` — the
-  // panel's bridge must not be able to reach the entry window's surface.
-  assert.equal(Object.keys(expected).length, 5);
-  for (const channel of Object.values(expected)) {
-    assert.ok(channel.startsWith('keys:'), channel);
-    assert.equal(Object.values(IPC).includes(channel), false, `${channel} is also a panel channel`);
   }
 });
 
@@ -530,12 +432,152 @@ test('navigation and window-open are blocked process wide', () => {
 });
 
 /**
+ * Structural guards over the main and core source. Each is a property of the
+ * SHAPE of the codebase, not of any one call, so a comment cannot hold it and a
+ * review holds it only until the next edit.
+ *
+ * Comment lines are stripped before every scan, exactly as the network scan
+ * below does: the prose that NAMES an API in order to say it is never called is
+ * documentation, and turning it into a failure would push the reasoning out of
+ * the file.
+ */
+function codeOf(file) {
+  return fs.readFileSync(file, 'utf8')
+    .split('\n')
+    .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+    .join('\n');
+}
+
+/** Every main/core source file, as `{ rel, code }`. */
+function mainAndCore() {
+  const out = [];
+  const walk = (d) => {
+    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.(js|mjs|cjs)$/.test(entry.name)) continue;
+      out.push({ rel: path.relative(ROOT, full).split(path.sep).join('/'), code: codeOf(full) });
+    }
+  };
+  walk(path.join(ROOT, 'src', 'main'));
+  walk(path.join(ROOT, 'src', 'core'));
+  return out;
+}
+
+test('every session gets the block-all request filter, with no exemption', () => {
+  // The optional-key feature once created one session that skipped the filter.
+  // With no request left for the app to make, no session may: the
+  // `session-created` handler hardens every one except the default session,
+  // which `applyAll()` hardens once itself.
+  const code = codeOf(path.join(ROOT, 'src', 'main', 'security.js'));
+  for (const needle of ['createExemptSession', 'EXEMPT_PARTITION', 'exemptSessions', 'fromPartition(']) {
+    assert.equal(code.includes(needle), false, needle);
+  }
+  const handler = code.slice(code.indexOf("app.on('session-created'"));
+  assert.ok(handler.includes('applySessionHardening(sess)'), 'a new session is hardened');
+  const security = require('../src/main/security');
+  assert.equal(security.isAllowed('https://api.github.com/'), false);
+  assert.equal(security.isAllowed('http://127.0.0.1/'), false);
+  assert.equal(security.isAllowed('file://server/share/x'), false);
+});
+
+test('no TLS override and no plaintext-storage escape hatch exists anywhere', () => {
+  const forbidden = [
+    'setCertificateVerifyProc',
+    'rejectUnauthorized',
+    'NODE_TLS_REJECT_UNAUTHORIZED',
+    'setUsePlainTextEncryption',
+    'allowNTLMCredentialsForDomains',
+    'ignore-certificate-errors',
+  ];
+  const offenders = [];
+  for (const { rel, code } of mainAndCore()) {
+    for (const needle of forbidden) {
+      if (code.includes(needle)) offenders.push(`${rel}: ${needle}`);
+    }
+  }
+  assert.deepEqual(offenders, []);
+});
+
+test('the proxy mode is a literal DIRECT, in one place, and never the system proxy (ADR-001 A2026-09-22)', () => {
+  const callers = mainAndCore().filter(({ code }) => code.includes('setProxy(')).map((o) => o.rel);
+  assert.deepEqual(callers, ['src/main/security.js'], 'one module decides the proxy mode');
+
+  const code = codeOf(path.join(ROOT, 'src', 'main', 'security.js'));
+  const calls = code.match(/setProxy\([^)]*\)/g) || [];
+  assert.equal(calls.length, 1, 'one call, not two');
+  // A literal object with a literal mode: no variable, so which mode ships
+  // cannot depend on a caller, a setting or a stored value.
+  assert.equal(calls[0], "setProxy({ mode: 'direct' })");
+
+  // `mode: 'system'` would put WPAD back on every machine that runs the app.
+  // It is not shipped anywhere, and this is what says so.
+  for (const { rel, code: body } of mainAndCore()) {
+    assert.equal(body.includes("mode: 'system'"), false, rel);
+    assert.equal(body.includes('proxyRules'), false, rel);
+    assert.equal(body.includes('pacScript'), false, rel);
+  }
+
+  // And the process-global control, which is the one devops measured at zero.
+  assert.ok(code.includes("appendSwitch('no-proxy-server')"));
+});
+
+test('DNS-over-HTTPS and the built-in resolver are pinned off, in one place (security F9)', () => {
+  // The pin exists, exactly once, in the module that owns network hardening.
+  const callers = mainAndCore().filter(({ code }) => code.includes('configureHostResolver(')).map((o) => o.rel);
+  assert.deepEqual(callers, ['src/main/security.js'], 'one module decides the resolver mode');
+
+  const code = codeOf(path.join(ROOT, 'src', 'main', 'security.js'));
+  const calls = code.match(/configureHostResolver\([^)]*\)/g) || [];
+  assert.equal(calls.length, 1, 'one call, not two');
+  // Literal values, both of them: a DoH lookup is a host resolution and not a
+  // URLRequest, so if an Electron default ever flips, the block-all filter would
+  // not see it and no in-process test could. This line is what says no.
+  assert.equal(
+    calls[0],
+    "configureHostResolver({ enableBuiltInResolver: false, secureDnsMode: 'off' })",
+  );
+
+  // And the modes that would undo it are nowhere.
+  for (const { rel, code: body } of mainAndCore()) {
+    assert.equal(body.includes('enableBuiltInResolver: true'), false, rel);
+    assert.equal(body.includes("secureDnsMode: 'automatic'"), false, rel);
+    assert.equal(body.includes("secureDnsMode: 'secure'"), false, rel);
+  }
+});
+
+test('spellcheck is off on every window, because the dictionary is a download (security F11)', () => {
+  /**
+   * NOT typography. Electron downloads hunspell dictionaries from a Google host
+   * the first time a spellcheckable field takes focus, through a browser-process
+   * loader that no session `onBeforeRequest` sees — the same class of blind spot
+   * as the `wpad` lookups. Any text field a window ever gains can trigger it,
+   * so this flag is a network control and cannot be dropped as cosmetic.
+   */
+  const withWindows = mainAndCore().filter(({ code }) => code.includes('webPreferences'));
+  assert.deepEqual(withWindows.map((o) => o.rel).sort(), ['src/main/panel-window.js']);
+  for (const { rel, code } of withWindows) {
+    assert.ok(code.includes('spellcheck: false'), `${rel} must keep spellcheck: false`);
+  }
+  // No spelling of the opposite, anywhere, including the loader switch that
+  // would fetch a dictionary without a webPreferences block at all.
+  for (const { rel, code } of mainAndCore()) {
+    assert.equal(code.includes('spellcheck: true'), false, rel);
+    assert.equal(code.includes('setSpellCheckerEnabled'), false, rel);
+    assert.equal(code.includes('setSpellCheckerLanguages'), false, rel);
+  }
+});
+
+/**
  * Ways a process can put bytes on a wire or spawn something that will.
  *
- * Grown for ADR-003 Amendment 5 (Phase B): once ONE module is allowed to make a
- * request, the list has to name every OTHER way a key could leave — `fetch`, a
- * socket, a websocket, a child process, http2, UDP, and DNS or TLS reached
- * directly. Both quote styles, because a single-quote-only list is one
+ * The app makes NO network request of its own, anywhere: since the optional
+ * GitHub API key was removed (2026-09-28) there is no module that may, so there
+ * is no exempt file either. The list names every way a request could still be
+ * written — `fetch`, a socket, a websocket, a child process, http2, UDP, DNS or
+ * TLS reached directly, Electron's own `net`, and handing a URL to the default
+ * browser. Both quote styles, because a single-quote-only list is one
  * autoformatter away from being blind.
  */
 const NETWORK_NEEDLES = [
@@ -549,20 +591,27 @@ const NETWORK_NEEDLES = [
   "'node:dns'", '"node:dns"', "'dns'", '"dns"',
   '"node:http"', '"node:https"', '"node:net"', '"node:dgram"',
   '"http"', '"https"', '"net"',
+  'XMLHttpRequest', 'sendBeacon', 'EventSource', 'openExternal',
+];
+
+/**
+ * Electron's `net` module, in every spelling that reaches it: destructured from
+ * `require('electron')` in any order, taken as a property of it, imported, or
+ * called. Patterns rather than needles, because `net` alone is a substring of
+ * too many ordinary words to be a needle.
+ */
+const NETWORK_PATTERNS = [
+  /\{[^}]*\bnet\b[^}]*\}\s*=\s*require\(['"](?:node:)?electron['"]\)/,
+  /require\(['"](?:node:)?electron['"]\)\.net\b/,
+  /import\s*\{[^}]*\bnet\b[^}]*\}\s*from\s*['"]electron['"]/,
+  /\bnet\.(?:request|fetch)\(/,
 ];
 
 /**
  * The exceptions, each with the condition that justifies it. Anything not listed
  * here is an offender wherever it appears.
  *
- * `src/main/keys/keyed-net.js` is the ONE module ADR-003 Amendment 5 K13 permits
- * to make a request. It is exempt from this list as a whole and guarded instead
- * by `test/keys-source-scan.test.js`, which asserts the stronger property: that
- * it is the only file in main or core that takes `net` from electron, that it
- * calls `net.request(` exactly once, and that no Node network module appears in
- * it at all.
- *
- * The two Antigravity files predate Phase B and spawn `tasklist.exe` and the
+ * The two Antigravity files spawn `tasklist.exe` and the
  * installer by ABSOLUTE PATH through `execFile` (ADR-003 Amendment 2 C3-C5):
  * no shell, no PATH lookup, no network. They are named one by one so a third
  * `child_process` import anywhere is a failure.
@@ -579,7 +628,6 @@ const NEEDLE_EXCEPTIONS = {
     'bridge/claude-statusline.mjs',
   ],
 };
-const NETWORK_EXEMPT_FILES = ['src/main/keys/keyed-net.js'];
 
 function scanForNetwork(dir, skip = () => false) {
   const offenders = [];
@@ -591,13 +639,15 @@ function scanForNetwork(dir, skip = () => false) {
       if (entry.isDirectory()) { walk(full); continue; }
       if (!/\.(js|mjs|cjs|ts|html)$/.test(entry.name)) continue;
       const rel = path.relative(ROOT, full).split(path.sep).join('/');
-      if (NETWORK_EXEMPT_FILES.includes(rel)) continue;
       const text = fs.readFileSync(full, 'utf8');
       const code = text.split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n');
       for (const needle of NETWORK_NEEDLES) {
         const allowed = NEEDLE_EXCEPTIONS[needle] || [];
         if (allowed.includes(rel)) continue;
         if (code.includes(needle)) offenders.push(`${rel}: ${needle}`);
+      }
+      for (const pattern of NETWORK_PATTERNS) {
+        if (pattern.test(code)) offenders.push(`${rel}: ${pattern}`);
       }
     }
   };
@@ -606,15 +656,28 @@ function scanForNetwork(dir, skip = () => false) {
 }
 
 test('the network scan has teeth: every needle and every exception is reachable', () => {
-  // A scan that matches nothing proves nothing. The exempt file and the two
-  // named exceptions must all still exist, or the exception list is stale and is
-  // silently widening the scan's blind spot.
-  for (const rel of [...NETWORK_EXEMPT_FILES, ...Object.values(NEEDLE_EXCEPTIONS).flat()]) {
+  // A scan that matches nothing proves nothing. The named exceptions must all
+  // still exist, or the exception list is stale and is silently widening the
+  // scan's blind spot.
+  for (const rel of Object.values(NEEDLE_EXCEPTIONS).flat()) {
     assert.ok(fs.existsSync(path.join(ROOT, rel)), `${rel} no longer exists; drop its exception`);
   }
-  // And the exempt file really is the one that makes the request.
-  const keyed = fs.readFileSync(path.join(ROOT, NETWORK_EXEMPT_FILES[0]), 'utf8');
-  assert.ok(keyed.includes('net.request('), 'the exemption belongs to the module that makes the request');
+  // Every spelling of Electron's `net` that the patterns exist for is caught,
+  // and an ordinary word containing "net" is not.
+  const caught = (code) => NETWORK_PATTERNS.some((p) => p.test(code));
+  for (const code of [
+    "const { net } = require('electron');",
+    "const { app, net, session } = require('electron');",
+    "const net = require('electron').net;",
+    "import { net } from 'electron';",
+    "net.request({ url });",
+    "await net.fetch(url);",
+  ]) {
+    assert.ok(caught(code), code);
+  }
+  for (const code of ["const planet = 'net';", "const { app } = require('electron');", 'internet.request()']) {
+    assert.equal(caught(code), false, code);
+  }
   assert.ok(NETWORK_NEEDLES.includes('fetch('));
   assert.ok(NETWORK_NEEDLES.includes('child_process'));
   assert.ok(NETWORK_NEEDLES.includes("'node:tls'"));

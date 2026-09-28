@@ -14,36 +14,10 @@ const kimiCostMod = require('./kimi/cost');
 const antigravityUsage = require('./antigravity/usage');
 const antigravityCostMod = require('./antigravity/cost');
 const { RETENTION_DAYS, DAY_MS } = require('./scan/scanner');
-const { isKeyCapable } = require('./keys/registry');
 const { sanitizePlanLabels } = require('./plan-labels');
 
 /** One shared empty list, so "no events" keeps the same identity across builds. */
 const EMPTY_EVENTS = Object.freeze([]);
-
-/**
- * The optional-key fields of one row (ADR-003 Amendment 8), on EVERY row.
- *
- * `keyCapable` comes from the hard-coded registry in `core/keys/registry.js`,
- * never from the caller: whether an optional key would add something defensible
- * is a fact about the provider, and a row that is not key-capable must offer
- * nothing at all — the offer itself is a claim that a key would help. Amendment
- * 6 rules Gemini out and holds Kimi, so today exactly one row is capable.
- *
- * The other three come from main's key service, which is the only thing that
- * knows them; with no service (a collector built in a test, or before the
- * service loads) the row reads as "no key", which is the state that renders
- * nothing.
- */
-function keyFields(id, keys) {
-  const capable = isKeyCapable(id);
-  const state = capable && keys && typeof keys === 'object' ? keys[id] : null;
-  return {
-    keyCapable: capable,
-    keyState: state && typeof state.keyState === 'string' ? state.keyState : 'none',
-    keyStoredAt: state && typeof state.keyStoredAt === 'string' ? state.keyStoredAt : null,
-    creditUsage: state && state.creditUsage ? state.creditUsage : null,
-  };
-}
 
 /**
  * The last usage history built, and what it was built from (ADR-003 A6 Phase A
@@ -481,16 +455,12 @@ function codexRowState(cx, anyFigure, fresh, rolledOver) {
  *          resultAtMs?:number|null, unreadRange?:object|null}|undefined} src
  * @param {number} now
  * @param {{sum: Function, cost: Function, pricesAsOf: string}} reader
- * @param {object} [keys] the optional-key state per provider; see `keyFields`.
- *        Neither Gemini nor Kimi is key-capable (ADR-003 A6), so both rows read
- *        as "no key" whatever is passed — the argument exists so a future
- *        key-capable local reader cannot silently omit the fields.
  * @param {string|null} [planLabel] the plan the user typed for THIS tool, or
  *        null. Passed in rather than looked up here so this function keeps no
  *        opinion about a value it only forwards.
  * @returns {{row: object, unread: Array}}
  */
-function localUsageRow(p, enabled, src, now, reader, keys, planLabel) {
+function localUsageRow(p, enabled, src, now, reader, planLabel) {
   const installed = Boolean(src && src.installed === true);
   const base = {
     id: p.id,
@@ -498,7 +468,6 @@ function localUsageRow(p, enabled, src, now, reader, keys, planLabel) {
     accent: p.accent,
     enabled,
     experimental: p.experimental === true,
-    ...keyFields(p.id, keys),
     planLabel: typeof planLabel === 'string' && planLabel ? planLabel : null,
     burnRatePerHour: null,
   };
@@ -619,11 +588,6 @@ function lastGoodAtFor(scanGoodAtMs, capturedAtMs, rateLimitState) {
  *        that EVERY emitted snapshot is ordered — the tray icon is driven by
  *        the first ENABLED row, and a snapshot that skipped the ordering step
  *        would put a different provider on the tray than in the panel.
- * @param {object} [input.keys]  the optional-key state per provider, from
- *        main's key service (`src/main/keys/service.js`): `{ <id>: { keyState,
- *        keyStoredAt, creditUsage } }`. Absent in a collector with no service,
- *        and then every row reads as "no key" — which is the state that renders
- *        nothing. `keyCapable` is NOT taken from here: it is a registry fact.
  * @param {object} [input.enabled]  persisted enablement map. Applied here for
  *        the same reason: the snapshot still carries ALL providers, because
  *        the settings view needs the full list, so `enabled` is the only thing
@@ -991,13 +955,13 @@ function buildSnapshot(input) {
     sum: geminiUsage.sumGeminiTokens,
     cost: geminiPricing.geminiCost,
     pricesAsOf: geminiPricing.PRICES_AS_OF,
-  }, input.keys, planOf('gemini'));
+  }, planOf('gemini'));
   const km = localUsageRow(PROVIDERS.find((p) => p.id === 'kimi'), enabled.kimi === true, input.kimi, now, {
     sum: kimiUsage.sumKimiTokens,
     cost: kimiCostMod.kimiCost,
     // Kimi has no price table: an incomplete empty cost states no date either.
     pricesAsOf: '',
-  }, input.keys, planOf('kimi'));
+  }, planOf('kimi'));
   const localPending = (src) => Boolean(src && src.installed === true && !Array.isArray(src.events));
 
   const providers = PROVIDERS.map((p) => {
@@ -1010,7 +974,6 @@ function buildSnapshot(input) {
         accent: p.accent,
         enabled: enabled[p.id] === true,
         experimental: p.experimental === true,
-        ...keyFields(p.id, input.keys),
         connected: agRow.connected,
         status: agRow.status,
         // Antigravity states a plan tier in its payload, and the bridge still
@@ -1043,7 +1006,6 @@ function buildSnapshot(input) {
         accent: p.accent,
         enabled: enabled[p.id] === true,
         experimental: p.experimental === true,
-        ...keyFields(p.id, input.keys),
         connected: cxRow.connected,
         status: cxRow.status,
         // plan_type ("plus") is in the rollout and is still not read: ADR-001
@@ -1071,13 +1033,6 @@ function buildSnapshot(input) {
       return snap;
     }
     if (p.id !== 'claude') {
-      const keys = keyFields(p.id, input.keys);
-      // A stored key IS this row's source. Without it the row says "not
-      // supported yet" and offers "Add"; with it, saying that next to the
-      // credits the key just read would contradict the row itself. A row whose
-      // key has produced a figure counts as connected. The status stays
-      // 'passive' because there is still no 5-hour or weekly window to show.
-      const keyStored = keys.keyCapable && keys.keyState !== 'none' && keys.keyState !== 'secure-storage-unavailable';
       return {
         id: p.id,
         displayName: p.displayName,
@@ -1085,8 +1040,7 @@ function buildSnapshot(input) {
         // The user's choice to SEE this row, not our ability to fill it.
         enabled: enabled[p.id] === true,
         experimental: p.experimental === true,
-        ...keys,
-        connected: keys.creditUsage !== null,
+        connected: false,
         status: 'passive',
         // A row we cannot collect for can still be a plan the user pays for, and
         // saying so is not a claim about usage.
@@ -1101,7 +1055,7 @@ function buildSnapshot(input) {
         // No transcripts, so no usage to price. Never 0, which would read as
         // "this provider cost nothing" rather than "we have no data".
         weeklyCost: null,
-        setupAction: keyStored ? null : { ...p.setupAction },
+        setupAction: { ...p.setupAction },
         // Never had a good value, so there is no age to report. The renderer
         // must not fall back to generatedAt and imply one.
         lastGoodAt: null,
@@ -1113,7 +1067,6 @@ function buildSnapshot(input) {
       accent: p.accent,
       enabled: enabled[p.id] === true,
       experimental: p.experimental === true,
-      ...keyFields(p.id, input.keys),
       connected: row.connected,
       status: row.status,
       planLabel: planOf(p.id),
@@ -1179,12 +1132,12 @@ function buildSnapshot(input) {
 }
 
 /** Shown before the first scan completes, and if the store is empty. */
-function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage, keys, planLabelsRaw) {
+function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage, planLabelsRaw) {
   // Same resolution as buildSnapshot: the skeleton must show exactly the rows
   // the first real snapshot will, or the panel visibly drops rows on load.
   const enabled = resolveEnabled(enabledRaw);
-  // Carried for the same reason `keys` is: the plan sits in the row HEADER, so a
-  // row that gains one a moment after the panel opens visibly changes shape. It
+  // Carried because the plan sits in the row HEADER, so a row that gains one a
+  // moment after the panel opens visibly changes shape. It
   // is a setting, already known at cold start — unlike every figure here, which
   // is why this is the one value the skeleton can state truthfully.
   const planLabels = sanitizePlanLabels(planLabelsRaw);
@@ -1198,9 +1151,6 @@ function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage, keys
       accent: p.accent,
       enabled: enabled[p.id] === true,
       experimental: p.experimental === true,
-      // The skeleton carries them too: a row that gains a key affordance a
-      // moment after the panel opens visibly changes shape.
-      ...keyFields(p.id, keys),
       connected: false,
       // Keyed off `live`, not off the id: a provider we can collect must paint
       // the same skeleton the first real snapshot will replace, or its row
@@ -1232,7 +1182,6 @@ function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage, keys
 module.exports = {
   buildSnapshot,
   loadingSnapshot,
-  keyFields,
   unknownWindow,
   windowFrom,
   lastGoodAtFor,

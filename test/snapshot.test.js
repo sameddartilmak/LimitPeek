@@ -267,10 +267,10 @@ test.describe('fresh capture -> certainty known, verbatim', () => {
 });
 
 test.describe('provider registry shape', () => {
-  test('all six providers are present, in order, exactly once', () => {
+  test('all five providers are present, in order, exactly once', () => {
     const snap = buildSnapshot({ now: NOW, events: [], rateLimits: { state: 'missing' }, scanOk: true });
     assert.deepEqual(snap.providers.map((p) => p.id), PROVIDER_IDS);
-    assert.deepEqual(PROVIDER_IDS, ['claude', 'codex', 'gemini', 'copilot', 'antigravity', 'kimi']);
+    assert.deepEqual(PROVIDER_IDS, ['claude', 'codex', 'gemini', 'antigravity', 'kimi']);
   });
 
   test('the passive providers show no numbers at all', () => {
@@ -279,7 +279,7 @@ test.describe('provider registry shape', () => {
     // session-rollout rate limits were read; the set is now read off the
     // registry's `live` flag, so the assertions below are unchanged. Gemini and
     // Kimi are live since ADR-003 A6 but stay in this set while not installed.
-    assert.deepEqual(PASSIVE_IDS, ['gemini', 'copilot', 'kimi']);
+    assert.deepEqual(PASSIVE_IDS, ['gemini', 'kimi']);
     const snap = buildSnapshot({ now: NOW, events: [ev({ output: 100 })], rateLimits: { state: 'missing' }, scanOk: true });
     for (const p of snap.providers.filter((x) => PASSIVE_IDS.includes(x.id))) {
       assert.equal(p.status, 'passive');
@@ -288,9 +288,7 @@ test.describe('provider registry shape', () => {
       assert.equal(p.sevenDay, null);
       assert.equal(p.tokens, null);
       assert.equal(p.burnRatePerHour, null);
-      // Copilot's source is a key the user adds, so its "Add" opens the key
-      // window ('add-api-key'); the other two are simply not on this machine.
-      assert.equal(p.setupAction.kind, p.id === 'copilot' ? 'add-api-key' : 'not-installed', p.id);
+      assert.equal(p.setupAction.kind, 'not-installed', p.id);
       assert.equal(p.planLabel, null);
     }
   });
@@ -324,7 +322,6 @@ test.describe('provider registry shape', () => {
       claude: '#C96442',
       codex: '#10A37F',
       gemini: '#4386F5',
-      copilot: '#8B5CF6',
       antigravity: '#E8B84B',
       kimi: '#2B6BE8',
     });
@@ -522,7 +519,7 @@ test.describe('lastGoodAt is per row, not snapshot-wide', () => {
     assert.equal(c.lastGoodAt, new Date(NOW2).toISOString());
   });
 
-  test('the five passive rows report null, never a borrowed generatedAt', () => {
+  test('the other rows report null, never a borrowed generatedAt', () => {
     const snap = buildSnapshot({
       now: NOW2, events: [], rateLimits: staleCapture(), scanOk: true, scanGoodAtMs: NOW2,
     });
@@ -924,73 +921,5 @@ test.describe('just after a weekly reset, a zero week is a measurement and says 
     assert.notEqual(cx.weeklyTokens, null, 'scanned, so present');
     assert.equal(cx.weeklyTokens.billable, 0, 'and the fresh quota week is empty');
     assert.deepEqual(cx.weeklyTokenFloorCauses, [], 'no write pattern can fire on zero events');
-  });
-});
-
-/**
- * A stored Copilot key IS that row's source (the key-backed passive row). With
- * it, "not supported yet" and "Add" would contradict the credits the key just
- * read, so the setup offer goes; the row counts as connected once a reading
- * exists; and it stays 'passive' because GitHub reports monthly AI credits, not
- * a five-hour or weekly window.
- */
-test.describe('copilot row with an optional key', () => {
-  const USAGE = {
-    grossCredits: 1234, includedCredits: 900, billedCredits: 334,
-    periodStart: '2026-09-01T00:00:00.000Z', periodEnd: '2026-09-30T23:59:59.000Z',
-    fetchedAt: '2026-09-08T11:48:00.000Z',
-  };
-  const copilotWith = (keys) =>
-    buildSnapshot({ now: NOW, events: [], scanOk: true, keys }).providers.find((p) => p.id === 'copilot');
-
-  test.it('no key stored: the row is exactly the unsupported passive row, with its offer', () => {
-    const row = copilotWith(undefined);
-    assert.equal(row.keyCapable, true);
-    assert.equal(row.keyState, 'none');
-    assert.equal(row.status, 'passive');
-    assert.equal(row.connected, false);
-    assert.ok(row.setupAction && typeof row.setupAction.label === 'string');
-  });
-
-  test.it('a key with a reading: connected, no setup offer, still passive and windowless', () => {
-    const row = copilotWith({ copilot: { keyState: 'stored', keyStoredAt: '2026-09-01T09:00:00.000Z', creditUsage: USAGE } });
-    assert.equal(row.setupAction, null);
-    assert.equal(row.connected, true);
-    assert.equal(row.status, 'passive');
-    assert.equal(row.fiveHour, null);
-    assert.equal(row.sevenDay, null);
-    assert.deepEqual(row.creditUsage, USAGE);
-  });
-
-  for (const state of ['stored', 'key-rejected', 'key-lacks-permission', 'rate-limited', 'not-available', 'unreachable', 'unreadable']) {
-    test.it(`a key in state ${state} with no reading: no setup offer, not connected`, () => {
-      const row = copilotWith({ copilot: { keyState: state, keyStoredAt: null, creditUsage: null } });
-      assert.equal(row.keyState, state);
-      assert.equal(row.setupAction, null);
-      assert.equal(row.connected, false);
-      assert.equal(row.status, 'passive');
-    });
-  }
-
-  test.it('a reading kept through an error state still counts as connected', () => {
-    const row = copilotWith({ copilot: { keyState: 'unreachable', keyStoredAt: null, creditUsage: USAGE } });
-    assert.equal(row.setupAction, null);
-    assert.equal(row.connected, true);
-  });
-
-  test.it('secure storage unavailable: no key can be read, so the offer stays', () => {
-    const row = copilotWith({ copilot: { keyState: 'secure-storage-unavailable', keyStoredAt: null, creditUsage: null } });
-    assert.ok(row.setupAction);
-    assert.equal(row.connected, false);
-  });
-
-  test.it('a key entry for a provider that cannot use one changes nothing on that row', () => {
-    const snap = buildSnapshot({ now: NOW, events: [], scanOk: true,
-      keys: { kimi: { keyState: 'stored', keyStoredAt: null, creditUsage: USAGE } } });
-    const kimi = snap.providers.find((p) => p.id === 'kimi');
-    assert.equal(kimi.keyCapable, false);
-    assert.equal(kimi.creditUsage, null);
-    assert.equal(kimi.connected, false);
-    assert.ok(kimi.setupAction);
   });
 });

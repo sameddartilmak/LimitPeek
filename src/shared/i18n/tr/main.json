@@ -11,7 +11,6 @@
   "provider.codex.notFound": "Codex bu makinede bulunamadı.",
   "provider.antigravity.detail": "Antigravity CLI kurulu değilse indirilip kurulur (onayınızla), sonra durum satırına köprü eklenir; yalnızca kalan kota oranı ve sıfırlanma zamanı okunur.",
   "provider.notInstalledHint": "{provider} bu bilgisayarda bulunamadı. Kurulduğunda satır kendiliğinden bağlanır.",
-  "provider.copilot.keyDetail": "Bu ayın AI kredilerini görmek için bir GitHub anahtarı ekleyin.",
   "provider.gemini.notFound": "Gemini CLI bu bilgisayarda bulunamadı.",
   "provider.kimi.notFound": "Kimi Code bu bilgisayarda bulunamadı.",
   "ipc.invalidRequest": "Geçersiz istek.",
@@ -68,5 +67,5 @@
   "dialog.agy.promise": "Önce zaman damgalı bir yedek alınır. Köprü yalnızca kalan kota oranını ve sıfırlanma zamanını okur; hiçbir metin, dosya yolu, e-posta veya kimlik bilgisi kaydetmez ve hiçbir ağ bağlantısı açmaz.",
   "dialog.agyInstall.title": "Antigravity CLI kurulsun mu?",
   "dialog.agyInstall.message": "Antigravity CLI (agy) indirilip kurulsun mu?",
-  "dialog.agyInstall.detail": "Bu adım, Antigravity'nin resmi kurulum betiğini (install.ps1) antigravity.google adresinden indirip PowerShell ile çalıştırır: tek seferlik bir indirme, yalnızca şimdi ve sizin onayınızla. Anahtar kaydetmediğiniz sürece uygulama kendiliğinden hiçbir ağ isteği yapmaz; kayıtlı bir Copilot anahtarı varsa yalnızca api.github.com'a, kendiliğinden en sık 5 dakikada bir (Yenile ile en sık dakikada bir) ve yalnızca o satır açıkken istek yapılır. Kurulumdan sonra durum satırı köprüsü eklenir; köprü yalnızca kalan kota oranını ve sıfırlanma zamanını okur."
+  "dialog.agyInstall.detail": "Bu adım, Antigravity'nin resmi kurulum betiğini (install.ps1) antigravity.google adresinden indirip PowerShell ile çalıştırır: tek seferlik bir indirme, yalnızca şimdi ve sizin onayınızla. Bunun dışında uygulama kendiliğinden hiçbir ağ isteği yapmaz. Kurulumdan sonra durum satırı köprüsü eklenir; köprü yalnızca kalan kota oranını ve sıfırlanma zamanını okur."
 }

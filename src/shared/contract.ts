@@ -121,7 +121,6 @@ export type RowStatus =
 /** What the row's action button does when pressed. */
 export type SetupKind =
   | 'install-bridge'  // Claude: install the statusline bridge (needs consent)
-  | 'add-api-key'     // future: user pastes a key (DPAPI via safeStorage)
   | 'not-installed';  // the tool itself is absent on this machine
 
 export interface SetupAction {
@@ -810,76 +809,8 @@ export interface ModelQuotaDetail {
   capturedAt: string;
 }
 
-/**
- * The state of the OPTIONAL, user-supplied API key for a provider (ADR-003
- * Amendment 8; the conditions are Amendment 5's K1-K25).
- *
- * Fixed codes, never provider text (K19). GitHub's own wording can name an
- * organisation, a repository or an account, so nothing from a reply, a header,
- * a URL or an `err.message` reaches this field — the renderer prints its own
- * sentence per code.
- *
- *  'none'                      no key stored; the row is exactly as it was
- *  'stored'                    a key is stored and nothing has refused it
- *  'key-rejected'              the provider refused the key (401). Polling STOPS
- *                              until the user replaces or removes it
- *  'key-lacks-permission'      authenticated, but not allowed to read the plan
- *  'rate-limited'              the provider asked us to come back later
- *  'not-available'             the provider has no such figure for this account
- *                              (including a reply we could not fully validate:
- *                              all-or-nothing, so no figure rather than a
- *                              partial one)
- *  'unreachable'              the request did not complete (timeout, transport,
- *                              a redirect, an oversized body, a 5xx)
- *  'unreadable'                a key IS stored and the local copy cannot be
- *                              read or decrypted — another Windows account, a
- *                              machine change, a truncated file
- *  'secure-storage-unavailable' Windows DPAPI is not available, so nothing was
- *                              stored. There is no plaintext fallback, by veto.
- */
-export type KeyState =
-  | 'none'
-  | 'stored'
-  | 'key-rejected'
-  | 'key-lacks-permission'
-  | 'rate-limited'
-  | 'not-available'
-  | 'unreachable'
-  | 'unreadable'
-  | 'secure-storage-unavailable';
-
-/**
- * What a stored Copilot key buys: AI credits consumed in the current calendar
- * month (ADR-003 Amendment 6 decision 3).
- *
- * THERE IS NO PERCENTAGE AND NO ALLOWANCE, and there never will be one in this
- * shape. GitHub's reply carries no allowance (A6.3), so a percentage would need
- * a denominator we invented — the exact fabrication ADR-001 Decision 1 rejects
- * for token math, and it would be worse here because it would look authoritative
- * beside a real figure. The row prints three counts and the time they were read.
- *
- * All three numbers are finite and non-negative, and they are either ALL present
- * or the whole object is null: a sum over a reply we only partly understood is a
- * number with no meaning that looks exactly like a real one.
- *
- * `grossCredits` is everything consumed, `includedCredits` the part the plan
- * covered and `billedCredits` the overage that will be charged. Self-paid plans
- * only; the consent screen says so.
- */
-export interface CreditUsage {
-  grossCredits: number;
-  includedCredits: number;
-  billedCredits: number;
-  /** ISO instant the billing period starts (UTC month for Copilot). */
-  periodStart: string;
-  /** ISO instant it ends — exclusive. Past it, the figure is dropped. */
-  periodEnd: string;
-  /** ISO instant this reading was taken. The row shows its age. */
-  fetchedAt: string;
-}
-
 export interface ProviderSnapshot {
-  id: 'claude' | 'codex' | 'gemini' | 'copilot' | 'antigravity' | 'kimi';
+  id: 'claude' | 'codex' | 'gemini' | 'antigravity' | 'kimi';
   displayName: string;
   /** Brand hex, used ONLY for the 2px spine + monogram tile. Never the meter. */
   accent: string;
@@ -892,34 +823,6 @@ export interface ProviderSnapshot {
    * installed or has usage.
    */
   experimental: boolean;
-  /**
-   * An optional, user-supplied API key would add something defensible to this
-   * row (ADR-003 Amendment 8).
-   *
-   * TRUE FOR 'copilot' AND NOTHING ELSE. Amendment 6 rules a Gemini key out (an
-   * API key exposes no quota and is a different pool from the Google-login CLI,
-   * so the figure would be a false statement) and holds Kimi (an undocumented
-   * endpoint, reached with a full spend key). A row with `keyCapable: false`
-   * must offer no key affordance at all — the offer itself is a claim that a
-   * key would help.
-   *
-   * Main always sends it, on every row, including the loading skeleton.
-   */
-  keyCapable: boolean;
-  /** See `KeyState`. 'none' on every row that is not key-capable. */
-  keyState: KeyState;
-  /**
-   * ISO instant the local copy of the key was stored, from the local record —
-   * never from the provider. Null whenever no key is stored, and null while
-   * `keyState` is 'unreadable' (the envelope may be the unreadable part).
-   */
-  keyStoredAt: string | null;
-  /**
-   * The figure the key buys, or null. Null covers every honest absence: no key,
-   * a key that has not been read yet, a reply that could not be fully
-   * validated, and a reading whose billing period has since ended.
-   */
-  creditUsage: CreditUsage | null;
   /**
    * The user has ADDED this provider to the main panel. Distinct from
    * `connected`: adding is the user's choice to see the row at all, connecting
@@ -1300,45 +1203,6 @@ export const IPC = {
   SET_AUTOSTART: 'prefs:set-autostart',
   SET_PLAN_LABEL: 'prefs:set-plan-label',
   /**
-   * renderer -> main invoke(providerId). Asks main to START the optional-key
-   * flow for a key-capable provider: one short-lived window of its own that
-   * shows the consent screen first and the entry form only after Continue
-   * (ADR-003 Amendment 5 K1/K2, Amendment 9). Returns `{ok}`, which says
-   * whether the window opened and never anything about a key.
-   *
-   * `{ok:true}` means the window opened. Declining happens inside it and is
-   * not reported back. `{ok:false}` answers a second call while a window is
-   * open, a provider that is not key-capable, and unavailable secure storage.
-   * One flow at a time: fifty calls in one tick open exactly one window.
-   */
-  KEY_ENTRY: 'keys:request-entry',
-  /**
-   * renderer -> main invoke(providerId). Deletes the LOCAL copy of the key,
-   * cancels its timers, aborts anything in flight, closes the keyed session's
-   * connections and drops the cached figure (K20). Returns `{ok}`.
-   *
-   * It is NOT revocation: only the user can revoke a token at the vendor, and
-   * the copy is all this app can remove. The copy says so.
-   */
-  KEY_REMOVE: 'keys:remove',
-  /**
-   * renderer -> main invoke(providerId). Opens the provider's token-creation
-   * page in the DEFAULT BROWSER, for the 'key-rejected' /
-   * 'key-lacks-permission' states where a new key is the fix. Returns `{ok}`.
-   *
-   * The argument only SELECTS a hard-coded branch; main holds the URL as a
-   * literal and no argument, provider reply or stored value ever reaches it. A
-   * call naming a provider that is not key-capable is refused.
-   */
-  KEY_TOKEN_PAGE: 'keys:open-token-page',
-  /**
-   * renderer -> main invoke(providerId). "Refresh now": asks main to read the
-   * credit figure early. Main's schedule still decides; it refuses within a
-   * minute of the last request, after a 401, and during a backoff or a
-   * Retry-After wait. Returns `{ok}`, and the figure arrives in the snapshot.
-   */
-  KEY_REFRESH: 'keys:refresh',
-  /**
    * renderer -> main invoke(providerId): take our statusLine hook out of the
    * tool's settings (Claude Code, agy), putting the user's own line back when
    * the setup kept one. Main asks natively first; a declined dialog changes
@@ -1346,40 +1210,6 @@ export const IPC = {
    * next snapshot.
    */
   DISCONNECT_PROVIDER: 'provider:disconnect',
-} as const;
-
-/**
- * The key-entry window's OWN channels. Not part of `UsageNotchApi`: they are
- * exposed by a different preload, to a different window, on its own session
- * (ADR-003 Amendment 8).
- *
- * `usageNotchKeyEntry` exposes exactly five methods and NO GETTER (K3):
- *
- *   entryInfo(): { provider, language, formatLocale? } | null   (synchronous)
- *   consent(): Promise<{ ok, code? }>                           (no argument)
- *   submit(key, username): Promise<{ ok, code? }>
- *   cancel(): void
- *   openTokenPage(): Promise<{ ok }>                            (no argument)
- *
- * `submit` is Amendment 8's `submit(key)` with the username as a second
- * argument: the page collects both, main validates both, and one call carrying
- * the pair means main never holds half of it. Main accepts it only from the
- * entry window's main frame, against a one-shot pending entry that `consent()`
- * creates, with the provider fixed and a five-minute expiry (K4). The window
- * itself shows the consent text first (Amendment 9). There is no native box.
- *
- * `code` is from a closed set, chosen so a message can never carry a value:
- * 'wrong-token-type' (another GitHub credential: ghp_/gho_/ghu_/ghs_/ghr_),
- * 'wrong-provider' (another vendor's key), 'invalid', 'invalid-username',
- * 'secure-storage-unavailable', 'busy', 'no-entry', 'expired', 'rejected',
- * 'store-failed'.
- */
-export const IPC_KEY_ENTRY = {
-  CONSENT: 'keys:consent',
-  SUBMIT: 'keys:submit',
-  CANCEL: 'keys:cancel',
-  ENTRY_INFO: 'keys:entry-info',
-  ENTRY_TOKEN_PAGE: 'keys:entry-token-page',
 } as const;
 
 /**
@@ -1543,20 +1373,6 @@ export interface UsageNotchApi {
    * new `planLabel`, which is what the row renders from.
    */
   setPlanLabel(providerId: string, label: string): Promise<{ ok: boolean }>;
-  /**
-   * Start the optional-key flow for a key-capable provider. See IPC.KEY_ENTRY.
-   *
-   * Write-only, like every key channel: the answer is whether main accepted the
-   * request. There is NO method on this interface that returns a key, a masked
-   * key or its length, and there never may be (K3).
-   */
-  requestKeyEntry(providerId: string): Promise<{ ok: boolean }>;
-  /** Delete the local copy of a provider's key. See IPC.KEY_REMOVE. */
-  removeKey(providerId: string): Promise<{ ok: boolean }>;
-  /** Open the provider's token page in the default browser. See IPC.KEY_TOKEN_PAGE. */
-  openTokenPage(providerId: string): Promise<{ ok: boolean }>;
-  /** Read the credit figure early, if the schedule allows. See IPC.KEY_REFRESH. */
-  refreshKey(providerId: string): Promise<{ ok: boolean }>;
   /** Remove our statusLine hook from a tool's settings. See IPC.DISCONNECT_PROVIDER. */
   disconnectProvider(providerId: string): Promise<{ ok: boolean; message: string }>;
   /** Tell main the panel opened, so it can raise its refresh cadence. */

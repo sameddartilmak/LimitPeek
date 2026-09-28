@@ -225,13 +225,13 @@ app.whenReady().then(async () => {
 
   // The whole point of initialSnapshot: real data, synchronously, frame one.
   const sync = await ev('(function () { var s = window.usageNotch.initialSnapshot(); return s === null ? "null" : (typeof s.generatedAt) + ":" + s.providers.length; })()');
-  check('initialSnapshot() returns a real Snapshot synchronously', sync === 'string:6', sync);
+  check('initialSnapshot() returns a real Snapshot synchronously', sync === 'string:5', sync);
 
   const rows = await ev('document.getElementById("rows").children.length');
-  check('SNAPSHOT reached the renderer and rendered a row per provider', rows === 6, `rows=${rows}`);
+  check('SNAPSHOT reached the renderer and rendered a row per provider', rows === 5, `rows=${rows}`);
 
   const providers = await ev('window.usageNotch.requestRefresh().then(s => s.providers.length)');
-  check('REQUEST_REFRESH round-trips a Snapshot', providers === 6, `providers=${providers}`);
+  check('REQUEST_REFRESH round-trips a Snapshot', providers === 5, `providers=${providers}`);
 
   const setup = await ev('window.usageNotch.runSetup("gemini", true).then(r => r.ok + ":" + r.message)');
   check('RUN_SETUP round-trips without throwing', setup === 'false:stub:gemini', setup);
@@ -242,7 +242,7 @@ app.whenReady().then(async () => {
   check('SET_ORDER round-trips and main drops the id that is not a provider',
     ordered === true && JSON.stringify(orderSeen) === '["kimi"]', `ok=${ordered} applied=${JSON.stringify(orderSeen)}`);
   check('the re-emitted snapshot is in user order and still has every provider',
-    collector.snapshot.providers[0].id === 'kimi' && collector.snapshot.providers.length === 6,
+    collector.snapshot.providers[0].id === 'kimi' && collector.snapshot.providers.length === 5,
     `first=${collector.snapshot.providers[0].id} count=${collector.snapshot.providers.length}`);
   await ev('window.usageNotch.setOrder([])');
 
@@ -261,7 +261,7 @@ app.whenReady().then(async () => {
 
   const bogus = await ev('window.usageNotch.setEnabled("not-a-provider", true).then(function (r) { return r.ok; })');
   check('an id that is not a provider is refused, and nothing changed',
-    bogus === false && collector.snapshot.providers.length === 6, `ok=${bogus}`);
+    bogus === false && collector.snapshot.providers.length === 5, `ok=${bogus}`);
   await ev('window.usageNotch.setEnabled("kimi", false)');
 
   // ---- preferences ------------------------------------------------------

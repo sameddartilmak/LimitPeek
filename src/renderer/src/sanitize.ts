@@ -18,9 +18,7 @@ import type {
   LanguageChoice,
   Preferences,
   CostByClass,
-  CreditUsage,
   FigureSource,
-  KeyState,
   HistoryFloorCause,
   ModelCost,
   ModelQuotaDetail,
@@ -50,52 +48,6 @@ const CONTROL_CHARS = new RegExp(
 );
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const NEUTRAL_ACCENT = '#6B7A77';
-
-/**
- * ADR-003 A8 (Phase B): the key states the renderer has copy for. An unknown
- * code is NOT printed as itself (K19) and not guessed at either: it degrades to
- * 'none', the state that renders nothing, so no screen can show a code no
- * catalog has a sentence for.
- */
-const KEY_STATE_CODES = new Set<KeyState>([
-  'none',
-  'stored',
-  'key-rejected',
-  'key-lacks-permission',
-  'rate-limited',
-  'not-available',
-  'unreachable',
-  'unreadable',
-  'secure-storage-unavailable',
-]);
-
-/**
- * The AI-credit reading (ADR-003 A8). Three non-negative finite counts and
- * three instants, or null: a partial reading is not a reading, because the
- * renderer states the three counts together. There is deliberately no
- * allowance field to accept — GitHub's reply has none (A6.3), so nothing here
- * could ever become the denominator of a percentage.
- */
-function creditUsage(raw: unknown): CreditUsage | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const source = raw as Record<string, unknown>;
-  const gross = nonNegative(source.grossCredits);
-  const included = nonNegative(source.includedCredits);
-  const billed = nonNegative(source.billedCredits);
-  const periodStart = isoInstant(source.periodStart);
-  const periodEnd = isoInstant(source.periodEnd);
-  const fetchedAt = isoInstant(source.fetchedAt);
-  if (gross === null || included === null || billed === null) return null;
-  if (periodStart === null || periodEnd === null || fetchedAt === null) return null;
-  return {
-    grossCredits: gross,
-    includedCredits: included,
-    billedCredits: billed,
-    periodStart,
-    periodEnd,
-    fetchedAt,
-  };
-}
 
 /** ADR-003 A6: the history floor-cause codes the renderer has copy for. */
 const HISTORY_FLOOR_CAUSES = new Set<HistoryFloorCause>([
@@ -134,13 +86,12 @@ const PROVIDER_IDS = new Set<ProviderSnapshot['id']>([
   'claude',
   'codex',
   'gemini',
-  'copilot',
   'antigravity',
   'kimi',
 ]);
 const ROW_STATUSES = new Set<RowStatus>(['loading', 'ok', 'stale', 'error', 'passive']);
 const CERTAINTIES = new Set<Certainty>(['known', 'estimated', 'unknown']);
-const SETUP_KINDS = new Set<SetupKind>(['install-bridge', 'add-api-key', 'not-installed']);
+const SETUP_KINDS = new Set<SetupKind>(['install-bridge', 'not-installed']);
 const THEME_CHOICES = new Set<ThemeChoice>(['dark', 'light', 'system']);
 const LANGUAGE_CHOICES = new Set<LanguageChoice>(['tr', 'en', 'system']);
 
@@ -890,15 +841,6 @@ function provider(raw: unknown): ProviderSnapshot | null {
     // ADR-003 A6.4: only a literal true carries the marker. Absent (an older
     // main) is false: the flag is a static registry fact main always sends.
     experimental: source.experimental === true,
-    // ADR-003 A8 (Phase B). keyCapable false is the state that renders nothing,
-    // so a main process that predates these fields degrades to "no key option"
-    // rather than to an offer for a provider that cannot use one.
-    keyCapable: source.keyCapable === true,
-    keyState: KEY_STATE_CODES.has(source.keyState as KeyState)
-      ? (source.keyState as KeyState)
-      : 'none',
-    keyStoredAt: isoInstant(source.keyStoredAt),
-    creditUsage: creditUsage(source.creditUsage),
     // Absent means a main process that predates the field. Default TRUE, not
     // false: an unteachable producer must degrade to the previous behaviour
     // (every provider visible) rather than to a silently empty panel, which

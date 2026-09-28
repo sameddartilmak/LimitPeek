@@ -110,7 +110,7 @@ const SHAPES = {
   MIXED_TOP,
   TALL_LAST: [44, 44, 64],
   SINGLE_TALL: [120, 44, 44],
-  // A tall connected row between short ones, as with Claude's row under Copilot.
+  // A tall connected row between short ones, as with Claude's row under Codex.
   TALL_MIDDLE: [64, 139, 44, 44],
 };
 
@@ -543,7 +543,9 @@ test.describe('properties, over randomised mixed-height panels', () => {
 // -------------------------------------------------------------------------
 
 test.describe('the index means what moveId thinks it means', () => {
-  const IDS = ['antigravity', 'claude', 'codex', 'gemini', 'copilot', 'kimi'];
+  // LIVE is the six-row shape the bug was reported on, so one id stands in for
+  // the provider that has since been removed.
+  const IDS = ['antigravity', 'claude', 'codex', 'gemini', 'kimi', 'sixth'];
 
   test('a zero-travel drag is a no-op end to end', () => {
     for (let from = 0; from < LIVE.length; from++) {

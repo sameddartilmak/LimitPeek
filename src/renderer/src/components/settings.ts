@@ -74,7 +74,6 @@ import {
 } from '../format.js';
 import { language as currentLanguage, t, type MessageKey } from '../i18n.js';
 import { experimentalTag } from './experimental.js';
-import { keyFieldsOf, keyStateSentence, offersTokenPage } from '../keys.js';
 import { hasTokenCount, modelTokens, providersWithTokens, tokensFor } from '../tokens.js';
 import { providerMark } from './logo.js';
 
@@ -120,11 +119,6 @@ export interface SettingsContext {
   /** Leave settings and go back to the usage list. */
   onBack(): void;
   /**
-   * ADR-003 A8: delete the LOCAL copy of this provider's key. Only ever called
-   * after the confirm step below, which states that this is not revocation.
-   */
-  onRemoveKey(providerId: string): void;
-  /**
    * Take our statusLine hook out of this tool's settings (Claude Code, agy).
    * Main asks natively before it writes anything.
    */
@@ -137,8 +131,6 @@ export interface SettingsContext {
    * stored (ADR-004's rule for theme and language, applied here).
    */
   onPlanLabel(providerId: string, label: string): void;
-  /** Open the vendor's token page, offered beside a key that needs replacing. */
-  onOpenTokenPage(providerId: string): void;
 }
 
 export interface SettingsHandle {
@@ -232,11 +224,6 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
   const experimental = experimentalTag(provider);
   const title = el('span', { class: 'settings__titleline' }, name, experimental);
 
-  // --- the optional API key (ADR-003 A8) ---------------------------------
-  // Present only for a key-capable provider, and only ever about STATE: the
-  // instant a key was stored, the fixed sentence for its state, a way to
-  // replace it where that is the fix, and a way to delete the local copy.
-  // Never a character of the key, never its length, never a mask (K23).
   // --- the plan the user says they are on ---------------------------------
   //
   // A NATIVE `<select>` over the plans we know for this tool — a closed list,
@@ -269,79 +256,6 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     el('p', { class: 'settings__plan-hint', id: planId + '-hint' }, t('settings.plan.hint')),
   );
   planBlock.hidden = true;
-
-  const keyState = el('p', { class: 'settings__key-state' });
-  // The one state whose cause is OUR OWN CHOICE, not a fault the user can
-  // clear (ADR-001 A2026-09-22 ruling 2): the app resolves DIRECT, so behind a
-  // proxy this figure can never arrive. The state line on the row carries the
-  // short true version; the full cause goes here, where there is room for it
-  // and — deliberately — directly above "Remove key", because removing and
-  // re-adding the key is exactly the wrong thing a silent version invites.
-  const keyCause = el('p', { class: 'settings__key-cause' });
-  keyCause.hidden = true;
-  const keyStored = el('p', { class: 'settings__key-stored' });
-  const keyToken = el(
-    'button',
-    { type: 'button', class: 'settings__key-token' },
-    t('key.openTokenPage'),
-  ) as HTMLButtonElement;
-  const keyRemove = el(
-    'button',
-    { type: 'button', class: 'settings__key-remove' },
-    t('key.remove'),
-  ) as HTMLButtonElement;
-  // The confirm step says what removing does and does NOT do: the copy on this
-  // computer goes, the key at the vendor stays valid until it is revoked.
-  const keyConfirmText = el('p', { class: 'settings__key-confirm-text' }, t('key.remove.confirm'));
-  const keyConfirmYes = el(
-    'button',
-    { type: 'button', class: 'settings__key-confirm-yes' },
-    t('key.remove.confirmAction'),
-  ) as HTMLButtonElement;
-  const keyConfirmNo = el(
-    'button',
-    { type: 'button', class: 'settings__key-confirm-no' },
-    t('key.remove.cancel'),
-  ) as HTMLButtonElement;
-  const keyConfirm = el(
-    'div',
-    { class: 'settings__key-confirm' },
-    keyConfirmText,
-    el('div', { class: 'settings__key-confirm-actions' }, keyConfirmNo, keyConfirmYes),
-  );
-  keyConfirm.hidden = true;
-  const keyBlock = el(
-    'div',
-    { class: 'settings__key' },
-    keyStored,
-    keyState,
-    keyCause,
-    el('div', { class: 'settings__key-actions' }, keyToken, keyRemove),
-    keyConfirm,
-  );
-  keyBlock.hidden = true;
-
-  let confirming = false;
-  function applyConfirm(): void {
-    keyConfirm.hidden = !confirming;
-    setAttr(keyRemove, 'aria-expanded', confirming ? 'true' : 'false');
-  }
-  on(keyRemove, 'click', () => {
-    confirming = true;
-    applyConfirm();
-    keyConfirmYes.focus();
-  });
-  on(keyConfirmNo, 'click', () => {
-    confirming = false;
-    applyConfirm();
-    keyRemove.focus();
-  });
-  on(keyConfirmYes, 'click', () => {
-    confirming = false;
-    applyConfirm();
-    ctx.onRemoveKey(provider.id);
-  });
-  on(keyToken, 'click', () => ctx.onOpenTokenPage(provider.id));
 
   // The way back from the setup's hook, offered only while main reports the
   // hook is in the tool's settings (ProviderSnapshot.hookInstalled). Main
@@ -395,7 +309,7 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     'li',
     { class: 'settings__item', role: 'listitem', 'data-provider': provider.id },
     mark,
-    el('span', { class: 'settings__text' }, title, meta, disconnect, keyBlock),
+    el('span', { class: 'settings__text' }, title, meta, disconnect),
     control,
     // AFTER the switch, deliberately, and this is a keyboard decision rather
     // than a layout one. The switch decides whether the tool appears at all;
@@ -475,41 +389,7 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     // attribute so the revert is SEEN and not only described in the notice.
     setAttr(root, 'data-revert', state.revertedId === next.id ? 'true' : null);
 
-    // ADR-003 A8: the key section. Hidden entirely for a provider that cannot
-    // use a key, and for one with no key stored — the offer to ADD one lives
-    // on the row, where the figure it would add would appear.
     updatePlan(next, state);
-
-    const keys = keyFieldsOf(next);
-    const hasKey = keys.keyCapable && keys.keyState !== 'none';
-    keyBlock.hidden = !hasKey;
-    setAttr(keyBlock, 'data-key-state', hasKey ? keys.keyState : null);
-    if (hasKey) {
-      // A key on a provider that is not in the panel is never read (K16), so
-      // "not read yet" would promise a reading that will not come. And once a
-      // figure exists, "not read yet" is simply false.
-      const paused = !next.enabled && keys.keyState === 'stored';
-      const sentence = paused
-        ? 'key.state.paused'
-        : keys.keyState === 'stored' && keys.creditUsage !== null
-          ? null
-          : keyStateSentence(keys.keyState);
-      setText(keyState, sentence ? t(sentence, { provider: next.displayName }) : '');
-      keyState.hidden = sentence === null;
-      const unreachable = keys.keyState === 'unreachable';
-      keyCause.hidden = !unreachable;
-      if (unreachable) setText(keyCause, t('key.unreachable.cause'));
-      keyStored.hidden = keys.keyStoredAt === null;
-      if (keys.keyStoredAt) {
-        setText(keyStored, t('key.storedAt', { date: priceDateShort(keys.keyStoredAt) }));
-      }
-      keyToken.hidden = !offersTokenPage(keys.keyState);
-      if (!keys.keyCapable || keys.keyState === 'none') confirming = false;
-      applyConfirm();
-    } else if (confirming) {
-      confirming = false;
-      applyConfirm();
-    }
   }
 
   return { el: root, update };
@@ -865,7 +745,6 @@ const PLAN_CHOICES: Partial<Record<ProviderSnapshot['id'], readonly string[]>> =
   claude: ['Pro', 'Max 5x', 'Max 20x'],
   codex: ['Plus', 'Pro', 'Business', 'Enterprise'],
   gemini: ['Free', 'Google AI Pro', 'Google AI Ultra'],
-  copilot: ['Free', 'Pro', 'Pro+', 'Business', 'Enterprise'],
   kimi: [],
   antigravity: [],
 };
@@ -879,7 +758,6 @@ const NOTE_TOOL_NAMES: Record<ProviderSnapshot['id'], string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   gemini: 'Gemini',
-  copilot: 'GitHub Copilot',
   antigravity: 'Antigravity',
   kimi: 'Kimi',
 };

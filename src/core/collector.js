@@ -242,15 +242,6 @@ class Collector extends EventEmitter {
     this._sweep = null;
     this._throttle = null;
     this._lastScanAt = 0;
-    /**
-     * The optional-key state, read on demand from main's key service (ADR-003
-     * Amendment 8). A FUNCTION, not a value: the service updates it from a poll
-     * and from IPC, and a snapshot must carry what is true at the moment it is
-     * built. Injected rather than imported because it lives in `src/main` — this
-     * file imports nothing from electron (ADR-001 Decision 2), and the key
-     * service necessarily does.
-     */
-    this.keysInput = typeof options.keysInput === 'function' ? options.keysInput : () => null;
     // Whether our statusLine hook is in Claude Code's / agy's settings; read on
     // every build so the settings screen can offer "Bağlantıyı kaldır".
     this.hooksInput = typeof options.hooksInput === 'function' ? options.hooksInput : () => null;
@@ -281,7 +272,7 @@ class Collector extends EventEmitter {
     if (this._claudeSettled) {
       this.rebuild();
     } else {
-      this.snapshot = loadingSnapshot(Date.now(), this.order, this.enabled, this._pendingUsage(), this.keysInput(), this.planLabels);
+      this.snapshot = loadingSnapshot(Date.now(), this.order, this.enabled, this._pendingUsage(), this.planLabels);
       this.emit('snapshot', this.snapshot);
     }
     this._startWatchers();
@@ -394,7 +385,7 @@ class Collector extends EventEmitter {
       // Claude's first scan is still running on an empty store: say LOADING,
       // not "no usage" (ADR-002 A3.14). Covers every rebuild path — panel open,
       // order/enablement changes, a Codex result.
-      this.snapshot = loadingSnapshot(now, this.order, this.enabled, this._pendingUsage(), this.keysInput(), this.planLabels);
+      this.snapshot = loadingSnapshot(now, this.order, this.enabled, this._pendingUsage(), this.planLabels);
       this.emit('snapshot', this.snapshot);
       return this.snapshot;
     }
@@ -444,7 +435,6 @@ class Collector extends EventEmitter {
       planLabels: this.planLabels,
       order: this.order,
       enabled: this.enabled,
-      keys: this.keysInput(),
       hooks: this.hooksInput(),
     });
     this.emit('snapshot', this.snapshot);

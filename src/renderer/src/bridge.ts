@@ -101,21 +101,6 @@ export interface Bridge {
    * the switch back where it was.
    */
   setAutostart(enabled: boolean): Promise<boolean>;
-  /**
-   * ADR-003 A8 (Phase B): ask main to open the key-entry window for a provider
-   * (IPC `keys:request-entry`). Write-only, like every key channel: the answer
-   * is only whether main accepted the request, never anything about a key.
-   */
-  requestKeyEntry(providerId: string): Promise<boolean>;
-  /** Delete the LOCAL copy of a provider's key (IPC `keys:remove`). Revocation
-   *  is the user's own step at the vendor; the copy is all we can remove. */
-  removeKey(providerId: string): Promise<boolean>;
-  /** Open the vendor's token page in the default browser. Main holds the URL;
-   *  the renderer never constructs one. */
-  openTokenPage(providerId: string): Promise<boolean>;
-  /** Read the credit figure early (IPC `keys:refresh`). Main's schedule
-   *  decides; false means it did not ask. */
-  refreshKey(providerId: string): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
@@ -150,10 +135,6 @@ function nullBridge(): Bridge {
     setTheme: async () => false,
     setLanguage: async () => false,
     setAutostart: async () => false,
-    requestKeyEntry: async () => false,
-    removeKey: async () => false,
-    openTokenPage: async () => false,
-    refreshKey: async () => false,
     close: () => {},
     pin: () => {},
   };
@@ -163,30 +144,6 @@ function nullBridge(): Bridge {
  *  once, loudly enough for a developer, without breaking the panel. */
 function missing(name: string): void {
   console.error(`usageNotch.${name} is missing; preload does not match UsageNotchApi`);
-}
-
-/**
- * The key channels answer `{ ok }` and nothing else (A8), so a shape mismatch
- * can only cost the control its effect, never leak a value.
- */
-type KeyChannel = 'requestKeyEntry' | 'removeKey' | 'openTokenPage' | 'refreshKey';
-
-type KeyCapableApi = UsageNotchApi &
-  Partial<Record<KeyChannel, (id: string) => Promise<{ ok?: boolean }>>>;
-
-async function callKeyChannel(name: KeyChannel, providerId: string): Promise<boolean> {
-  const api = getApi() as KeyCapableApi | null;
-  const method = api ? api[name] : undefined;
-  if (typeof method !== 'function') {
-    missing(name);
-    return false;
-  }
-  try {
-    const result = await method.call(api, providerId);
-    return !!result && result.ok === true;
-  } catch {
-    return false;
-  }
 }
 
 export function createBridge(): Bridge {
@@ -316,27 +273,6 @@ export function createBridge(): Bridge {
       } catch {
         return false;
       }
-    },
-
-    /**
-     * The four key channels (ADR-003 A8). Each is write-only and answers only
-     * whether main accepted the request: there is no getter anywhere, so no
-     * shape here could carry a secret back (K3).
-     */
-    async requestKeyEntry(providerId: string): Promise<boolean> {
-      return callKeyChannel('requestKeyEntry', providerId);
-    },
-
-    async removeKey(providerId: string): Promise<boolean> {
-      return callKeyChannel('removeKey', providerId);
-    },
-
-    async openTokenPage(providerId: string): Promise<boolean> {
-      return callKeyChannel('openTokenPage', providerId);
-    },
-
-    async refreshKey(providerId: string): Promise<boolean> {
-      return callKeyChannel('refreshKey', providerId);
     },
 
     /** Mirrors setOrder: any failure is a real instruction to revert. */
