@@ -1,6 +1,6 @@
 {
   "name": "usage-notch",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "Windows tray monitor for AI coding tool usage limits.",
   "main": "src/main/index.js",
