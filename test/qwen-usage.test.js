@@ -287,6 +287,15 @@ test.describe('where the log is: QWEN_HOME, QWEN_RUNTIME_DIR, and no log at all'
     assert.equal(scanner.stats().usageLogAbsent, false, 'not "no log": a log we could not read');
   });
 
+  test('a NETWORK QWEN_RUNTIME_DIR is a log we will not open: all unread, never "no log yet" (review F3)', (t) => {
+    const global = tmpDir();
+    withEnv(t, { QWEN_HOME: global, QWEN_RUNTIME_DIR: String.raw`\\nas\share\qwen` });
+    const scanner = createQwenUsageScanner();
+    assert.deepEqual(scanner.scan({ now: NOW, startMs: WEEK_START }), []);
+    assert.deepEqual(scanner.unreadRange(), { fromMs: 0, throughMs: NOW });
+    assert.equal(scanner.stats().usageLogAbsent, false);
+  });
+
   test('a home override is the runtime dir too, so a developer\'s own QWEN_RUNTIME_DIR never reaches a test', (t) => {
     const home = tmpDir();
     withEnv(t, { QWEN_RUNTIME_DIR: tmpDir() });

@@ -94,10 +94,17 @@ const OPAQUE_ID = /^[\x21-\x7e]{1,128}$/;
 
 let networkHomeWarned = false;
 
-/** `GROK_HOME` (when non-empty) or `~/.grok`, or null when that is a network path. */
+/**
+ * `GROK_HOME` (when non-empty) or `~/.grok`, or null when that is a network
+ * path. A RELATIVE `GROK_HOME` is null too: Grok resolves it against its own
+ * working directory, which this app cannot know, and resolving it against the
+ * app's would read some other tree (security review F3).
+ */
 function grokHome(home) {
   const env = process.env.GROK_HOME;
-  const dir = home || (typeof env === 'string' && env.length > 0 ? env : path.join(os.homedir(), '.grok'));
+  const fromEnv = typeof env === 'string' && env.length > 0;
+  if (!home && fromEnv && !path.isAbsolute(env)) return null;
+  const dir = home || (fromEnv ? env : path.join(os.homedir(), '.grok'));
   if (isNetworkPath(dir)) {
     if (!networkHomeWarned) {
       networkHomeWarned = true;
@@ -106,6 +113,30 @@ function grokHome(home) {
     return null;
   }
   return dir;
+}
+
+/**
+ * The file's text, read through ONE descriptor and never past MAX_FILE_BYTES:
+ * the size checked on lstat is not the size at open, and a file grown in
+ * between must not become an unbounded buffer (security review F2). A file
+ * that turns out larger throws, and is treated as unread.
+ */
+function readBounded(file) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const size = fs.fstatSync(fd).size;
+    if (size > MAX_FILE_BYTES) throw Object.assign(new Error('too large'), { code: 'EFBIG' });
+    const buf = Buffer.allocUnsafe(size);
+    let off = 0;
+    while (off < size) {
+      const n = fs.readSync(fd, buf, off, size - off, off);
+      if (n === 0) break;
+      off += n;
+    }
+    return buf.toString('utf8', 0, off);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 /** A safe non-negative integer, or null. `optional` lets an ABSENT field read 0. */
@@ -175,6 +206,7 @@ function turnOf(t, primaryModel) {
   if (u === null) return null;
   const key = `${t.endedAt}|${n}|${u.input}|${u.output}|${u.ticks}`;
   const events = [];
+  let reported = 0;
   const mu = t.modelUsage;
   if (mu !== undefined && mu !== null) {
     if (typeof mu !== 'object' || Array.isArray(mu)) return null;
@@ -184,9 +216,24 @@ function turnOf(t, primaryModel) {
       const m = usageOf(mu[id]);
       if (m === null) return null;
       events.push(eventOf(ts, MODEL_ID.test(id) ? id : 'unknown', m, u.costIsPartial, u.usageIsIncomplete));
+      reported += m.ticks > 0 ? m.ticks : 0;
     }
   }
-  if (events.length === 0) events.push(eventOf(ts, primaryModel, u, false, false));
+  if (events.length === 0) {
+    events.push(eventOf(ts, primaryModel, u, false, false));
+  } else if (u.ticks > reported) {
+    // The per-model entries do not carry all of the amount xAI reported for
+    // the turn (review F1): the rest is kept, on the primary model's entry
+    // (else the first), rather than dropped. The TOTAL is then exact; only
+    // which model it sits under is the primary's best guess.
+    const extra = (u.ticks - reported) / TICKS_PER_USD;
+    const target = events.find((e) => e.model === primaryModel) || events[0];
+    target.usd = (target.usd || 0) + extra;
+  } else if (u.ticks > 0 && reported > u.ticks) {
+    // More split out than the turn reported: the two disagree, so no figure
+    // from this turn is stated as exact.
+    for (const e of events) e.partial = true;
+  }
   return { key, ts, events };
 }
 
@@ -358,7 +405,7 @@ function createGrokUsageScanner() {
       }
       let text;
       try {
-        text = fs.readFileSync(file, 'utf8');
+        text = readBounded(file);
       } catch {
         unread.set(file, rangeOf(prior, st, now, Boolean(prior) && prior.size !== st.size));
         cache.delete(file);
@@ -372,10 +419,11 @@ function createGrokUsageScanner() {
       entry.birthMs = st.birthtimeMs;
       entry.startMs = startMs;
       if (!parseInto(entry, text, startMs)) {
-        // Not the writer's shape, or caught mid-rewrite: known unread, and
-        // not cached, so the next scan tries again.
+        // Not the writer's shape, or caught mid-rewrite: known unread. The
+        // last good read stays cached, so the turns it already counted do not
+        // drop out for a scan (review F5); its size and mtime no longer match
+        // the file, so the next scan reads it again.
         unread.set(file, rangeOf(prior, st, now, false));
-        cache.delete(file);
         continue;
       }
       cache.set(file, entry);

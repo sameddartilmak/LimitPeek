@@ -147,7 +147,9 @@ function qwenUsageDir(home) {
   const runtime = envDir(process.env.QWEN_RUNTIME_DIR);
   if (runtime === null) return { dir: null, relative: true };
   const base = runtime || global;
-  if (refuseNetwork(base)) return { dir: null, relative: false };
+  // A network QWEN_RUNTIME_DIR: the log exists, on a path this app will not
+  // open. Known unread, never "no log yet" (review F3).
+  if (refuseNetwork(base)) return { dir: null, relative: Boolean(runtime) };
   return { dir: path.join(base, 'usage'), relative: false };
 }
 
@@ -333,7 +335,8 @@ function createQwenUsageScanner() {
     const where = qwenUsageDir(options.home);
     const files = [];
     if (where.relative) {
-      // The log exists somewhere this app cannot name: known unread, all of it.
+      // The log exists somewhere this app cannot name or will not open: known
+      // unread, all of it.
       unread.set('runtime', { fromMs: 0, throughMs: now });
     } else if (where.dir) {
       const root = resolveLocalDir(where.dir, LABEL);

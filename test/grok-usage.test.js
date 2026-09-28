@@ -203,6 +203,7 @@ test.describe('the reported cost', () => {
   test('a per-model entry\'s own flags count as well as the turn\'s', () => {
     const home = tmpDir();
     writeSession(home, 's1', usageDoc('s1', [turn(1, T0, {
+      usd: 0.02,
       modelUsage: {
         'grok-4.6': { inputTokens: 10, outputTokens: 1, costUsdTicks: 1e8, costIsPartial: true },
         'grok-code-fast-2': { inputTokens: 10, outputTokens: 1, costUsdTicks: 1e8 },
@@ -210,6 +211,40 @@ test.describe('the reported cost', () => {
     })]));
     const c = grokCost(scan(home).events, WEEK_START, NOW, false);
     assert.equal(c.partialUsageEvents, 1);
+  });
+
+  // Review F1: the turn's own amount is never dropped by the per-model split.
+  test('a turn amount the per-model entries do not carry is kept, on the primary model', () => {
+    const home = tmpDir();
+    writeSession(home, 's1', usageDoc('s1', [turn(1, T0, {
+      usd: 0.05,
+      modelUsage: { 'grok-4.6': { inputTokens: 1000, outputTokens: 100 } },
+    })]));
+    const c = grokCost(scan(home).events, WEEK_START, NOW, false);
+    assert.equal(c.totalUsd, 0.05, 'the $0.05 xAI reported is not shown as "no reported cost"');
+    assert.equal(c.partialUsageEvents, 0);
+  });
+
+  test('a leftover beyond the per-model amounts is kept too, and a split larger than the turn is a floor', () => {
+    const home = tmpDir();
+    writeSession(home, 's1', usageDoc('s1', [
+      turn(1, T0, {
+        usd: 0.05,
+        modelUsage: {
+          'grok-code-fast-2': { inputTokens: 10, outputTokens: 1, costUsdTicks: 1e8 },
+          'grok-4.6': { inputTokens: 10, outputTokens: 1, costUsdTicks: 2e8 },
+        },
+      }),
+      turn(2, T0 + 1000, {
+        usd: 0.01,
+        modelUsage: { 'grok-4.6': { inputTokens: 10, outputTokens: 1, costUsdTicks: 3e8 } },
+      }),
+    ]));
+    const { events } = scan(home);
+    const first = events.filter((e) => e.ts === T0);
+    assert.equal(Math.round(first.find((e) => e.model === 'grok-4.6').usd * 1e4) / 1e4, 0.04, 'the $0.02 leftover sits on the primary model');
+    assert.equal(Math.round(first.reduce((s, e) => s + e.usd, 0) * 1e4) / 1e4, 0.05);
+    assert.equal(events.filter((e) => e.ts === T0 + 1000).every((e) => e.partial), true);
   });
 });
 
@@ -295,7 +330,7 @@ test.describe('the Grok Build reader opens usage.json and nothing else', () => {
       t.after(() => { fs[name] = orig; });
     }
     assert.equal(scan(home).events.length, 1);
-    assert.ok(seen.some((c) => c.startsWith('readFileSync:') && c.endsWith('usage.json')), 'the spy observes the real read');
+    assert.ok(seen.some((c) => c.startsWith('openSync:') && c.endsWith('usage.json')), 'the spy observes the real read');
     assert.deepEqual(seen.filter((c) => /chat_history|updates\.jsonl|prompt_history|plan\.json|summary\.json|auth\.json/.test(c)), []);
     assert.deepEqual(seen.filter((c) => c.startsWith('readdirSync:') && path.resolve(c.slice('readdirSync:'.length)) === path.resolve(home)), []);
     assert.deepEqual(seen.filter((c) => c.startsWith('readdirSync:') && path.resolve(c.slice('readdirSync:'.length)) === path.resolve(dir)), [],
@@ -339,6 +374,9 @@ test.describe('the Grok Build reader opens usage.json and nothing else', () => {
     assert.equal(grokHome(), path.join(os.homedir(), '.grok'));
     process.env.GROK_HOME = path.join(os.tmpdir(), 'grok-home-x');
     assert.equal(grokHome(), path.join(os.tmpdir(), 'grok-home-x'));
+    // Relative: Grok resolves it against ITS cwd, which the app cannot know.
+    process.env.GROK_HOME = 'grok-home';
+    assert.equal(grokHome(), null, 'never resolved against the app’s own working directory');
     const log = require('../src/core/log');
     const lines = [];
     log.setSink((level, msg) => { lines.push(String(msg)); });

@@ -503,7 +503,9 @@ function localUsageRow(p, enabled, src, now, reader, planLabel) {
   }
   const events = Array.isArray(src.events) ? src.events : null;
   const list = events || EMPTY_EVENTS;
-  if (events && src.usageLogAbsent === true && list.length === 0) {
+  // Only from a scan that worked: after a failed one the old "no log" is not
+  // known to still hold (review F4).
+  if (events && src.usageLogAbsent === true && src.readFailed !== true && list.length === 0) {
     return {
       row: {
         ...base,
