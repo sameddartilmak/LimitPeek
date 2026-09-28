@@ -33,6 +33,10 @@ const DEBOUNCE_MS = 400;        // file-watcher coalescing
 const SWEEP_OPEN_MS = 15 * 1000;
 const SWEEP_IDLE_MS = 60 * 1000;
 const WORKER_TIMEOUT_MS = 30 * 1000;
+/** The archive's first build reads every transcript once (~3 s for 600 MB
+ *  here). A slow disk or a cold cache at login must not turn it into a
+ *  timeout that is retried on every sweep (review F3). */
+const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 /** Floor between two scans. Hovering the tray repeatedly would otherwise
  *  dispatch a worker per hover. */
 const MIN_SCAN_GAP_MS = 1500;
@@ -422,6 +426,7 @@ class Collector extends EventEmitter {
     this.snapshot = buildSnapshot({
       now: Date.now(),
       events: this.store.events,
+      claudeArchive: this.store.archive || null,
       rateLimits,
       antigravityQuota,
       antigravityIde,
@@ -621,13 +626,16 @@ class Collector extends EventEmitter {
       // and fsyncs the entire store for data identical to what is already on
       // disk. During an active Claude Code session that is hundreds of MB of
       // writes for nothing.
-      const changed = result.stats.filesParsed > 0 || cursorsDiffer(this.store.cursors, result.cursors);
+      const changed = result.stats.filesParsed > 0 || result.archiveChanged === true
+        || cursorsDiffer(this.store.cursors, result.cursors);
       this.store = {
         schemaVersion: store.SCHEMA_VERSION,
         cursors: result.cursors,
         // Identical events keep the previous array (the snapshot's history memo
         // keys on identity; ADR-003 A6 F3).
         events: sameEvents(this.store.events, result.events) ? this.store.events : result.events,
+        // Kept as the same object while it did not move (the history memo keys on identity).
+        archive: result.archiveChanged === true ? (result.archive || null) : (this.store.archive || null),
         builtAt: changed ? new Date().toISOString() : (this.store.builtAt || new Date().toISOString()),
       };
       if (changed) store.save(this.userDataDir, this.store);
@@ -667,6 +675,7 @@ class Collector extends EventEmitter {
             root: this.projectsRoot,
             cursors: this.store.cursors,
             priorEvents: this.store.events,
+            archive: this.store.archive || null,
             now: Date.now(),
           },
         });
@@ -686,7 +695,7 @@ class Collector extends EventEmitter {
 
       const timer = setTimeout(() => {
         finish(reject, Object.assign(new Error('scan timeout'), { code: 'ETIMEDOUT' }));
-      }, WORKER_TIMEOUT_MS);
+      }, this.store.archive ? WORKER_TIMEOUT_MS : BUILD_TIMEOUT_MS);
 
       worker.on('message', (msg) => {
         if (!msg || typeof msg !== 'object') return;

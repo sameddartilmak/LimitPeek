@@ -283,7 +283,12 @@ function weeklyCost(events, startMs, endMs, anchored) {
     // from byClass and from the total, and named in unpricedModels instead.
     if (!price) continue;
 
-    if (observedCacheWrite > 0) {
+    if (Number.isFinite(event.nCw)) {
+      // An archive row (scan/archive.js) stands for many records, each one
+      // counted when it was folded in, and its writes are stored already split.
+      cacheWriteEvents += event.nCw;
+      fallbackWriteEvents += num(event.nFb);
+    } else if (observedCacheWrite > 0) {
       cacheWriteEvents += 1;
       if (!split.fromBreakdown) fallbackWriteEvents += 1;
     }

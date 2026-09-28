@@ -21,6 +21,7 @@ log.setSink((level, msg) => {
       root: workerData.root,
       cursors: workerData.cursors,
       priorEvents: workerData.priorEvents,
+      archive: workerData.archive,
       now: workerData.now,
       retentionDays: workerData.retentionDays,
       maxDepth: workerData.maxDepth,

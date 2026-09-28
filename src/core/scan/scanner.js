@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const { walkJsonlFiles } = require('./walk');
 const { extractEvents } = require('./parse');
+const archiveMod = require('./archive');
 const log = require('../log');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -49,14 +50,55 @@ const TORN_WRITE_GRACE_MS = 5 * 60 * 1000;
  * @param {string} opts.root         projects directory
  * @param {object} opts.cursors      { [fileId]: { size, mtimeMs } } from the store
  * @param {Array}  opts.priorEvents  events from the store, each carrying `f`
+ * @param {object|null} [opts.archive] the stored archive (scan/archive.js);
+ *                                   null: every transcript is read once and
+ *                                   the archive is built from scratch;
+ *                                   omitted: no archive is kept at all and
+ *                                   the raw store is cut at exactly 8 days
  * @param {number} opts.now          epoch ms
+ *
+ * The raw store keeps records from a local midnight (`frontier`, 8 days back)
+ * on; everything before it is folded into the archive as the frontier moves,
+ * so the week/month history outlives both the retention and Claude Code's own
+ * transcript cleanup. The records folded are the ones this scan holds for the
+ * days between the archive's frontier and the new one: carried or read, and a
+ * never-seen file is opened when it may hold such a day.
  */
 async function scan(opts) {
   const started = Date.now();
   const root = opts.root;
   const now = Number.isFinite(opts.now) ? opts.now : Date.now();
   const retentionDays = opts.retentionDays ?? RETENTION_DAYS;
-  const cutoff = now - retentionDays * DAY_MS;
+  const archiving = Object.prototype.hasOwnProperty.call(opts, 'archive');
+  const frontier = archiveMod.frontierFor(now, retentionDays, DAY_MS);
+  let priorArchive = archiving ? archiveMod.fromStored(opts.archive) : null;
+  // First build: every transcript is read once, whatever its cursor says.
+  const backfill = archiving && priorArchive === null;
+  // A frontier in the future was saved while the clock ran ahead. Kept, it
+  // would cut the raw store at that date and skip every new transcript as
+  // too old (review F2). The rows from the real frontier on are dropped and
+  // the files that can hold those days are read again into the raw store.
+  const rewound = !backfill && archiving && priorArchive.frontierMs > frontier;
+  if (rewound) {
+    priorArchive = { ...priorArchive, frontierMs: frontier, rows: priorArchive.rows.filter((r) => r.ts < frontier) };
+  }
+  const gapFrom = !archiving ? Infinity : (backfill ? -Infinity : priorArchive.frontierMs);
+  // Never below the archive's frontier: a record on both sides would be counted twice.
+  const cutoff = !archiving ? now - retentionDays * DAY_MS
+    : (backfill ? frontier : Math.max(frontier, priorArchive.frontierMs));
+  const needGap = archiving && frontier > gapFrom;
+  // Old records this scan KNOWS it missed, for the archive (the hot range
+  // below never starts before the cutoff).
+  let gapUnread = null;
+  const gapUnreadThrough = (ms) => {
+    if (!needGap) return;
+    const at = Number.isFinite(ms) ? Math.min(ms, frontier) : frontier;
+    if (at < gapFrom) return;
+    const from = Number.isFinite(gapFrom) ? gapFrom : 0;
+    gapUnread = gapUnread === null
+      ? { fromMs: from, throughMs: at }
+      : { fromMs: Math.min(gapUnread.fromMs, from), throughMs: Math.max(gapUnread.throughMs, at) };
+  };
   const priorCursors = opts.cursors && typeof opts.cursors === 'object' ? opts.cursors : {};
 
   const priorByFile = new Map();
@@ -77,6 +119,7 @@ async function scan(opts) {
       errorCode: (err && err.code) || 'EWALK',
       cursors: priorCursors,
       events: opts.priorEvents || [],
+      archive: opts.archive || null,
       stats: { filesSeen: 0, filesParsed: 0, bytesParsed: 0, records: 0, failedLines: 0, ms: Date.now() - started },
     };
   }
@@ -90,6 +133,7 @@ async function scan(opts) {
       errorCode: walked.rootError,
       cursors: priorCursors,
       events: opts.priorEvents || [],
+      archive: opts.archive || null,
       stats: { filesSeen: 0, filesParsed: 0, filesFailed: 0, bytesParsed: 0, records: 0, failedLines: 0, ms: Date.now() - started },
     };
   }
@@ -110,7 +154,10 @@ async function scan(opts) {
       if (at > unread.throughMs) unread.throughMs = at;
     }
   };
-  if (walked.truncated || walked.unreadable > 0) unreadThrough(now);
+  if (walked.truncated || walked.unreadable > 0) {
+    unreadThrough(now);
+    gapUnreadThrough(now);
+  }
 
   for (const file of walked.files) {
     const prev = priorCursors[file.id];
@@ -118,7 +165,8 @@ async function scan(opts) {
     // A cursor from before the loss accounting carries no `droppedLines`: its
     // file is re-read once while inside retention, so an old loss is counted.
     const accounted = Boolean(prev) && Number.isSafeInteger(prev.droppedLines);
-    const unchanged = sameFile && (accounted || file.mtimeMs < cutoff);
+    const unchanged = !backfill && sameFile && (accounted || file.mtimeMs < cutoff)
+      && !(rewound && file.mtimeMs >= frontier);
 
     if (unchanged) {
       cursors[file.id] = { size: file.size, mtimeMs: file.mtimeMs };
@@ -136,15 +184,19 @@ async function scan(opts) {
         // Nothing from a file older than retention is in the store, so nothing
         // of it is missing from the store (review F3).
         if (dropped > 0 && file.mtimeMs >= cutoff) unreadThrough(file.mtimeMs);
+        // The days the archive takes in now keep their known loss (review F4).
+        if (dropped > 0) gapUnreadThrough(file.mtimeMs);
       }
       const carried = priorByFile.get(file.id);
       if (carried) for (const ev of carried) events.push(ev);
       continue;
     }
 
-    // Never-seen file that is older than the retention window: record the
-    // cursor so we do not consider it again, but never open it.
-    if (!prev && file.mtimeMs < cutoff) {
+    // Never-seen file that is older than the retention window AND than the
+    // archive's frontier: record the cursor so we do not consider it again,
+    // but never open it. One written after the archive's frontier may hold a
+    // day the archive is about to take in (the app was closed for a while).
+    if (!backfill && !prev && file.mtimeMs < cutoff && file.mtimeMs < gapFrom) {
       cursors[file.id] = { size: file.size, mtimeMs: file.mtimeMs };
       continue;
     }
@@ -164,9 +216,16 @@ async function scan(opts) {
       // grace has passed instead of being excused forever (review F1).
       if (torn > 0) cursors[file.id].tornLines = torn;
       if (dropped > 0) unreadThrough(file.mtimeMs);
+      // A torn LAST line is the file's newest record: in a file written after
+      // the frontier it is not in any day the archive holds (review F5).
+      const tornLost = torn > 0 ? 0 : (res.failedUnterminated || 0);
+      if (dropped - (file.mtimeMs >= frontier ? tornLost : 0) > 0) gapUnreadThrough(file.mtimeMs);
     } catch (err) {
       filesFailed += 1;
-      if (!err || err.code !== 'ENOENT') unreadThrough(file.mtimeMs);
+      if (!err || err.code !== 'ENOENT') {
+        unreadThrough(file.mtimeMs);
+        gapUnreadThrough(file.mtimeMs);
+      }
       log.fileFailure(file.id, err);
       // Keep whatever we already had for this file rather than dropping it,
       // and keep the OLD cursor so the next scan retries the read.
@@ -176,14 +235,12 @@ async function scan(opts) {
     }
   }
 
-  // Files that disappeared from the tree drop out of both maps implicitly:
-  // they were never added to `cursors`, and their events were never carried.
-  const kept = events.filter((ev) => ev.ts >= cutoff);
-
-  return {
+  const result = (kept, archive) => ({
     ok: true,
     cursors,
     events: kept,
+    archive,
+    archiveChanged: archiving && archive !== opts.archive,
     unreadRange: unread,
     stats: {
       filesSeen: walked.files.length,
@@ -195,8 +252,48 @@ async function scan(opts) {
       truncated: walked.truncated,
       ms: Date.now() - started,
     },
-  };
+  });
+
+  if (!archiving) {
+    // Files that disappeared from the tree drop out of both maps implicitly:
+    // they were never added to `cursors`, and their events were never carried.
+    const kept = events.filter((ev) => ev.ts >= cutoff);
+    return result(kept, null);
+  }
+
+  // A transcript that disappeared (Claude Code's own cleanup, a deleted
+  // project) keeps its records here until the archive has taken them in:
+  // the usage happened (review F6). Its cursor is gone, so it is never read.
+  const walkedIds = new Set(walked.files.map((f) => f.id));
+  for (const [id, bucket] of priorByFile) {
+    if (!walkedIds.has(id)) for (const ev of bucket) events.push(ev);
+  }
+
+  // One response is several lines under one request id, each with its own
+  // time. The EARLIEST line decides the side of the frontier for all of
+  // them, the same instant the dedupe keeps: split by line, a response
+  // across midnight would be counted on both sides (review F1).
+  const firstTs = new Map();
+  for (const ev of events) {
+    const t = firstTs.get(ev.key);
+    if (t === undefined || ev.ts < t) firstTs.set(ev.key, ev.ts);
+  }
+  const kept = events.filter((ev) => firstTs.get(ev.key) >= cutoff);
+  // An archive that did not move is handed back as the SAME object it came
+  // in as: the history memo keys on identity.
+  let archive = opts.archive;
+  if (needGap) {
+    const gap = events.filter((ev) => {
+      const t = firstTs.get(ev.key);
+      return t >= gapFrom && t < frontier;
+    });
+    archive = archiveMod.advance(priorArchive, frontier, gap, gapUnread);
+  } else if (rewound) {
+    archive = priorArchive;
+  }
+  return result(kept, archive);
 }
+
 
 /** A cursor's persisted count of usage lines that failed to parse, or 0. */
 function droppedLinesOf(cursor) {

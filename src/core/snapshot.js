@@ -62,7 +62,7 @@ function keyFields(id, keys) {
  */
 let historyMemo = null;
 
-function memoUsageHistory(rawClaude, dedupedAll, now, opts) {
+function memoUsageHistory(rawClaude, dedupedAll, now, opts, archive) {
   // A Claude record stamped in the future (clock skew) would join the history
   // later without any key changing (review F10): such records are left out of
   // the history until their time comes, and how many were left out is part of
@@ -73,6 +73,7 @@ function memoUsageHistory(rawClaude, dedupedAll, now, opts) {
   const key = {
     future,
     claude: rawClaude,
+    archive,
     codex: opts.codexEvents,
     gemini: opts.geminiEvents,
     kimi: opts.kimiEvents,
@@ -82,11 +83,16 @@ function memoUsageHistory(rawClaude, dedupedAll, now, opts) {
     month: history.monthStartMs(now),
   };
   const prev = historyMemo && historyMemo.key;
-  if (prev && prev.future === key.future && prev.claude === key.claude && prev.codex === key.codex && prev.gemini === key.gemini
+  if (prev && prev.future === key.future && prev.claude === key.claude && prev.archive === key.archive && prev.codex === key.codex && prev.gemini === key.gemini
     && prev.kimi === key.kimi && prev.antigravity === key.antigravity && prev.unread === key.unread && prev.week === key.week && prev.month === key.month) {
     return historyMemo.value;
   }
-  const value = history.usageHistory(deduped, now, opts);
+  // Before the archive's frontier the archive's per-day rows stand in for the
+  // raw records; from it on, the raw records. Never both for one instant.
+  const claudeHistory = archive
+    ? archive.rows.concat(deduped.filter((ev) => ev && ev.ts >= archive.frontierMs))
+    : deduped;
+  const value = history.usageHistory(claudeHistory, now, opts);
   historyMemo = { key, value };
   return value;
 }
@@ -322,6 +328,11 @@ function absenceOf(reading, raw, supplies, now) {
  * and an older result is served — everything from when that result was read
  * up to now. Invalid entries are dropped.
  */
+/** The collector's archive: validated when it was loaded or built, so only its shape is checked here. */
+function isArchive(a) {
+  return Boolean(a) && typeof a === 'object' && Number.isFinite(a.frontierMs) && Array.isArray(a.rows);
+}
+
 function unreadRangesOf(scanRange, failed, failedFromMs, now) {
   const out = [];
   if (scanRange && Number.isFinite(scanRange.fromMs) && Number.isFinite(scanRange.throughMs)) {
@@ -625,6 +636,9 @@ function buildSnapshot(input) {
   const scanOk = input.scanOk !== false;
 
   const deduped = agg.dedupe(input.events || []);
+  // The per-day archive of Claude records older than the raw retention
+  // (scan/archive.js); only the week/month history reads it.
+  const claudeArchive = isArchive(input.claudeArchive) ? input.claudeArchive : null;
 
   const capturedAtMs = Number.isFinite(rl.capturedAtMs) ? rl.capturedAtMs : null;
   const captureFresh = rl.state === 'fresh';
@@ -1145,8 +1159,11 @@ function buildSnapshot(input) {
       geminiEvents: gm.events,
       kimiEvents: km.events,
       antigravityEvents: agEvents,
-      unreadRanges: { claude: claudeUnread, codex: codexUnread, gemini: gm.unread, kimi: km.unread, antigravity: agUnread },
-    }),
+      unreadRanges: {
+        claude: claudeArchive && claudeArchive.unread ? claudeUnread.concat([claudeArchive.unread]) : claudeUnread,
+        codex: codexUnread, gemini: gm.unread, kimi: km.unread, antigravity: agUnread,
+      },
+    }, claudeArchive),
     // ADR-002 A3.12. The collector passes `codexEvents: null` until the Codex
     // worker's first result, so its empty figures above read as NOT READ YET.
     // Claude never needs an entry: before its first scan the collector sends
