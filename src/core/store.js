@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const log = require('./log');
+const archiveMod = require('./scan/archive');
 
 /**
  * Single-file, atomically written persistence. No SQLite (ADR-001) — the
@@ -9,7 +10,8 @@ const log = require('./log');
  *
  * What is stored: file cursors keyed by a HASH of the path (never the path
  * itself, because Claude Code encodes the user's cwd in the directory name),
- * and the extracted numeric events for the retention window. There are no
+ * the extracted numeric events for the retention window, and the per-day
+ * archive of older ones (scan/archive.js). There are no
  * message bodies, no file paths, no cwd, no model prompts in this file.
  */
 /**
@@ -27,7 +29,7 @@ function storePath(userDataDir) {
 }
 
 function emptyStore() {
-  return { schemaVersion: SCHEMA_VERSION, cursors: {}, events: [], builtAt: null };
+  return { schemaVersion: SCHEMA_VERSION, cursors: {}, events: [], archive: null, builtAt: null };
 }
 
 function load(userDataDir) {
@@ -55,6 +57,9 @@ function load(userDataDir) {
     schemaVersion: SCHEMA_VERSION,
     cursors: raw.cursors && typeof raw.cursors === 'object' ? raw.cursors : {},
     events: Array.isArray(raw.events) ? raw.events.filter(isEvent) : [],
+    // Absent (a store from before the archive) or malformed: the next scan
+    // reads every transcript once and builds it.
+    archive: archiveMod.fromStored(raw.archive),
     builtAt: typeof raw.builtAt === 'string' ? raw.builtAt : null,
   };
 }
@@ -87,6 +92,7 @@ function save(userDataDir, data) {
     builtAt: data.builtAt || new Date().toISOString(),
     cursors: data.cursors || {},
     events: data.events || [],
+    archive: data.archive || null,
   };
   try {
     fs.mkdirSync(userDataDir, { recursive: true });
