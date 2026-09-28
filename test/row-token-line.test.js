@@ -80,7 +80,6 @@ const win = (resetsAt) => ({
 function provider(over = {}) {
   return {
     id: 'codex', displayName: 'Codex', accent: '#10A37F', experimental: false,
-    keyCapable: false, keyState: 'none', keyStoredAt: null, creditUsage: null,
     enabled: true, connected: true, status: 'ok', planLabel: null,
     fiveHour: null, sevenDay: null,
     tokens: null,
@@ -93,7 +92,7 @@ function provider(over = {}) {
 }
 
 const ctx = () => ({
-  onRetry() {}, onSetup() {}, onAddKey() {}, onOpenTokenPage() {},
+  onRetry() {}, onSetup() {},
   isBusy: () => false, attachGrip() {}, isTrayRow: () => false, isPending: () => false,
   generatedAt: new Date(NOW).toISOString(), staleOverride: false,
 });
@@ -430,45 +429,6 @@ test.describe('the row states its chrome in attributes, and each one is a claim'
     const since = walk(root).find((n) => n.getAttribute('data-since'));
     assert.ok(since, 'a stale row with no capture instant must carry data-since');
     assert.equal(since.getAttribute('data-since'), lastGoodAt);
-  });
-});
-
-/* -------------------------------------- the row's wiring of other blocks
- *
- * Also added during the `row.ts` certification, and for a sharper reason than
- * the chrome hooks above: deleting `refs.keys.update(p)` from this file broke
- * NOTHING in the suite — not `keys-entry-flow`, not `keys-credits`, not
- * `keys-validation`. Those suites exercise `keys.ts` directly and the key-entry
- * window; none of them mounts a ROW, so the row's wiring of the block was
- * untested. That wiring is exactly the ADR-003 A8 work a `git checkout --` on a
- * dirty tree discarded, which means the suite could not have told anyone whether
- * the recovery put it back.
- */
-
-test.describe('a key-capable row wires up the optional key block', () => {
-  const keyRow = (over = {}) => rowMod.createRow(
-    provider({ id: 'copilot', displayName: 'GitHub Copilot', keyCapable: true, keyState: 'none', ...over }),
-    ctx(),
-    NOW,
-  ).el;
-
-  const keyBlockOf = (root) => walk(root).find((n) => (n.getAttribute('class') || '').includes('key')
-    && (n.getAttribute('class') || '').split(/\s+/).includes('key'));
-
-  test('the block is attached to the row and shown for a key-capable provider', () => {
-    const block = keyBlockOf(keyRow());
-    assert.ok(block, 'no key block in the row at all — the row never created or appended it');
-    assert.equal(block.hidden, false, 'the block exists but was never updated, so it stayed hidden');
-  });
-
-  test('it carries the key state main sent, so the row reflects a stored key', () => {
-    assert.equal(keyBlockOf(keyRow({ keyState: 'none' })).getAttribute('data-key-state'), 'none');
-    assert.equal(keyBlockOf(keyRow({ keyState: 'stored' })).getAttribute('data-key-state'), 'stored');
-  });
-
-  test('a provider that cannot take a key never shows one', () => {
-    const block = keyBlockOf(rowMod.createRow(provider({ keyCapable: false }), ctx(), NOW).el);
-    if (block) assert.equal(block.hidden, true, 'a non-key-capable row must keep the block hidden');
   });
 });
 

@@ -241,7 +241,7 @@ app.whenReady().then(async () => {
       grips: rows.map(r => !!r.querySelector('button.grip')),
       marks: rows.map(r => {
         const m = r.querySelector('.grip .mark');
-        return m ? (m.getAttribute('data-logo') || (m.classList.contains('mark--mono') ? 'copilot' : null)) : null;
+        return m ? m.getAttribute('data-logo') : null;
       }),
       spines: document.querySelectorAll('.row__spine').length,
       monos: document.querySelectorAll('.mono').length,
@@ -255,14 +255,14 @@ app.whenReady().then(async () => {
   })()`);
 
   check('one row list, not two', structure.lists === 1, structure.lists);
-  check('all six providers rendered in snapshot order',
-    JSON.stringify(structure.ids) === JSON.stringify(['claude','codex','gemini','copilot','antigravity','kimi']),
+  check('all five providers rendered in snapshot order',
+    JSON.stringify(structure.ids) === JSON.stringify(['claude','codex','gemini','antigravity','kimi']),
     structure.ids);
   check('data-connected reflects the contract flag',
-    JSON.stringify(structure.connected) === JSON.stringify(['true','true','false','false','false','false']),
+    JSON.stringify(structure.connected) === JSON.stringify(['true','true','false','false','false']),
     structure.connected);
-  check('aria-posinset is 1..6', JSON.stringify(structure.posinset) === JSON.stringify(['1','2','3','4','5','6']), structure.posinset);
-  check('aria-setsize is 6 everywhere', structure.setsize.every(v => v === '6'), structure.setsize);
+  check('aria-posinset is 1..5', JSON.stringify(structure.posinset) === JSON.stringify(['1','2','3','4','5']), structure.posinset);
+  check('aria-setsize is 5 everywhere', structure.setsize.every(v => v === '5'), structure.setsize);
   check('every row has a grip button', structure.grips.every(Boolean));
   check('every row draws its brand logo', structure.marks.every(Boolean), structure.marks);
   check('the brand spine element is gone', structure.spines === 0, structure.spines);
@@ -279,10 +279,9 @@ app.whenReady().then(async () => {
 
   // ---- brand-logo treatment ---------------------------------------------
   // The mark is now the vendor's real brand SVG (assets/logos/), painted in CSS
-  // — a background-image for the multi-colour marks, a mask filled with a
-  // controlled colour for the monochrome copilot one. Connected = full brand
-  // colour; unconnected = the SAME art in grey (grayscale filter, or an ink
-  // token for the mask). See components/logo.ts and styles/row.css.
+  // as a background-image. Connected = full brand colour; unconnected = the
+  // SAME art in grey (a grayscale filter). See components/logo.ts and
+  // styles/row.css.
   const colours = await js(`(() => {
     const pick = (id) => {
       const row = document.querySelector('li.row[data-provider="' + id + '"]');
@@ -291,14 +290,13 @@ app.whenReady().then(async () => {
       const cs = getComputedStyle(mark);
       const gs = getComputedStyle(grip);
       return { logo: mark.getAttribute('data-logo'),
-               mono: mark.classList.contains('mark--mono'),
-               bg: cs.backgroundImage, mask: cs.maskImage || cs.webkitMaskImage,
+               bg: cs.backgroundImage,
                filter: cs.filter, opacity: cs.opacity, bgColor: cs.backgroundColor,
                tile: gs.backgroundColor, border: gs.borderTopColor,
                w: mark.getBoundingClientRect().width };
     };
     return { claude: pick('claude'), codex: pick('codex'), gemini: pick('gemini'),
-             kimi: pick('kimi'), copilot: pick('copilot') };
+             kimi: pick('kimi') };
   })()`);
   say('colours: ' + JSON.stringify(colours));
   check('connected claude mark is its own colour art', /claude-color\.svg/.test(colours.claude.bg), colours.claude.bg);
@@ -309,8 +307,6 @@ app.whenReady().then(async () => {
     /gemini-color\.svg/.test(colours.gemini.bg) && /grayscale/.test(colours.gemini.filter), [colours.gemini.bg, colours.gemini.filter]);
   check('unconnected kimi mark is the same art, in grey',
     /kimi-color\.svg/.test(colours.kimi.bg) && /grayscale/.test(colours.kimi.filter), [colours.kimi.bg, colours.kimi.filter]);
-  check('copilot has no colour file, so it is a masked monochrome mark',
-    colours.copilot.mono && /github-copilot\.svg/.test(colours.copilot.mask), [colours.copilot.mono, colours.copilot.mask]);
   check('connected mark is at full opacity, unconnected is not',
     parseFloat(colours.claude.opacity) === 1 && parseFloat(colours.gemini.opacity) < 1,
     [colours.claude.opacity, colours.gemini.opacity]);
@@ -693,7 +689,7 @@ app.whenReady().then(async () => {
   await js(`window.__probe.setWindowsDirect('claude', Object.assign({ status: 'ok' }, ${JSON.stringify(original)}))`);
   await sleep(160);
 
-  // ---- the layout has to survive six added providers --------------------
+  // ---- the layout has to survive five added providers -------------------
   // Two window blocks per provider is a lot taller than the twin-track meter
   // was. What keeps that from turning the panel into a scroll tunnel is that
   // row height tracks what the row actually REPORTS, and that the list — not
@@ -718,7 +714,7 @@ app.whenReady().then(async () => {
   check('the list is a bounded scroller, so rows never push the panel off screen',
     /px$/.test(heights.maxHeight) && heights.overflow === 'auto',
     [heights.maxHeight, heights.overflow]);
-  check('and the panel itself stays inside the canvas with all six added',
+  check('and the panel itself stays inside the canvas with all five added',
     heights.panelTop >= 0 && heights.panelBottom <= heights.canvas,
     [heights.panelTop, heights.panelBottom, heights.canvas]);
 
@@ -1012,7 +1008,7 @@ app.whenReady().then(async () => {
       rowsHidden: document.querySelector('ul.rows.rows, ul.rows') ? [...document.querySelectorAll('ul.rows')].every(l => l.hidden) : null,
       expanded: document.querySelector('.iconbtn--settings').getAttribute('aria-expanded'),
       ids: items.map(i => i.dataset.provider),
-      marks: items.map(i => i.querySelector('.settings__mark .mark[data-logo], .settings__mark .mark--mono') ? 1 : 0),
+      marks: items.map(i => i.querySelector('.settings__mark .mark[data-logo]') ? 1 : 0),
       switches: items.map(i => {
         const s = i.querySelector('button.switch');
         return s ? { role: s.getAttribute('role'), checked: s.getAttribute('aria-checked'),
@@ -1026,7 +1022,7 @@ app.whenReady().then(async () => {
   })()`);
   check('the settings view opens inside the panel', settings.visible && settings.expanded === 'true', settings.visible);
   check('the usage list is hidden while settings is open', settings.rowsHidden === true, settings.rowsHidden);
-  check('settings lists every provider, added or not', settings.ids.length === 6, settings.ids);
+  check('settings lists every provider, added or not', settings.ids.length === 5, settings.ids);
   check('every settings row draws the provider mark', settings.marks.every(n => n >= 1), settings.marks);
   check('every settings row offers a real switch',
     settings.switches.every(s => s && s.role === 'switch' && s.checked === 'true'), settings.switches);
@@ -1060,16 +1056,16 @@ app.whenReady().then(async () => {
     tabbed.role === 'switch' && tabbed.tag === 'BUTTON', tabbed);
 
   // ---- un-added providers leave the main panel --------------------------
-  await js(`window.__probe.setEnabledDirect({ gemini: false, copilot: false, antigravity: false, kimi: false })`);
+  await js(`window.__probe.setEnabledDirect({ gemini: false, antigravity: false, kimi: false })`);
   await sleep(150);
   const split = await js(`(() => ({
     settingsIds: [...document.querySelectorAll('#settings-view li.settings__item')].map(i => i.dataset.provider),
     checked: [...document.querySelectorAll('#settings-view li.settings__item button.switch')].map(s => s.getAttribute('aria-checked')),
     metas: [...document.querySelectorAll('#settings-view .settings__meta')].map(m => m.textContent),
   }))()`);
-  check('settings still lists all six after four are removed', split.settingsIds.length === 6, split.settingsIds);
+  check('settings still lists all five after three are removed', split.settingsIds.length === 5, split.settingsIds);
   check('the switches follow the snapshot',
-    JSON.stringify(split.checked) === JSON.stringify(['true','true','false','false','false','false']), split.checked);
+    JSON.stringify(split.checked) === JSON.stringify(['true','true','false','false','false']), split.checked);
   check('a removed provider says it is not in the main panel',
     /Ana panelde de/.test(split.metas[2] || ''), split.metas[2]);
 
@@ -1089,7 +1085,7 @@ app.whenReady().then(async () => {
   check('leaving settings hides the settings view', filtered.settingsHidden === true);
 
   // Reordering a FILTERED list must still persist a full order. Sending only
-  // the two visible ids would tell main the other four no longer exist.
+  // the two visible ids would tell main the other three no longer exist.
   await js(`(() => {
     const grip = document.querySelector('ul.rows:not([hidden]) li.row[data-provider] .grip');
     grip.focus();
@@ -1098,24 +1094,24 @@ app.whenReady().then(async () => {
   await sleep(300);
   probe = await js('window.__probe.calls()');
   const partial = probe.setOrder[probe.setOrder.length - 1];
-  check('a drag in the filtered list still persists all six providers',
-    Array.isArray(partial) && partial.length === 6, partial);
+  check('a drag in the filtered list still persists all five providers',
+    Array.isArray(partial) && partial.length === 5, partial);
   check('the un-added providers keep their positions in the persisted order',
-    Array.isArray(partial) && partial.slice(2).join(',') === 'kimi,gemini,copilot,antigravity', partial);
+    Array.isArray(partial) && partial.slice(2).join(',') === 'kimi,gemini,antigravity', partial);
 
   // ---- the expansion must be a PERMUTATION, not just the right length -----
   // The case above happens to have both added providers at the front. The
   // interesting one is a set that is NOT contiguous: expandOrder() has to
   // leave every un-added provider at its own absolute index and pour the
   // visible order into the gaps between them.
-  await js(`window.__probe.setEnabledDirect({ claude: true, codex: false, gemini: false, copilot: true, antigravity: true, kimi: false })`);
+  await js(`window.__probe.setEnabledDirect({ claude: true, codex: false, gemini: true, antigravity: true, kimi: false })`);
   await sleep(180);
   const gapped = await js(`(() => ({
     all: window.__probe.providers(),
     visible: [...document.querySelectorAll('ul.rows:not([hidden]) li.row[data-provider]')].map(r => r.dataset.provider),
   }))()`);
   check('a non-contiguous added set draws exactly the added rows',
-    JSON.stringify(gapped.visible) === JSON.stringify(gapped.all.filter(id => ['claude','copilot','antigravity'].includes(id))),
+    JSON.stringify(gapped.visible) === JSON.stringify(gapped.all.filter(id => ['claude','gemini','antigravity'].includes(id))),
     gapped);
 
   // Move the LAST visible row to the top. Alt+Home is the keyboard equivalent
@@ -1159,7 +1155,7 @@ app.whenReady().then(async () => {
   // Put the fixture back exactly where this section found it, so the sections
   // below still start from the state they were written against.
   await js(`window.__probe.setOrderDirect(${JSON.stringify(partial)})`);
-  await js(`window.__probe.setEnabledDirect({ claude: true, codex: true, gemini: false, copilot: false, antigravity: false, kimi: false })`);
+  await js(`window.__probe.setEnabledDirect({ claude: true, codex: true, gemini: false, antigravity: false, kimi: false })`);
   await sleep(200);
   check('the fixture is back at the state the next section expects',
     JSON.stringify(await js('window.__probe.providers()')) === JSON.stringify(partial), partial);
@@ -1534,7 +1530,6 @@ app.whenReady().then(async () => {
       const m = r.querySelector('.settings__mark .mark');
       const cs = getComputedStyle(m);
       return { id: r.dataset.provider, logo: m.getAttribute('data-logo'),
-               mono: m.classList.contains('mark--mono'),
                filter: cs.filter, opacity: cs.opacity };
     });
   })()`);
@@ -1890,7 +1885,7 @@ app.whenReady().then(async () => {
   check('the empty panel names the cause: no rows were added',
     /Ana panelde hi/.test(emptyAdded.title || ''), emptyAdded.title);
   check('the empty panel counts what it found, so zero is not read as no data',
-    /6/.test(emptyAdded.detail || ''), emptyAdded.detail);
+    /5/.test(emptyAdded.detail || ''), emptyAdded.detail);
   check('the empty panel offers the way to fix it', emptyAdded.action === 'Ayarları aç', emptyAdded.action);
 
   await js(`document.querySelector('.empty button').click()`);
@@ -1931,7 +1926,7 @@ app.whenReady().then(async () => {
       && /bulunamad/.test(settingsEmpty.status || ''), settingsEmpty);
   check('and it does not claim to still be scanning', settingsEmpty.busy === null, settingsEmpty);
   // The empty branch of createSettings.render() returns BEFORE the reconcile,
-  // so the six <li> from the previous provider list are still in the DOM. That
+  // so the five <li> from the previous provider list are still in the DOM. That
   // is only harmless while the list stays hidden, which is what is asserted
   // here rather than the absence: an item that survives must not be reachable.
   check('no stale switch survives for a provider that is gone',
@@ -2265,89 +2260,6 @@ app.whenReady().then(async () => {
     escNotice.hidden === false && escNotice.text.length > 0, escNotice);
   check('Esc still closes the panel while a notice is on screen',
     closesAfter === closesBefore + 1, [closesBefore, closesAfter]);
-
-  // ---- the Copilot row with an optional key (ADR-003 A8) -----------------
-  //
-  // A stored key is the row's source, so main drops the setup offer; a reading
-  // makes the row connected; it stays 'passive' (no 5-hour/weekly window). The
-  // row must then read as a real connected row with the month's credits — no
-  // "not supported / not connected" line, no "Ekle", no percentage, no meter —
-  // and a key in a failure state shows its one fixed sentence instead.
-  await js(`window.__probe.restore()`);
-  await sleep(300);
-  const readCopilot = `(() => {
-    const row = document.querySelector('.row[data-provider="copilot"]');
-    const claudeName = document.querySelector('.row[data-provider="claude"] .row__name');
-    const mark = row.querySelector('.mark');
-    const vis = (sel) => { const n = row.querySelector(sel); return n && !n.hidden && n.getClientRects().length > 0 ? n : null; };
-    const text = (sel) => { const n = vis(sel); return n ? n.textContent : null; };
-    const rowBtn = [...row.children].find((n) => n.matches('button.btn'));
-    return {
-      status: row.getAttribute('data-status'),
-      connected: row.getAttribute('data-connected'),
-      detail: text('.row__meta-detail'),
-      rowButton: rowBtn ? rowBtn.textContent : null,
-      add: text('.key__add'),
-      figure: text('.key__figure'),
-      split: text('.key__split'),
-      asof: text('.key__asof'),
-      state: text('.key__state'),
-      token: vis('.key__token') ? { text: vis('.key__token').textContent, tag: vis('.key__token').tagName } : null,
-      percent: /%/.test(row.textContent),
-      gauge: row.querySelectorAll('.meter, .win, [role="progressbar"], [role="meter"]').length,
-      markFill: getComputedStyle(mark).backgroundColor,
-      markW: Math.round(mark.getBoundingClientRect().width),
-      nameColour: getComputedStyle(row.querySelector('.row__name')).color,
-      nameWeight: getComputedStyle(row.querySelector('.row__name')).fontWeight,
-      liveNameColour: claudeName ? getComputedStyle(claudeName).color : null,
-      liveNameWeight: claudeName ? getComputedStyle(claudeName).fontWeight : null,
-      text: row.textContent,
-    };
-  })()`;
-  const NOT_SUPPORTED = /desteklenmiyor|bulunamadı|bağlı değil/;
-
-  await js(`window.__probe.setCopilotKeyDirect('credits')`);
-  await sleep(300);
-  const cpCredits = await js(readCopilot);
-  say('copilot with credits: ' + JSON.stringify(cpCredits));
-  check('copilot with credits: passive (no window) but connected, with no setup line and no "Ekle"',
-    cpCredits.status === 'passive' && cpCredits.connected === 'true'
-      && cpCredits.detail === null && cpCredits.rowButton === null && cpCredits.add === null
-      && !NOT_SUPPORTED.test(cpCredits.text), cpCredits);
-  check('copilot with credits: the month\'s credits, the included/billed split and the "as of" time',
-    cpCredits.figure === 'Bu ay 1.234 AI kredisi kullanıldı'
-      && cpCredits.split === 'Plan kapsamında 900 · faturalanan 334'
-      && /itibarıyla/.test(cpCredits.asof || '') && cpCredits.state === null,
-    [cpCredits.figure, cpCredits.split, cpCredits.asof, cpCredits.state]);
-  check('copilot with credits: no percentage and no meter (there is no denominator)',
-    cpCredits.percent === false && cpCredits.gauge === 0, [cpCredits.percent, cpCredits.gauge]);
-  check('copilot with credits: the mark is in colour at full size and the name at the connected ink',
-    cpCredits.markFill === 'rgb(139, 92, 246)' && cpCredits.markW === 24
-      && cpCredits.nameColour === cpCredits.liveNameColour
-      && cpCredits.nameWeight === cpCredits.liveNameWeight, cpCredits);
-
-  await js(`window.__probe.setCopilotKeyDirect('key-rejected')`);
-  await sleep(300);
-  const cpRejected = await js(readCopilot);
-  say('copilot key-rejected: ' + JSON.stringify(cpRejected));
-  check('copilot key-rejected: its fixed sentence and the token-page button, nothing else',
-    cpRejected.state === 'Anahtar kabul edilmedi. Ayarlar’dan kaldırıp yenisini ekleyebilirsiniz.'
-      && cpRejected.token && cpRejected.token.tag === 'BUTTON' && cpRejected.token.text === 'GitHub’da anahtar oluştur'
-      && cpRejected.figure === null && cpRejected.add === null && cpRejected.percent === false, cpRejected);
-  check('copilot key-rejected: still no "not supported" line and no "Ekle"',
-    cpRejected.detail === null && cpRejected.rowButton === null && !NOT_SUPPORTED.test(cpRejected.text), cpRejected);
-  check('copilot key-rejected: not connected, so the mark is the grey passive one',
-    cpRejected.connected === 'false' && cpRejected.markFill !== 'rgb(139, 92, 246)' && cpRejected.markW === 20, cpRejected);
-
-  await js(`window.__probe.setCopilotKeyDirect('none')`);
-  await sleep(300);
-  const cpNone = await js(readCopilot);
-  say('copilot no key: ' + JSON.stringify(cpNone));
-  check('copilot with no key is unchanged: the setup line, "Ekle" and the calm key offer',
-    cpNone.status === 'passive' && cpNone.connected === 'false'
-      && cpNone.detail === 'Bu araç bu makinede bulunamadı.' && cpNone.rowButton === 'Ekle'
-      && cpNone.add === 'Daha fazla ayrıntı için API anahtarı ekle'
-      && cpNone.figure === null && cpNone.state === null && cpNone.token === null, cpNone);
 
   // ---- no innerHTML anywhere in shipped renderer ------------------------
   say(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}  (${lines.filter(l=>l.startsWith('PASS')).length} pass)`);

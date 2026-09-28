@@ -5,8 +5,8 @@
 
 .DESCRIPTION
   Every other F11 test in this repo asserts from INSIDE the process: no HTTP
-  client in the dependency tree, defaultSession cancels every request, the keyed
-  session's allowlist refuses every hostile URL shape. None of that can see a
+  client in the dependency tree, and every session cancels every request that
+  is not a local file. None of that can see a
   socket opened by Chromium itself, by a child process, or by anything that
   bypasses Electron's request filters. This script watches from outside, at the
   kernel, and is the only evidence K25 accepts.
@@ -40,52 +40,26 @@
   WHAT IS ISOLATED, AND WHAT IS NOT
     The app runs from -AppDir with its own `--user-data-dir`, so settings.json,
     the single-instance lock and the window state are the audit's, not the
-    owner's. The API key is NOT in userData by design (src/core/paths.js:135:
-    %LOCALAPPDATA%\UsageNotch\secrets), so a real key WOULD be visible to this
-    run. Case A therefore refuses to start if a secret record exists.
+    owner's.
 
     A packaged launch rewrites HKCU\...\Run (src/main/index.js:486
     applyAutostart, packaged builds only). The value is read before launch and
     written back verbatim in the finally block, including the case where it did
     not exist.
 
-  THE THREE CASES
-    -Case A   No key stored. Asserts ZERO kernel-network events of ANY kind -
-              loopback included - from any PID of the app's process tree, and
-              zero sockets in the sampler. Loopback counts because the WPAD
-              defect this script was written for produced 32 TCPv4 attempts to
+  THE CASE
+    -Case A   Asserts ZERO kernel-network events of ANY kind - loopback
+              included - from any PID of the app's process tree, and zero
+              sockets in the sampler. Loopback counts because the WPAD defect
+              this script was written for produced 32 TCPv4 attempts to
               127.0.0.1:80 fetching wpad.dat beside its DNS; a criterion of
               "non-loopback only" would have passed a regression that resolves
               `wpad` to a loopback proxy. Runnable here.
-    -Case B   A real key stored (owner only; needs a fine-grained GitHub PAT).
-              Asserts that every non-loopback event is either UDP/53 to a
-              configured DNS server or TCP/443 to an address of the allowlisted
-              host (src/core/keys/registry.js:83 api.github.com), that no other
-              remote endpoint appears at all, and
-              that the number of distinct TCP/443 connection attempts is at most
-              ceil(Minutes / 5) + 1 — the MIN_GAP_MS floor of
-              src/core/keys/schedule.js:37 plus the one request at startup.
-    -Case C   Starts with a key stored, waits for the secret record to disappear
-              (the owner removes the key from the panel), then asserts ZERO
-              non-loopback events after the removal timestamp.
 
-    A KNOWN LEGITIMATE WAY CASE B CAN FAIL, which must NOT be papered over:
-    if the TLS handshake to api.github.com needs an intermediate certificate the
-    machine does not have cached, Chromium fetches it over plain TCP/80 from the
-    URL inside the server certificate (AIA), after a DNS lookup for that CA
-    host. Neither is a URLRequest, so no allowlist in this app can see it, and
-    Case B will FAIL and print `peer=<ip> ptr=<host>`. The correct response is to
-    report that host and change the consent copy to say a certificate may be
-    fetched from a certificate authority - NOT to add the host here. Online OCSP
-    is not expected (Chromium uses CRLSets for non-EV certificates); that is
-    upstream reading, not something this script has measured.
-
-    B and C cannot be simulated without a real PAT: the app makes no request
-    unless a DPAPI record it can decrypt exists, and this script will not
-    fabricate one. Both are one command for the owner:
-
-      powershell -ExecutionPolicy Bypass -File scripts\zero-socket-audit.ps1 -Case B -Minutes 35
-      powershell -ExecutionPolicy Bypass -File scripts\zero-socket-audit.ps1 -Case C -Minutes 20
+    It is the only case. The app makes no network request of its own at all
+    since the optional GitHub API key was removed, so the cases that measured
+    a stored key's requests and their end after the key was removed are gone
+    with it, and no run may allow a single socket.
 
   FIRST MEASUREMENT (2026-09-22, Windows 11 26200, electron 44.2.0)
     Case A, 10 min, no key, dist\win-unpacked: FAIL.
@@ -125,7 +99,7 @@
 #>
 [CmdletBinding()]
 param(
-  [ValidateSet('A', 'B', 'C')]
+  [ValidateSet('A')]
   [string]$Case = 'A',
 
   [ValidateRange(1, 720)]
@@ -179,10 +153,6 @@ Set-StrictMode -Version Latest
 $SESSION = 'UsageNotchZeroSocket'
 $RUN_KEY = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $RUN_VALUE = 'electron.app.Usage Notch'
-$SECRETS_DIR = Join-Path $env:LOCALAPPDATA 'UsageNotch\secrets'
-$ALLOWED_HOST = 'api.github.com'
-# Must match MIN_GAP_MS in src/core/keys/schedule.js (5 min since 2026-09-24).
-$MIN_GAP_MINUTES = 5
 
 function Say([string]$m) { Write-Host ("[audit] " + $m) }
 function Fail([string]$m) { Write-Host ("[audit] FAIL " + $m) -ForegroundColor Red; exit 1 }
@@ -201,50 +171,9 @@ $exe = Join-Path $AppDir 'Usage Notch.exe'
 if (-not (Test-Path -LiteralPath $exe)) { Fail "no packaged exe at $exe - run 'npm run dist:dir' first." }
 $exe = (Resolve-Path -LiteralPath $exe).Path
 
-$secretRecords = @()
-if (Test-Path -LiteralPath $SECRETS_DIR) {
-  $secretRecords = @(Get-ChildItem -LiteralPath $SECRETS_DIR -Filter '*.json' -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -notlike '*.state.json' })
-}
-switch ($Case) {
-  'A' {
-    if ($secretRecords.Count -gt 0) {
-      Fail ("Case A needs NO stored key, but " + $SECRETS_DIR + " holds: " +
-        (($secretRecords | ForEach-Object { $_.Name }) -join ', ') +
-        ". Remove the key from the panel first; this script will not touch it.")
-    }
-  }
-  'B' {
-    if ($secretRecords.Count -eq 0) {
-      Fail ("Case B needs a real stored key. None in " + $SECRETS_DIR + ". Add one from the panel, then re-run. " +
-        "This script cannot fabricate a key: without a decryptable DPAPI record the app makes no request and Case B would pass vacuously.")
-    }
-  }
-  'C' {
-    if ($secretRecords.Count -eq 0) {
-      Fail ("Case C must START with a stored key so there is a request to stop. None in " + $SECRETS_DIR + ".")
-    }
-  }
-}
-
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $userData = Join-Path $OutDir 'user-data'
 New-Item -ItemType Directory -Force -Path $userData | Out-Null
-# A key is polled only while Copilot is in the panel (K16), and a fresh
-# user-data-dir starts with it switched off. Without this seed Case B and C
-# would see no request at all and pass for the wrong reason.
-if ($Case -ne 'A') {
-  [System.IO.File]::WriteAllText((Join-Path $userData 'settings.json'),
-    '{"enabledProviders":{"copilot":true}}', (New-Object System.Text.UTF8Encoding($false)))
-  # The key record is sealed with Electron safeStorage, whose key lives in
-  # "Local State" INSIDE the user-data-dir. A fresh dir gets a fresh key, so the
-  # audited app cannot open the record, answers 'unreadable' and sends nothing.
-  # First Case B run (2026-09-24) measured exactly that: 0 events. The owner's
-  # Local State is copied in for the run and deleted in the finally block.
-  $ownerLocalState = Join-Path (Join-Path $env:APPDATA 'usage-notch') 'Local State'
-  if (-not (Test-Path -LiteralPath $ownerLocalState)) { Fail "no Local State at $ownerLocalState; the stored key could not be opened" }
-  Copy-Item -LiteralPath $ownerLocalState -Destination (Join-Path $userData 'Local State') -Force
-}
 $etl = Join-Path $OutDir 'kernel-network.etl'
 
 Say "case=$Case minutes=$Minutes"
@@ -288,62 +217,12 @@ if ($runExisted -and $runBefore -like '*\dist\win-unpacked\*') {
 }
 @{ existed = $runExisted; value = $runBefore } | ConvertTo-Json | Set-Content -LiteralPath $RUN_MARKER -Encoding UTF8
 
-$dnsServers = @(Get-DnsClientServerAddress -ErrorAction SilentlyContinue |
-  ForEach-Object { $_.ServerAddresses } | Where-Object { $_ } | Sort-Object -Unique)
-$allowedIps = @()
-if ($Case -ne 'A') {
-  $allowedIps = @(Resolve-DnsName -Name $ALLOWED_HOST -ErrorAction SilentlyContinue |
-    Where-Object { $_.IPAddress } | ForEach-Object { $_.IPAddress } | Sort-Object -Unique)
-  Say ("allowlisted host " + $ALLOWED_HOST + " resolves to: " + ($allowedIps -join ', '))
-}
-# ONE resolution is not "the host's addresses". api.github.com answers from
-# several front ends, and the first full Case B run (2026-09-24 15:18) failed
-# on it: three polls, five minutes apart, went to 140.82.121.6, 140.82.121.5
-# and 20.199.39.228, and only the first had been resolved here. All three are in
-# the "api" list of GitHub's own https://api.github.com/meta. That list is
-# fetched once here (by this script, not by the app) and an address inside it
-# counts as the allowlisted host. It covers api.github.com only, not
-# github.com's web or git ranges, except where GitHub lists a range under both.
-$apiCidrs = @()
-if ($Case -ne 'A') {
-  try {
-    $meta = Invoke-RestMethod -Uri 'https://api.github.com/meta' -TimeoutSec 20 -ErrorAction Stop
-    $apiCidrs = @($meta.api | Where-Object { $_ -match '/' })
-    Say ("GitHub meta: " + $apiCidrs.Count + " published api ranges")
-  } catch {
-    Say "GitHub meta could not be fetched; only the resolved addresses count"
-  }
-}
-
-function Test-InCidr([string]$ip, [string]$cidr) {
-  $parts = $cidr.Split('/')
-  $a = $null; $n = $null
-  if (-not [System.Net.IPAddress]::TryParse($ip, [ref]$a)) { return $false }
-  if (-not [System.Net.IPAddress]::TryParse($parts[0], [ref]$n)) { return $false }
-  if ($a.AddressFamily -ne $n.AddressFamily) { return $false }
-  $ab = $a.GetAddressBytes(); $nb = $n.GetAddressBytes(); $bits = [int]$parts[1]
-  for ($i = 0; $i -lt $ab.Length; $i++) {
-    $take = [Math]::Min(8, [Math]::Max(0, $bits - 8 * $i))
-    if ($take -eq 0) { break }
-    $mask = [byte]((0xFF -shl (8 - $take)) -band 0xFF)
-    if (($ab[$i] -band $mask) -ne ($nb[$i] -band $mask)) { return $false }
-  }
-  return $true
-}
-
-function Test-ApiAddress([string]$ip) {
-  if ($allowedIps -contains $ip) { return $true }
-  foreach ($c in $apiCidrs) { if (Test-InCidr $ip $c) { return $true } }
-  return $false
-}
-
 $pids = [System.Collections.Generic.HashSet[int]]::new()
 # Identity of every pid ever tracked, recorded the moment it is discovered. A
 # pid alone is not evidence: Windows reuses them, and an offending event has to
 # be attributable to a named image before it counts against the app.
 $pidInfo = @{}
 $samples = New-Object System.Collections.ArrayList
-$removalAt = $null
 $root = $null
 $toggleDone = $false
 $toggleStartedAt = $null
@@ -445,15 +324,6 @@ try {
       }
     }
 
-    if ($Case -eq 'C' -and -not $removalAt) {
-      $still = @(Get-ChildItem -LiteralPath $SECRETS_DIR -Filter '*.json' -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notlike '*.state.json' })
-      if ($still.Count -eq 0) {
-        $removalAt = Get-Date
-        Say ("key removed at " + $removalAt.ToString('o') + "; everything after this instant must be silent.")
-      }
-    }
-
     if (-not (Get-Process -Id $root -ErrorAction SilentlyContinue)) {
       # A window the app did not survive proves nothing: zero events out of a
       # dead process is a false PASS of exactly the kind this script exists to
@@ -482,11 +352,6 @@ finally {
     $p = Get-CimInstance Win32_Process -Filter "ProcessId = $id" -ErrorAction SilentlyContinue
     # Only ever our own unpacked exe: never the installed build, never anything else.
     if ($p -and $p.ExecutablePath -eq $exe) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
-  }
-  if ($Case -ne 'A') {
-    # The copied key wrapper is not left lying in %TEMP%.
-    Start-Sleep -Milliseconds 500
-    Remove-Item -LiteralPath (Join-Path $userData 'Local State') -Force -ErrorAction SilentlyContinue
   }
   if (-not $SkipEtw) {
     # Read the session's own counters BEFORE stopping it: a dropped buffer could
@@ -641,8 +506,8 @@ Say ("sampler rows: " + $samples.Count + " (non-loopback tcp: " + $sampledRemote
 $verdict = 'PASS'
 $reasons = New-Object System.Collections.ArrayList
 
-# Liveness first, for every case. Zero traffic from an app that died in minute
-# two is not evidence of anything.
+# Liveness first. Zero traffic from an app that died in minute two is not
+# evidence of anything.
 if ($deadAt) {
   $verdict = 'FAIL'
   $null = $reasons.Add("the app exited at $($deadAt.ToString('o')), before the $Minutes-minute window closed; the measurement is void")
@@ -656,71 +521,26 @@ if (-not $childRoles.Contains('renderer')) {
   $null = $reasons.Add("no renderer child process ever appeared (roles seen: $(($childRoles | Sort-Object) -join ', ')); the panel document never loaded, so this is not a working app")
 }
 
-switch ($Case) {
-  'A' {
-    # ZERO events of ANY kind, loopback included. "Non-loopback only" was the
-    # first criterion here and it was too loose: the WPAD defect this script was
-    # written to catch produced 32 TCPv4 attempts to 127.0.0.1:80 fetching
-    # wpad.dat alongside its 6 DNS datagrams, so a regression in which `wpad`
-    # resolves to a loopback proxy would have PASSED. With no key stored the app
-    # has no business opening any socket at all, and the --no-proxy-server
-    # control run measured 0 of any kind, so the tighter bar costs nothing.
-    if ($events.Count -gt 0) {
-      $verdict = 'FAIL'
-      $null = $reasons.Add("$($events.Count) kernel-network events with no key stored ($($offenders.Count) of them non-loopback); expected 0 of any kind")
-    }
-    if ($samples.Count -gt 0) {
-      $verdict = 'FAIL'
-      $null = $reasons.Add("$($samples.Count) sockets seen by the sampler ($($sampledRemote.Count) non-loopback tcp); expected 0")
-    }
-  }
-  'B' {
-    $budget = [math]::Ceiling($Minutes / $MIN_GAP_MINUTES) + 1
-    $connects = @($offenders | Where-Object { $_.id -in 12, 28 })
-    foreach ($o in $offenders) {
-      $peer = if (Test-Loopback $o.saddr) { $o.daddr } elseif (Test-Loopback $o.daddr) { $o.saddr } else { $o.daddr }
-      $okDns = ($o.proto -eq 'udp' -and ($o.dport -eq '53' -or $o.sport -eq '53') -and ($dnsServers -contains $peer -or $dnsServers -contains $o.saddr -or $dnsServers -contains $o.daddr))
-      $okApi = ($o.proto -eq 'tcp' -and ($o.dport -eq '443' -or $o.sport -eq '443') -and ((Test-ApiAddress $o.saddr) -or (Test-ApiAddress $o.daddr)))
-      if (-not ($okDns -or $okApi)) {
-        $verdict = 'FAIL'
-        # NAME the peer. A TCP/80 contact to a certificate authority is the known
-        # legitimate reason this can fail (AIA: Chromium fetches a missing
-        # intermediate from the URL inside the server certificate, plus DNS for
-        # that host - neither is a URLRequest, so no filter sees it). The answer
-        # is to report the host so the consent copy can say a certificate may be
-        # fetched, NOT to fold the host into this allowlist.
-        $ptr = ''
-        try { $ptr = (Resolve-DnsName -Name $peer -Type PTR -ErrorAction Stop | Select-Object -First 1).NameHost } catch { $ptr = '(no PTR)' }
-        $null = $reasons.Add("endpoint outside the allowlist: $($o.proto) $($o.saddr):$($o.sport) -> $($o.daddr):$($o.dport) peer=$peer ptr=$ptr")
-      }
-    }
-    if ($connects.Count -gt $budget) {
-      $verdict = 'FAIL'
-      $null = $reasons.Add("$($connects.Count) tcp connection attempts, budget $budget (MIN_GAP_MS $MIN_GAP_MINUTES min + one at startup)")
-    }
-    # A window with no request proves nothing about the request it exists to
-    # measure: the provider switched off, a stale schedule, another instance
-    # spending the shared slots. Say so rather than pass.
-    if ($connects.Count -eq 0) {
-      $verdict = 'FAIL'
-      $null = $reasons.Add('no tcp connection attempt was observed, so the keyed request was never measured')
-    }
-    Say ("connection attempts: " + $connects.Count + " / budget " + $budget)
-  }
-  'C' {
-    if (-not $removalAt) { $verdict = 'FAIL'; $null = $reasons.Add('the key was never removed during the window, so nothing was proven') }
-    else {
-      $after = @($offenders | Where-Object { [datetime]::Parse($_.at) -gt $removalAt })
-      if ($after.Count -gt 0) { $verdict = 'FAIL'; $null = $reasons.Add("$($after.Count) non-loopback events after the key was removed") }
-    }
-  }
+# ZERO events of ANY kind, loopback included. "Non-loopback only" was the
+# first criterion here and it was too loose: the WPAD defect this script was
+# written to catch produced 32 TCPv4 attempts to 127.0.0.1:80 fetching
+# wpad.dat alongside its 6 DNS datagrams, so a regression in which `wpad`
+# resolves to a loopback proxy would have PASSED. The app has no business
+# opening any socket at all, and the --no-proxy-server control run measured 0
+# of any kind, so the tighter bar costs nothing.
+if ($events.Count -gt 0) {
+  $verdict = 'FAIL'
+  $null = $reasons.Add("$($events.Count) kernel-network events ($($offenders.Count) of them non-loopback); expected 0 of any kind")
+}
+if ($samples.Count -gt 0) {
+  $verdict = 'FAIL'
+  $null = $reasons.Add("$($samples.Count) sockets seen by the sampler ($($sampledRemote.Count) non-loopback tcp); expected 0")
 }
 
 $summary = [pscustomobject]@{
   case = $Case; verdict = $verdict; reasons = @($reasons)
   minutes = $Minutes; exe = $exe; userDataDir = $userData; extraArgs = @($ExtraArgs)
   startedAt = $startedAt.ToString('o'); endedAt = $endedAt.ToString('o')
-  keyRemovedAt = $(if ($removalAt) { $removalAt.ToString('o') } else { $null })
   adapterToggled = $(if ($ToggleAdapter) { $ToggleAdapter } else { $null })
   adapterDownAt = $(if ($toggleStartedAt) { $toggleStartedAt.ToString('o') } else { $null })
   adapterUpAt = $(if ($toggleEndedAt) { $toggleEndedAt.ToString('o') } else { $null })
@@ -741,7 +561,6 @@ $summary = [pscustomobject]@{
   etwEvents = $events.Count; nonLoopbackEvents = $offenders.Count
   samplerRows = $samples.Count; samplerNonLoopbackTcp = $sampledRemote.Count
   etwUsed = (-not $SkipEtw); elevated = $isAdmin
-  dnsServers = $dnsServers; allowedIps = $allowedIps; apiRanges = $apiCidrs
   outDir = $OutDir
 }
 $summary | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 (Join-Path $OutDir 'summary.json')

@@ -46,11 +46,8 @@
 
 /* The identity mark is the provider's REAL brand logo, shipped as a build-time
  * asset (assets/logos/) and painted here — never fetched, never innerHTML'd.
- * See components/logo.ts. Two techniques, chosen by the art the vendor ships:
- *   - a multi-colour SVG shown as a background-image (claude/codex/gemini/
- *     antigravity/kimi);
- *   - a monochrome mark used as a MASK filled with a colour we control
- *     (copilot, .mark--mono).
+ * See components/logo.ts. Each is a multi-colour SVG shown as a
+ * background-image (claude/codex/gemini/antigravity/kimi).
  * Grey vs brand-colour is the connected/unconnected treatment; see below. */
 .mark {
   width: 24px; height: 24px;
@@ -65,18 +62,6 @@
 .mark[data-logo="gemini"]      { background-image: url(../assets/logos/gemini-color.svg); }
 .mark[data-logo="antigravity"] { background-image: url(../assets/logos/antigravity-color.svg); }
 .mark[data-logo="kimi"]        { background-image: url(../assets/logos/kimi-color.svg); }
-
-/* Copilot ships only a monochrome (currentColor) mark, which would render black
- * — invisible on a dark ground — inside an image. It is used as a mask instead
- * and filled with a colour we choose: an ink token when inactive (grey rule
- * below), the provider accent when active (below that). */
-.mark--mono {
-  -webkit-mask-image: url(../assets/logos/github-copilot.svg);
-  mask-image: url(../assets/logos/github-copilot.svg);
-  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-  -webkit-mask-position: center; mask-position: center;
-  -webkit-mask-size: contain; mask-size: contain;
-}
 
 /* An id with no shipped asset: a neutral ring, never a broken image or a
  * letter. logo.ts adds this class; today every provider has art, so it is
@@ -96,7 +81,7 @@
   border-color: color-mix(in srgb, var(--accent, #666666) 40%, transparent);
   color: var(--accent, var(--ink-200));
 }
-/* The brand hexes were chosen against a dark ground and four of the six are
+/* The brand hexes were chosen against a dark ground and four of the five are
  * illegible on a light one, so the light theme darkens the SAME hue rather than
  * inventing a second accent the contract does not give it. See --accent-shade
  * in tokens.css for the ratio and why it is that number.
@@ -115,33 +100,17 @@
  * — which is therefore always fresh; the mark's own data-active is a redundant
  * self-descriptor the row stamps at creation. The ancestor is authoritative, so
  * a provider that later disconnects greys correctly even though data-active is
- * stale. Grey uses ink TOKENS (grayscale filter for the colour art, --ink-300
- * for the copilot mask), so it stays visible on both the dark and light ground. */
+ * stale. Grey is the same art through a grayscale filter, so it stays visible
+ * on both the dark and light ground. */
 .mark { filter: grayscale(1); opacity: .6; }
-.mark--mono { background-color: var(--ink-300); }
 
 .mark[data-active="true"],
 [data-connected="true"] .mark { filter: none; opacity: 1; }
-.mark--mono[data-active="true"],
-[data-connected="true"] .mark--mono {
-  /* Copilot has no brand colour of its own; the provider accent (a defined
-   * colour, #8B5CF6) is the sensible fill and matches the tile tint. */
-  background-color: var(--accent, #8B5CF6);
-}
 
 /* The ancestor is authoritative: a disconnected row/item greys its mark even if
  * a stale data-active still says active. Same specificity as the active rules,
  * so it must come AFTER them to win. */
 [data-connected="false"] .mark { filter: grayscale(1); opacity: .6; }
-[data-connected="false"] .mark--mono { background-color: var(--ink-300); }
-
-/* Light theme: the brand hexes were chosen against a dark ground, so the
- * copilot accent fill is shaded the same way the grip colour is (--accent-shade
- * in tokens.css) rather than used raw. */
-:root[data-theme="light"] .mark--mono[data-active="true"],
-:root[data-theme="light"] [data-connected="true"] .mark--mono {
-  background-color: color-mix(in srgb, var(--accent, #8B5CF6) var(--accent-shade), #000000);
-}
 
 .row[data-status="loading"] .grip {
   background: var(--ink-800);
@@ -611,13 +580,6 @@
 .row--passive .row__body { gap: 2px; }
 .row--passive .row__meta { font-size: var(--fs-micro); }
 
-/* A passive row that is nonetheless CONNECTED: today only Copilot with a key
- * whose credits were read (ADR-003 A8). It is passive because GitHub reports no
- * five-hour or weekly window, not because nothing is known, so it takes the
- * connected identity — full-size mark in colour, full-ink name — and keeps only
- * the passive geometry. The key block below the name carries its reading. */
-.row--passive[data-connected="true"] .mark { width: 24px; height: 24px; }
-.row--passive[data-connected="true"] .row__name { color: var(--ink-100); font-weight: 500; }
 
 /* ------------------------------------------------------ state: loading */
 /* Skeleton occupies the FINAL geometry so nothing reflows when data lands. */
@@ -896,81 +858,6 @@
   font-size: var(--fs-micro);
   color: var(--ink-500);
 }
-
-/* ----------------------------------------------------------- optional key */
-/* ADR-003 A8 (Phase B): the row's key block. Calm and last, because it is an
- * EXTRA: the offer to add a key must never read as something missing, and the
- * figure it unlocks is three counts and a time.
- *
- * There is deliberately NO bar, NO ring and NO state-ramp hook here. GitHub's
- * AI-credit reply carries no allowance, so a percentage would need an invented
- * denominator — the same fabrication ADR-001 forbids for an unpublished limit.
- * Nothing about the key itself is styled, because nothing about it is rendered
- * (K23): no mask, no length, no last-four. */
-
-.key {
-  margin-top: var(--s-1);
-  padding-top: var(--s-1);
-  border-top: 1px dashed var(--ink-700);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: var(--fs-micro);
-  color: var(--ink-300);
-}
-.key[hidden] { display: none !important; }
-.key p { margin: 0; overflow-wrap: break-word; }
-
-/* The offer. A quiet, text-weight control: an outlined or filled button here
- * would compete with the row's own reading for attention. */
-.key__add,
-.key__token,
-.key__refresh {
-  align-self: flex-start;
-  padding: 0;
-  border: 0;
-  border-bottom: 1px dashed var(--ink-600);
-  background: transparent;
-  color: var(--ink-400);
-  font: inherit;
-  font-size: var(--fs-micro);
-  text-align: left;
-  cursor: pointer;
-}
-.key__add:hover,
-.key__token:hover,
-.key__refresh:hover:not(:disabled) { color: var(--ink-100); }
-.key__refresh:disabled { cursor: default; opacity: 0.6; }
-.key__add[hidden],
-.key__token[hidden],
-.key__refresh[hidden],
-.key__when[hidden] { display: none !important; }
-
-/* "09:56 itibarıyla · Yenile" on one line. */
-.key__when {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--s-1);
-}
-
-.key__figure {
-  color: var(--ink-100);
-  font-variant-numeric: tabular-nums lining-nums;
-}
-/* A reading main KEPT through an error state (ADR-001 stale-but-true): still a
- * real measurement, so it stays legible, but it is dimmed to the meta ink so it
- * cannot be mistaken for a current one. Its age line and the state sentence
- * below it are what say so in words. */
-.key[data-stale="true"] .key__figure { color: var(--ink-300); }
-.key[data-stale="true"] .key__split,
-.key[data-stale="true"] .key__asof { color: var(--ink-500); }
-.key__split { font-variant-numeric: tabular-nums lining-nums; }
-.key__asof { color: var(--ink-500); }
-.key__figure[hidden],
-.key__split[hidden],
-.key__asof[hidden],
-.key__state[hidden] { display: none !important; }
 
 /* ------------------------------------------------- per-model quota detail */
 /* One figure per model family, behind a disclosure. It borrows the cost

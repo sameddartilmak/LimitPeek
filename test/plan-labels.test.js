@@ -211,7 +211,7 @@ test.describe('the label reaches the right row and only that row', () => {
   test('every provider can carry its own, and each row shows only its own', () => {
     const labels = {
       claude: 'Max 20x', codex: 'Plus', gemini: 'AI Pro',
-      kimi: 'Coding', copilot: 'Business', antigravity: 'Ultra',
+      kimi: 'Coding', antigravity: 'Ultra',
     };
     const snap = buildSnapshot({
       ...base, planLabels: labels, codexEvents: [], gemini: installed, kimi: installed,
@@ -233,7 +233,7 @@ test.describe('the label reaches the right row and only that row', () => {
 
   test('every row declares the field, and only ever as a string or null', () => {
     const snap = buildSnapshot({ ...base, planLabels: { claude: 'Max 20x' }, codexEvents: [] });
-    for (const s of [snap, loadingSnapshot(NOW, undefined, undefined, undefined, undefined, { claude: 'Max 20x' })]) {
+    for (const s of [snap, loadingSnapshot(NOW, undefined, undefined, undefined, { claude: 'Max 20x' })]) {
       for (const p of s.providers) {
         assert.ok(p.planLabel === null || typeof p.planLabel === 'string', p.id);
       }
@@ -241,9 +241,9 @@ test.describe('the label reaches the right row and only that row', () => {
   });
 
   test('the loading skeleton carries it, so the row header does not shift when data lands', () => {
-    // Same reason the skeleton carries the key fields: the plan sits in the row
-    // HEADER, and it is a setting already known at cold start.
-    const skeleton = loadingSnapshot(NOW, undefined, undefined, undefined, undefined, { claude: 'Max 20x', codex: 'Plus' });
+    // The plan sits in the row HEADER, and it is a setting already known at
+    // cold start.
+    const skeleton = loadingSnapshot(NOW, undefined, undefined, undefined, { claude: 'Max 20x', codex: 'Plus' });
     assert.equal(rowOf(skeleton, 'claude').planLabel, 'Max 20x');
     assert.equal(rowOf(skeleton, 'codex').planLabel, 'Plus');
     assert.equal(rowOf(skeleton, 'kimi').planLabel, null);
@@ -322,7 +322,7 @@ test.describe('it never touches a number', () => {
     });
     const withLabels = buildSnapshot({
       ...base, events, codexEvents: [],
-      planLabels: { claude: 'Max 20x', codex: 'Plus', copilot: 'Business' },
+      planLabels: { claude: 'Max 20x', codex: 'Plus', gemini: 'AI Pro' },
     });
     const without = buildSnapshot({ ...base, events, codexEvents: [] });
     assert.equal(strip(withLabels), strip(without),

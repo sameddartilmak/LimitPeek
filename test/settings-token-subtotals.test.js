@@ -94,7 +94,6 @@ function history(over = {}) {
 
 const prov = (id, displayName) => ({
   id, displayName, accent: '#888', experimental: false,
-  keyCapable: false, keyState: 'none', keyStoredAt: null, creditUsage: null,
   enabled: true, connected: true, status: 'ok', planLabel: null,
   fiveHour: null, sevenDay: null, tokens: null,
   weeklyTokens: null, weeklyTokensWindowAnchored: null, weeklyTokenFloorCauses: [],
@@ -107,7 +106,6 @@ const PROVIDERS = [prov('claude', 'Claude Code'), prov('codex', 'Codex'), prov('
 function subtotalsOf(hist, providers = PROVIDERS) {
   const handle = settingsMod.createSettings({
     onToggle() {}, onTheme() {}, onBack() {}, onLanguage() {}, onGrain() {},
-    onAddKey() {}, onOpenTokenPage() {}, onRemoveKey() {},
   });
   const store = new storeMod.Store();
   store.set({ hasData: true, snapshot: { generatedAt: new Date(NOW).toISOString(), providers, usageHistory: hist, pendingUsage: [] } });

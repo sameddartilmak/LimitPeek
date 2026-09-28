@@ -63,11 +63,9 @@ import {
   tokens,
 } from '../format.js';
 import { t } from '../i18n.js';
-import { keyIsSource } from '../keys.js';
 import { allZero, hasTokenCount } from '../tokens.js';
 import { createCost, type CostHandle } from './cost.js';
 import { experimentalTag } from './experimental.js';
-import { createKeyBlock, type KeyBlockHandle } from './keys.js';
 import { createQuotas, type QuotaHandle } from './quotas.js';
 import { gripDots, providerMark } from './logo.js';
 import { createMeter, isDrawable, meterStateStep, type MeterHandle } from './meter.js';
@@ -78,12 +76,6 @@ export const REORDER_HELP_ID = 'reorder-help';
 export interface RowContext {
   onRetry(providerId: string): void;
   onSetup(providerId: string): void;
-  /** ADR-003 A8: the user asked to add an optional API key for this provider. */
-  onAddKey(providerId: string): void;
-  /** The user asked for the vendor's token page (owner's A8 addendum). */
-  onOpenTokenPage(providerId: string): void;
-  /** "Refresh now" for the credit figure. Resolves to whether main asked. */
-  onRefreshKey(providerId: string): Promise<boolean>;
   isBusy(providerId: string): boolean;
   /**
    * Wire this row's grip to the reorder controller. Called on every update so
@@ -160,7 +152,6 @@ export interface RowHandle {
 interface Refs {
   grip: HTMLButtonElement;
   cost: CostHandle;
-  keys: KeyBlockHandle;
   quotas: QuotaHandle;
   name: HTMLElement | null;
   plan: HTMLElement | null;
@@ -176,7 +167,6 @@ interface Refs {
 const EMPTY_REFS: Refs = {
   grip: null as unknown as HTMLButtonElement,
   cost: null as unknown as CostHandle,
-  keys: null as unknown as KeyBlockHandle,
   quotas: null as unknown as QuotaHandle,
   name: null,
   plan: null,
@@ -431,23 +421,16 @@ function buildPassive(
   const name = el('span', { class: 'row__name' }, p.displayName);
   const experimental = experimentalTag(p);
   const detailId = `setup-detail-${p.id}`;
-  // A stored key is this row's source (ADR-003 A8): main drops the setup offer
-  // then, and the key block below the name carries the row — the month's
-  // credits, or the one fixed sentence for the key's state. "Not connected
-  // yet" beside either would contradict it, so the line is not drawn at all.
-  const keyed = !p.setupAction && keyIsSource(p);
   const detailText = p.setupAction?.detail || t('row.notConnected');
-  const detail = keyed
-    ? null
-    : el(
-        'span',
-        { class: 'row__meta-detail', id: detailId, title: detailText },
-        detailText,
-      );
+  const detail = el(
+    'span',
+    { class: 'row__meta-detail', id: detailId, title: detailText },
+    detailText,
+  );
 
   replaceChildrenWith(body, [
     el('div', { class: 'row__line' }, name, experimental),
-    detail ? el('div', { class: 'row__meta' }, detail) : null,
+    el('div', { class: 'row__meta' }, detail),
   ]);
 
   refs.name = name;
@@ -462,7 +445,7 @@ function buildPassive(
     const label = p.setupAction.label;
     // The brightest ink goes to the action that will actually do something.
     // `not-installed` means the tool is not on this machine, so its button
-    // cannot connect anything; making six of those the loudest elements in the
+    // cannot connect anything; making five of those the loudest elements in the
     // panel would bury the one row the user can act on today.
     const actionable = p.setupAction.kind !== 'not-installed';
     const button = el(
@@ -727,14 +710,6 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
   // Same lifetime and the same reason: a disclosure that collapsed itself on
   // every 15s push would be unusable.
   refs.quotas = createQuotas(provider.id);
-  // ADR-003 A8: the optional key block. Created once, like the two above, and
-  // for the same reason — it holds a confirm step the user must not lose to a
-  // snapshot push.
-  refs.keys = createKeyBlock(provider.id, {
-    onAddKey: (id) => ctx.onAddKey(id),
-    onOpenTokenPage: (id) => ctx.onOpenTokenPage(id),
-    onRefreshKey: (id) => ctx.onRefreshKey(id),
-  });
 
   root.appendChild(refs.grip);
   root.appendChild(body);
@@ -802,8 +777,7 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     setAttr(refs.grip, 'aria-label', t('row.gripLabel', { name: p.displayName }));
     // The tray consequence is stated on the control that causes it, and it is
     // stated honestly: a provider with no five-hour window drives an empty
-    // ring, not a donut. Being connected is not enough: a Copilot row with a
-    // key is connected and still has no five-hour window.
+    // ring, not a donut.
     const title = t('row.gripTitle', { name: p.displayName });
     const trayNote = tray
       ? p.connected && p.fiveHour != null
@@ -904,13 +878,6 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
       body.appendChild(refs.cost.el);
     }
 
-    // ADR-003 A8: the optional key block, last in the row. It is an EXTRA, so
-    // it sits after everything the row shows without a key — and a provider
-    // that cannot use a key renders nothing here at all.
-    refs.keys.update(p);
-    if (!refs.keys.el.hidden && refs.keys.el.parentElement !== body) {
-      body.appendChild(refs.keys.el);
-    }
     // A row carrying the cost block is several times taller than a plain one,
     // and a vertically centred mark then floats away from the name it
     // identifies. The flag lets CSS pin it to the first line for those rows

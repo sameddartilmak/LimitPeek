@@ -18,9 +18,8 @@ const ALLOWED_SCHEMES = ['file:', 'devtools:', 'blob:', 'data:'];
 /**
  * A `file:` URL that names a REMOTE AUTHORITY is a network fetch wearing a
  * local scheme (security review of Phase B, F5): `file://server/share/x` is an
- * SMB round trip, and on the sessions this module hardens — which now include
- * the key-entry window, the one page where a secret is typed — "it is a file
- * URL" was the whole check. So the authority has to be empty, and a path that
+ * SMB round trip, and on the sessions this module hardens "it is a file URL"
+ * was the whole check. So the authority has to be empty, and a path that
  * begins with `//` is refused too, because Windows resolves `\\host\share` from
  * exactly that shape.
  *
@@ -66,8 +65,8 @@ function isAllowed(url) {
  * `setProxy` is per session and cannot be called before the session exists,
  * which is already inside the window WPAD ran in. So the control is the
  * process-global switch in `applyProcessHardening` — measured at zero — and this
- * is belt and braces for any session created later in the process's life (the
- * key-entry window's, and anything a future change adds).
+ * is belt and braces for any session created later in the process's life
+ * (anything a future change adds).
  *
  * `{ mode: 'direct' }` is a literal, in one place, on purpose: `'system'` here
  * would put WPAD back, and a variable would make which mode ships depend on a
@@ -149,69 +148,6 @@ function applySessionHardening(sess) {
 }
 
 /**
- * Sessions that must NOT get the block-all filter above (ADR-003 Amendment 5).
- *
- * Exactly one qualifies: the keyed request session (`main/keys/keyed-net.js`),
- * which carries its own single unfiltered allowlist for one host. Amendment 5
- * names the trap this arrangement avoids — Electron keeps only the LAST
- * `onBeforeRequest` listener per session, so two listeners on one session is a
- * race whose loser silently disappears. Rather than ordering them, the keyed
- * session is created THROUGH this module and never gets the block-all listener
- * at all.
- *
- * A WeakSet plus a scoped counter, because `session-created` is emitted
- * SYNCHRONOUSLY from inside `session.fromPartition()` — there is no moment
- * between "the session exists" and "the handler ran" in which a caller could
- * mark it.
- */
-const exemptSessions = new WeakSet();
-let creatingExempt = 0;
-
-/**
- * The ONE partition that may skip the block-all filter.
- *
- * Named here rather than taken from the caller (security review of Phase B,
- * F1): a function that exempts whatever partition it is handed is a function
- * whose next caller can create a page-hosting session with no outbound block —
- * and the exemption would be correct-looking code, not a bug anyone would spot
- * in review. The keyed request module asserts the same constant from its own
- * side, and a test covers the refusal.
- */
-const EXEMPT_PARTITION = 'usage-notch-keyed';
-
-/**
- * The keyed session, created with the block-all filter suppressed for it alone.
- * Every other control a session can carry (permissions, devices) is applied by
- * the caller, which is also the only module that may open a socket.
- *
- * Throws on any other partition. Loud, deliberately: it can only be reached by
- * a code change, the caller (`keys/keyed-net.js`) treats a throw as "no request
- * was made", and a silent fallback would hand back a session whose filter state
- * the caller cannot see.
- */
-function createExemptSession(partition) {
-  if (partition !== EXEMPT_PARTITION) {
-    // A fixed message: no partition string, so a future caller's value cannot
-    // reach a log through the error.
-    throw new Error('refused: only the keyed request session may skip the request filter');
-  }
-  creatingExempt += 1;
-  try {
-    const sess = session.fromPartition(partition);
-    exemptSessions.add(sess);
-    // Exempt from the request FILTER, never from the proxy mode: a session with
-    // no explicit mode is a session that may go looking for a PAC file, which is
-    // the one kind of outbound traffic the filter cannot cancel. Keeping this
-    // here rather than in the caller means EVERY session this app creates has an
-    // explicit mode, which is the property the test can assert.
-    setDirectProxy(sess);
-    return sess;
-  } finally {
-    creatingExempt -= 1;
-  }
-}
-
-/**
  * `defaultSession`? Its listener is registered ONCE, from `applyAll()`, and is
  * never re-registered (Amendment 5, K14a): doing it a second time — even with
  * identical code — is the shape of the edit that removes the global block, so it
@@ -245,28 +181,15 @@ function applyProcessHardening() {
    *
    * A SECOND, INDEPENDENT REASON this switch is the control and not belt and
    * braces (security review F4): `setDirectProxy` never awaits `setProxy` (it
-   * only attaches a `.catch`), and `keys/keyed-net.js` returns synchronously from
-   * its session setup and creates the request in the same turn — so the first
-   * keyed request can be created before DIRECT has actually been applied, which
-   * is harmless only because this switch has already made the process default
-   * direct. Per-session control could therefore never have been the control; do
-   * not "simplify" this line away on the strength of the `setProxy` calls.
+   * only attaches a `.catch`), so a session can be used before DIRECT has
+   * actually been applied, which is harmless only because this switch has
+   * already made the process default direct. Per-session control could
+   * therefore never have been the control; do not "simplify" this line away on
+   * the strength of the `setProxy` calls.
    *
    * It is a command-line switch and therefore must be appended BEFORE `ready`,
    * which is why it lives here: `applyAll()` runs at require time in
    * `src/main/index.js`, before the app is ready.
-   *
-   * THE COST, STATED PLAINLY: a user whose network needs a proxy cannot reach
-   * `api.github.com`, so the optional Copilot credit figure is unavailable to
-   * them and its row reports 'unreachable'. Nothing else changes — every other
-   * figure in this app comes from local files. The alternative was letting one
-   * optional feature put WPAD traffic on every machine that runs the app,
-   * including the ones with no key at all, and the ADR chose correctly.
-   *
-   * A keyed session on the system proxy (`mode: 'system'`) is deliberately NOT
-   * shipped: whether it re-introduces WPAD under this switch is unmeasured, and
-   * an unmeasured answer to "does the app phone home" is not an answer. The
-   * experiment is one line and belongs to devops (see the report).
    */
   app.commandLine.appendSwitch('no-proxy-server');
 
@@ -274,17 +197,12 @@ function applyProcessHardening() {
    * EVERY session, not just the default one (ADR-003 Amendment 5: "hardening
    * today covers defaultSession only").
    *
-   * The key-entry window runs on its own in-memory session, and a session with
-   * no request filter is a session with no outbound block — on the one window in
-   * this app where a secret is typed. Registered before `ready`, so a session
+   * A session with no request filter is a session with no outbound block, and
+   * the app makes no network request of its own on ANY session, so every one
+   * gets the same block-all filter. Registered before `ready`, so a session
    * created during startup cannot slip through.
    */
   app.on('session-created', (sess) => {
-    if (creatingExempt > 0) {
-      exemptSessions.add(sess);
-      return;
-    }
-    if (exemptSessions.has(sess)) return;
     if (isDefaultSession(sess)) return;
     applySessionHardening(sess);
   });
@@ -314,6 +232,4 @@ module.exports = {
   isLocalFileUrl,
   setDirectProxy,
   pinHostResolver,
-  createExemptSession,
-  EXEMPT_PARTITION,
 };

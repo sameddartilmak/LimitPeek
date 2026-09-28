@@ -7,7 +7,7 @@ const { IPC, IPC_EXT } = require('../shared/contract');
 const { Collector } = require('../core/collector');
 const { isProviderId, getProvider } = require('../core/providers');
 const { sanitizeOrder } = require('../core/order');
-const { withEnabled, resolveEnabled } = require('../core/enabled');
+const { withEnabled } = require('../core/enabled');
 const { isTheme } = require('../core/theme');
 const { createSetPlanLabelHandler } = require('./plan-label-ipc');
 const i18n = require('../core/i18n');
@@ -30,7 +30,6 @@ const {
 const { createSetAutostartHandler } = require('./autostart-ipc');
 const { createRefreshHandler } = require('./refresh-ipc');
 const { buildTrayImage } = require('./tray-icon');
-const { KeyService } = require('./keys/service');
 const {
   runClaudeSetup,
   runAntigravitySetup,
@@ -65,11 +64,6 @@ let panel = null;
 let tray = null;
 let collector = null;
 let settings = null;
-/**
- * The optional-key service (ADR-003 Amendment 8). Created in bootstrap BEFORE
- * the collector, because the collector reads its state on every snapshot.
- */
-let keys = null;
 let isQuitting = false;
 /** Last icon actually drawn, and last tooltip actually set. See updateTray(). */
 let trayIconDrawnKey = null;
@@ -78,7 +72,7 @@ let trayTooltipShown = null;
 let locale = null;
 
 /**
- * Upper bound on a SET_ORDER payload. The registry has six providers; anything
+ * Upper bound on a SET_ORDER payload. The registry has five providers; anything
  * an order of magnitude past that is a malformed or hostile message, not a
  * user dragging rows, and there is no reason to sanitise a list of any length.
  */
@@ -360,9 +354,6 @@ function registerIpc() {
       log.warn(`provider enablement could not be applied: code=${(err && err.code) || 'UNKNOWN'}`);
       return { ok: false };
     }
-    // A key is polled only while its provider is ENABLED (ADR-003 A5 K16), so
-    // this switch also starts and stops the poll.
-    keys.enablementChanged();
     return { ok: true };
   });
 
@@ -453,11 +444,6 @@ function registerIpc() {
     log,
   }));
 
-  // The optional-key channels (ADR-003 Amendment 5 + Amendment 8). Registered
-  // by the service itself, with the same `fromPanel` check every other channel
-  // here uses, plus its own sender check on the entry window's channels.
-  keys.registerIpc(ipcMain, fromPanel);
-
   ipcMain.handle(IPC.RUN_SETUP, async (event, providerId, confirmed) => {
     if (!fromPanel(event)) return { ok: false, message: i18n.t('ipc.invalidRequest') };
     if (!isProviderId(providerId)) {
@@ -470,11 +456,6 @@ function registerIpc() {
     // throws, never writes anything.
     if (provider.setupAction.kind === 'not-installed') {
       return { ok: false, message: i18n.t('provider.notInstalledHint', { provider: provider.displayName }) };
-    }
-    // A key-sourced row: the renderer opens the key window itself
-    // (requestKeyEntry). Reaching here means an older renderer; nothing runs.
-    if (provider.setupAction.kind === 'add-api-key') {
-      return { ok: false, message: provider.setupAction.detail };
     }
 
     if (provider.id === 'claude') {
@@ -640,23 +621,6 @@ function bootstrap() {
     if (!materialiseBridge(script)) log.warn(`bridge could not be refreshed on this launch: ${script}`);
   }
 
-  // Before the collector: it reads `keys.snapshotInput()` on every build, and a
-  // warm start must not paint a Copilot row that gains its key state a moment
-  // later. `load()` only reads the record envelope — it never decrypts.
-  keys = new KeyService({
-    isEnabled: (id) => resolveEnabled(settings.enabledProviders)[id] === true,
-    // The collector may not exist yet during load(); afterwards every state
-    // change rebuilds the snapshot, which pushes to the panel and the tray
-    // through the same listener every other update goes through.
-    onChange: () => { if (collector) collector.rebuild(); },
-    getLocale: () => preferences(),
-    // Same contract as the setup dialogs: an unpinned panel closes shortly
-    // after the pointer leaves it, and the pointer HAS to leave it to reach the
-    // key window. The user should come back to the row they started from.
-    beforePrompt: () => openPinned(),
-  });
-  keys.load();
-
   // Order matters. The collector is built and started FIRST, because
   // `start()` loads the persisted store synchronously and sets
   // `collector.snapshot`. The renderer calls `initialSnapshot()` during its
@@ -676,8 +640,6 @@ function bootstrap() {
     // is only started when that tool is on this machine.
     geminiWorkerPath: path.join(__dirname, '..', 'core', 'gemini', 'scan-worker.js'),
     kimiWorkerPath: path.join(__dirname, '..', 'core', 'kimi', 'scan-worker.js'),
-    // Read on every build; see `Collector.keysInput`.
-    keysInput: () => keys.snapshotInput(),
     hooksInput: () => ({ claude: hookInstalled('claude'), antigravity: hookInstalled('antigravity') }),
   });
 
@@ -875,9 +837,6 @@ app.on('window-all-closed', () => { /* stay resident in the tray */ });
 
 app.on('before-quit', () => {
   isQuitting = true;
-  // Before the collector: this cancels the key poll, aborts anything in flight,
-  // closes the keyed session's connections and destroys any entry window.
-  if (keys) keys.stop();
   if (collector) collector.stop();
   if (tray) tray.destroy();
   trayIconDrawnKey = null;

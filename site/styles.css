@@ -63,7 +63,6 @@
   --shadow-lift: 0 8px 18px -6px rgba(0, 0, 0, .7);
   --accent-shade: 100%;
   --accent-tint: 16%;
-  --mono-invert: 1;
   --wall-a: rgba(63, 184, 158, .20); --wall-b: #131A19; --wall-c: #0A0E0D;
   --taskbar: rgba(20, 25, 24, .86);
   --tray-track: var(--ink-400);
@@ -82,7 +81,6 @@
   --shadow-lift: 0 6px 14px -6px rgba(16, 32, 28, .34);
   --accent-shade: 66%;
   --accent-tint: 22%;
-  --mono-invert: 0;
   --wall-a: rgba(63, 184, 158, .28); --wall-b: #DCE7E3; --wall-c: #C5D3CE;
   --taskbar: rgba(240, 244, 242, .9);
   --tray-track: var(--ink-500);
@@ -415,8 +413,6 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
 .mark { width: 24px; height: 24px; transition: opacity 120ms linear; }
 .row--passive { min-height: 44px; align-items: center; }
 .row--passive .mark { width: 20px; height: 20px; filter: grayscale(1); opacity: .6; }
-.mark--mono { filter: invert(var(--mono-invert, 1)); }
-.row--passive .mark--mono { filter: grayscale(1) invert(var(--mono-invert)); }
 .grip__dots { position: absolute; left: 50%; top: 50%; width: 6px; height: 16px; margin: -8px 0 0 -3px; fill: var(--ink-200); opacity: 0; transition: opacity 120ms linear; pointer-events: none; }
 .grip:not(.grip--static):hover .mark, .grip:focus-visible .mark, .row.is-dragging .mark { opacity: .18; }
 .grip:not(.grip--static):hover .grip__dots, .grip:focus-visible .grip__dots, .row.is-dragging .grip__dots { opacity: .9; }
@@ -515,7 +511,6 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
 .settings__list > .settings__item:first-child { border-top: 0; }
 .settings__mark { flex: 0 0 auto; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; border: 1px solid transparent; }
 .settings__item[data-connected="false"] .settings__mark img { filter: grayscale(1); opacity: .6; }
-.settings__item[data-connected="false"] .settings__mark img.mark--mono { filter: grayscale(1) invert(var(--mono-invert)); }
 .settings__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .settings__name { color: var(--ink-200); }
 .settings__item[data-enabled="true"] .settings__name { color: var(--ink-100); }

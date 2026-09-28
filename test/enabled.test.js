@@ -24,7 +24,7 @@ const settingsStore = require('../src/main/settings');
 /* --------------------------------------------------------------- defaults */
 
 test.describe('shipped enablement', () => {
-  test('claude is added by default and the other five are not', () => {
+  test('claude is added by default and the other four are not', () => {
     const resolved = resolveEnabled(undefined);
     assert.equal(resolved.claude, true);
     for (const id of PROVIDER_IDS.filter((p) => p !== 'claude')) {
@@ -130,6 +130,38 @@ test.describe('settings.json survives a hand-edited enablement map', () => {
     fs.writeFileSync(path.join(dir, 'settings.json'), '{"enabledProvide', 'utf8');
     assert.deepEqual(resolveEnabled(settingsStore.load(dir).enabledProviders), { ...DEFAULT_ENABLED });
   });
+
+  test('a settings file naming a removed provider loads cleanly, and the id is dropped', () => {
+    // Migration: 0.4.3 and earlier shipped GitHub Copilot and saved its id in
+    // all three per-provider settings. The provider is gone, so the id is an
+    // unknown one — dropped silently, costing no other provider its setting.
+    const removed = 'copilot';
+    const dir = tmpDir();
+    const file = path.join(dir, 'settings.json');
+    fs.writeFileSync(file, JSON.stringify({
+      providerOrder: ['kimi', removed, 'claude'],
+      enabledProviders: { [removed]: true, kimi: true, claude: false },
+      planLabels: { [removed]: 'Business', claude: 'Max 20x' },
+    }), 'utf8');
+    const loaded = settingsStore.load(dir);
+    assert.deepEqual(loaded.providerOrder, ['kimi', 'claude']);
+    assert.deepEqual(loaded.enabledProviders, { claude: false, kimi: true });
+    assert.deepEqual(loaded.planLabels, { claude: 'Max 20x' });
+
+    // Saving writes the cleaned values back, so the id does not outlive the
+    // first change the user makes.
+    assert.equal(settingsStore.save(dir, loaded), true);
+    assert.equal(fs.readFileSync(file, 'utf8').includes(removed), false);
+
+    // And the snapshot built from it has every current row and nothing else.
+    const s = buildSnapshot({
+      now: Date.now(), events: [], rateLimits: null,
+      order: loaded.providerOrder, enabled: loaded.enabledProviders, planLabels: loaded.planLabels,
+    });
+    const rest = PROVIDER_IDS.filter((id) => id !== 'kimi' && id !== 'claude');
+    assert.deepEqual(s.providers.map((p) => p.id), ['kimi', 'claude', ...rest]);
+    assert.deepEqual(s.providers.filter((p) => p.enabled).map((p) => p.id), ['kimi']);
+  });
 });
 
 /* ------------------------------------------------------------- snapshot */
@@ -139,7 +171,7 @@ test.describe('the snapshot carries enablement for every provider', () => {
     return buildSnapshot({ now: Date.now(), events: [], rateLimits: null, ...over });
   }
 
-  test('all six rows are present whatever is enabled, because settings needs them', () => {
+  test('every row is present whatever is enabled, because settings needs them', () => {
     const s = snap({ enabled: { claude: false } });
     assert.equal(s.providers.length, PROVIDER_IDS.length);
     assert.equal(s.providers.every((p) => typeof p.enabled === 'boolean'), true);

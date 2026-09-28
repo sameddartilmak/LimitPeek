@@ -97,10 +97,9 @@ test('nothing in the shipped renderer upper-cases text, which would break Turkis
  * Packaging sync: `PACKAGE_GLOBS` in src/renderer/build.mjs is the renderer
  * lane's statement of what a packaged app must contain; `build.files` in
  * package.json is what electron-builder actually copies into the asar. The two
- * lists are owned by different lanes and nothing connected them, so
- * `key-entry.html` was added to one and not the other — a packaged build with
- * no key-entry page, on a flow that REFUSES rather than improvising a fallback
- * (src/main/keys/entry-window.js:60).
+ * lists are owned by different lanes and nothing connected them, so a second
+ * window's page was once added to one and not the other — a packaged build
+ * missing a page that main loads from disk and has no fallback for.
  *
  * The check is made against real files on disk, not glob string equality: every
  * file a PACKAGE_GLOB matches must survive build.files' include/exclude rules.
@@ -174,8 +173,8 @@ test('package.json build.files ships every file the renderer build declares as p
   const { build } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const declared = packagedRendererFiles();
   assert.ok(
-    declared.includes('src/renderer/key-entry.html'),
-    'key-entry.html is no longer matched by PACKAGE_GLOBS; if the page moved, move it here too',
+    declared.includes('src/renderer/index.html'),
+    'index.html is no longer matched by PACKAGE_GLOBS; if the page moved, move it here too',
   );
 
   const missing = declared.filter((rel) => !includedByBuildFiles(build.files, rel));

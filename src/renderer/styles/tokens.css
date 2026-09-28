@@ -124,7 +124,7 @@
 
   /* --- provider accent, per theme --------------------------------------
    * `ProviderSnapshot.accent` is one fixed brand hex chosen against a dark
-   * ground, and four of the six fail the 3:1 non-text threshold on a light
+   * ground, and four of the five fail the 3:1 non-text threshold on a light
    * one (#E8B84B, antigravity's yellow, lands at 1.47 — effectively invisible).
    * The renderer does not get a second accent from main and must not invent
    * one, so it SHADES the given hue instead: same hue, enough luminance to be

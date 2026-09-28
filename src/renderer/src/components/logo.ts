@@ -9,21 +9,12 @@
  * (`img-src 'self'`) permits and which never turns file-sourced text into
  * markup. So no parser and no `innerHTML` path exists here, exactly as before.
  *
- * TWO PAINTING TECHNIQUES, ONE ELEMENT
- * ------------------------------------
- * Which mechanism CSS uses is decided by what art the vendor ships (see
- * assets/logos/):
- *
- *   background-image  the multi-colour `<name>-color.svg` painted as-is, so the
- *                     ACTIVE mark carries the vendor's own colours. Greyed for
- *                     the inactive state with `filter: grayscale(1)` — the same
- *                     SVG, desaturated. Used for claude, codex, gemini,
- *                     antigravity and kimi.
- *   mask-image        github-copilot ships only a monochrome `currentColor`
- *                     mark, which renders black inside an <img> (invisible on a
- *                     dark ground). It is instead used as a MASK and filled with
- *                     a colour we control — the provider accent when active, an
- *                     ink token when not. Marked `.mark--mono`.
+ * PAINTING
+ * --------
+ * CSS paints the multi-colour `<name>-color.svg` (see assets/logos/) as a
+ * background-image, so the ACTIVE mark carries the vendor's own colours. It is
+ * greyed for the inactive state with `filter: grayscale(1)` — the same SVG,
+ * desaturated.
  *
  * ACTIVE vs INACTIVE
  * ------------------
@@ -58,7 +49,6 @@ const HAS_LOGO: ReadonlySet<string> = new Set<ProviderId>([
   'claude',
   'codex',
   'gemini',
-  'copilot',
   'antigravity',
   'kimi',
 ]);
@@ -74,10 +64,7 @@ const HAS_LOGO: ReadonlySet<string> = new Set<ProviderId>([
  */
 export function providerMark(id: string, active?: boolean): HTMLSpanElement {
   const known = HAS_LOGO.has(id);
-  // Copilot ships only a monochrome mark, so it is painted via a CSS mask in a
-  // colour we control rather than shown as flat art.
   const classes = ['mark'];
-  if (id === 'copilot') classes.push('mark--mono');
   if (!known) classes.push('mark--fallback');
 
   const span = el('span', {

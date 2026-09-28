@@ -31,13 +31,11 @@ const path = require('node:path');
  * THE RULE IS UNIVERSAL AND HAS NO EXCEPTION LIST
  * -----------------------------------------------
  * `\u200b` and a raw U+200B are the SAME value to the JavaScript parser, so a
- * file that genuinely needs one of these characters — `src/core/keys/validate.js`
- * strips them from pasted keys; `test/keys-validation.test.js` and
- * `test/quota-fields.test.js` embed them as fixtures to prove they are rejected
- * — loses nothing by writing the escape. That is what "allowed by construction"
- * means here: the legitimate uses were converted (behaviour verified identical
- * across all 65,536 BMP codepoints for `validate.js`), so this test needs no
- * allowlist, and an allowlist is exactly where the next corruption would hide.
+ * file that genuinely needs one of these characters — `test/quota-fields.test.js`
+ * embeds them as fixtures to prove they are rejected — loses nothing by writing
+ * the escape. That is what "allowed by construction" means here: the legitimate
+ * uses were converted, so this test needs no allowlist, and an allowlist is
+ * exactly where the next corruption would hide.
  *
  * Tab, newline and carriage return are the three literals a source file
  * legitimately contains as layout, so they are permitted.
@@ -130,7 +128,7 @@ test('the scan reaches every source tree, so it cannot pass by walking nothing',
   const rels = sourceFiles().map((f) => path.relative(ROOT, f).split(path.sep).join('/'));
   for (const must of [
     'src/core/plan-labels.js',
-    'src/core/keys/validate.js',
+    'test/quota-fields.test.js',
     'src/shared/contract.ts',
     'src/renderer/src/sanitize.ts',
     'test/token-merge-scan.test.js',

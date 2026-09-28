@@ -151,11 +151,6 @@ function claudeOk(pct5 = 62, pct7 = 41): ProviderSnapshot {
     displayName: 'Claude Code',
     accent: '#D97757',
     experimental: false,
-    // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-    keyCapable: false,
-    keyState: 'none',
-    keyStoredAt: null,
-    creditUsage: null,
     enabled: true,
     connected: true,
     status: 'ok',
@@ -183,11 +178,6 @@ function claudeUnknown(): ProviderSnapshot {
     displayName: 'Claude Code',
     accent: '#D97757',
     experimental: false,
-    // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-    keyCapable: false,
-    keyState: 'none',
-    keyStoredAt: null,
-    creditUsage: null,
     enabled: true,
     connected: true,
     status: 'ok',
@@ -215,11 +205,6 @@ function codexUnknown(): ProviderSnapshot {
     displayName: 'Codex CLI',
     accent: '#7FB3D5',
     experimental: false,
-    // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-    keyCapable: false,
-    keyState: 'none',
-    keyStoredAt: null,
-    creditUsage: null,
     enabled: true,
     connected: true,
     status: 'ok',
@@ -246,11 +231,6 @@ function geminiLoading(): ProviderSnapshot {
     displayName: 'Gemini CLI',
     accent: '#8AB4F8',
     experimental: true,
-    // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-    keyCapable: false,
-    keyState: 'none',
-    keyStoredAt: null,
-    creditUsage: null,
     enabled: true,
     connected: true,
     status: 'loading',
@@ -267,45 +247,12 @@ function geminiLoading(): ProviderSnapshot {
   };
 }
 
-function copilotStale(): ProviderSnapshot {
-  return {
-    id: 'copilot',
-    displayName: 'GitHub Copilot',
-    accent: '#A8B3CF',
-    experimental: false,
-    // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-    keyCapable: false,
-    keyState: 'none',
-    keyStoredAt: null,
-    creditUsage: null,
-    enabled: true,
-    connected: true,
-    status: 'stale',
-    planLabel: 'Business',
-    fiveHour: known(88, FIVE_H_RESET()),
-    sevenDay: known(73, SEVEN_D_RESET()),
-    tokens: breakdown(420_000),
-    weeklyTokens: breakdown(1_890_000),
-    weeklyTokensWindowAnchored: false,
-    weeklyTokenFloorCauses: [],
-    burnRatePerHour: 31_000,
-    weeklyCost: null,
-    setupAction: null,
-    lastGoodAt: iso(-3 * 60_000),
-  };
-}
-
 function antigravityError(): ProviderSnapshot {
   return {
     id: 'antigravity',
     displayName: 'Antigravity',
     accent: '#B892E8',
     experimental: false,
-    // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-    keyCapable: false,
-    keyState: 'none',
-    keyStoredAt: null,
-    creditUsage: null,
     enabled: true,
     connected: true,
     status: 'error',
@@ -337,11 +284,6 @@ function claudeStaleCapture(pct5 = 6, pct7 = 10): ProviderSnapshot {
     displayName: 'Claude Code',
     accent: '#D97757',
     experimental: false,
-    // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-    keyCapable: false,
-    keyState: 'none',
-    keyStoredAt: null,
-    creditUsage: null,
     enabled: true,
     connected: true,
     status: 'stale',
@@ -383,11 +325,6 @@ function claudeCaptureExpired2(): ProviderSnapshot {
     displayName: 'Codex CLI',
     accent: '#7FB3D5',
     experimental: false,
-    // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-    keyCapable: false,
-    keyState: 'none',
-    keyStoredAt: null,
-    creditUsage: null,
     fiveHour: { ...(base.fiveHour as NonNullable<typeof base.fiveHour>), resetsAt: justPassed },
     sevenDay: { ...(base.sevenDay as NonNullable<typeof base.sevenDay>), resetsAt: justPassed },
   };
@@ -399,11 +336,6 @@ function kimiPassive(): ProviderSnapshot {
     displayName: 'Kimi',
     accent: '#5FD3A6',
     experimental: true,
-    // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-    keyCapable: false,
-    keyState: 'none',
-    keyStoredAt: null,
-    creditUsage: null,
     enabled: true,
     connected: false,
     status: 'passive',
@@ -436,12 +368,7 @@ function passive(
     displayName,
     accent,
     experimental: id === 'gemini' || id === 'kimi',
-    // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-    keyCapable: id === 'copilot',
-    keyState: 'none',
-    keyStoredAt: null,
-    creditUsage: null,
-    // The shipped default: Claude is added, the other five are offered in
+    // The shipped default: Claude is added, the other four are offered in
     // settings and are NOT rows in the main panel until the user adds them.
     enabled: false,
     connected: false,
@@ -486,9 +413,6 @@ export const SCENARIOS: readonly Scenario[] = [
     label: 'Tüm durumlar',
     bridgeAvailable: true,
     // Well inside CADENCE.STALE_AFTER_MS, so the healthy rows stay healthy.
-    // The one stale row carries its OWN age via lastGoodAt, which is the whole
-    // point of that field: a single failing provider must not make the other
-    // five look stale, and must not claim it was updated just now either.
     snapshot: () => ({
       generatedAt: iso(-45_000),
       pendingUsage: [],
@@ -496,7 +420,6 @@ export const SCENARIOS: readonly Scenario[] = [
         claudeOk(),
         codexUnknown(),
         geminiLoading(),
-        copilotStale(),
         antigravityError(),
         kimiPassive(),
       ],
@@ -538,9 +461,8 @@ export const SCENARIOS: readonly Scenario[] = [
       pendingUsage: [],
       providers: [
         claudeUnknown(),
-        passive('codex', 'Codex CLI', '#7FB3D5', 'Bulundu, henüz bağlı değil.', 'add-api-key'),
-        passive('gemini', 'Gemini CLI', '#8AB4F8', 'Bulundu, henüz bağlı değil.', 'add-api-key'),
-        passive('copilot', 'GitHub Copilot', '#A8B3CF', 'Bu makinede bulunamadı.'),
+        passive('codex', 'Codex CLI', '#7FB3D5', 'Bulundu, henüz bağlı değil.'),
+        passive('gemini', 'Gemini CLI', '#8AB4F8', 'Bulundu, henüz bağlı değil.'),
         passive('antigravity', 'Antigravity', '#B892E8', 'Bu makinede bulunamadı.'),
         passive('kimi', 'Kimi', '#5FD3A6', 'Bu makinede bulunamadı.'),
       ],
@@ -567,16 +489,11 @@ export const SCENARIOS: readonly Scenario[] = [
         },
         {
           ...claudeOk(94, 81),
-          id: 'copilot',
-          displayName: 'GitHub Copilot',
-          accent: '#A8B3CF',
+          id: 'codex',
+          displayName: 'Codex',
+          accent: '#10A37F',
           experimental: false,
-          // ADR-003 A8: only Copilot is key-capable, and nothing is stored here.
-          keyCapable: false,
-          keyState: 'none',
-          keyStoredAt: null,
-          creditUsage: null,
-          planLabel: 'Business',
+          planLabel: 'Plus',
           tokens: breakdown(420_000),
           weeklyTokens: breakdown(1_890_000),
           weeklyTokensWindowAnchored: false,
@@ -604,7 +521,7 @@ export const SCENARIOS: readonly Scenario[] = [
     snapshot: () => ({ generatedAt: iso(-2_000), providers: [], pendingUsage: [] }),
   },
   {
-    // The OTHER empty panel: six providers were found and the user removed
+    // The OTHER empty panel: five providers were found and the user removed
     // every row. Identical pixels to 'bos' unless the empty state says which
     // of the two it is, which is why both scenarios exist.
     id: 'hicbiri-ekli',
@@ -617,7 +534,6 @@ export const SCENARIOS: readonly Scenario[] = [
         { ...claudeOk(), enabled: false },
         { ...codexUnknown(), enabled: false },
         passive('gemini', 'Gemini CLI', '#8AB4F8', 'Bu makinede bulunamadı.'),
-        passive('copilot', 'GitHub Copilot', '#A8B3CF', 'Bu makinede bulunamadı.'),
         passive('antigravity', 'Antigravity', '#B892E8', 'Bu makinede bulunamadı.'),
         { ...kimiPassive(), enabled: false },
       ],

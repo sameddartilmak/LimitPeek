@@ -54,8 +54,6 @@ const TOAST_MS = 8000;
  * controller owns the list.
  */
 export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow'> {
-  /** ADR-003 A8: the user asked to remove the LOCAL copy of a provider's key. */
-  onRemoveKey(providerId: string): void;
   /** Take our statusLine hook out of a tool's settings. */
   onDisconnect(providerId: string): void;
   /** The user stated the plan they are on for this tool, or cleared it. */
@@ -159,10 +157,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
 
   const settings: SettingsHandle = createSettings({
     onToggle: (id, enabled) => ctx.onToggleProvider(id, enabled),
-    onRemoveKey: (id) => ctx.onRemoveKey(id),
     onDisconnect: (id) => ctx.onDisconnect(id),
     onPlanLabel: (id, label) => ctx.onPlanLabel(id, label),
-    onOpenTokenPage: (id) => ctx.onOpenTokenPage(id),
     onTheme: (theme) => ctx.onThemeChange(theme),
     onLanguage: (choice) => ctx.onLanguageChange(choice),
     onAutostart: (enabled) => ctx.onAutostartChange(enabled),
@@ -510,9 +506,6 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   const rowCtx: RowContext = {
     onRetry: (id) => ctx.onRetry(id),
     onSetup: (id) => ctx.onSetup(id),
-    onAddKey: (id) => ctx.onAddKey(id),
-    onOpenTokenPage: (id) => ctx.onOpenTokenPage(id),
-    onRefreshKey: (id) => ctx.onRefreshKey(id),
     isBusy: (id) => ctx.isBusy(id),
     isPending: (id) => ctx.isPending(id),
     attachGrip: (grip, id, name) => reorder.attach(grip, id, name),

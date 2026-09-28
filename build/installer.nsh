@@ -19,10 +19,11 @@
 ; A REAL uninstall also deletes the stored API key (ADR-003 Amendment 5, K12).
 ;
 ; `%LOCALAPPDATA%\UsageNotch\secrets` holds one DPAPI-encrypted record per
-; provider, written only if the user chose to add a key (src/core/paths.js,
-; secretsDir). Leaving it behind would leave a credential on a machine whose
-; owner just removed the program that asked for it — and nothing would ever
-; delete it, because the only code that can is being uninstalled.
+; provider, written only if the user chose to add a key in a version up to
+; 0.4.3 — the optional key was removed after that, and no current code writes
+; or reads this folder. An upgrade keeps it, so leaving it behind here would
+; leave a credential on a machine whose owner just removed the program that
+; asked for it, and nothing else would ever delete it.
 ;
 ; Guarded by the same isUpdated as the login item, and for a stronger reason:
 ; electron-builder runs the OLD uninstaller during an upgrade, so deleting the

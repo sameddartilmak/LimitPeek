@@ -30,10 +30,6 @@ const CH = {
   SET_PLAN_LABEL: 'prefs:set-plan-label',
   INITIAL_SNAPSHOT: 'usage:initial-snapshot',
   INITIAL_PREFERENCES: 'prefs:initial',
-  KEY_ENTRY: 'keys:request-entry',
-  KEY_REMOVE: 'keys:remove',
-  KEY_TOKEN_PAGE: 'keys:open-token-page',
-  KEY_REFRESH: 'keys:refresh',
   DISCONNECT_PROVIDER: 'provider:disconnect',
 };
 
@@ -225,51 +221,6 @@ contextBridge.exposeInMainWorld('usageNotch', {
   setPlanLabel: (providerId, label) =>
     ipcRenderer.invoke(CH.SET_PLAN_LABEL, String(providerId), String(label == null ? '' : label)),
 
-  /**
-   * Starts the optional-key flow (ADR-003 Amendment 5 K1/K3, Amendment 8).
-   *
-   * WRITE-ONLY, like every key channel on this bridge. There is no method here
-   * that returns a key, a masked key or its length — not because none is
-   * exposed today, but because none may ever be: the renderer's job is to show
-   * WHETHER a key is stored, and a "•••• 1234" affordance would need exactly the
-   * getter K3 forbids. The answer is whether main accepted the request.
-   *
-   * The id is coerced to a string here and validated in main against the
-   * hard-coded key-capable table; it selects a table entry and never reaches a
-   * URL, a path or a file name.
-   *
-   * @param {string} providerId
-   * @returns {Promise<{ok:boolean}>}
-   */
-  requestKeyEntry: (providerId) => ipcRenderer.invoke(CH.KEY_ENTRY, String(providerId)),
-
-  /**
-   * Deletes the LOCAL copy of a provider's key. Not revocation — that is the
-   * user's own step at the vendor, and the copy says so.
-   *
-   * @param {string} providerId
-   * @returns {Promise<{ok:boolean}>}
-   */
-  removeKey: (providerId) => ipcRenderer.invoke(CH.KEY_REMOVE, String(providerId)),
-
-  /**
-   * Opens the provider's token-creation page in the default browser, for the
-   * states where a new key is the fix. Main holds the URL as a literal; nothing
-   * sent from here reaches it.
-   *
-   * @param {string} providerId
-   * @returns {Promise<{ok:boolean}>}
-   */
-  openTokenPage: (providerId) => ipcRenderer.invoke(CH.KEY_TOKEN_PAGE, String(providerId)),
-
-  /**
-   * "Refresh now" for the credit figure. Main's schedule decides whether a
-   * request is made; the answer carries nothing but that.
-   *
-   * @param {string} providerId
-   * @returns {Promise<{ok:boolean}>}
-   */
-  refreshKey: (providerId) => ipcRenderer.invoke(CH.KEY_REFRESH, String(providerId)),
   /** Takes our statusLine hook out of a tool's settings; main confirms natively. */
   disconnectProvider: (providerId) => ipcRenderer.invoke(CH.DISCONNECT_PROVIDER, String(providerId)),
 

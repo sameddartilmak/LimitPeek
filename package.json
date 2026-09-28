@@ -37,7 +37,6 @@
       "src/core/**",
       "src/shared/**",
       "src/renderer/index.html",
-      "src/renderer/key-entry.html",
       "src/renderer/dist/**",
       "src/renderer/styles/**",
       "src/renderer/assets/**",

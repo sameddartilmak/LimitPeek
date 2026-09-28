@@ -112,7 +112,7 @@ test.describe('the stored order cannot inject an id the registry does not have',
 
   test('a duplicated id in the stored order is honoured once, at its first position', () => {
     const out = applyOrder(PROVIDER_IDS.map((id) => ({ id })), ['kimi', 'claude', 'kimi']);
-    assert.deepEqual(out.map((p) => p.id), ['kimi', 'claude', 'codex', 'gemini', 'copilot', 'antigravity']);
+    assert.deepEqual(out.map((p) => p.id), ['kimi', 'claude', 'codex', 'gemini', 'antigravity']);
   });
 
   test('a provider that disappeared between sessions costs no other row its place', () => {

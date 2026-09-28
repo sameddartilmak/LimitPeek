@@ -84,13 +84,6 @@ function makeBridge(scenario: Scenario): Bridge {
   return {
     available: scenario.bridgeAvailable,
 
-    // ADR-003 A8: the harness has no main process, so the key channels answer
-    // "nothing happened" rather than pretending a window opened.
-    requestKeyEntry: async () => false,
-    removeKey: async () => false,
-    openTokenPage: async () => false,
-    refreshKey: async () => false,
-
     initialSnapshot: () => base,
 
     onSnapshot(listener) {

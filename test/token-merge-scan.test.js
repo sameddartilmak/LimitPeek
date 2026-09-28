@@ -22,7 +22,7 @@ const path = require('node:path');
  * renderer is where the temptation is (it has the map and it needs a headline).
  *
  * Comment lines are stripped before every scan, exactly as the network scan in
- * `contract-mirror.test.js` and the key scans in `keys-source-scan.test.js` do:
+ * `contract-mirror.test.js` does:
  * prose that NAMES the forbidden operation in order to forbid it is
  * documentation, and turning it into a failure would push the reasoning out of
  * the files that need to carry it.
