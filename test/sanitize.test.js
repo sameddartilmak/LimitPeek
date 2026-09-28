@@ -349,11 +349,11 @@ test.describe('enabled decides whether a row exists at all', () => {
   test('a whole snapshot of malformed flags still renders something', () => {
     const raw = {
       generatedAt: '2026-09-08T15:00:00.000Z',
-      providers: ['claude', 'codex', 'gemini', 'antigravity', 'kimi'].map((id, i) => ({
+      providers: ['claude', 'codex', 'antigravity', 'kimi', 'qwen', 'grok'].map((id, i) => ({
         id,
         displayName: id,
         accent: '#6B7A77',
-        enabled: [undefined, null, 'false', 0, NaN][i],
+        enabled: [undefined, null, 'false', 0, NaN, ''][i],
         connected: false,
         status: 'passive',
         planLabel: null,
@@ -365,7 +365,7 @@ test.describe('enabled decides whether a row exists at all', () => {
       })),
     };
     const out = s.sanitizeSnapshot(raw);
-    assert.equal(out.providers.length, 5);
+    assert.equal(out.providers.length, 6);
     assert.equal(out.providers.every((p) => p.enabled === true), true,
       'a corrupt producer must not be able to empty the panel');
   });
@@ -429,7 +429,7 @@ test.describe('enabled decides whether a row exists at all', () => {
       })),
     };
     const out = s.sanitizeSnapshot(raw);
-    assert.equal(out.providers.length, 5, 'settings still needs every row');
+    assert.equal(out.providers.length, 6, 'settings still needs every row');
     assert.equal(out.providers.some((p) => p.enabled), false);
   });
 });
@@ -730,7 +730,7 @@ test.describe('the per-model breakdown survives the boundary', () => {
           openai: { input: 9, output: 9, cacheWrite: 9, cacheRead: 9, billable: 27 },
           // Unreadable: DROPPED, not zeroed. No entry reads as "nothing to
           // show"; a zero would read as "this tool used nothing".
-          gemini: { billable: 'çok' },
+          qwen: { billable: 'çok' },
         },
       })],
       months: [], pricesAsOf: '2026-06-24',

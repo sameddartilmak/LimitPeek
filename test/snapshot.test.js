@@ -14,10 +14,10 @@ const { PROVIDER_IDS, PROVIDERS } = require('../src/core/providers');
  * registry rather than listed, because the list changes every time a row is
  * wired and a hard-coded copy of it silently stops testing the new one.
  */
-// A provider we cannot collect, OR a local-log provider (Gemini, Kimi) whose tool
-// is not installed: buildSnapshot is given no `gemini`/`kimi` input here, which
+// A provider we cannot collect, OR a local-log provider (Kimi, Qwen, Grok) whose
+// tool is not installed: buildSnapshot is given no `kimi`/`qwen`/`grok` input here, which
 // is exactly the not-installed state (ADR-003 A6).
-const PASSIVE_IDS = PROVIDERS.filter((p) => p.live !== true || p.id === 'gemini' || p.id === 'kimi').map((p) => p.id);
+const PASSIVE_IDS = PROVIDERS.filter((p) => p.live !== true || ['kimi', 'qwen', 'grok'].includes(p.id)).map((p) => p.id);
 
 const HOUR = 60 * 60 * 1000;
 const NOW = Date.parse('2026-09-08T12:00:00.000Z');
@@ -267,19 +267,19 @@ test.describe('fresh capture -> certainty known, verbatim', () => {
 });
 
 test.describe('provider registry shape', () => {
-  test('all five providers are present, in order, exactly once', () => {
+  test('all six providers are present, in order, exactly once', () => {
     const snap = buildSnapshot({ now: NOW, events: [], rateLimits: { state: 'missing' }, scanOk: true });
     assert.deepEqual(snap.providers.map((p) => p.id), PROVIDER_IDS);
-    assert.deepEqual(PROVIDER_IDS, ['claude', 'codex', 'gemini', 'antigravity', 'kimi']);
+    assert.deepEqual(PROVIDER_IDS, ['claude', 'codex', 'antigravity', 'kimi', 'qwen', 'grok']);
   });
 
   test('the passive providers show no numbers at all', () => {
     // Was "the five passive providers". Antigravity left this set when its
     // documented `agy` statusline hook was wired, and Codex left it when its
     // session-rollout rate limits were read; the set is now read off the
-    // registry's `live` flag, so the assertions below are unchanged. Gemini and
-    // Kimi are live since ADR-003 A6 but stay in this set while not installed.
-    assert.deepEqual(PASSIVE_IDS, ['gemini', 'kimi']);
+    // registry's `live` flag, so the assertions below are unchanged. Kimi, Qwen
+    // and Grok are live (ADR-003 A6) but stay in this set while not installed.
+    assert.deepEqual(PASSIVE_IDS, ['kimi', 'qwen', 'grok']);
     const snap = buildSnapshot({ now: NOW, events: [ev({ output: 100 })], rateLimits: { state: 'missing' }, scanOk: true });
     for (const p of snap.providers.filter((x) => PASSIVE_IDS.includes(x.id))) {
       assert.equal(p.status, 'passive');
@@ -321,9 +321,10 @@ test.describe('provider registry shape', () => {
     assert.deepEqual(accents, {
       claude: '#C96442',
       codex: '#10A37F',
-      gemini: '#4386F5',
       antigravity: '#E8B84B',
       kimi: '#2B6BE8',
+      qwen: '#6D5DFC',
+      grok: '#D946EF',
     });
   });
 
@@ -907,7 +908,7 @@ test.describe('just after a weekly reset, a zero week is a measurement and says 
   });
 
   test('every local-log row reads the same way just after its own reset', () => {
-    // Codex anchors to its OWN weekly reset; Gemini and Kimi never anchor.
+    // Codex anchors to its OWN weekly reset; Kimi, Qwen and Grok never anchor.
     const s = buildSnapshot({
       now: NOW, events, rateLimits: justReset, scanOk: true,
       codexEvents: [{ ts: NOW - 3 * HOUR, model: 'gpt-5.6-sol', tier: 'standard', inputUncached: 10, cachedInput: 0, cacheWrite: 0, output: 20 }],

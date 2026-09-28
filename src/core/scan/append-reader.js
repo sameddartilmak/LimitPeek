@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Incremental line reading for append-only JSONL logs written by OTHER tools
- * (Gemini CLI chat recordings, Kimi Code wire journals).
+ * (Kimi Code wire journals, Qwen Code usage logs).
  *
  * The same discipline as the Codex rollout reader (codex/usage.js), restated
  * here as a small shared module for the readers added after it rather than

@@ -334,8 +334,8 @@ test.describe('the five-hour figure is not deleted — it moves into the title, 
 
   test('no cause is carried in it either — the floor marker left the tooltip too', () => {
     const title = titleOf({
-      id: 'gemini',
-      displayName: 'Gemini',
+      id: 'qwen',
+      displayName: 'Qwen Code',
       weeklyTokens: tk(600_000),
       weeklyTokensWindowAnchored: false,
       weeklyTokenFloorCauses: ['unread-range', 'unrecorded-calls'],
@@ -357,9 +357,9 @@ test.describe('the burn rate beside the count stays a five-hour figure', () => {
   });
 });
 
-test.describe('Gemini CLI and Kimi Code are never labelled a quota week (ADR-003 A6)', () => {
+test.describe('Kimi Code, Qwen Code and Grok Build are never labelled a quota week (ADR-003 A6)', () => {
   test('main reports a trailing window for them once scanned, and the row says so', () => {
-    for (const id of ['gemini', 'kimi']) {
+    for (const id of ['kimi', 'qwen', 'grok']) {
       const text = metaOf({ id, displayName: id, weeklyTokens: tk(600_000), weeklyTokensWindowAnchored: false });
       assert.equal(text, labelled('row.tokens.last7', fmt.tokens(600_000)), id);
     }

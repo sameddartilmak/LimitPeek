@@ -676,8 +676,9 @@ interface UsageHandleLocal {
  * cost block's shape (ADR-004 A3: nobody reads a wall of text).
  *
  * One compact line per tool in `usageProviders` with its price source and date:
- * "Claude Code · 1 Ağu 2026 fiyatları", "Gemini · Gemini API standart, 10 Eyl
- * 2026", "Kimi · fiyat yayımlamıyor". Nothing else: the "en az" lead and the
+ * "Claude Code · 1 Ağu 2026 fiyatları", "Qwen Code · Alibaba Cloud Model
+ * Studio, 28 Eyl 2026", "Grok Build · xAI'nin bildirdiği tutar", "Kimi · fiyat
+ * yayımlamıyor". Nothing else: the "en az" lead and the
  * per-tool causes behind "Neden en az?" went with the floor marker.
  *
  * A date is stated only for a table that priced something in these figures
@@ -710,20 +711,23 @@ function noteModel(history: UsageHistory | null, known: readonly ProviderSnapsho
   for (const id of tools) {
     const tool = nameOf(id);
     const date = legacy ? history?.pricesAsOf : byDate[id];
-    // Only Kimi has no price table (contract: never in pricesAsOfByProvider).
-    const hasTable = !!date || id !== 'kimi';
+    // Kimi has no price table and Grok's amounts are xAI's own (contract:
+    // neither is ever in pricesAsOfByProvider).
+    const hasTable = !!date || (id !== 'kimi' && id !== 'grok');
 
     sources.push({
       id,
-      text: !hasTable
-        ? t('settings.usage.source.none', { tool })
-        : id === 'gemini'
-          ? date
-            ? t('settings.usage.source.gemini', { date: priceDateShort(date) })
-            : t('settings.usage.source.geminiNoDate')
-          : date
-            ? t('settings.usage.source.date', { tool, date: priceDateShort(date) })
-            : t('settings.usage.source.dateMissing', { tool }),
+      text: id === 'grok'
+        ? t('settings.usage.source.grok', { tool })
+        : !hasTable
+          ? t('settings.usage.source.none', { tool })
+          : id === 'qwen'
+            ? date
+              ? t('settings.usage.source.qwen', { tool, date: priceDateShort(date) })
+              : t('settings.usage.source.qwenNoDate', { tool })
+            : date
+              ? t('settings.usage.source.date', { tool, date: priceDateShort(date) })
+              : t('settings.usage.source.dateMissing', { tool }),
     });
   }
   return { sources, empty: false };
@@ -744,9 +748,11 @@ function noteModel(history: UsageHistory | null, known: readonly ProviderSnapsho
 const PLAN_CHOICES: Partial<Record<ProviderSnapshot['id'], readonly string[]>> = {
   claude: ['Pro', 'Max 5x', 'Max 20x'],
   codex: ['Plus', 'Pro', 'Business', 'Enterprise'],
-  gemini: ['Free', 'Google AI Pro', 'Google AI Ultra'],
   kimi: [],
   antigravity: [],
+  // No plan list we could verify for either: no control, as for Kimi.
+  qwen: [],
+  grok: [],
 };
 
 function planChoices(id: ProviderSnapshot['id']): readonly string[] {
@@ -757,9 +763,10 @@ function planChoices(id: ProviderSnapshot['id']): readonly string[] {
 const NOTE_TOOL_NAMES: Record<ProviderSnapshot['id'], string> = {
   claude: 'Claude Code',
   codex: 'Codex',
-  gemini: 'Gemini',
   antigravity: 'Antigravity',
   kimi: 'Kimi',
+  qwen: 'Qwen Code',
+  grok: 'Grok Build',
 };
 
 

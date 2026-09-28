@@ -404,9 +404,10 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
 .tile--claude { --accent: #C96442; }
 .tile--codex { --accent: #10A37F; }
 .tile--antigravity { --accent: #E8B84B; }
-.tile--gemini { --accent: #4386F5; }
 .tile--kimi { --accent: #2B6BE8; }
-.tile--claude, .tile--codex, .tile--antigravity, .tile--gemini, .tile--kimi {
+.tile--qwen { --accent: #6D5DFC; }
+.tile--grok { --accent: #D946EF; }
+.tile--claude, .tile--codex, .tile--antigravity, .tile--kimi, .tile--qwen, .tile--grok {
   background: color-mix(in srgb, var(--accent) var(--accent-tint, 16%), var(--ink-800, #171D1C));
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }

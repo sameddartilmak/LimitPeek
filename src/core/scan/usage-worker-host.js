@@ -4,7 +4,7 @@ const log = require('../log');
 const { sameEvents } = require('../same-events');
 
 /**
- * The long-lived scan worker protocol shared by the Gemini and Kimi readers.
+ * The long-lived scan worker protocol shared by the local-log usage readers.
  * Identical to the Codex worker's (codex/scan-worker.js), which it mirrors:
  * the scanner and its per-file cache live in the worker, so a rescan only reads
  * what changed, and the main thread never opens a chat log for usage.

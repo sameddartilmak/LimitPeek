@@ -93,7 +93,7 @@ test.describe('the per-tool map', () => {
     const got = plan.sanitizePlanLabels({
       claude: 'Max 20x',
       codex: '  Plus  ',
-      gemini: '',
+      qwen: '',
       kimi: 42,
       notATool: 'Enterprise',
       __proto__: 'hostile',
@@ -184,7 +184,7 @@ test.describe('migrating the legacy single planLabel', () => {
   test('settings.load() caps and trims what it reads from a hand-edited file', () => {
     const dir = tmpdir();
     fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({
-      planLabels: { claude: `  ${'z'.repeat(80)}  `, codex: '', notATool: 'x', gemini: 7 },
+      planLabels: { claude: `  ${'z'.repeat(80)}  `, codex: '', notATool: 'x', qwen: 7 },
     }));
     assert.deepEqual(settingsStore.load(dir).planLabels, { claude: 'z'.repeat(24) });
   });
@@ -210,11 +210,11 @@ test.describe('the label reaches the right row and only that row', () => {
 
   test('every provider can carry its own, and each row shows only its own', () => {
     const labels = {
-      claude: 'Max 20x', codex: 'Plus', gemini: 'AI Pro',
-      kimi: 'Coding', antigravity: 'Ultra',
+      claude: 'Max 20x', codex: 'Plus', qwen: 'Coding Plan',
+      kimi: 'Coding', antigravity: 'Ultra', grok: 'SuperGrok',
     };
     const snap = buildSnapshot({
-      ...base, planLabels: labels, codexEvents: [], gemini: installed, kimi: installed,
+      ...base, planLabels: labels, codexEvents: [], kimi: installed, qwen: installed, grok: installed,
       enabled: Object.fromEntries(PROVIDER_IDS.map((id) => [id, true])),
     });
     for (const id of PROVIDER_IDS) {
@@ -295,7 +295,7 @@ test.describe('it never touches a number', () => {
 
   test('the pricing, aggregate and history modules never mention it at all', () => {
     for (const rel of ['pricing.js', 'aggregate.js', 'history.js', 'codex/pricing.js',
-      'gemini/pricing.js', 'kimi/cost.js', 'donut.js', 'ratelimits.js']) {
+      'qwen/pricing.js', 'grok/cost.js', 'antigravity/cost.js', 'kimi/cost.js', 'donut.js', 'ratelimits.js']) {
       const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', rel), 'utf8');
       assert.equal(/planLabel/.test(src), false, `${rel} must not reference planLabel`);
     }
@@ -322,7 +322,7 @@ test.describe('it never touches a number', () => {
     });
     const withLabels = buildSnapshot({
       ...base, events, codexEvents: [],
-      planLabels: { claude: 'Max 20x', codex: 'Plus', gemini: 'AI Pro' },
+      planLabels: { claude: 'Max 20x', codex: 'Plus', qwen: 'Coding Plan' },
     });
     const without = buildSnapshot({ ...base, events, codexEvents: [] });
     assert.equal(strip(withLabels), strip(without),

@@ -32,7 +32,7 @@ function p(id, name, accent, connected, status, extra) {
       displayName: name,
       accent,
       // ADR-003 A6.4: the registry fact main sends for every provider.
-      experimental: id === 'gemini' || id === 'kimi',
+      experimental: id === 'kimi' || id === 'qwen' || id === 'grok',
       // Every fixture row starts ADDED; the settings checks flip these at
       // runtime through __probe so the earlier structural checks still see
       // all five rows.
@@ -71,7 +71,7 @@ const LIVE_COST = {
   fallbackWriteEvents: 0,
   cacheWriteEvents: 1781,
   // ADR-002 A3.15: every log in the window was read. Spread into the costs
-  // below, so the stale gemini row carries false too — its limit capture is
+  // below, so the stale qwen row carries false too — its limit capture is
   // old, its logs are not incomplete, and the cost block must not say so.
   sourceIncomplete: false,
   assumedTierEvents: 0,
@@ -235,18 +235,48 @@ const MANY_UNPRICED_COST = {
   unrecordedWriteEvents: 0,
 };
 /**
- * ADR-003 A6: a Gemini CLI week. Priced at Gemini API standard rates, always a
- * floor (unrecorded calls), with long-prompt and tool-token counts and one
- * usage group that recorded no model ('no-model', never printed raw).
+ * A Qwen Code week. Priced at Alibaba Cloud Model Studio rates, always a floor
+ * (unrecorded calls), with a request above its model's last published tier
+ * ('standard-long-context', never printed raw) and another vendor's model
+ * served through the Coding Plan (unpriced).
  */
-const GEMINI_COST = {
+const QWEN_COST = {
   totalUsd: 12.34,
   byClass: { input: 5.1, output: 6.2, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 1.04 },
   byModel: [
-    { model: 'gemini-2.5-pro', speed: 'standard', pricedAs: 'gemini-2.5-pro|standard', usd: 12.34,
+    { model: 'qwen3-coder-plus', speed: 'standard', pricedAs: 'qwen3-coder-plus', usd: 12.34,
       tokens: { input: 900000, output: 120000, cacheWrite: 0, cacheRead: 400000, billable: 1020000 } },
-    { model: 'unknown', speed: 'no-model', pricedAs: null, usd: null,
+    { model: 'qwen3-coder-next', speed: 'standard-long-context', pricedAs: null, usd: null,
+      tokens: { input: 300000, output: 800, cacheWrite: 0, cacheRead: 0, billable: 300800 } },
+    { model: 'glm-5', speed: 'standard', pricedAs: null, usd: null,
       tokens: { input: 4000, output: 800, cacheWrite: 0, cacheRead: 0, billable: 4800 } },
+  ],
+  unpricedModels: ['glm-5', 'qwen3-coder-next'],
+  fallbackWriteEvents: 0,
+  cacheWriteEvents: 0,
+  unrecordedWriteEvents: 0,
+  sourceIncomplete: false,
+  assumedTierEvents: 0,
+  fastRequestedEvents: 0,
+  unrecordedCalls: true,
+  longPromptFloorEvents: 0,
+  toolTokenEvents: 0,
+  partialUsageEvents: 0,
+  pricesAsOf: '2026-09-28',
+  windowStart: iso(-6 * 864e5),
+  windowEnd: iso(-1000),
+  windowAnchored: false,
+};
+/**
+ * A Grok Build week: the amount xAI reported per turn, one turn marked partial,
+ * no price table and so no date, and no class split (byClass all zero).
+ */
+const GROK_COST = {
+  totalUsd: 0.51,
+  byClass: { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
+  byModel: [
+    { model: 'grok-4.6', speed: 'reported', pricedAs: 'grok-4.6', usd: 0.51,
+      tokens: { input: 80000, output: 12000, cacheWrite: 6000, cacheRead: 300000, billable: 98000 } },
   ],
   unpricedModels: [],
   fallbackWriteEvents: 0,
@@ -255,13 +285,25 @@ const GEMINI_COST = {
   sourceIncomplete: false,
   assumedTierEvents: 0,
   fastRequestedEvents: 0,
-  unrecordedCalls: true,
-  longPromptFloorEvents: 3,
-  toolTokenEvents: 7,
-  pricesAsOf: '2026-09-10',
+  unrecordedCalls: false,
+  longPromptFloorEvents: 0,
+  toolTokenEvents: 0,
+  partialUsageEvents: 1,
+  pricesAsOf: '',
   windowStart: iso(-6 * 864e5),
   windowEnd: iso(-1000),
   windowAnchored: false,
+};
+/** A Grok Build week whose every turn reported no cost: unpriced, never $0. */
+const GROK_NONE_COST = {
+  ...GROK_COST,
+  totalUsd: 0,
+  byModel: [
+    { model: 'grok-4.6', speed: 'no-reported-cost', pricedAs: null, usd: null,
+      tokens: { input: 80000, output: 12000, cacheWrite: 6000, cacheRead: 300000, billable: 98000 } },
+  ],
+  unpricedModels: ['grok-4.6'],
+  partialUsageEvents: 0,
 };
 /** ADR-003 A6: a Kimi Code week. No price table: every row unpriced, pricesAsOf ''. */
 const KIMI_COST = {
@@ -283,6 +325,7 @@ const KIMI_COST = {
   unrecordedCalls: false,
   longPromptFloorEvents: 0,
   toolTokenEvents: 0,
+  partialUsageEvents: 0,
   pricesAsOf: '',
   windowStart: iso(-6 * 864e5),
   windowEnd: iso(-1000),
@@ -299,7 +342,9 @@ const PARTIAL_COST = {
   windowAnchored: true,
 };
 const NAMED_COSTS = {
-  gemini: GEMINI_COST,
+  qwen: QWEN_COST,
+  grok: GROK_COST,
+  grokNone: GROK_NONE_COST,
   kimi: KIMI_COST,
   ownerTiers: OWNER_TIERS_COST,
   tierFloor: TIER_FLOOR_COST,
@@ -377,7 +422,7 @@ const TINY_COST = {
   totalUsd: 0.004,
   byClass: { input: 0.0009, output: 0.002, cacheWrite5m: 0.0006, cacheWrite1h: 0.0004, cacheRead: 0.0001 },
   byModel: [LIVE_COST.byModel[1]],
-  // This cost sits on the GEMINI row, and Gemini CLI publishes no weekly reset,
+  // This cost sits on the QWEN row, and Qwen Code publishes no weekly reset,
   // so main can only ever price it over a trailing seven days
   // (`localUsageRow` passes anchored=false unconditionally). Inheriting
   // LIVE_COST's `windowAnchored: true` made the fixture a state main cannot
@@ -420,7 +465,7 @@ const FIXTURES = {
       weeklyTokensWindowAnchored: false,
       burnRatePerHour: 90_000,
     }),
-    p('gemini', 'Gemini', '#4386F5', false, 'passive', { setupAction: ADD }),
+    p('qwen', 'Qwen Code', '#6D5DFC', false, 'passive', { setupAction: ADD }),
     p('antigravity', 'Antigravity', '#E8B84B', false, 'passive', { setupAction: ADD }),
     p('kimi', 'Kimi', '#2B6BE8', false, 'passive', { setupAction: ADD }),
   ],
@@ -448,12 +493,12 @@ const FIXTURES = {
       burnRatePerHour: 90_000,
     }),
     // A stale row: the meter dims, and the cost figure must become a bound.
-    p('gemini', 'Gemini', '#4386F5', true, 'stale', {
+    p('qwen', 'Qwen Code', '#6D5DFC', true, 'stale', {
       weeklyCost: TINY_COST,
       fiveHour: win(31, 'known'),
       tokens: tok(120000),
       weeklyTokens: tok(600000),
-      // Gemini CLI is ALWAYS trailing (contract): it publishes no weekly reset.
+      // Qwen Code is ALWAYS trailing (contract): it publishes no weekly reset.
       weeklyTokensWindowAnchored: false,
       lastGoodAt: new Date(Date.now() - 40 * 60_000).toISOString(),
     }),
@@ -468,6 +513,8 @@ const FIXTURES = {
       modelQuotas: LIVE_QUOTAS,
     }),
     p('kimi', 'Kimi', '#2B6BE8', false, 'passive', { setupAction: ADD }),
+    // Last, so no geometry above it moves: the Grok Build checks connect it.
+    p('grok', 'Grok Build', '#D946EF', false, 'passive', { setupAction: ADD }),
   ],
 };
 

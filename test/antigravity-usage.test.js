@@ -22,7 +22,7 @@ const {
   createAntigravityUsageScanner, antigravityUsageEvents, sumAntigravityTokens, antigravityUsageInstallDir,
 } = require('../src/core/antigravity/usage');
 const { antigravityCost, priceFor } = require('../src/core/antigravity/cost');
-const geminiPricing = require('../src/core/gemini/pricing');
+const geminiPricing = require('../src/core/antigravity/gemini-pricing');
 const { buildSnapshot, _resetHistoryMemoForTests } = require('../src/core/snapshot');
 
 const HOUR = 60 * 60 * 1000;
@@ -345,7 +345,7 @@ test.describe('Antigravity notional cost', () => {
     const both = antigravityCost(events, before, after + 1, false);
     close(both.totalUsd, 4.575 + 9.15, 'each at its own rate');
     assert.equal(both.byModel[0].pricedAs, 'gemini-3.8-flash');
-    // The same table serves the Gemini CLI row, with the same date rule.
+    // The table itself answers the same date rule for any caller.
     assert.equal(geminiPricing.priceFor('gemini-3.8-flash', before).input, 0.75);
     assert.equal(geminiPricing.priceFor('gemini-3.8-flash', after).input, 1.50);
   });
@@ -456,7 +456,8 @@ test.describe('the collector reads Antigravity usage off the main thread', () =>
       antigravityQuotaFile: path.join(dir, 'antigravity-quota.json'),
       ideAppDataDir: path.join(dir, 'ide'),
       codexHome: path.join(dir, 'codex'),
-      geminiHome: path.join(dir, 'gemini-home'),
+      qwenHome: path.join(dir, 'qwen-home'),
+      grokHome: path.join(dir, 'grok-home'),
       kimiHome: path.join(dir, 'kimi-home'),
       antigravityUsageHome: home,
     });

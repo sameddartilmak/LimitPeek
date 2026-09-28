@@ -372,15 +372,19 @@ Kararların gerekçesi: `ADR-001` (orkestratör karar kaydı).
 (IDE deposundan beş saatlik yüzde + model kırılımı; `agy` kuruluysa haftalık
 yüzde; token/maliyet yok), Codex canlı (rollout'tan 5 saatlik ve haftalık
 yüzde, token sayıları ve model/katman bazlı API fiyatı karşılığı), açılışta
-başlatma, tepsi simgesi, tıklamayla açılan panel, beş sağlayıcı satırı, Bağla/Ekle
+başlatma, tepsi simgesi, tıklamayla açılan panel, altı sağlayıcı satırı, Bağla/Ekle
 düğmeleri.
 
-**Kısmen var:** Gemini ve Kimi kendi yerel kayıtlarından token (Gemini'de ayrıca standart
-API fiyatlarına göre kavramsal maliyet); ikisi de **limit yüzdesi yayımlamıyor**, o yüzden
-pencereler `bildirilmiyor` diyor ve satırlar gerçek bir kurulumda doğrulanana kadar
-"deneysel" işaretini taşıyor.
+**Kısmen var:** Kimi Code, Qwen Code ve Grok Build kendi yerel kayıtlarından token
+(Qwen Code'da ayrıca Alibaba Cloud Model Studio fiyatlarına göre kavramsal maliyet; Grok
+Build'de xAI'nin oturum dosyasında bildirdiği maliyet); üçü de **limit yüzdesi
+yayımlamıyor**, o yüzden pencereler `bildirilmiyor` diyor ve satırlar gerçek bir kurulumda
+doğrulanana kadar "deneysel" işaretini taşıyor. Yalnızca modeli yapan şirketin kendi
+kodlama aracı izleniyor; Gemini CLI, Google onu bireysel kullanıcılar için kapattığı için
+(2026-06-18) kaldırıldı — yerine gelen Antigravity CLI, Antigravity satırında okunuyor.
 
-**Yok:** Gemini ve Kimi için limit yüzdesi (yayımlanan bir kaynak yok). Hiçbir satır uydurma sayı göstermiyor.
+**Yok:** Kimi Code, Qwen Code ve Grok Build için limit yüzdesi (yayımlanan bir kaynak yok).
+Hiçbir satır uydurma sayı göstermiyor.
 
 **Haftalık limit neden yok:** Depodaki 130 anahtarın tamamı tarandı, her
 base64 protobuf değeri çözüldü: tek bir kota yapısı var ve hiçbir yerde

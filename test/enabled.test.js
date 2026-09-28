@@ -162,6 +162,37 @@ test.describe('settings.json survives a hand-edited enablement map', () => {
     assert.deepEqual(s.providers.map((p) => p.id), ['kimi', 'claude', ...rest]);
     assert.deepEqual(s.providers.filter((p) => p.enabled).map((p) => p.id), ['kimi']);
   });
+
+  test('a 0.4.3 settings file naming Gemini CLI loads cleanly, and the new tools take their shipped defaults', () => {
+    // Migration: 0.4.3 shipped a 'gemini' row (Gemini CLI, removed 2026-09-28:
+    // Google retired it for consumers; Antigravity CLI replaces it and has its
+    // own row). A user who added it, moved it and typed a plan for it has the
+    // id in all three settings. It is dropped; nothing else moves; Qwen Code
+    // and Grok Build, which that file cannot name, are offered but not added.
+    const dir = tmpDir();
+    const file = path.join(dir, 'settings.json');
+    fs.writeFileSync(file, JSON.stringify({
+      providerOrder: ['gemini', 'antigravity', 'claude', 'codex', 'kimi'],
+      enabledProviders: { claude: true, codex: false, gemini: true, antigravity: true, kimi: false },
+      planLabels: { gemini: 'Google AI Pro', claude: 'Max 5x' },
+    }), 'utf8');
+    const loaded = settingsStore.load(dir);
+    assert.deepEqual(loaded.providerOrder, ['antigravity', 'claude', 'codex', 'kimi']);
+    assert.deepEqual(loaded.enabledProviders, { claude: true, codex: false, antigravity: true, kimi: false });
+    assert.deepEqual(loaded.planLabels, { claude: 'Max 5x' });
+
+    assert.equal(settingsStore.save(dir, loaded), true);
+    assert.equal(fs.readFileSync(file, 'utf8').includes('gemini'), false, 'the id does not outlive the first save');
+
+    const s = buildSnapshot({
+      now: Date.now(), events: [], rateLimits: null,
+      order: loaded.providerOrder, enabled: loaded.enabledProviders, planLabels: loaded.planLabels,
+    });
+    assert.deepEqual(s.providers.map((p) => p.id), ['antigravity', 'claude', 'codex', 'kimi', 'qwen', 'grok'],
+      'the new rows join after the stored order, in registry order');
+    assert.deepEqual(s.providers.filter((p) => p.enabled).map((p) => p.id), ['antigravity', 'claude']);
+    assert.equal(s.providers.some((p) => p.id === 'gemini'), false);
+  });
 });
 
 /* ------------------------------------------------------------- snapshot */

@@ -36,7 +36,7 @@
  *
  * PERFORMANCE AND PRIVACY
  * -----------------------
- * Same design as the Gemini and Codex scanners: long-lived worker, per-file cache
+ * Same design as the Codex scanner: long-lived worker, per-file cache
  * by size + mtime, appended files read from their last complete line, raw records
  * for RAW_DAYS and UTC 15-minute buckets before. A line is decoded only when its
  * head names a `usage.record` or `forked` record; only the alias, the time and

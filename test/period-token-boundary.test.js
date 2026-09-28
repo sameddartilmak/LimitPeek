@@ -21,7 +21,7 @@ const history = require('../src/core/history');
  * It tests ONE: the Claude period TOTAL, fingerprinted by cost. Measured by
  * mutation, four other in-window filters had no test at all — flipping
  * `ev.ts >= endMs` to `> endMs` (or `< startMs` to `<=`) in
- * `codex/pricing.js`, `gemini/pricing.js`, `kimi/cost.js` and in
+ * `codex/pricing.js`, the local tools' cost modules and in
  * `history.js`'s own `byModelUsageFrom` each left the suite fully green. The
  * last one is the worst of the four: `byModelUsageFrom` feeds the per-model
  * rows while `pricing.weeklyCost` feeds the period total and
@@ -52,10 +52,16 @@ const codexEv = (over) => ({
   inputUncached: 0, cachedInput: 0, cacheWrite: 0, output: 0,
   ...over,
 });
-/** A Gemini message, the shape `gemini/usage.js` emits. */
-const geminiEv = (over) => ({
-  ts: 0, model: 'gemini-2.5-pro',
-  input: 0, cached: 0, output: 0, thoughts: 0, tool: 0, longPrompt: false,
+/** A Qwen Code response, the shape `qwen/usage.js` emits. */
+const qwenEv = (over) => ({
+  ts: 0, model: 'qwen3-coder-plus', tier: 0,
+  input: 0, cached: 0, output: 0,
+  ...over,
+});
+/** A Grok Build turn, the shape `grok/usage.js` emits. */
+const grokEv = (over) => ({
+  ts: 0, model: 'grok-4.6',
+  input: 0, cacheRead: 0, cacheWrite: 0, output: 0, usd: 0.01, partial: false, incomplete: false,
   ...over,
 });
 /** A Kimi event, the shape `kimi/usage.js` emits. */
@@ -69,8 +75,9 @@ const kimiEv = (over) => ({
 function weeksFor(opts) {
   const { weeks } = history.usageHistory(opts.claude || [], NOW, {
     codexEvents: opts.codex || [],
-    geminiEvents: opts.gemini || [],
     kimiEvents: opts.kimi || [],
+    qwenEvents: opts.qwen || [],
+    grokEvents: opts.grok || [],
   });
   assert.equal(weeks.length, 2, 'the pair must span exactly two calendar weeks');
   return weeks;
@@ -140,10 +147,17 @@ test.describe('every tool\'s period boundary is half-open', () => {
     ],
   }));
 
-  boundaryCase('gemini', (onBoundary, before) => ({
-    gemini: [
-      geminiEv({ ts: W_START, output: onBoundary }),
-      geminiEv({ ts: W_START - 1, output: before }),
+  boundaryCase('qwen', (onBoundary, before) => ({
+    qwen: [
+      qwenEv({ ts: W_START, output: onBoundary }),
+      qwenEv({ ts: W_START - 1, output: before }),
+    ],
+  }));
+
+  boundaryCase('grok', (onBoundary, before) => ({
+    grok: [
+      grokEv({ ts: W_START, output: onBoundary }),
+      grokEv({ ts: W_START - 1, output: before }),
     ],
   }));
 
@@ -159,13 +173,14 @@ test.describe('the boundary holds when all four tools cross it at once', () => {
   const build = () => ({
     claude: [claudeEv({ ts: W_START, key: 'on', output: 1000 }), claudeEv({ ts: W_START - 1, key: 'b', output: 2000 })],
     codex: [codexEv({ ts: W_START, output: 1000 }), codexEv({ ts: W_START - 1, output: 2000 })],
-    gemini: [geminiEv({ ts: W_START, output: 1000 }), geminiEv({ ts: W_START - 1, output: 2000 })],
     kimi: [kimiEv({ ts: W_START, output: 1000 }), kimiEv({ ts: W_START - 1, output: 2000 })],
+    qwen: [qwenEv({ ts: W_START, output: 1000 }), qwenEv({ ts: W_START - 1, output: 2000 })],
+    grok: [grokEv({ ts: W_START, output: 1000 }), grokEv({ ts: W_START - 1, output: 2000 })],
   });
 
   test('each tool keeps its own count on its own side, and none is merged', () => {
     const weeks = weeksFor(build());
-    for (const id of ['claude', 'codex', 'gemini', 'kimi']) {
+    for (const id of ['claude', 'codex', 'kimi', 'qwen', 'grok']) {
       assert.equal(countFor(weeks[0], id).output, 1000, `${id}, new week`);
       assert.equal(countFor(weeks[1], id).output, 2000, `${id}, previous week`);
     }
@@ -175,7 +190,7 @@ test.describe('the boundary holds when all four tools cross it at once', () => {
     const period = weeksFor(build())[0];
     assert.deepEqual(
       Object.keys(period.tokensByProvider).sort(),
-      ['claude', 'codex', 'gemini', 'kimi'],
+      ['claude', 'codex', 'grok', 'kimi', 'qwen'],
       'one entry per tool, and nothing else',
     );
     // 4 x 1000 would be the banned merged figure; no entry may hold it.

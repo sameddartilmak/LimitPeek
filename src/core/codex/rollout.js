@@ -156,7 +156,7 @@ const refusedDirWarned = new Set();
 const refusedPaths = new Map();
 
 /**
- * `label` names the tree in the fixed log line ('codex sessions', 'gemini chats',
+ * `label` names the tree in the fixed log line ('codex sessions', 'qwen usage',
  * 'kimi sessions'). It is a code-chosen constant, never a path.
  */
 function refuse(key, code, label = 'codex sessions') {
@@ -236,7 +236,7 @@ function precheck(abs, depth = 0, budget = { hops: MAX_LINK_HOPS }) {
  * are followed. Refusals log one fixed code, never the path. Rollout FILES are
  * separately required to be regular files by lstat.
  *
- * The same guard serves every local reader (Gemini chats, Kimi sessions);
+ * The same guard serves every local reader (Kimi sessions, Qwen usage logs, Grok sessions);
  * `label` only changes which tree the fixed refusal line names.
  */
 function resolveLocalDir(p, label = 'codex sessions') {

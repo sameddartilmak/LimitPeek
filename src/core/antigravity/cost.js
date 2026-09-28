@@ -8,10 +8,10 @@
  * Each model is looked up in the table that already prices that vendor, with
  * that table's own rules and nothing added:
  *
- *   gemini-*   gemini/pricing.js   EXACT ids only (its rule 1), at the rate in
+ *   gemini-*   gemini-pricing.js   EXACT ids only (its rule 1), at the rate in
  *                                  effect at the event's own instant; the
  *                                  <=200k rate for a longer prompt, counted as
- *                                  a floor cause (its rule 3)
+ *                                  a floor cause (its rule 2)
  *   claude-*   pricing.js          its model-key + date-suffix match, at
  *                                  Standard speed; cache reads at that row's
  *                                  read multiplier
@@ -22,8 +22,7 @@
  * includes the 'unknown' placeholder (a model enum with no recorded name) and
  * 'gemini-pro-default', which is not a published model id.
  *
- * cost = input (uncached; Antigravity's input EXCLUDES cache reads, unlike the
- * Gemini CLI's) x input + cacheRead x read + output x output. Output already
+ * cost = input (uncached; Antigravity's input EXCLUDES cache reads) x input + cacheRead x read + output x output. Output already
  * holds thinking tokens and is not added to again.
  *
  * A cache write (usage field 4) has never been observed. Should one appear on
@@ -35,7 +34,7 @@
  */
 
 const claudePricing = require('../pricing');
-const geminiPricing = require('../gemini/pricing');
+const geminiPricing = require('./gemini-pricing');
 
 /**
  * The OLDER of the two tables' dates: what a cost states when nothing in it
@@ -186,11 +185,12 @@ function antigravityCost(events, startMs, endMs, anchored) {
     unrecordedWriteEvents: 0,
     assumedTierEvents: 0,
     fastRequestedEvents: 0,
-    // Gemini CLI's standing cause. Whether Antigravity leaves calls unrecorded
+    // Qwen Code's standing cause. Whether Antigravity leaves calls unrecorded
     // is not known, so it is not claimed.
     unrecordedCalls: false,
     longPromptFloorEvents,
     toolTokenEvents: 0,
+    partialUsageEvents: 0,
     // Set by the snapshot from the scan (ADR-002 A3.15).
     sourceIncomplete: false,
     pricesAsOf: vendors.size === 1

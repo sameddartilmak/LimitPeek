@@ -264,9 +264,9 @@ function shapeKeyOf(p: ProviderSnapshot): string {
  *    one window object.
  *
  * `null` means unscanned, so there is no window to name and the label states the
- * SPAN only ("Haftalık" / "Weekly"). Gemini CLI and Kimi Code are always false
- * once scanned — neither publishes a weekly reset to us — so neither can ever be
- * labelled a quota week.
+ * SPAN only ("Haftalık" / "Weekly"). Kimi Code, Qwen Code and Grok Build are
+ * always false once scanned — none publishes a weekly reset to us — so none can
+ * ever be labelled a quota week.
  */
 function weeklyTokenLabel(p: ProviderSnapshot, value: string): string {
   const anchored = p.weeklyTokensWindowAnchored;
@@ -633,8 +633,12 @@ function buildLive(
       // lines gone (2026-09-23) this line says it, in the words the zero-count
       // case already uses, so the gap is never silent.
       if (metaChildren.length === 0) {
+        // Qwen Code with no usage log at all: "no token data" would read as a
+        // fact about the user's week. The one-line reason is the true one.
         metaChildren.push(
-          el('span', {}, p.weeklyCost?.sourceIncomplete ? t('row.tokens.uncounted') : t('row.noTokens')),
+          p.usageLogAbsent === true
+            ? el('span', { class: 'row__hint', title: t('row.usageLogAbsentDetail', { provider: p.displayName }) }, t('row.usageLogAbsent'))
+            : el('span', {}, p.weeklyCost?.sourceIncomplete ? t('row.tokens.uncounted') : t('row.noTokens')),
         );
       }
     }

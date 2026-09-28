@@ -365,15 +365,25 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     { file: 'renderer.json', key: 'cost.unpricedToggleLabelNoTable', en: [/\bdoes not publish\b/, /\bno amount\b/], tr: [/yayımlamıyor/, /tutar yok/] },
     { file: 'renderer.json', key: 'cost.unpricedSummaryNoModel', en: [/\bNo model was recorded\b/i], tr: [/Model kaydı olmadığı/i] },
     { file: 'renderer.json', key: 'cost.unpricedToggleLabelNoModel', en: [/\bNo model was recorded\b/i], tr: [/Model kaydı olmadığı/i] },
-    // Gemini is priced at its API's standard rates, and says so
-    { file: 'renderer.json', key: 'cost.summaryGemini', en: [/\bwould have cost\b/i, /\bGemini API standard\b/], tr: [/tutardı/, /Gemini API standart/] },
-    { file: 'renderer.json', key: 'cost.toggleLabelGemini', en: [/\bwould have cost\b/i, /\bGemini API standard\b/, /\bnot a bill\b/], tr: [/tutardı/, /Gemini API standart/, /fatura değil/] },
-    { file: 'renderer.json', key: 'cost.pricesAsOfGemini', en: [/\bGemini API standard\b/, /\{date\}/], tr: [/Gemini API standart/, /\{date\}/] },
+    // Qwen Code is priced at Alibaba Cloud Model Studio rates, and says so
+    { file: 'renderer.json', key: 'cost.summaryQwen', en: [/\bwould have cost\b/i, /\bAlibaba Cloud Model Studio\b/], tr: [/tutardı/, /Alibaba Cloud Model Studio/] },
+    { file: 'renderer.json', key: 'cost.toggleLabelQwen', en: [/\bwould have cost\b/i, /\bAlibaba Cloud Model Studio\b/, /\bnot a bill\b/], tr: [/tutardı/, /Alibaba Cloud Model Studio/, /fatura değil/] },
+    { file: 'renderer.json', key: 'cost.pricesAsOfQwen', en: [/\bAlibaba Cloud Model Studio\b/, /\{date\}/], tr: [/Alibaba Cloud Model Studio/, /\{date\}/] },
+    // Grok Build's amount is the one xAI reported, never a price we computed
+    { file: 'renderer.json', key: 'cost.summaryGrok', en: [/\bwould have cost\b/i, /\breported by xAI\b/], tr: [/tutardı/, /xAI'nin bildirdiğine göre/] },
+    { file: 'renderer.json', key: 'cost.toggleLabelGrok', en: [/\bwould have cost\b/i, /\breported by xAI\b/, /\bnot a bill\b/], tr: [/tutardı/, /xAI'nin bildirdiğine göre/, /fatura değil/] },
+    { file: 'renderer.json', key: 'cost.pricesReportedGrok', en: [/\breported by xAI\b/], tr: [/xAI'nin/, /bildirdiği/] },
+    { file: 'renderer.json', key: 'cost.unpricedSummaryNoReport', en: [/\{provider\}/, /\breported no cost\b/, /\bno amount\b/], tr: [/\{provider\}/, /tutar bildirmedi/, /tutar yok/] },
+    { file: 'renderer.json', key: 'cost.unpricedToggleLabelNoReport', en: [/\{provider\}/, /\bno cost was reported\b/, /\bno amount\b/], tr: [/\{provider\}/, /bildirilmedi/, /tutar yok/] },
+    // Qwen Code installed but with no usage log: says so, never "no token data"
+    { file: 'renderer.json', key: 'row.usageLogAbsent', en: [/\bno usage log\b/i], tr: [/kullanım kaydı yok/] },
+    { file: 'renderer.json', key: 'row.usageLogAbsentDetail', en: [/\{provider\}/, /0\.18\.4/, /\busage statistics\b/], tr: [/\{provider\}/, /0\.18\.4/, /kullanım istatistikleri/] },
     // The composed per-tool price note (ADR-003 A6): one source line per tool.
     { file: 'renderer.json', key: 'settings.usage.source.date', en: [/\{tool\}/, /\{date\}/], tr: [/\{tool\}/, /\{date\}/] },
     { file: 'renderer.json', key: 'settings.usage.source.dateMissing', en: [/\{tool\}/, /\bnot reported\b/], tr: [/\{tool\}/, /bildirilmedi/] },
-    { file: 'renderer.json', key: 'settings.usage.source.gemini', en: [/Gemini API/, /\bstandard\b/, /\{date\}/], tr: [/Gemini API/, /standart/, /\{date\}/] },
-    { file: 'renderer.json', key: 'settings.usage.source.geminiNoDate', en: [/Gemini API/, /\bstandard\b/], tr: [/Gemini API/, /standart/] },
+    { file: 'renderer.json', key: 'settings.usage.source.qwen', en: [/\{tool\}/, /Alibaba Cloud Model Studio/, /\{date\}/], tr: [/\{tool\}/, /Alibaba Cloud Model Studio/, /\{date\}/] },
+    { file: 'renderer.json', key: 'settings.usage.source.qwenNoDate', en: [/\{tool\}/, /Alibaba Cloud Model Studio/], tr: [/\{tool\}/, /Alibaba Cloud Model Studio/] },
+    { file: 'renderer.json', key: 'settings.usage.source.grok', en: [/\{tool\}/, /\breported by xAI\b/], tr: [/\{tool\}/, /xAI'nin bildirdiği/] },
     { file: 'renderer.json', key: 'settings.usage.source.none', en: [/\{tool\}/, /\bdoes not publish\b/], tr: [/\{tool\}/, /yayımlamıyor/] },
     // experimental local-file providers (ADR-003 A6): the log format is unverified
     { file: 'renderer.json', key: 'provider.experimental', en: [/\bexperimental\b/], tr: [/deneysel/] },
@@ -381,8 +391,9 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // a tool that publishes no price says so where the price date would be
     { file: 'renderer.json', key: 'cost.pricesNotPublished', en: [/\{provider\}/, /\bdoes not publish\b/], tr: [/\{provider\}/, /yayımlamıyor/] },
     // an absent tool is "not found", never "not supported"
-    { file: 'main.json', key: 'provider.gemini.notFound', en: [/Gemini CLI/, /\bnot found\b/], tr: [/Gemini CLI/, /bulunamadı/] },
     { file: 'main.json', key: 'provider.kimi.notFound', en: [/Kimi Code/, /\bnot found\b/], tr: [/Kimi Code/, /bulunamadı/] },
+    { file: 'main.json', key: 'provider.qwen.notFound', en: [/Qwen Code/, /\bnot found\b/], tr: [/Qwen Code/, /bulunamadı/] },
+    { file: 'main.json', key: 'provider.grok.notFound', en: [/Grok Build/, /\bnot found\b/], tr: [/Grok Build/, /bulunamadı/] },
     // pending state (ADR-002 A3.12): the totals are still being computed —
     // incomplete, which is neither zero nor a floor
     { file: 'renderer.json', key: 'row.tokens.pending', en: [/\bcalculating\b/i], tr: [/hesaplanıyor/] },
@@ -477,8 +488,9 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
       const entries = catalogs[lang]['renderer.json'] || {};
       for (const [key, entry] of Object.entries(entries)) {
         // The one-line cost summaries for a tool with no price table, no
-        // recorded model, or Gemini's standard rates.
-        if (!/^(cost\.unpricedSummaryNo(Table|Model)$|cost\.(summary|pricesAsOf)Gemini$)/.test(key)) continue;
+        // recorded model or no reported cost, and the named price sources of
+        // Qwen Code and Grok Build.
+        if (!/^(cost\.unpricedSummaryNo(Table|Model|Report)$|cost\.(summary|pricesAsOf)Qwen$|cost\.(summaryGrok|pricesReportedGrok)$)/.test(key)) continue;
         seen += 1;
         for (const text of variants(entry)) {
           assert.ok(text.length <= MAX_CHARS, `${lang} "${key}" is ${text.length} characters (max ${MAX_CHARS}): ${text}`);
@@ -486,8 +498,8 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
         }
       }
     }
-    // Per language: the 4 one-line summaries, measured 2026-09-23.
-    assert.ok(seen >= 8, `the short-line keys exist in both languages (saw ${seen})`);
+    // Per language: the 7 one-line summaries (2026-09-28).
+    assert.ok(seen >= 14, `the short-line keys exist in both languages (saw ${seen})`);
   });
 
   test('the unreadable history amount shows no figure: no dash, no zero, no currency (ADR-002 A3.19)', () => {
@@ -503,10 +515,11 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
   test('the per-tool price source line names the tool by placeholder only (ADR-003 A6)', () => {
     for (const lang of LANGS) {
       const entries = catalogs[lang]['renderer.json'];
-      for (const key of ['settings.usage.source.date', 'settings.usage.source.dateMissing', 'settings.usage.source.none']) {
+      for (const key of ['settings.usage.source.date', 'settings.usage.source.dateMissing', 'settings.usage.source.none',
+        'settings.usage.source.qwen', 'settings.usage.source.qwenNoDate', 'settings.usage.source.grok']) {
         assert.deepEqual(placeholders(entries[key]).includes('tool'), true, `${lang}: ${key} names the tool by placeholder`);
         for (const text of variants(entries[key])) {
-          assert.doesNotMatch(text, /Claude|Codex|Kimi|Antigravity/, `${lang}: ${key} hard-codes a tool`);
+          assert.doesNotMatch(text, /Claude|Codex|Kimi|Antigravity|Qwen|Grok/, `${lang}: ${key} hard-codes a tool`);
         }
       }
     }
@@ -518,7 +531,7 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
       for (const key of ['settings.usage.sources', 'settings.usage.sourcesTools']) {
         assert.ok(has(entries, key), `${lang}: ${key} exists`);
         for (const text of variants(entries[key])) {
-          assert.doesNotMatch(text, /Claude|Codex|Gemini|Kimi|Antigravity/, `${lang} "${key}" hard-codes a tool: ${text}`);
+          assert.doesNotMatch(text, /Claude|Codex|Kimi|Antigravity|Qwen|Grok/, `${lang} "${key}" hard-codes a tool: ${text}`);
         }
       }
     }
@@ -527,7 +540,8 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
   test('a tool that publishes no price is never said to be missing from a price list (review HIGH: false Kimi reason)', () => {
     for (const lang of LANGS) {
       const entries = catalogs[lang]['renderer.json'] || {};
-      for (const key of ['cost.unpricedSummaryNoTable', 'cost.unpricedToggleLabelNoTable', 'settings.usage.source.none']) {
+      for (const key of ['cost.unpricedSummaryNoTable', 'cost.unpricedToggleLabelNoTable', 'settings.usage.source.none',
+        'cost.unpricedSummaryNoReport', 'cost.unpricedToggleLabelNoReport', 'settings.usage.source.grok']) {
         assert.ok(has(entries, key), `${lang}: ${key} exists`);
         for (const text of variants(entries[key])) {
           assert.doesNotMatch(text, /price list|fiyat listesi/i, `${lang} "${key}" blames a price list that does not exist: ${text}`);
@@ -571,7 +585,7 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
         }
       }
     }
-    assert.ok(seen >= 4, `gemini and kimi notFound exist in both languages (saw ${seen})`);
+    assert.ok(seen >= 6, `kimi, qwen and grok notFound exist in both languages (saw ${seen})`);
   });
 
   test('no pending-state copy reads as a floor: never "en az" / "at least" (ADR-002 A3.12)', () => {

@@ -214,25 +214,28 @@ export interface CostByClass {
  * not a price tier (ADR-003 Amendment 6). Stable machine codes: the renderer
  * maps each to catalog text and never prints the code.
  *
- *   'no-model'            Gemini CLI recorded tokens on a message with no model
- *                         (a synthetic response); `model` is `'unknown'`.
+ *   'no-model'            tokens recorded with no model; `model` is `'unknown'`.
+ *                         No provider emits it since Gemini CLI was removed
+ *                         (2026-09-28); kept so the renderer's wording stays.
  *   'no-published-price'  Kimi Code, a Kimi plan model (`kimi-code/<id>`): Kimi
  *                         publishes no per-token price for its plan models.
  *   'other-model-alias'   Kimi Code, any other model alias: another provider's
  *                         model used through Kimi Code ("other models via Kimi
  *                         Code"). The alias is resolved only by the user's Kimi
  *                         config, which this app never opens, so it is unpriced.
+ *   'no-reported-cost'    Grok Build: xAI reported no amount for these turns
+ *                         (Grok has no price table; its amounts are xAI's own).
  *
  * Always `usd: null` and `pricedAs: null`.
  */
-export type UnpricedReasonCode = 'no-model' | 'no-published-price' | 'other-model-alias';
+export type UnpricedReasonCode = 'no-model' | 'no-published-price' | 'other-model-alias' | 'no-reported-cost';
 
 export interface ModelCost {
   /**
    * Raw id as recorded, e.g. "claude-haiku-4-5-20251001". The exact string
    * `'unknown'` is a placeholder: the tool recorded usage but no model could be
    * resolved for it (Codex: no `turn_context` and no model in the session
-   * header; Gemini: no model on the message, or one that is not id-shaped;
+   * header; Qwen Code and Grok Build: a model that is not id-shaped;
    * Kimi: an alias that is not id-shaped). Such usage is always unpriced; the
    * renderer maps the placeholder to a catalog label instead of printing it as
    * a model name. For Kimi this is the model ALIAS as configured in Kimi Code
@@ -245,8 +248,10 @@ export interface ModelCost {
    * naming only the model would put a row in `unpricedModels` while an
    * identically-named priced row sits beside it.
    *
-   * Gemini emits 'standard' (Gemini API Standard rates; an unknown model id is
-   * 'standard' with `usd: null`) or 'no-model'. Kimi emits only
+   * Qwen Code emits 'standard' (Model Studio rates; an unknown model id is
+   * 'standard' with `usd: null`) or 'standard-long-context' (a request above
+   * the model's last published tier, unpriced). Grok Build emits 'reported'
+   * (the amount xAI reported) or 'no-reported-cost'. Kimi emits only
    * 'no-published-price' or 'other-model-alias'. See `UnpricedReasonCode`.
    */
   speed: string;
@@ -260,6 +265,11 @@ export interface ModelCost {
 export interface WeeklyCost {
   /** Sum over PRICED models only. Never includes an unpriced model as zero. */
   totalUsd: number;
+  /**
+   * The priced total split by token class. All zero for Grok Build, whose
+   * amounts are the ones xAI reported per turn with no class split: there is
+   * then no composition to draw, and the classes do not sum to `totalUsd`.
+   */
   byClass: CostByClass;
   byModel: ModelCost[];
   /**
@@ -281,8 +291,9 @@ export interface WeeklyCost {
    * ISO date the price table was current. Prices drift; say when.
    *
    * The empty string `''` when the provider HAS no price table (Kimi Code,
-   * ADR-003 A6): nothing in this cost was priced from a list, so there is no
-   * date to state. Never a made-up date.
+   * ADR-003 A6; Grok Build, whose amounts are the ones xAI reported): nothing
+   * in this cost was priced from a list, so there is no date to state. Never a
+   * made-up date.
    */
   pricesAsOf: string;
   /**
@@ -333,30 +344,34 @@ export interface WeeklyCost {
    */
   fastRequestedEvents: number;
   /**
-   * Gemini CLI floor cause (ADR-003 A6): true whenever this is a Gemini cost
-   * with an amount. The CLI never records its utility model calls (routing,
-   * compression, loop detection, next-speaker checks, summaries, edit
-   * correction, web search/fetch) or failed stream attempts, so every Gemini
-   * figure is a FLOOR ("en az") with this as a standing cause. Always present:
-   * `false` for every other provider, and `false` on an empty known-incomplete
-   * Gemini cost (A3.19), which has no amount to qualify.
+   * Qwen Code floor cause: true whenever this is a Qwen Code cost with an
+   * amount. The tool never writes failed calls, retries or its internal side
+   * queries to its usage log, so every Qwen figure is a FLOOR ("en az") with
+   * this as a standing cause. Always present: `false` for every other
+   * provider, and `false` on an empty known-incomplete Qwen cost (A3.19),
+   * which has no amount to qualify.
    */
   unrecordedCalls: boolean;
   /**
-   * Gemini floor cause: priced events whose prompt exceeded 200,000 tokens on a
-   * model that publishes a separate >200k rate. They are priced at the <=200k
-   * rate AS A FLOOR (the page does not say whether the higher rate reprices the
-   * whole request, so only the lower rate cannot overstate). Always present;
-   * 0 for every other provider.
+   * Antigravity floor cause (its Gemini models): priced events whose prompt
+   * exceeded 200,000 tokens on a model that publishes a separate >200k rate.
+   * They are priced at the <=200k rate AS A FLOOR (the page does not say
+   * whether the higher rate reprices the whole request, so only the lower rate
+   * cannot overstate). Always present; 0 for every other provider.
    */
   longPromptFloorEvents: number;
   /**
-   * Gemini floor cause: events that recorded tool-use prompt tokens
-   * (`toolUsePromptTokenCount` > 0), priced or not. Those tokens are not priced
-   * (their billing is not published), so the figure is a FLOOR. Always present;
-   * 0 for every other provider.
+   * Events that recorded tool-use prompt tokens that could not be priced. No
+   * provider emits it since Gemini CLI was removed (2026-09-28): always 0.
+   * Kept so the shape, and every reader of it, stays unchanged.
    */
   toolTokenEvents: number;
+  /**
+   * Grok Build floor cause: priced turns xAI marked `costIsPartial` or
+   * `usageIsIncomplete`. Their reported amount is counted, and the figure is a
+   * FLOOR. Always present; 0 for every other provider.
+   */
+  partialUsageEvents: number;
   /**
    * true ONLY when the cost reader KNOWS it could not read usage records that
    * may fall inside this window (ADR-002 A3.15): the last local scan failed or
@@ -396,15 +411,17 @@ export interface WeeklyCost {
 export interface PeriodModelCost {
   /**
    * The tool this usage was recorded by. A period's list holds the models of
-   * every tool with usage (Claude Code, Codex, Gemini CLI, Kimi Code), each
-   * priced through its own tool's rules (`src/core/pricing.js`,
-   * `src/core/codex/pricing.js`, `src/core/gemini/pricing.js`; Kimi is never
-   * priced) — so the renderer can mark which tool a model belongs to, and no
-   * entry's figure mixes two tables. Only dollars are combined into the period
-   * total; token counts are never summed across tools.
+   * every tool with usage (Claude Code, Codex, Antigravity, Kimi Code, Qwen
+   * Code, Grok Build), each priced through its own tool's rules
+   * (`src/core/pricing.js`, `src/core/codex/pricing.js`,
+   * `src/core/antigravity/cost.js`, `src/core/qwen/pricing.js`; Grok carries
+   * the amount xAI reported; Kimi is never priced) — so the renderer can mark
+   * which tool a model belongs to, and no entry's figure mixes two tables.
+   * Only dollars are combined into the period total; token counts are never
+   * summed across tools.
    *
-   * Gemini entries with an amount are ALWAYS `isFloor: true` (unrecorded calls).
-   * Kimi entries are always `costUsd: null`, `isFloor: false`.
+   * Qwen Code entries with an amount are ALWAYS `isFloor: true` (unrecorded
+   * calls). Kimi entries are always `costUsd: null`, `isFloor: false`.
    */
   provider: ProviderSnapshot['id'];
   /**
@@ -556,8 +573,8 @@ export interface PeriodUsage {
    *
    * Causes and not a bare flag, because ADR-002 A3.16 forbids showing a floor
    * without at least one visible cause line, and a token floor cannot always
-   * borrow one from the cost side: a Gemini period where nothing could be priced
-   * is a token floor while `floorCausesByProvider.gemini` carries no
+   * borrow one from the cost side: a Qwen period where nothing could be priced
+   * is a token floor while `floorCausesByProvider.qwen` carries no
    * 'unrecorded-calls' at all. Deliberately the same shape as the cost side's
    * `UsageHistory.floorCausesByProvider`, so one renderer routine can compose
    * either note.
@@ -579,8 +596,9 @@ export interface PeriodUsage {
    *                        so events are missing from the count (A3.20). Note
    *                        this code is TOKEN-side only — see
    *                        `HistoryFloorCause`.
-   *   'unrecorded-calls'   Gemini CLI, unconditional while it has a count:
-   *                        utility calls and failed streams are never recorded.
+   *   'unrecorded-calls'   Qwen Code, unconditional while it has a count: failed
+   *                        calls and side queries are never recorded.
+   *   'partial-usage'      Grok Build: xAI marked a turn's usage incomplete.
    *   'unrecorded-writes'  Codex: a turn recorded 0 cache writes although it read
    *                        cache or sent a prompt at or above the minimum
    *                        cacheable size (A3.3/A3.9), so `cacheWrite` and
@@ -609,9 +627,10 @@ export interface PeriodUsage {
    * was assumed Standard or Fast was requested and priced at Standard
    * (`assumedTierEvents` / `fastRequestedEvents`, A3.17-18), or a range of
    * usage a reader KNOWS it could not read overlaps the period (A3.20; see
-   * `UsageHistory.incompleteProviders`). Also (ADR-003 A6) whenever Gemini CLI
-   * has usage in the period (unrecorded calls, always) and whenever Kimi Code
-   * has usage (unpriced, always). Every such cause can only push the true
+   * `UsageHistory.incompleteProviders`). Also (ADR-003 A6) whenever Qwen Code
+   * has an amount in the period (unrecorded calls, always), whenever a Grok
+   * Build turn was marked partial, and whenever Kimi Code has usage
+   * (unpriced, always). Every such cause can only push the true
    * figure up, so the renderer prints "en az". An empty period
    * (`hasUsage: false`) can be a floor through the unread cause alone.
    * `UsageHistory.floorCausesByProvider` names the causes per tool.
@@ -634,14 +653,18 @@ export interface PeriodUsage {
  *                               it could not read overlaps the window, so events are
  *                               missing from the COUNT (ADR-002 A3.15/A3.20)
  *   'unpriced'                  some usage has no price (unknown model, a tier with
- *                               no row, tokens without a model, every Kimi model)
+ *                               no row, tokens without a model, every Kimi model,
+ *                               a Grok turn xAI reported no amount for)
  *   'cache-write-ttl-fallback'  Claude: TTL split missing, writes priced at 1.25x
  *   'unrecorded-writes'         Codex: writes recorded as 0 on a write-priced model
  *   'assumed-tier'              Codex: no tier recorded yet, priced at Standard
  *   'fast-requested'            Codex: Fast requested, priced at Standard
- *   'unrecorded-calls'          Gemini: utility calls and failed streams never recorded
- *   'long-prompt'               Gemini: prompt over 200k priced at the <=200k rate
- *   'tool-tokens'               Gemini: tool-use prompt tokens not priced
+ *   'unrecorded-calls'          Qwen Code: failed calls and side queries never recorded
+ *   'long-prompt'               Antigravity (Gemini models): prompt over 200k priced
+ *                               at the <=200k rate
+ *   'tool-tokens'               no producer since Gemini CLI was removed; kept known
+ *   'partial-usage'             Grok Build: xAI marked a turn's cost partial or its
+ *                               usage incomplete
  *
  * ONE code is TOKEN-side only and never appears in `floorCausesByProvider`:
  * 'unread-range'. On the COST side a known-unread range already has its own
@@ -659,7 +682,9 @@ export interface PeriodUsage {
  *                        price exists decides what may be CHARGED for the
  *                        missing writes, not whether they are missing.
  *   'unrecorded-calls'   cost: set only when something in the window priced.
- *                        tokens: unconditional while Gemini CLI has a count.
+ *                        tokens: unconditional while Qwen Code has a count.
+ *   'partial-usage'      cost: a PRICED turn marked partial or incomplete.
+ *                        tokens: a turn whose USAGE xAI marked incomplete.
  */
 export type HistoryFloorCause =
   | 'unread-range'
@@ -670,7 +695,8 @@ export type HistoryFloorCause =
   | 'fast-requested'
   | 'unrecorded-calls'
   | 'long-prompt'
-  | 'tool-tokens';
+  | 'tool-tokens'
+  | 'partial-usage';
 
 /**
  * Week-by-week and month-by-month notional usage, for the settings "Toplam
@@ -699,12 +725,14 @@ export interface UsageHistory {
    * included — because the date of a table that priced nothing is not a fact
    * about these figures. Empty when there is no usage at all. Prices drift
    * independently per vendor, so one date for all would be false for some.
-   * Kimi Code NEVER appears here: it has no price table (read `usageProviders`).
+   * Kimi Code and Grok Build NEVER appear here: neither has a price table
+   * (read `usageProviders`).
    */
   pricesAsOfByProvider: Partial<Record<ProviderSnapshot['id'], string>>;
   /**
    * Every tool whose usage is part of this history, in the fixed order
-   * claude, codex, gemini, antigravity, kimi — including a tool with no price table (Kimi),
+   * claude, codex, antigravity, kimi, qwen, grok — including a tool with no
+   * price table (Kimi, Grok),
    * which therefore has no entry in `pricesAsOfByProvider`. Always present;
    * empty when there is no usage. With `pricesAsOfByProvider` and
    * `floorCausesByProvider` it is everything a composed price note needs:
@@ -714,8 +742,9 @@ export interface UsageHistory {
   /**
    * For each tool, the floor causes present in its usage across the LISTED
    * periods (weeks and months), in the fixed order of `HistoryFloorCause`. A
-   * tool is present only when it has at least one cause; Gemini always has
-   * 'unrecorded-calls' and Kimi always has 'unpriced' while they have usage.
+   * tool is present only when it has at least one cause; Qwen Code always has
+   * 'unrecorded-calls' while it has an amount, and Kimi always has 'unpriced'
+   * while it has usage.
    * Always present; empty object when no figure is a floor for these reasons.
    */
   floorCausesByProvider: Partial<Record<ProviderSnapshot['id'], HistoryFloorCause[]>>;
@@ -810,7 +839,7 @@ export interface ModelQuotaDetail {
 }
 
 export interface ProviderSnapshot {
-  id: 'claude' | 'codex' | 'gemini' | 'antigravity' | 'kimi';
+  id: 'claude' | 'codex' | 'antigravity' | 'kimi' | 'qwen' | 'grok';
   displayName: string;
   /** Brand hex, used ONLY for the 2px spine + monogram tile. Never the meter. */
   accent: string;
@@ -818,8 +847,8 @@ export interface ProviderSnapshot {
    * true when this provider's local reader was written from the vendor's
    * source code and has NOT been confirmed against a real install (ADR-003
    * Amendment 6, decision 4). The row must carry a visible "experimental"
-   * marker while true. Today: true for 'gemini' and 'kimi', false for every
-   * other provider. A static registry fact, independent of whether the tool is
+   * marker while true. Today: true for 'kimi', 'qwen' and 'grok', false for
+   * every other provider. A static registry fact, independent of whether the tool is
    * installed or has usage.
    */
   experimental: boolean;
@@ -967,8 +996,8 @@ export interface ProviderSnapshot {
    * renderer, which this contract exists to prevent: main resolves windows, the
    * renderer renders them.
    *
-   * Gemini CLI and Kimi Code are always `false` once scanned: neither publishes
-   * a weekly reset to us, so their window can only ever be trailing.
+   * Kimi Code, Qwen Code and Grok Build are always `false` once scanned: none
+   * publishes a weekly reset to us, so their window can only ever be trailing.
    */
   weeklyTokensWindowAnchored: boolean | null;
   /**
@@ -978,7 +1007,7 @@ export interface ProviderSnapshot {
    *
    * Causes and not a bare boolean, because ADR-002 A3.16 forbids showing a floor
    * without at least one visible cause, and this row cannot always borrow one
-   * from its own cost block: a Gemini week where nothing could be priced is a
+   * from its own cost block: a Qwen week where nothing could be priced is a
    * token floor while `weeklyCost.unrecordedCalls` is false. Same shape as
    * `PeriodUsage.tokenFloorCausesByProvider`, one level up.
    *
@@ -994,10 +1023,12 @@ export interface ProviderSnapshot {
    *                        (`weeklyCost.sourceIncomplete`, A3.15), so events are
    *                        missing from the count. TOKEN-side only — see
    *                        `HistoryFloorCause`.
-   *   'unrecorded-calls'   Gemini CLI, unconditional while it has a count: its
-   *                        utility calls and failed streams are NEVER recorded.
+   *   'unrecorded-calls'   Qwen Code, unconditional while it has a count: its
+   *                        failed calls and side queries are NEVER recorded.
    *                        Do NOT derive this from `weeklyCost.unrecordedCalls`,
    *                        a COST cause that goes false when nothing priced.
+   *   'partial-usage'      Grok Build: xAI marked a turn in this window as
+   *                        having incomplete usage.
    *   'unrecorded-writes'  Codex: a turn recorded 0 cache writes although it read
    *                        cache or sent a prompt at or above OpenAI's minimum
    *                        cacheable size, so `cacheWrite` and therefore
@@ -1021,6 +1052,15 @@ export interface ProviderSnapshot {
    * and never render it as "en az 0 token".
    */
   weeklyTokenFloorCauses: HistoryFloorCause[];
+  /**
+   * Qwen Code only, and present only when true: the tool is installed but has
+   * written no usage log at all — it is older than v0.18.4, its usage
+   * statistics are turned off, or its runtime directory was moved through a
+   * setting this app never reads. `tokens`, `weeklyTokens` and `weeklyCost`
+   * are then null: there is no log to measure, so there is no zero to state.
+   * The renderer says why in one line instead of "no token data".
+   */
+  usageLogAbsent?: true;
   /** Billable tokens per hour over the active window. */
   burnRatePerHour: number | null;
   /** Per-model split inside the window, largest first. */
@@ -1105,7 +1145,8 @@ export interface Snapshot {
    * present a history that leaves the tool out as complete.
    *
    * Listed: 'codex' until its rollout scan worker's first result, and
-   * 'gemini' / 'kimi' (ADR-003 A6) / 'antigravity' until their scan workers' first result —
+   * 'antigravity' / 'kimi' / 'qwen' / 'grok' (ADR-003 A6) until their scan
+   * workers' first result —
    * but only while that tool is INSTALLED (its data directory exists); a tool
    * that is not on this machine is a passive "not installed" row and is never
    * pending. Claude is not listed —

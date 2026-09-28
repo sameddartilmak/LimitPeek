@@ -23,7 +23,7 @@ function setup(kind, labelKey, detailKey, detailParams) {
  *
  * `claude` and `antigravity` are wired: both publish a server-computed
  * percentage through a documented statusline hook, which is the only source
- * ADR-001 Decision 1 accepts. The other three are read from the tools' own
+ * ADR-001 Decision 1 accepts. The others are read from the tools' own
  * local files; a tool that is not on this machine renders as a passive row
  * with no meter and no fabricated number (ADR-001 Decision 3).
  *
@@ -38,7 +38,13 @@ function setup(kind, labelKey, detailKey, detailParams) {
  * `experimental` (contract.ts `ProviderSnapshot.experimental`): the provider's
  * local reader was written from the vendor's SOURCE and has not yet been
  * confirmed against a real install (ADR-003 Amendment 6, decision 4). True for
- * Gemini and Kimi until someone with the tool installed confirms the format.
+ * Kimi, Qwen Code and Grok Build until someone with the tool installed
+ * confirms the format.
+ *
+ * Only FIRST-PARTY coding tools are listed: the model maker's own tool (owner
+ * decision, 2026-09-28). Gemini CLI was removed that day — Google retired it
+ * for consumers on 2026-06-18, and its replacement, Antigravity CLI, is read
+ * by the Antigravity row.
  */
 const PROVIDERS = [
   {
@@ -67,20 +73,6 @@ const PROVIDERS = [
     },
   },
   {
-    id: 'gemini',
-    displayName: 'Gemini',
-    accent: '#4386F5',
-    // Rung 1 (ADR-003 A6): tokens and a notional cost from the CLI's own chat
-    // recordings under ~/.gemini/tmp/*/chats. Passive "not installed" when that
-    // directory is absent. No gauge: every quota path needs Google's stored login.
-    live: true,
-    enabledByDefault: false,
-    experimental: true,
-    get setupAction() {
-      return setup('not-installed', 'provider.setup.add', 'provider.gemini.notFound');
-    },
-  },
-  {
     id: 'antigravity',
     // `live` without `enabledByDefault`: we can collect this provider, but the
     // user never asked to see it. This is the exact split the comment above
@@ -105,6 +97,35 @@ const PROVIDERS = [
     experimental: true,
     get setupAction() {
       return setup('not-installed', 'provider.setup.add', 'provider.kimi.notFound');
+    },
+  },
+  {
+    id: 'qwen',
+    displayName: 'Qwen Code',
+    accent: '#6D5DFC',
+    // Rung 1: tokens and a notional cost at Alibaba Cloud Model Studio rates,
+    // from the tool's own content-free usage log (~/.qwen/usage). Passive "not
+    // installed" when the Qwen home is absent. No gauge: Qwen Code writes no
+    // plan-quota percentage anywhere this app may read.
+    live: true,
+    enabledByDefault: false,
+    experimental: true,
+    get setupAction() {
+      return setup('not-installed', 'provider.setup.add', 'provider.qwen.notFound');
+    },
+  },
+  {
+    id: 'grok',
+    displayName: 'Grok Build',
+    accent: '#D946EF',
+    // Rung 1: tokens and the cost xAI itself reported, from each session's
+    // content-free usage.json under ~/.grok/sessions. Passive "not installed"
+    // when the Grok home is absent. No gauge, for the same reason as Qwen Code.
+    live: true,
+    enabledByDefault: false,
+    experimental: true,
+    get setupAction() {
+      return setup('not-installed', 'provider.setup.add', 'provider.grok.notFound');
     },
   },
 ];

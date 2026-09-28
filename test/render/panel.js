@@ -256,7 +256,7 @@ app.whenReady().then(async () => {
 
   check('one row list, not two', structure.lists === 1, structure.lists);
   check('all five providers rendered in snapshot order',
-    JSON.stringify(structure.ids) === JSON.stringify(['claude','codex','gemini','antigravity','kimi']),
+    JSON.stringify(structure.ids) === JSON.stringify(['claude','codex','qwen','antigravity','kimi']),
     structure.ids);
   check('data-connected reflects the contract flag',
     JSON.stringify(structure.connected) === JSON.stringify(['true','true','false','false','false']),
@@ -295,7 +295,7 @@ app.whenReady().then(async () => {
                tile: gs.backgroundColor, border: gs.borderTopColor,
                w: mark.getBoundingClientRect().width };
     };
-    return { claude: pick('claude'), codex: pick('codex'), gemini: pick('gemini'),
+    return { claude: pick('claude'), codex: pick('codex'), qwen: pick('qwen'),
              kimi: pick('kimi') };
   })()`);
   say('colours: ' + JSON.stringify(colours));
@@ -303,18 +303,18 @@ app.whenReady().then(async () => {
   check('connected codex mark is its own colour art', /codex-color\.svg/.test(colours.codex.bg), colours.codex.bg);
   check('connected marks are not desaturated', colours.claude.filter === 'none' && colours.codex.filter === 'none',
     [colours.claude.filter, colours.codex.filter]);
-  check('unconnected gemini mark is the same art, in grey',
-    /gemini-color\.svg/.test(colours.gemini.bg) && /grayscale/.test(colours.gemini.filter), [colours.gemini.bg, colours.gemini.filter]);
+  check('unconnected qwen mark is the same art, in grey',
+    /qwen-mono\.svg/.test(colours.qwen.bg) && /grayscale/.test(colours.qwen.filter), [colours.qwen.bg, colours.qwen.filter]);
   check('unconnected kimi mark is the same art, in grey',
     /kimi-color\.svg/.test(colours.kimi.bg) && /grayscale/.test(colours.kimi.filter), [colours.kimi.bg, colours.kimi.filter]);
   check('connected mark is at full opacity, unconnected is not',
-    parseFloat(colours.claude.opacity) === 1 && parseFloat(colours.gemini.opacity) < 1,
-    [colours.claude.opacity, colours.gemini.opacity]);
+    parseFloat(colours.claude.opacity) === 1 && parseFloat(colours.qwen.opacity) < 1,
+    [colours.claude.opacity, colours.qwen.opacity]);
   check('connected tile has a ground, unconnected does not',
-    colours.claude.tile !== 'rgba(0, 0, 0, 0)' && colours.gemini.tile === 'rgba(0, 0, 0, 0)',
-    [colours.claude.tile, colours.gemini.tile]);
-  check('marks render at 20-24px', colours.claude.w === 24 && colours.gemini.w === 20,
-    [colours.claude.w, colours.gemini.w]);
+    colours.claude.tile !== 'rgba(0, 0, 0, 0)' && colours.qwen.tile === 'rgba(0, 0, 0, 0)',
+    [colours.claude.tile, colours.qwen.tile]);
+  check('marks render at 20-24px', colours.claude.w === 24 && colours.qwen.w === 20,
+    [colours.claude.w, colours.qwen.w]);
 
   // ---- the weekly window is a first-class figure -------------------------
   // It used to be a 2px hairline under the five-hour rail with no percentage
@@ -701,7 +701,7 @@ app.whenReady().then(async () => {
       'li.row[data-provider="' + id + '"]').getBoundingClientRect().height);
     const panel = document.querySelector('.panel').getBoundingClientRect();
     return {
-      two: h('claude'), one: h('codex'), none: h('gemini'),
+      two: h('claude'), one: h('codex'), none: h('qwen'),
       maxHeight: cs.maxHeight, overflow: cs.overflowY,
       panelTop: panel.top, panelBottom: panel.bottom,
       canvas: document.documentElement.clientHeight,
@@ -1056,7 +1056,7 @@ app.whenReady().then(async () => {
     tabbed.role === 'switch' && tabbed.tag === 'BUTTON', tabbed);
 
   // ---- un-added providers leave the main panel --------------------------
-  await js(`window.__probe.setEnabledDirect({ gemini: false, antigravity: false, kimi: false })`);
+  await js(`window.__probe.setEnabledDirect({ qwen: false, antigravity: false, kimi: false })`);
   await sleep(150);
   const split = await js(`(() => ({
     settingsIds: [...document.querySelectorAll('#settings-view li.settings__item')].map(i => i.dataset.provider),
@@ -1097,21 +1097,21 @@ app.whenReady().then(async () => {
   check('a drag in the filtered list still persists all five providers',
     Array.isArray(partial) && partial.length === 5, partial);
   check('the un-added providers keep their positions in the persisted order',
-    Array.isArray(partial) && partial.slice(2).join(',') === 'kimi,gemini,antigravity', partial);
+    Array.isArray(partial) && partial.slice(2).join(',') === 'kimi,qwen,antigravity', partial);
 
   // ---- the expansion must be a PERMUTATION, not just the right length -----
   // The case above happens to have both added providers at the front. The
   // interesting one is a set that is NOT contiguous: expandOrder() has to
   // leave every un-added provider at its own absolute index and pour the
   // visible order into the gaps between them.
-  await js(`window.__probe.setEnabledDirect({ claude: true, codex: false, gemini: true, antigravity: true, kimi: false })`);
+  await js(`window.__probe.setEnabledDirect({ claude: true, codex: false, qwen: true, antigravity: true, kimi: false })`);
   await sleep(180);
   const gapped = await js(`(() => ({
     all: window.__probe.providers(),
     visible: [...document.querySelectorAll('ul.rows:not([hidden]) li.row[data-provider]')].map(r => r.dataset.provider),
   }))()`);
   check('a non-contiguous added set draws exactly the added rows',
-    JSON.stringify(gapped.visible) === JSON.stringify(gapped.all.filter(id => ['claude','gemini','antigravity'].includes(id))),
+    JSON.stringify(gapped.visible) === JSON.stringify(gapped.all.filter(id => ['claude','qwen','antigravity'].includes(id))),
     gapped);
 
   // Move the LAST visible row to the top. Alt+Home is the keyboard equivalent
@@ -1155,7 +1155,7 @@ app.whenReady().then(async () => {
   // Put the fixture back exactly where this section found it, so the sections
   // below still start from the state they were written against.
   await js(`window.__probe.setOrderDirect(${JSON.stringify(partial)})`);
-  await js(`window.__probe.setEnabledDirect({ claude: true, codex: true, gemini: false, antigravity: false, kimi: false })`);
+  await js(`window.__probe.setEnabledDirect({ claude: true, codex: true, qwen: false, antigravity: false, kimi: false })`);
   await sleep(200);
   check('the fixture is back at the state the next section expects',
     JSON.stringify(await js('window.__probe.providers()')) === JSON.stringify(partial), partial);
@@ -1167,7 +1167,7 @@ app.whenReady().then(async () => {
   // and a second round trip would let the mock's answer land first and hide
   // the very state this asserts.
   const optimisticAdd = await js(`(() => {
-    const i = document.querySelector('#settings-view li[data-provider="gemini"]');
+    const i = document.querySelector('#settings-view li[data-provider="qwen"]');
     const s = i.querySelector('button.switch');
     s.click();
     return { checked: s.getAttribute('aria-checked'), busy: s.getAttribute('aria-busy') };
@@ -1178,10 +1178,10 @@ app.whenReady().then(async () => {
   await sleep(350);
   probe = await js('window.__probe.calls()');
   check('setEnabled was called with the provider and the new value',
-    probe.setEnabled.length === 1 && probe.setEnabled[0][0] === 'gemini' && probe.setEnabled[0][1] === true,
+    probe.setEnabled.length === 1 && probe.setEnabled[0][0] === 'qwen' && probe.setEnabled[0][1] === true,
     probe.setEnabled);
   const settledAdd = await js(`(() => {
-    const i = document.querySelector('#settings-view li[data-provider="gemini"]');
+    const i = document.querySelector('#settings-view li[data-provider="qwen"]');
     return { checked: i.querySelector('button.switch').getAttribute('aria-checked'),
              busy: i.querySelector('button.switch').getAttribute('aria-busy') };
   })()`);
@@ -1189,15 +1189,15 @@ app.whenReady().then(async () => {
     settledAdd.checked === 'true' && settledAdd.busy === null, settledAdd);
 
   await js('window.__probe.setFailEnabled(true)');
-  await js(`document.querySelector('#settings-view li[data-provider="gemini"] button.switch').click()`);
+  await js(`document.querySelector('#settings-view li[data-provider="qwen"] button.switch').click()`);
   await sleep(60);
   const optimisticFail = await js(
-    `document.querySelector('#settings-view li[data-provider="gemini"] button.switch').getAttribute('aria-checked')`,
+    `document.querySelector('#settings-view li[data-provider="qwen"] button.switch').getAttribute('aria-checked')`,
   );
   check('a removal also moves optimistically', optimisticFail === 'false', optimisticFail);
   await sleep(500);
   const reverted2 = await js(`(() => {
-    const i = document.querySelector('#settings-view li[data-provider="gemini"]');
+    const i = document.querySelector('#settings-view li[data-provider="qwen"]');
     return { checked: i.querySelector('button.switch').getAttribute('aria-checked'),
              flash: i.getAttribute('data-revert'),
              notice: (document.querySelector('.notice:not([hidden])') || {}).textContent || null };
@@ -1868,7 +1868,7 @@ app.whenReady().then(async () => {
   await sleep(160);
 
   // ---- the empty panel says WHICH empty it is ---------------------------
-  await js(`window.__probe.setEnabledDirect({ claude: false, codex: false, gemini: false })`);
+  await js(`window.__probe.setEnabledDirect({ claude: false, codex: false, qwen: false })`);
   await sleep(160);
   const emptyAdded = await js(`(() => {
     const box = document.querySelector('.empty');

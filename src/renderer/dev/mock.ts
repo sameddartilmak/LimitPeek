@@ -106,10 +106,11 @@ function weeklyCost(patch: Partial<WeeklyCost> = {}): WeeklyCost {
     // Claude has no Codex service tier (ADR-002 A3.17-18).
     assumedTierEvents: 0,
     fastRequestedEvents: 0,
-    // Gemini-only floor causes (ADR-003 A6); none for Claude.
+    // The local tools' floor causes (Qwen Code, Antigravity, Grok Build); none for Claude.
     unrecordedCalls: false,
     longPromptFloorEvents: 0,
     toolTokenEvents: 0,
+    partialUsageEvents: 0,
     pricesAsOf: '2026-06-24',
     windowStart: iso(-5 * 24 * HOUR),
     // Anchored means the window ends at the weekly reset, which is in the
@@ -225,11 +226,11 @@ function codexUnknown(): ProviderSnapshot {
   };
 }
 
-function geminiLoading(): ProviderSnapshot {
+function qwenLoading(): ProviderSnapshot {
   return {
-    id: 'gemini',
-    displayName: 'Gemini CLI',
-    accent: '#8AB4F8',
+    id: 'qwen',
+    displayName: 'Qwen Code',
+    accent: '#6D5DFC',
     experimental: true,
     enabled: true,
     connected: true,
@@ -367,7 +368,7 @@ function passive(
     id,
     displayName,
     accent,
-    experimental: id === 'gemini' || id === 'kimi',
+    experimental: id === 'kimi' || id === 'qwen' || id === 'grok',
     // The shipped default: Claude is added, the other four are offered in
     // settings and are NOT rows in the main panel until the user adds them.
     enabled: false,
@@ -419,7 +420,7 @@ export const SCENARIOS: readonly Scenario[] = [
       providers: [
         claudeOk(),
         codexUnknown(),
-        geminiLoading(),
+        qwenLoading(),
         antigravityError(),
         kimiPassive(),
       ],
@@ -462,9 +463,10 @@ export const SCENARIOS: readonly Scenario[] = [
       providers: [
         claudeUnknown(),
         passive('codex', 'Codex CLI', '#7FB3D5', 'Bulundu, henüz bağlı değil.'),
-        passive('gemini', 'Gemini CLI', '#8AB4F8', 'Bulundu, henüz bağlı değil.'),
         passive('antigravity', 'Antigravity', '#B892E8', 'Bu makinede bulunamadı.'),
         passive('kimi', 'Kimi', '#5FD3A6', 'Bu makinede bulunamadı.'),
+        passive('qwen', 'Qwen Code', '#6D5DFC', 'Bu makinede bulunamadı.'),
+        passive('grok', 'Grok Build', '#D946EF', 'Bu makinede bulunamadı.'),
       ],
     }),
   },
@@ -533,9 +535,10 @@ export const SCENARIOS: readonly Scenario[] = [
       providers: [
         { ...claudeOk(), enabled: false },
         { ...codexUnknown(), enabled: false },
-        passive('gemini', 'Gemini CLI', '#8AB4F8', 'Bu makinede bulunamadı.'),
         passive('antigravity', 'Antigravity', '#B892E8', 'Bu makinede bulunamadı.'),
         { ...kimiPassive(), enabled: false },
+        passive('qwen', 'Qwen Code', '#6D5DFC', 'Bu makinede bulunamadı.'),
+        passive('grok', 'Grok Build', '#D946EF', 'Bu makinede bulunamadı.'),
       ],
     }),
   },

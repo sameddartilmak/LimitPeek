@@ -51,9 +51,9 @@ test.describe('mergeOrder', () => {
   });
 
   test('providers the order omits are kept, in registry order, after the named ones', () => {
-    const merged = mergeOrder(['kimi', 'gemini']);
-    assert.deepEqual(merged.slice(0, 2), ['kimi', 'gemini']);
-    assert.deepEqual(merged.slice(2), PROVIDER_IDS.filter((id) => id !== 'kimi' && id !== 'gemini'));
+    const merged = mergeOrder(['kimi', 'grok']);
+    assert.deepEqual(merged.slice(0, 2), ['kimi', 'grok']);
+    assert.deepEqual(merged.slice(2), PROVIDER_IDS.filter((id) => id !== 'kimi' && id !== 'grok'));
   });
 
   test('every provider appears exactly once, whatever the input', () => {
@@ -70,10 +70,10 @@ test.describe('applyOrder', () => {
   const rows = () => PROVIDER_IDS.map((id) => ({ id, tag: id }));
 
   test('reorders without dropping or duplicating a row', () => {
-    const out = applyOrder(rows(), ['kimi', 'gemini']);
-    const rest = PROVIDER_IDS.filter((i) => i !== 'kimi' && i !== 'gemini');
+    const out = applyOrder(rows(), ['kimi', 'grok']);
+    const rest = PROVIDER_IDS.filter((i) => i !== 'kimi' && i !== 'grok');
     assert.equal(out.length, PROVIDER_IDS.length);
-    assert.equal(ids(out), ['kimi', 'gemini', ...rest].join(','));
+    assert.equal(ids(out), ['kimi', 'grok', ...rest].join(','));
   });
 
   test('an order naming only unknown ids leaves the array untouched', () => {
@@ -101,9 +101,9 @@ test.describe('applyOrder', () => {
 
 test.describe('the order reaches the snapshot', () => {
   test('buildSnapshot emits providers in user order', () => {
-    const snap = buildSnapshot({ now: Date.now(), events: [], rateLimits: null, order: ['kimi', 'gemini'] });
+    const snap = buildSnapshot({ now: Date.now(), events: [], rateLimits: null, order: ['kimi', 'qwen'] });
     assert.equal(snap.providers[0].id, 'kimi');
-    assert.equal(snap.providers[1].id, 'gemini');
+    assert.equal(snap.providers[1].id, 'qwen');
     assert.equal(snap.providers.length, PROVIDER_IDS.length);
   });
 
