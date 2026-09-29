@@ -1,0 +1,2 @@
+# Files written by the real CLIs: kept byte for byte, never line-ending converted.
+test/fixtures/real-cli/** -text
