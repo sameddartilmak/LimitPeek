@@ -1,0 +1,56 @@
+{
+  "sessionId": "01a0eceb-94cb-7873-aab8-31c8ac076225",
+  "updatedAt": "2026-09-29T11:27:39.781837200+00:00",
+  "session": {
+    "inputTokens": 1234,
+    "outputTokens": 56,
+    "cachedReadTokens": 1000,
+    "cacheCreationTokens": 0,
+    "reasoningTokens": 7,
+    "totalTokens": 1290,
+    "modelCalls": 1,
+    "costUsdTicks": 12345678,
+    "turnCount": 1,
+    "primaryModelId": "mock-model",
+    "modelUsage": {
+      "mock-model": {
+        "inputTokens": 1234,
+        "outputTokens": 56,
+        "cachedReadTokens": 1000,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 7,
+        "totalTokens": 1290,
+        "modelCalls": 1,
+        "costUsdTicks": 12345678
+      }
+    }
+  },
+  "turns": [
+    {
+      "turnNumber": 1,
+      "endedAt": "2026-09-29T11:27:39.781837200+00:00",
+      "inputTokens": 1234,
+      "outputTokens": 56,
+      "cachedReadTokens": 1000,
+      "cacheCreationTokens": 0,
+      "reasoningTokens": 7,
+      "totalTokens": 1290,
+      "modelCalls": 1,
+      "costUsdTicks": 12345678,
+      "turnCount": 1,
+      "primaryModelId": "mock-model",
+      "modelUsage": {
+        "mock-model": {
+          "inputTokens": 1234,
+          "outputTokens": 56,
+          "cachedReadTokens": 1000,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 7,
+          "totalTokens": 1290,
+          "modelCalls": 1,
+          "costUsdTicks": 12345678
+        }
+      }
+    }
+  ]
+}
