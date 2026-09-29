@@ -145,7 +145,10 @@
   --s-8: 32px;
 
   /* --- geometry -------------------------------------------------------- */
-  --panel-w: 360px;
+  /* 400px inside the 480x720 window (UI plan 2026-09-29), and never wider
+   * than the window minus a 16px margin each side: a work area too small for
+   * 480 gets a narrower window, and the panel follows it down. */
+  --panel-w: min(400px, calc(100vw - 32px));
   /* A live row is now name + two window blocks + meta; the min-height is a
    * floor for rows that report less, not the height of a full one. */
   --row-live-h: 64px;
@@ -188,6 +191,9 @@
   --dur-close: 140ms;
   --dur-fill: 400ms;
   --stagger: 30ms;
+  /* A card's details opening, and every hover/focus colour change. */
+  --dur-disclosure: 180ms;
+  --dur-hover: 120ms;
 }
 
 /* ------------------------------------------------------------ light theme */
@@ -355,7 +361,7 @@ body { user-select: none; cursor: default; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --dur-open: 1ms; --dur-close: 1ms; --dur-fill: 1ms; --stagger: 0ms; }
+  :root { --dur-open: 1ms; --dur-close: 1ms; --dur-fill: 1ms; --stagger: 0ms; --dur-disclosure: 1ms; --dur-hover: 1ms; }
   *, *::before, *::after {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;

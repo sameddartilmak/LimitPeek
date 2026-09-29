@@ -60,6 +60,8 @@ let prefs: Preferences = {
   formatLocale: 'tr-TR',
   autostart: true,
   autostartByWindows: false,
+  // A fresh install, so the first-run card can be reviewed.
+  setupCoachDismissed: false,
 };
 let prefsCb: ((p: Preferences) => void) | null = null;
 
@@ -251,6 +253,13 @@ function makeBridge(scenario: Scenario): Bridge {
     },
 
     /** Mirrors setTheme: persist, then push; `failAutostart` refuses. */
+    async setSetupCoachDismissed(dismissed: boolean): Promise<boolean> {
+      log(`setSetupCoachDismissed(${dismissed})`);
+      prefs = { ...prefs, setupCoachDismissed: dismissed };
+      prefsCb?.(prefs);
+      return true;
+    },
+
     async setAutostart(enabled: boolean): Promise<boolean> {
       log(`setAutostart(${enabled})`);
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -507,4 +516,26 @@ controls.appendChild(
 );
 controls.appendChild(logBox);
 
-remount(SCENARIOS[0] as Scenario);
+/**
+ * URL parameters, for screenshots of a given state without clicking through:
+ *   ?s=<scenario id>  &theme=light|dark  &lang=en  &coach=done
+ *   &view=settings  &tab=providers|usage|general  &expand=<provider id>
+ *   &shot=1 (the panel alone, no controls)
+ */
+const params = new URLSearchParams(window.location.search);
+const themeParam = params.get('theme');
+if (themeParam === 'light' || themeParam === 'dark') prefs = { ...prefs, theme: themeParam };
+if (params.get('lang') === 'en') prefs = { ...prefs, language: 'en', resolvedLanguage: 'en', formatLocale: 'en-US' };
+if (params.get('coach') === 'done') prefs = { ...prefs, setupCoachDismissed: true };
+if (params.get('shot') === '1') document.body.classList.add('hx--shot');
+remount(SCENARIOS.find((s) => s.id === params.get('s')) ?? (SCENARIOS[0] as Scenario));
+window.setTimeout(() => {
+  const click = (selector: string): void => {
+    (document.querySelector(selector) as HTMLElement | null)?.click();
+  };
+  if (params.get('view') === 'settings') click('.iconbtn--settings');
+  const tab = params.get('tab');
+  if (tab) click(`.tabs__tab[data-tab="${tab}"]`);
+  const expand = params.get('expand');
+  if (expand) click(`.row[data-provider="${expand}"] .row__more`);
+}, 300);

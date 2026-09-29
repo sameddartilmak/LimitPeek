@@ -23,7 +23,23 @@ export interface ConsentRequest {
   providerName: string;
   label: string;
   detail: string;
+  /**
+   * Where the prompt is drawn: inside the first-run card when the user pressed
+   * its "Bağla", otherwise inside the provider's own card. Either way the
+   * question appears where the button was, so the user never loses their place
+   * (UI plan 2026-09-29).
+   */
+  origin: 'coach' | 'row';
 }
+
+/** The settings view's three tabs (UI plan 2026-09-29). */
+export type SettingsTab = 'providers' | 'usage' | 'general';
+
+/**
+ * How a notice is presented. `error` stays until the user closes it; the
+ * others leave on their own after a few seconds, politely announced.
+ */
+export type NoticeTone = 'info' | 'success' | 'error';
 
 /**
  * Which view the panel shows.
@@ -53,8 +69,29 @@ export interface PanelState {
   refreshing: boolean;
   /** Provider ids whose setup action is currently running. */
   busy: readonly string[];
-  /** Transient, renderer-side message shown above the footer. */
+  /** Transient, renderer-side message, shown as a toast above the footer. */
   notice: string | null;
+  /** How `notice` is presented; see NoticeTone. */
+  noticeTone: NoticeTone;
+  /**
+   * The one provider card whose "Ayrıntılar" is open, or null. Only one at a
+   * time: opening another closes it. Lives in the store, so it survives the
+   * panel hiding and a language rebuild; a restart starts with all closed.
+   */
+  expandedProviderId: string | null;
+  /** The settings tab on screen. Survives hiding; a restart starts on 'providers'. */
+  settingsTab: SettingsTab;
+  /**
+   * `Preferences.setupCoachDismissed`: the first-run card was closed with
+   * "Şimdi değil" (or the file predates the card). Main's value, held here so
+   * the card can read it; flipped optimistically when the user closes it.
+   */
+  setupCoachDismissed: boolean;
+  /**
+   * The outcome line inside the first-run card after a cancelled or failed
+   * connect, so the user reads it where they acted. Null when there is none.
+   */
+  coachMessage: string | null;
   /**
    * A notice about the last EXPLICIT refresh — not about the data. Set from
    * `Snapshot.refreshNotices` on a `requestRefresh()` reply and never from a
@@ -158,6 +195,11 @@ const INITIAL: PanelState = {
   refreshing: false,
   busy: [],
   notice: null,
+  noticeTone: 'info',
+  expandedProviderId: null,
+  settingsTab: 'providers',
+  setupCoachDismissed: true,
+  coachMessage: null,
   refreshNotice: null,
   consent: null,
   order: null,

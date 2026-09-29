@@ -24,22 +24,15 @@
  * language. The panel is click-opened and pinnable now, so it is stable enough
  * to hold a form.
  *
- * THREE SECTIONS, ONE OPEN AT A TIME (ACCORDION)
- * ----------------------------------------------
- * The view holds three sections now — "Model Yönetimi" (which rows exist),
- * "Toplam Kullanım" (per-period notional cost) and "Görünüm" (the theme). They
- * are collapsible and mutually exclusive: opening one closes the others, so the
- * short hover panel never has to scroll through all three at once. Each header
- * is the accordion pattern from the ARIA practices — an <h3> wrapping a real
- * <button> with `aria-expanded` — so a screen-reader user both navigates by
- * heading AND operates the disclosure with the platform's own Space/Enter, and
- * the focus ring is the shared :focus-visible one.
- *
- * DEFAULT OPEN: "Model Yönetimi", the first section. It is the view's original
- * job, and it keeps the provider switches one tab stop away (back control ->
- * its header -> first provider switch); the other two start collapsed. Clicking the open header collapses it,
- * so "all closed" is reachable too — the invariant is at most one open, which
- * is what "opening one closes the others" means.
+ * THREE TABS (UI plan 2026-09-29)
+ * -------------------------------
+ * "Araçlar" (which cards exist, and each tool's plan), "Kullanım" (per-period
+ * notional cost) and "Genel" (appearance, language, start with Windows). They
+ * replaced an accordion that grew long and form-heavy. The bar and the tab list
+ * stay put; only the selected page scrolls, and on "Kullanım" the period
+ * selection stays on top while the chart and the list scroll under it. The
+ * selected tab lives in the store, so it survives the panel hiding and a
+ * language rebuild; a restart starts on "Araçlar".
  *
  * WHY THE USAGE FIGURE IS A COST AND NOT A TOKEN TOTAL
  * ---------------------------------------------------
@@ -60,7 +53,7 @@ import type {
   UsageHistory,
 } from '../../../shared/contract.js';
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
-import { enabledOf, type PanelState } from '../store.js';
+import { enabledOf, type PanelState, type SettingsTab } from '../store.js';
 import { themeLabel } from '../theme.js';
 import { pendingUsageOf } from '../sanitize.js';
 import {
@@ -80,12 +73,6 @@ import { providerMark } from './logo.js';
 /** The id the header's settings button points `aria-controls` at. */
 export const SETTINGS_VIEW_ID = 'settings-view';
 const SETTINGS_TITLE_ID = 'settings-title';
-const MODELS_HEADER_ID = 'settings-sec-models-h';
-const MODELS_REGION_ID = 'settings-sec-models-r';
-const USAGE_HEADER_ID = 'settings-sec-usage-h';
-const USAGE_REGION_ID = 'settings-sec-usage-r';
-const THEME_HEADER_ID = 'settings-sec-theme-h';
-const THEME_REGION_ID = 'settings-sec-theme-r';
 const SETTINGS_HELP_ID = 'settings-help';
 const THEME_TITLE_ID = 'settings-theme-title';
 const THEME_HELP_ID = 'settings-theme-help';
@@ -118,6 +105,8 @@ export interface SettingsContext {
   onAutostart(enabled: boolean): void;
   /** Leave settings and go back to the usage list. */
   onBack(): void;
+  /** The user picked a tab. The store keeps it across hide and rebuild. */
+  onTab(tab: SettingsTab): void;
   /**
    * Take our statusLine hook out of this tool's settings (Claude Code, agy).
    * Main asks natively before it writes anything.
@@ -248,12 +237,16 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     class: 'settings__plan-select',
     'aria-describedby': planId + '-hint',
   }) as HTMLSelectElement;
+  // Compact: "Plan: Max 20x" on one line inside the tool's card. The note
+  // that we cannot read the plan from the tool moved into the select's own
+  // tooltip, and stays in the accessibility tree through aria-describedby.
+  setAttr(planSelect, 'title', t('settings.plan.hint'));
   const planBlock = el(
     'div',
     { class: 'settings__plan' },
-    el('label', { class: 'settings__plan-label', for: planId }, t('settings.plan.label')),
+    el('label', { class: 'settings__plan-label', for: planId }, t('settings.plan.labelShort')),
     planSelect,
-    el('p', { class: 'settings__plan-hint', id: planId + '-hint' }, t('settings.plan.hint')),
+    el('p', { class: 'settings__plan-hint u-sr', id: planId + '-hint' }, t('settings.plan.hint')),
   );
   planBlock.hidden = true;
 
@@ -939,17 +932,23 @@ function createUsageSection(): UsageHandleLocal {
   const incompleteNote = el('p', { class: 'usage__incomplete' }, '');
   incompleteNote.hidden = true;
 
+  // The period SELECTION stays on top; the chart, the chosen period and the
+  // notes scroll under it (UI plan 2026-09-29).
   const root = el(
     'div',
     { class: 'usage' },
-    intro,
-    toggle,
-    pendingNote,
-    incompleteNote,
-    chart,
-    list,
-    empty,
-    note,
+    el('div', { class: 'usage__chooser' }, toggle),
+    el(
+      'div',
+      { class: 'usage__scroll' },
+      intro,
+      pendingNote,
+      incompleteNote,
+      chart,
+      list,
+      empty,
+      note,
+    ),
   );
 
   function periodsFor(): PeriodUsage[] {
@@ -1369,81 +1368,92 @@ function createUsageSection(): UsageHandleLocal {
   return { el: root, update };
 }
 
-/* --------------------------------------------------------------- accordion */
+/* -------------------------------------------------------------------- tabs */
 
-interface AccordionSection {
-  id: string;
-  trigger: HTMLButtonElement;
-  region: HTMLElement;
-  el: HTMLElement;
+interface TabDef {
+  id: SettingsTab;
+  label: string;
+  tab: HTMLButtonElement;
+  panel: HTMLElement;
 }
 
 /**
- * Builds one accordion section: an <h3> that wraps the toggle button, and a
- * labelled region. The heading carries the outline for screen-reader
- * navigation; the button carries the disclosure. `data-acc` is a stable hook
- * for tests and for the CSS chevron.
+ * The three tabs (UI plan 2026-09-29), in the ARIA tabs pattern: a
+ * `role="tablist"` of `role="tab"` buttons, each controlling one
+ * `role="tabpanel"`. One tab stop for the whole list (a roving tabindex): Left
+ * and Right move and select, Home and End jump to the ends, and Tab leaves the
+ * list for the selected page's first control. Selection is automatic on arrow,
+ * because each page is already built and switching costs nothing.
  */
-function createAccordionSection(
-  id: string,
-  headerId: string,
-  regionId: string,
-  title: string,
-  content: readonly HTMLElement[],
-): AccordionSection {
-  const trigger = el(
-    'button',
-    {
-      type: 'button',
-      class: 'acc__trigger',
-      id: headerId,
-      'aria-expanded': 'false',
-      'aria-controls': regionId,
-      'data-acc': id,
-    },
-    el('span', { class: 'acc__title' }, title),
-    el('span', { class: 'acc__chev', 'aria-hidden': 'true' }, chevronIcon()),
-  ) as HTMLButtonElement;
+function createTabs(
+  defs: ReadonlyArray<{ id: SettingsTab; label: string; content: readonly HTMLElement[]; extraClass?: string }>,
+  onSelect: (id: SettingsTab) => void,
+): { list: HTMLElement; panels: HTMLElement[]; tabs: TabDef[]; select(id: SettingsTab): void } {
+  const tabs: TabDef[] = defs.map((def) => {
+    const tabId = `settings-tab-${def.id}`;
+    const panelId = `settings-panel-${def.id}`;
+    const tab = el(
+      'button',
+      {
+        type: 'button',
+        class: 'tabs__tab',
+        role: 'tab',
+        id: tabId,
+        'aria-selected': 'false',
+        'aria-controls': panelId,
+        tabindex: '-1',
+        'data-tab': def.id,
+      },
+      def.label,
+    ) as HTMLButtonElement;
+    const panel = el(
+      'div',
+      {
+        class: `settings__panel${def.extraClass ? ` ${def.extraClass}` : ''}`,
+        role: 'tabpanel',
+        id: panelId,
+        'aria-labelledby': tabId,
+        'data-tab': def.id,
+      },
+      ...def.content,
+    );
+    panel.hidden = true;
+    return { id: def.id, label: def.label, tab, panel };
+  });
 
-  const heading = el('h3', { class: 'acc__heading' }, trigger);
-  const region = el(
+  const list = el(
     'div',
-    { class: 'acc__region', id: regionId, role: 'region', 'aria-labelledby': headerId },
-    ...content,
+    { class: 'tabs', role: 'tablist', 'aria-label': t('settings.tabs.label') },
+    ...tabs.map((d) => d.tab),
   );
-  const section = el('div', { class: 'acc__section', 'data-acc-section': id }, heading, region);
-  return { id, trigger, region, el: section };
-}
 
-/**
- * Wires the sections so at most one is open. Opening one closes the others;
- * clicking the open one collapses it. `aria-expanded` on the trigger and
- * `hidden` on the region are the two things kept in sync, and they are the two
- * a screen reader and a Tab key respectively depend on.
- */
-function wireAccordion(
-  sections: readonly AccordionSection[],
-  defaultOpenId: string | null,
-): (id: string) => void {
-  const setOpen = (section: AccordionSection, open: boolean): void => {
-    setAttr(section.trigger, 'aria-expanded', open ? 'true' : 'false');
-    section.region.hidden = !open;
-  };
-  for (const section of sections) setOpen(section, section.id === defaultOpenId);
-  for (const section of sections) {
-    on(section.trigger, 'click', () => {
-      const open = section.trigger.getAttribute('aria-expanded') === 'true';
-      if (open) {
-        setOpen(section, false);
-      } else {
-        for (const other of sections) setOpen(other, other.id === section.id);
-      }
-    });
+  function select(id: SettingsTab): void {
+    for (const d of tabs) {
+      const on_ = d.id === id;
+      setAttr(d.tab, 'aria-selected', on_ ? 'true' : 'false');
+      setAttr(d.tab, 'tabindex', on_ ? '0' : '-1');
+      d.panel.hidden = !on_;
+    }
   }
-  // Programmatic open, with the same one-open invariant as a click.
-  return (id: string) => {
-    for (const other of sections) setOpen(other, other.id === id);
-  };
+
+  tabs.forEach((d, index) => {
+    on(d.tab, 'click', () => onSelect(d.id));
+    on(d.tab, 'keydown', (e) => {
+      const key = e.key;
+      const next = key === 'ArrowRight' ? (index + 1) % tabs.length
+        : key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length
+          : key === 'Home' ? 0
+            : key === 'End' ? tabs.length - 1
+              : null;
+      if (next === null) return;
+      e.preventDefault();
+      const target = tabs[next];
+      onSelect(target.id);
+      target.tab.focus();
+    });
+  });
+
+  return { list, panels: tabs.map((d) => d.panel), tabs, select };
 }
 
 export function createSettings(ctx: SettingsContext): SettingsHandle {
@@ -1465,66 +1475,51 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     el('h2', { class: 'settings__title', id: SETTINGS_TITLE_ID }, t('header.settings')),
   );
 
-  // --- "Model Yönetimi": which rows exist ---------------------------------
-  const help = el(
-    'p',
-    { class: 'settings__help', id: SETTINGS_HELP_ID },
-    t('settings.models.help'),
-  );
-
+  // --- "Araçlar": which cards exist, and each tool's plan --------------------
+  const help = el('p', { class: 'settings__help', id: SETTINGS_HELP_ID }, t('settings.models.help'));
   const list = el('ul', {
     class: 'settings__list',
     role: 'list',
-    'aria-labelledby': MODELS_HEADER_ID,
+    'aria-label': t('settings.tabs.providers'),
     'aria-describedby': SETTINGS_HELP_ID,
   });
-
-  // The models section's own three states. "Taranıyor" and "araç yok" are
-  // different claims and must not share one blank panel.
+  // "Taranıyor" and "araç yok" are different claims and must not share one
+  // blank page.
   const status = el('p', { class: 'settings__status' }, '');
   status.hidden = true;
 
-  const modelsSection = createAccordionSection(
-    'models',
-    MODELS_HEADER_ID,
-    MODELS_REGION_ID,
-    t('settings.section.models'),
-    [help, list, status],
-  );
-
-  // --- "Toplam Kullanım": per-period notional cost ------------------------
+  // --- "Kullanım": per-period notional cost ---------------------------------
   const usage = createUsageSection();
-  const usageSection = createAccordionSection(
-    'usage',
-    USAGE_HEADER_ID,
-    USAGE_REGION_ID,
-    t('settings.section.usage'),
-    [usage.el],
-  );
 
-  // --- "Görünüm ve dil": the theme and the language ---------------------
-  // One section for both: they are the two preferences about how the panel
-  // presents itself, and a fourth accordion section would push the list down
-  // in a 360px panel. The id stays 'theme' so existing hooks keep working.
-  // "Start with Windows" sits here too, last, for the same reason: it is the
-  // one app-wide preference left, and it did not earn a section of its own.
+  // --- "Genel": appearance, language, start with Windows --------------------
   const theme = createThemeControl(ctx);
   const languageControl = createLanguageControl(ctx);
   const autostart = createAutostartControl(ctx);
-  const themeSection = createAccordionSection(
-    'theme',
-    THEME_HEADER_ID,
-    THEME_REGION_ID,
-    t('settings.section.appearance'),
-    [theme.el, languageControl.el, autostart.el],
+
+  let current: SettingsTab = 'providers';
+  const tabs = createTabs(
+    [
+      { id: 'providers', label: t('settings.tabs.providers'), content: [help, list, status] },
+      { id: 'usage', label: t('settings.tabs.usage'), content: [usage.el], extraClass: 'settings__panel--usage' },
+      {
+        id: 'general',
+        label: t('settings.tabs.general'),
+        content: [
+          el('h3', { class: 'settings__heading' }, t('settings.theme.legend')),
+          theme.el,
+          el('h3', { class: 'settings__heading' }, t('settings.language.legend')),
+          languageControl.el,
+          autostart.el,
+        ],
+      },
+    ],
+    (id) => {
+      current = id;
+      tabs.select(id);
+      ctx.onTab(id);
+    },
   );
-
-  const sections = [modelsSection, usageSection, themeSection];
-  // First section open. The tab path is back -> "Model Yönetimi" header ->
-  // first switch: each section header is a real button and a tab stop.
-  const openSection = wireAccordion(sections, 'models');
-
-  const acc = el('div', { class: 'acc' }, ...sections.map((s) => s.el));
+  tabs.select(current);
 
   const root = el(
     'section',
@@ -1534,27 +1529,20 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
       role: 'group',
       'aria-labelledby': SETTINGS_TITLE_ID,
     },
-    bar,
-    acc,
+    el('div', { class: 'settings__top' }, bar, tabs.list),
+    ...tabs.panels,
   );
   root.hidden = true;
 
   /**
    * Reconciled by id in the order given, exactly like the main list: the
-   * switch must keep focus across the 15s snapshot cadence.
-   *
-   * Runs BEFORE the empty/loading branches decide what to show, and runs even
-   * for an empty array. Returning early instead left hidden switches in the
-   * document after every provider went away — invisible, but still real
-   * controls carrying stale names and stale aria-checked, which is what a
-   * screen reader and a query selector both walk.
+   * switch must keep focus across the 15s snapshot cadence. Runs even for an
+   * empty array, so no stale hidden switch is left in the document.
    */
   function syncItems(state: PanelState, providers: readonly ProviderSnapshot[]): void {
     let cursor = list.firstElementChild;
     for (const provider of providers) {
-      // The shared predicate, never a restatement of it: this view and the
-      // main list must agree about what "added" means, or the switch will
-      // disagree with the row it controls.
+      // The shared predicate, never a restatement of it.
       const enabled = enabledOf(state, provider);
       let item = items.get(provider.id);
       if (!item) {
@@ -1583,16 +1571,18 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   }
 
   function render(state: PanelState, providers: readonly ProviderSnapshot[]): void {
+    if (state.settingsTab !== current) {
+      current = state.settingsTab;
+      tabs.select(current);
+    }
     syncItems(state, providers);
-    // Painted regardless of the models list's state: the theme control and the
-    // usage section belong to the VIEW, not to the provider list, and a machine
-    // with no recognised tools must still be able to pick a theme and see its
-    // history.
+    // Painted regardless of the tools list: a machine with no recognised tools
+    // must still be able to pick a theme and see its history.
     theme.update(state);
     languageControl.update(state);
     autostart.update(state);
     // The FULL snapshot list, not the added subset: a model row names its tool
-    // even when that tool's row was removed from the main panel.
+    // even when that tool's card was removed from the main panel.
     usage.update(
       state.snapshot?.usageHistory ?? null,
       state.hasData,
@@ -1600,8 +1590,6 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
       pendingUsageOf(state.snapshot),
     );
 
-    // Three states for the models list, told apart in words. "Still scanning"
-    // and "this machine has nothing" are different claims.
     if (!state.hasData) {
       list.hidden = true;
       status.hidden = false;
@@ -1627,7 +1615,9 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
       back.focus({ preventScroll: true });
     },
     focusLanguage(): void {
-      openSection('theme');
+      current = 'general';
+      tabs.select('general');
+      ctx.onTab('general');
       languageControl.focusChecked();
     },
   };

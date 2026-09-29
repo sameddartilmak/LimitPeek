@@ -203,7 +203,13 @@ export function createCost(providerId: string): CostHandle {
   const pendingLine = el('p', { class: 'cost__pending' });
   pendingLine.hidden = true;
 
-  const root = el('div', { class: 'cost' }, pendingLine, toggle, bar, caption, detail);
+  // The block's FIRST sentence, whenever a figure is shown (UI plan
+  // 2026-09-29): the reader meets "this is not a bill" before the amount, not
+  // after opening a disclosure.
+  const frame = el('p', { class: 'cost__frame' }, t('cost.notABill'));
+  frame.hidden = true;
+
+  const root = el('div', { class: 'cost' }, frame, pendingLine, toggle, bar, caption, detail);
   root.hidden = true;
 
   let expanded = false;
@@ -266,6 +272,7 @@ export function createCost(providerId: string): CostHandle {
     pendingLine.hidden = !pending;
     toggle.hidden = pending;
     if (pending) {
+      frame.hidden = true;
       setText(pendingLine, t('cost.pending'));
       bar.hidden = true;
       caption.hidden = true;
@@ -322,6 +329,8 @@ export function createCost(providerId: string): CostHandle {
     }
     root.hidden = false;
     setAttr(root, 'data-unpriced', hasFigure ? null : 'true');
+    // With no amount on screen there is nothing to deny (see the denial below).
+    frame.hidden = !hasFigure;
 
     if (hasFigure) {
       const amount = usd(cost.totalUsd);

@@ -1251,6 +1251,13 @@ export const IPC = {
    * next snapshot.
    */
   DISCONNECT_PROVIDER: 'provider:disconnect',
+  /**
+   * renderer -> main invoke(dismissed). Persists "Şimdi değil" on the first-run
+   * card (`Preferences.setupCoachDismissed`), then pushes PREFERENCES.
+   * `dismissed` must be a real boolean. Returns { ok: boolean }; on false
+   * nothing changed.
+   */
+  SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
 } as const;
 
 /**
@@ -1295,6 +1302,14 @@ export interface Preferences {
    * that is not `true` reaches the renderer as `false`.
    */
   autostartByWindows: boolean;
+  /**
+   * The user closed the first-run card that offers to connect Claude Code
+   * ("Şimdi değil"). False only on a fresh install that has not answered yet;
+   * a settings file from before the card existed reads as true, so an update
+   * never shows onboarding. Anything that is not a boolean reaches the renderer
+   * as `true`.
+   */
+  setupCoachDismissed: boolean;
 }
 
 /**
@@ -1396,6 +1411,8 @@ export interface UsageNotchApi {
   setLanguage(language: LanguageChoice): Promise<{ ok: boolean }>;
   /** Persist "start with Windows". See IPC.SET_AUTOSTART. */
   setAutostart(enabled: boolean): Promise<{ ok: boolean }>;
+  /** Persist "Şimdi değil" on the first-run card. See IPC.SET_SETUP_COACH_DISMISSED. */
+  setSetupCoachDismissed(dismissed: boolean): Promise<{ ok: boolean }>;
   /**
    * Persist the plan the user says they are on for ONE tool, or clear it. See
    * IPC.SET_PLAN_LABEL and `ProviderSnapshot.planLabel`.

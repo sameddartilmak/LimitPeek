@@ -37,6 +37,7 @@ const IPC = {
   SET_AUTOSTART: 'prefs:set-autostart',
   SET_PLAN_LABEL: 'prefs:set-plan-label',
   DISCONNECT_PROVIDER: 'provider:disconnect',
+  SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
 };
 
 /**

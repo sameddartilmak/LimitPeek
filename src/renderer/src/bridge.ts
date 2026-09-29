@@ -101,6 +101,8 @@ export interface Bridge {
    * the switch back where it was.
    */
   setAutostart(enabled: boolean): Promise<boolean>;
+  /** Persist "Şimdi değil" on the first-run card. `false` means nothing changed. */
+  setSetupCoachDismissed(dismissed: boolean): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
@@ -135,6 +137,7 @@ function nullBridge(): Bridge {
     setTheme: async () => false,
     setLanguage: async () => false,
     setAutostart: async () => false,
+    setSetupCoachDismissed: async () => false,
     close: () => {},
     pin: () => {},
   };
@@ -382,6 +385,19 @@ export function createBridge(): Bridge {
       }
       try {
         const result = await api.setAutostart(enabled);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    async setSetupCoachDismissed(dismissed: boolean): Promise<boolean> {
+      if (typeof api.setSetupCoachDismissed !== 'function') {
+        missing('setSetupCoachDismissed');
+        return false;
+      }
+      try {
+        const result = await api.setSetupCoachDismissed(dismissed);
         return !!result && result.ok === true;
       } catch {
         return false;

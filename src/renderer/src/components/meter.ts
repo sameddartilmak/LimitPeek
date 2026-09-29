@@ -67,9 +67,12 @@ interface WindowCopy {
  * (see row.css).
  */
 function copyFor(kind: WindowKind): WindowCopy {
+  // The SHORT label ("5 saatlik", "Haftalık"): the two windows now sit side by
+  // side as equal columns, and the full name is still what a screen reader
+  // hears and what the details and the tooltip say.
   return kind === '5h'
-    ? { label: t('meter.window5h.label'), spoken: t('meter.window5h.spoken') }
-    : { label: t('meter.window7d.label'), spoken: t('meter.window7d.spoken') };
+    ? { label: t('meter.window5h.short'), spoken: t('meter.window5h.spoken') }
+    : { label: t('meter.window7d.short'), spoken: t('meter.window7d.spoken') };
 }
 
 /**

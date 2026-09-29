@@ -31,6 +31,7 @@ const CH = {
   INITIAL_SNAPSHOT: 'usage:initial-snapshot',
   INITIAL_PREFERENCES: 'prefs:initial',
   DISCONNECT_PROVIDER: 'provider:disconnect',
+  SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -200,6 +201,15 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   setAutostart: (enabled) => ipcRenderer.invoke(CH.SET_AUTOSTART, enabled === true),
+
+  /**
+   * Persists "Şimdi değil" on the first-run card. Same shape as setAutostart;
+   * `{ok:false}` means nothing changed.
+   *
+   * @param {boolean} dismissed
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setSetupCoachDismissed: (dismissed) => ipcRenderer.invoke(CH.SET_SETUP_COACH_DISMISSED, dismissed === true),
 
   /**
    * Persists the plan the user says they are on for ONE tool, or clears it.

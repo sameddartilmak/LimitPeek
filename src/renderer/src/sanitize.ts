@@ -1041,7 +1041,10 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
     : defaultFormatLocale(resolvedLanguage);
   const autostart = typeof source.autostart === 'boolean' ? source.autostart : true;
   const autostartByWindows = source.autostartByWindows === true;
-  return { theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows };
+  // Only a real `false` opens the first-run card; a main that predates the
+  // field, or any odd value, keeps it closed.
+  const setupCoachDismissed = source.setupCoachDismissed !== false;
+  return { theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed };
 }
 
 /** Returns null when the payload is not a usable Snapshot at all. */

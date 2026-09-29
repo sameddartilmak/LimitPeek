@@ -180,6 +180,9 @@ function createPreferences({ getSettings, currentLocale, readOs, storeBuild = ()
       autostart: settings ? sanitizeAutostart(settings.autostart) : DEFAULT_AUTOSTART,
       // A Store package: Windows owns start-at-sign-in (packaging.js).
       autostartByWindows: storeBuild() === true,
+      // Only a real `false` shows the first-run card; anything else keeps it
+      // closed, the safe side for a value that only ever hides a suggestion.
+      setupCoachDismissed: !(settings && settings.setupCoachDismissed === false),
     };
   };
 }

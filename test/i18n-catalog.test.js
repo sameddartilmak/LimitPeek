@@ -185,7 +185,8 @@ test.describe('the catalogs have one shape in both languages', () => {
     // the endonyms (a language's own name is the same word for every reader),
     // words that are the same in both ("OK", the product name), and values that
     // are only placeholders and separators.
-    const SAME_KEYS = new Set(['language.endonym.tr', 'language.endonym.en']);
+    // "Plan" is the same word in both languages (settings, 2026-09-29).
+    const SAME_KEYS = new Set(['language.endonym.tr', 'language.endonym.en', 'settings.plan.labelShort']);
     const SAME_VALUES = new Set(['OK', 'Usage Notch']);
     const onlyPlaceholders = (text) => !/\p{L}/u.test(text.replace(/\{[A-Za-z][A-Za-z0-9]*\}/g, ''));
     // Plural records are compared category by category: English "one" may

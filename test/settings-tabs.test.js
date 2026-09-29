@@ -9,12 +9,14 @@ const { stripTypeScriptTypes } = require('node:module');
 const { inlineJsonImports } = require('../src/renderer/inline-json.cjs');
 
 /**
- * The settings accordion (src/renderer/src/components/settings.ts).
+ * The settings tabs (src/renderer/src/components/settings.ts; UI plan
+ * 2026-09-29: "Araçlar", "Kullanım", "Genel" replaced the accordion).
  *
  * WHY A DOM SHIM AND NOT THE RENDER HARNESS
  * -----------------------------------------
- * The one-open-closes-others behaviour and the `aria-expanded` reflection are
- * DOM facts, and `npm test` has no window. The full electron render suite
+ * The tabs pattern — one selected tab, one visible panel, a roving tab stop,
+ * arrow keys that move and select — is a set of DOM facts, and `npm test` has
+ * no window. The full electron render suite
  * (`npm run verify:render`) does, but it is a separate, slow GUI run. So this
  * mounts the REAL component against a tiny DOM implementing only the handful of
  * operations settings.ts touches at construction and on a click — enough to
@@ -215,7 +217,7 @@ function mirrorRenderer() {
   return dir;
 }
 
-const SECTION_IDS = ['models', 'usage', 'theme'];
+const TAB_IDS = ['providers', 'usage', 'general'];
 
 let settingsMod;
 let mirrorDir;
@@ -234,166 +236,117 @@ test.after(() => {
 });
 
 function mount() {
+  const picked = [];
   const handle = settingsMod.createSettings({
     onToggle() {},
     onTheme() {},
+    onLanguage() {},
+    onAutostart() {},
+    onDisconnect() {},
+    onPlanLabel() {},
     onBack() {},
+    onTab(id) { picked.push(id); },
   });
-  const triggers = new Map();
-  const regions = new Map();
-  for (const id of SECTION_IDS) {
-    const trigger = findByAttr(handle.el, 'data-acc', id);
-    assert.ok(trigger, `no accordion trigger for "${id}"`);
-    triggers.set(id, trigger);
-    regions.set(id, findById(handle.el, trigger.getAttribute('aria-controls')));
+  const tabs = new Map();
+  const panels = new Map();
+  for (const id of TAB_IDS) {
+    const tab = walk(handle.el).find((el) => el.getAttribute('role') === 'tab' && el.getAttribute('data-tab') === id);
+    assert.ok(tab, `no tab for "${id}"`);
+    tabs.set(id, tab);
+    panels.set(id, findById(handle.el, tab.getAttribute('aria-controls')));
   }
-  return { handle, triggers, regions };
+  return { handle, tabs, panels, picked };
 }
 
-const isOpen = (trigger) => trigger.getAttribute('aria-expanded') === 'true';
+const selectedOf = (tabs) => TAB_IDS.filter((id) => tabs.get(id).getAttribute('aria-selected') === 'true');
 
-test('each section header is a real button carrying the disclosure ARIA', () => {
-  const { triggers, regions } = mount();
-  for (const id of SECTION_IDS) {
-    const trigger = triggers.get(id);
-    assert.equal(trigger.tagName, 'BUTTON', `${id} header must be a <button>`);
-    assert.equal(trigger.getAttribute('type'), 'button');
-    // aria-expanded is a real 'true'/'false' string, never absent.
-    assert.ok(['true', 'false'].includes(trigger.getAttribute('aria-expanded')));
-    // The button lives inside an <h3>, so it is navigable by heading.
-    assert.equal(trigger.parentNode.tagName, 'H3');
-    // aria-controls points at a region that exists and is labelled by the button.
-    const region = regions.get(id);
-    assert.ok(region, `${id} region is missing`);
-    assert.equal(region.getAttribute('role'), 'region');
-    assert.equal(region.getAttribute('aria-labelledby'), trigger.getAttribute('id'));
-  }
-});
-
-test('the first section (Model Yönetimi) is open by default, the others collapsed', () => {
-  const { triggers, regions } = mount();
-  assert.equal(isOpen(triggers.get('models')), true);
-  assert.equal(regions.get('models').hidden, false);
-
-  for (const id of ['usage', 'theme']) {
-    assert.equal(isOpen(triggers.get(id)), false, `${id} should start collapsed`);
-    assert.equal(regions.get(id).hidden, true, `${id} region should start hidden`);
-  }
-});
-
-test('opening one section closes the others (at most one open)', () => {
-  const { triggers, regions } = mount();
-
-  // Open "usage": models must close.
-  triggers.get('usage').click();
-  assert.equal(isOpen(triggers.get('usage')), true);
-  assert.equal(regions.get('usage').hidden, false);
-  assert.equal(isOpen(triggers.get('models')), false);
-  assert.equal(regions.get('models').hidden, true);
-  assert.equal(isOpen(triggers.get('theme')), false);
-
-  // Open "theme": usage must close.
-  triggers.get('theme').click();
-  assert.equal(isOpen(triggers.get('theme')), true);
-  assert.equal(regions.get('theme').hidden, false);
-  assert.equal(isOpen(triggers.get('usage')), false);
-  assert.equal(regions.get('usage').hidden, true);
-
-  // Never more than one open at any point.
-  const openCount = SECTION_IDS.filter((id) => isOpen(triggers.get(id))).length;
-  assert.equal(openCount, 1);
-});
-
-test('clicking the open section collapses it — all-closed is reachable', () => {
-  const { triggers, regions } = mount();
-  // models starts open; click it to collapse.
-  triggers.get('models').click();
-  assert.equal(isOpen(triggers.get('models')), false);
-  assert.equal(regions.get('models').hidden, true);
-  const openCount = SECTION_IDS.filter((id) => isOpen(triggers.get(id))).length;
-  assert.equal(openCount, 0, 'clicking the open header leaves every section closed');
-});
-
-test('aria-expanded and region.hidden stay in lockstep across a sequence of clicks', () => {
-  const { triggers, regions } = mount();
-  const clicks = ['usage', 'theme', 'theme', 'models', 'usage'];
-  for (const id of clicks) {
-    triggers.get(id).click();
-    for (const s of SECTION_IDS) {
-      // The region is hidden exactly when its trigger says collapsed.
-      assert.equal(
-        regions.get(s).hidden,
-        !isOpen(triggers.get(s)),
-        `${s} region.hidden must mirror aria-expanded after clicking ${id}`,
-      );
-    }
-  }
-});
-
-// ------------------------------------------------ language (ADR-004)
-
-/** The i18n and store modules of the SAME mirror, so setLocale reaches settings.js. */
-async function mirrorModule(...parts) {
-  return import(pathToFileURL(path.join(mirrorDir, 'renderer', 'src', ...parts)).href);
+function press(el, key) {
+  const event = { type: 'keydown', key, target: el, currentTarget: el, preventDefault() {}, stopPropagation() {} };
+  for (const fn of (el.listeners.get('keydown') || []).slice()) fn(event);
 }
 
-function stateWith(store, patch) {
-  const s = new store.Store();
-  s.set({ hasData: true, ...patch });
-  return s.get();
-}
-
-function uninstalled(detail) {
+/** Just enough PanelState for settings.render(). */
+function state(over = {}) {
   return {
-    id: 'codex',
-    displayName: 'Codex',
-    connected: false,
-    enabled: false,
-    accent: '#10a37f',
-    setupAction: { kind: 'not-installed', label: 'x', detail },
+    snapshot: null, hasData: false, settingsTab: 'providers', theme: 'system', themePending: false,
+    themeReverted: false, language: 'system', languagePending: false, languageReverted: false,
+    autostart: true, autostartPending: false, autostartReverted: false, autostartByWindows: false,
+    enabledOverride: {}, enabledPending: [], revertedId: null, planPending: [], planReverted: null,
+    ...over,
   };
 }
 
-test('the setup detail becomes a clause lower-cased in the RESOLVED language (A1.7)', async () => {
-  const i18n = await mirrorModule('i18n.js');
-  const store = await mirrorModule('store.js');
-  const metaOf = (detail) => {
-    const handle = settingsMod.createSettings({ onToggle() {}, onTheme() {}, onLanguage() {}, onBack() {} });
-    handle.render(stateWith(store, {}), [uninstalled(detail)]);
-    const meta = findById(handle.el, 'settings-meta-codex');
-    assert.ok(meta, 'no meta line for the provider');
-    return meta.textContent;
-  };
-  try {
-    i18n.setLocale('tr', 'tr-TR');
-    const tr = metaOf('Işık bulunamadı.');
-    assert.ok(tr.endsWith('ışık bulunamadı'), tr);
-    assert.ok(metaOf('İzmir kurulu değil.').endsWith('izmir kurulu değil'));
-
-    i18n.setLocale('en', 'en-US');
-    const en = metaOf('It is not installed.');
-    assert.ok(en.endsWith('it is not installed'), en);
-    assert.equal(/ıt is/.test(en), false, 'English "I" lower-cased with Turkish rules');
-  } finally {
-    i18n.setLocale('tr', 'tr-TR');
+test('a tablist of three real tab buttons, each controlling a labelled tabpanel', () => {
+  const { handle, tabs, panels } = mount();
+  const list = walk(handle.el).find((el) => el.getAttribute('role') === 'tablist');
+  assert.ok(list, 'no tablist');
+  assert.ok(list.getAttribute('aria-label'), 'the tablist has no name');
+  for (const id of TAB_IDS) {
+    const tab = tabs.get(id);
+    assert.equal(tab.tagName, 'BUTTON');
+    assert.equal(tab.getAttribute('type'), 'button');
+    assert.ok(['true', 'false'].includes(tab.getAttribute('aria-selected')));
+    const panel = panels.get(id);
+    assert.ok(panel, `${id}: aria-controls points nowhere`);
+    assert.equal(panel.getAttribute('role'), 'tabpanel');
+    assert.equal(panel.getAttribute('aria-labelledby'), tab.getAttribute('id'));
   }
 });
 
-test('picking a language only asks: the component does not switch the words itself', async () => {
-  const i18n = await mirrorModule('i18n.js');
-  const store = await mirrorModule('store.js');
-  i18n.setLocale('tr', 'tr-TR');
-  const asked = [];
-  const handle = settingsMod.createSettings({
-    onToggle() {}, onTheme() {}, onBack() {}, onLanguage: (choice) => asked.push(choice),
-  });
-  handle.render(stateWith(store, { language: 'tr' }), []);
-  const en = findById(handle.el, 'language-en');
-  assert.ok(en, 'no English radio');
-  en.checked = true;
-  en.dispatch('change');
-  assert.deepEqual(asked, ['en']);
-  // Main has not pushed PREFERENCES: the resolved language is unchanged.
-  assert.equal(i18n.language(), 'tr');
-  assert.equal(i18n.formatLocale(), 'tr-TR');
+test('"Araçlar" is selected on a fresh panel; one tab stop, one visible panel', () => {
+  const { tabs, panels } = mount();
+  assert.deepEqual(selectedOf(tabs), ['providers']);
+  assert.deepEqual(TAB_IDS.map((id) => tabs.get(id).getAttribute('tabindex')), ['0', '-1', '-1']);
+  assert.deepEqual(TAB_IDS.map((id) => panels.get(id).hidden), [false, true, true]);
+});
+
+test('a click selects its tab, shows its panel and tells the app', () => {
+  const { tabs, panels, picked } = mount();
+  tabs.get('usage').click();
+  assert.deepEqual(selectedOf(tabs), ['usage']);
+  assert.deepEqual(TAB_IDS.map((id) => panels.get(id).hidden), [true, false, true]);
+  assert.deepEqual(picked, ['usage']);
+});
+
+test('arrow keys move and select, wrapping at both ends; Home and End jump', () => {
+  const { tabs, picked } = mount();
+  press(tabs.get('providers'), 'ArrowRight');
+  assert.deepEqual(selectedOf(tabs), ['usage']);
+  press(tabs.get('usage'), 'ArrowRight');
+  assert.deepEqual(selectedOf(tabs), ['general']);
+  press(tabs.get('general'), 'ArrowRight');
+  assert.deepEqual(selectedOf(tabs), ['providers'], 'Right on the last tab wraps to the first');
+  press(tabs.get('providers'), 'ArrowLeft');
+  assert.deepEqual(selectedOf(tabs), ['general'], 'Left on the first tab wraps to the last');
+  press(tabs.get('general'), 'Home');
+  assert.deepEqual(selectedOf(tabs), ['providers']);
+  press(tabs.get('providers'), 'End');
+  assert.deepEqual(selectedOf(tabs), ['general']);
+  assert.deepEqual(picked, ['usage', 'general', 'providers', 'general', 'providers', 'general']);
+  // Exactly one tab stop at every point.
+  assert.equal(TAB_IDS.filter((id) => tabs.get(id).getAttribute('tabindex') === '0').length, 1);
+});
+
+test('other keys do nothing', () => {
+  const { tabs, picked } = mount();
+  press(tabs.get('providers'), 'Enter');
+  press(tabs.get('providers'), 'a');
+  assert.deepEqual(selectedOf(tabs), ['providers']);
+  assert.deepEqual(picked, []);
+});
+
+test('the store decides the tab on render, so it survives the panel hiding and a rebuild', () => {
+  const { handle, tabs, panels } = mount();
+  handle.render(state({ settingsTab: 'general' }), []);
+  assert.deepEqual(selectedOf(tabs), ['general']);
+  assert.equal(panels.get('general').hidden, false);
+  handle.render(state({ settingsTab: 'usage' }), []);
+  assert.deepEqual(selectedOf(tabs), ['usage']);
+});
+
+test('after a language change the language control is found on the "Genel" tab', () => {
+  const { handle, tabs, picked } = mount();
+  handle.focusLanguage();
+  assert.deepEqual(selectedOf(tabs), ['general']);
+  assert.deepEqual(picked, ['general']);
 });

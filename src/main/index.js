@@ -27,7 +27,7 @@ const {
   createApplyLanguage,
   createPreferences,
 } = require('./language-ipc');
-const { createSetAutostartHandler } = require('./autostart-ipc');
+const { createSetAutostartHandler, createSetSetupCoachDismissedHandler } = require('./autostart-ipc');
 const { createRefreshHandler } = require('./refresh-ipc');
 const { buildTrayImage } = require('./tray-icon');
 const {
@@ -425,6 +425,15 @@ function registerIpc() {
     save: (s) => settingsStore.save(userDataDir(), s),
     apply: applyAutostart,
     rebuildTrayMenu: () => { if (tray) tray.setMenu(trayMenuOptions()); },
+    push: pushPreferences,
+    log,
+  }));
+
+  // "Şimdi değil" on the first-run card. Persist, then push; nothing to apply.
+  ipcMain.handle(IPC.SET_SETUP_COACH_DISMISSED, createSetSetupCoachDismissedHandler({
+    fromPanel,
+    getSettings: () => settings,
+    save: (s) => settingsStore.save(userDataDir(), s),
     push: pushPreferences,
     log,
   }));

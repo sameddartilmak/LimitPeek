@@ -587,8 +587,8 @@ export function drift(snapshot: Snapshot, step: number): Snapshot {
 
 // ----------------------------------------------------------------- anchors
 
-const WINDOW_W = 440;
-const WINDOW_H = 680;
+const WINDOW_W = 480;
+const WINDOW_H = 720;
 
 /**
  * Tray anchor fixtures. The harness renders inside a browser tab, so these

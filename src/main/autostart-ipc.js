@@ -77,7 +77,40 @@ function createSetAutostartHandler({ fromPanel, getSettings, save, apply, rebuil
   };
 }
 
+/**
+ * The SET_SETUP_COACH_DISMISSED handler: "Şimdi değil" on the first-run card,
+ * persisted so the card does not come back after a restart.
+ *
+ * Persist-then-push, refused (nothing changed) on a non-boolean or a failed
+ * write, exactly like SET_AUTOSTART minus the login-item and tray steps, which
+ * this value has no part in.
+ *
+ * @param {object} deps
+ * @param {(event: object) => boolean} deps.fromPanel
+ * @param {() => object} deps.getSettings
+ * @param {(settings: object) => boolean} deps.save
+ * @param {() => void} deps.push
+ * @param {{warn: Function}} deps.log
+ */
+function createSetSetupCoachDismissedHandler({ fromPanel, getSettings, save, push, log }) {
+  return (event, dismissed) => {
+    if (!fromPanel(event)) return { ok: false };
+    if (typeof dismissed !== 'boolean') return { ok: false };
+    const settings = getSettings();
+    const previous = settings.setupCoachDismissed;
+    settings.setupCoachDismissed = dismissed;
+    if (!save(settings)) {
+      settings.setupCoachDismissed = previous;
+      log.warn('setup coach state could not be persisted; nothing changed');
+      return { ok: false };
+    }
+    push();
+    return { ok: true };
+  };
+}
+
 module.exports = {
+  createSetSetupCoachDismissedHandler,
   DEFAULT_AUTOSTART,
   sanitizeAutostart,
   createSetAutostartHandler,

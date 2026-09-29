@@ -1,26 +1,31 @@
 /**
- * The panel shell: header band, one ordered row list, footer.
+ * The panel shell: header, an optional status strip, one ordered card list,
+ * the toasts, and the footer.
  *
- * Rows are reconciled by provider id rather than rebuilt, so the meter keeps
+ * Cards are reconciled by provider id rather than rebuilt, so the meter keeps
  * its element across snapshots and the 400ms fill transition actually has
  * something to transition from. Rebuilding the list would make every update
  * look like a first paint.
  *
  * ONE LIST, NOT TWO
  * -----------------
- * Connected and passive rows used to live in separate sections under a
- * "Henüz bağlı değil" label. They now share a single list, in the order main
- * sends. Three reasons, all forced by reordering:
- *   1. The contract says `providers[0]` drives the tray icon and the user's
- *      model of that is "the row at the top of the panel". With two sections
- *      those are different objects, and a disconnected provider sitting at
- *      index 0 would show at the BOTTOM while owning the tray.
- *   2. Passive rows are draggable too, so they have to share one position
- *      space; "3 of 4" has to mean one thing.
- *   3. Two lists means two drop targets with different semantics and two live
- *      regions. One list has one set of positions and one announcement.
- * The grouping information is not lost: an unconnected row has a monochrome
- * mark, no tile, no meter, and its own "bağlı değil" explanation.
+ * Connected and passive cards share a single list, in the order main sends.
+ * The contract says the tray icon follows the first ENABLED provider, and the
+ * user's model of that is "the card at the top"; passive cards are draggable
+ * too, so they share one position space; and one list has one drop target and
+ * one live region. An unconnected card still reads as one: grey mark, no meter,
+ * its own "bağlı değil" explanation.
+ *
+ * THE SHELL (UI plan 2026-09-29)
+ * ------------------------------
+ *   header   fixed; the freshness marker is a dot while live and a chip when not
+ *   strip    "Bağlantı yok" while the background service is unreachable — the
+ *            ONE place that condition is stated; the footer no longer repeats it
+ *   list     the only thing that scrolls; the first-run card sits above it
+ *   toasts   outcomes of the user's own actions: a success leaves after 3 s, an
+ *            error stays until closed
+ *   footer   "Son tarama" and "Yenile", nothing else; the pin's promise moved
+ *            into the pin's own tooltip
  */
 
 import type { LanguageChoice, ProviderSnapshot, ThemeChoice } from '../../../shared/contract.js';
@@ -29,7 +34,8 @@ import { el, on, setAttr, setText, svg } from '../dom.js';
 import { clockTime } from '../format.js';
 import { language, t } from '../i18n.js';
 import { createReorder, type ReorderHandle } from '../reorder.js';
-import { enabledOf, type PanelState, type PanelView } from '../store.js';
+import { isDrawable } from './meter.js';
+import { enabledOf, type PanelState, type PanelView, type SettingsTab } from '../store.js';
 import { createHeader, type HeaderHandle } from './header.js';
 import { providerMark } from './logo.js';
 import { createSettings, type SettingsHandle } from './settings.js';
@@ -41,19 +47,21 @@ import {
   type RowHandle,
 } from './row.js';
 
-/** Placeholder rows shown before the first snapshot lands. Enough to fill the
+/** Placeholder cards shown before the first snapshot lands. Enough to fill the
  *  panel without pretending to know how many tools this machine has. */
 const SKELETON_ROWS = 3;
 
 /** How long the "tool is closed" toast stays before it leaves on its own. */
-const TOAST_MS = 8000;
+const TOOL_TOAST_MS = 5000;
+/** How long a success or info toast stays. An error stays until closed. */
+const OUTCOME_TOAST_MS = 3000;
 
 /**
  * `attachGrip` and `isTrayRow` are supplied by the panel itself, not the app:
  * only the panel knows which element ended up first and which reorder
  * controller owns the list.
  */
-export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow'> {
+export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow' | 'isExpanded' | 'onToggleExpand'> {
   /** Take our statusLine hook out of a tool's settings. */
   onDisconnect(providerId: string): void;
   /** The user stated the plan they are on for this tool, or cleared it. */
@@ -63,6 +71,10 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onRefresh(): void;
   /** Swap between the usage list and the settings view. */
   onSettingsToggle(): void;
+  /** Open the settings view on a given tab. */
+  onOpenSettings(tab: SettingsTab): void;
+  /** The user picked a settings tab. */
+  onSettingsTab(tab: SettingsTab): void;
   /** Add a provider to the main panel, or remove it. */
   onToggleProvider(providerId: string, enabled: boolean): void;
   /** The user picked a theme in settings. */
@@ -71,6 +83,12 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onLanguageChange(language: LanguageChoice): void;
   /** The user flipped "start with Windows" in settings. Optimistic. */
   onAutostartChange(enabled: boolean): void;
+  /** The user pressed a card's "Ayrıntılar". */
+  onToggleExpand(providerId: string): void;
+  /** "Bağla" on the first-run card: the same consent path, drawn in the card. */
+  onCoachConnect(providerId: string): void;
+  /** "Şimdi değil" on the first-run card: persisted, it does not come back. */
+  onCoachDismiss(): void;
   /**
    * Whether the first-run tray coach was dismissed. Held by the app, not the
    * panel, because a language change rebuilds the panel and a tip the user
@@ -84,8 +102,7 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   /** Cancels main's pending auto-hide. Called whenever the pointer is inside
    *  the panel, and again at the start of every drag. */
   onKeepAlive(): void;
-  /** The user closed the notice. Clears `state.notice`; see the notice block
-   *  below for why the offline banner never reaches this. */
+  /** The user closed the toast. Clears `state.notice`. */
   onNoticeDismiss(): void;
   /** The user closed the refresh bubble ("Antigravity açık değil"). */
   onRefreshNoticeDismiss(): void;
@@ -127,13 +144,8 @@ function tailGlyph(): SVGElement {
   );
 }
 
-/**
- * The notice's close cross. Same geometry and stroke as the header's close
- * (components/header.ts) so the two read as one control at two sizes, drawn
- * at 12/16 of the viewBox because this one sits inside a text box rather than
- * a control strip.
- */
-function noticeCloseIcon(): SVGElement {
+/** A small close cross, shared by every toast. */
+function closeIcon(): SVGElement {
   return svg(
     'svg',
     { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false' },
@@ -144,6 +156,36 @@ function noticeCloseIcon(): SVGElement {
       'stroke-linecap': 'round',
     }),
   );
+}
+
+/** The refresh arrow. It turns while a refresh is in flight; the label says so too. */
+function refreshIcon(): SVGElement {
+  return svg(
+    'svg',
+    { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false', class: 'foot__refresh-icon' },
+    svg('path', {
+      d: 'M13 8a5 5 0 1 1-1.46-3.54M13 3v2.5h-2.5',
+      stroke: 'currentColor',
+      'stroke-width': '1.4',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+    }),
+  );
+}
+
+/**
+ * Should the first-run card show? Only when main says the user has not
+ * answered it (`setupCoachDismissed === false`, a fresh install), Claude Code
+ * can be connected through its bridge, and no tool is giving a limit figure
+ * yet — the moment one is, the card has nothing left to offer.
+ */
+export function coachProviderOf(state: PanelState): ProviderSnapshot | null {
+  if (state.setupCoachDismissed || !state.hasData) return null;
+  const providers = state.snapshot?.providers ?? [];
+  const claude = providers.find((p) => p.id === 'claude') ?? null;
+  if (!claude || claude.setupAction?.kind !== 'install-bridge') return null;
+  const anyFigure = providers.some((p) => isDrawable(p.fiveHour) || isDrawable(p.sevenDay));
+  return anyFigure ? null : claude;
 }
 
 export function createPanel(ctx: PanelContext): PanelHandle {
@@ -163,7 +205,12 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onLanguage: (choice) => ctx.onLanguageChange(choice),
     onAutostart: (enabled) => ctx.onAutostartChange(enabled),
     onBack: () => ctx.onSettingsToggle(),
+    onTab: (tab) => ctx.onSettingsTab(tab),
   });
+
+  // --- the status strip: the ONE place "no connection" is stated ----------
+  const strip = el('p', { class: 'strip', role: 'status' }, t('panel.offline'));
+  strip.hidden = true;
 
   const rowList = el('ul', {
     class: 'rows',
@@ -181,39 +228,26 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   skeletonList.hidden = true;
 
   /**
-   * The empty state, spelled out.
-   *
-   * A blank list is the no-data-versus-zero collision: "we found nothing on
-   * this machine" and "you removed every row" look identical, and one of them
-   * has an obvious fix. So the box always says WHICH it is, and when the fix
-   * is in settings it offers the way there rather than describing it.
+   * The empty states, spelled out. "We found nothing on this machine" and "you
+   * removed every card" look identical as a blank list, and each has its own
+   * fix, so each gets its own words and its own one button.
    */
   const emptyTitle = el('strong', { class: 'empty__title' }, '');
   const emptyDetail = el('span', { class: 'empty__detail' }, '');
-  const emptyAction = el(
-    'button',
-    { type: 'button', class: 'btn btn--primary' },
-    t('panel.openSettings'),
-  ) as HTMLButtonElement;
-  on(emptyAction, 'click', () => ctx.onSettingsToggle());
+  const emptyAction = el('button', { type: 'button', class: 'btn btn--primary' }, '') as HTMLButtonElement;
+  let emptyMode: 'none-found' | 'none-added' = 'none-found';
+  on(emptyAction, 'click', () => {
+    if (emptyMode === 'none-found') ctx.onRefresh();
+    else ctx.onOpenSettings('providers');
+  });
   const emptyState = el('div', { class: 'empty' }, emptyTitle, emptyDetail, emptyAction);
   emptyState.hidden = true;
 
   // Every grip points at this with aria-describedby, so the keyboard path is
   // announced by the control that offers it rather than hidden in a tooltip.
-  const reorderHelp = el(
-    'p',
-    { class: 'u-sr', id: REORDER_HELP_ID },
-    t('panel.reorderHelp'),
-  );
+  const reorderHelp = el('p', { class: 'u-sr', id: REORDER_HELP_ID }, t('panel.reorderHelp'));
 
-  // Moves are announced here, politely, with the resulting position. A drag
-  // announces once, on drop; the keyboard path announces on every move.
-  // Classed, not anonymous: the header now carries a second polite status
-  // region (the freshness marker), and a bare [role=status] selector — in a
-  // test or in a future component — would find whichever comes first in the
-  // document. Two regions is the right ARIA here, one per concern; what is
-  // wrong is two regions that cannot be told apart.
+  // Moves are announced here, politely, with the resulting position.
   const liveRegion = el('p', {
     class: 'u-sr rows__live',
     role: 'status',
@@ -221,86 +255,18 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     'aria-atomic': 'true',
   });
 
-  const listBand = el(
-    'div',
-    { class: 'panel__band panel__band--list' },
-    el('hr', { class: 'rule' }),
-    reorderHelp,
-    skeletonList,
-    rowList,
-    emptyState,
-    settings.el,
-  );
-  listBand.style.setProperty('--band-delay', '40ms');
-
-  /**
-   * The notice, and its close control.
-   *
-   * WHY THE BUTTON IS OUTSIDE THE LIVE REGION
-   * -----------------------------------------
-   * `role="status"` is a live region: assistive technology re-reads its
-   * contents whenever they change. The whole box used to BE that region, so
-   * putting the button inside it would have made every message — a reorder
-   * failure, a theme failure, a setup result — announce itself with
-   * "Bu bildirimi kapat, düğme" tacked on the end. Worse, the region's content
-   * is replaced on every render, and a focused control inside a node whose
-   * text is being rewritten is the classic way to drop focus to <body>.
-   *
-   * So the region shrank to the paragraph. The wrapper is a plain <div> with
-   * no role, the text is the only thing announced, and the button is a sibling
-   * that is never part of the announcement and is never rewritten.
-   *
-   * WHY THE OFFLINE BANNER HAS NO BUTTON
-   * ------------------------------------
-   * Two different things share this box. `state.notice` is an OUTCOME — a
-   * thing that happened once and is over — and clearing it loses nothing. The
-   * bridge-unavailable line is a live CONDITION: it is true for as long as it
-   * is on screen, and the panel is showing values it cannot refresh the whole
-   * time. There is no store field to clear, and inventing a dismissed-flag for
-   * it would let the user hide a fact that is still true. So the control is
-   * present exactly when pressing it would do something, which is also the
-   * only honest reading of a close button.
-   *
-   * NO Esc BINDING. Esc already unwinds consent -> settings -> close the panel
-   * (app.ts onKeyDown). A notice appears after almost every action, so binding
-   * Esc here would mean "Esc closes the panel" silently stops working at
-   * exactly the moment the user is most likely to press it. The notice is not
-   * modal, takes no focus and blocks nothing, so it has no claim on the key.
-   */
-  const noticeText = el('p', { class: 'notice__text', role: 'status' }, '');
-  const noticeClose = el('button', {
-    type: 'button',
-    // Same 24px icon button as the header controls, one step quieter: the
-    // message is the point and the control must not compete with it.
-    class: 'iconbtn notice__close',
-    // The glyph is drawn and aria-hidden, so the button would otherwise have
-    // no accessible name at all.
-    'aria-label': t('panel.noticeClose'),
-    title: t('panel.noticeClose'),
-  }) as HTMLButtonElement;
-  noticeClose.appendChild(noticeCloseIcon());
-  const notice = el('div', { class: 'notice' }, noticeText, noticeClose);
-  notice.hidden = true;
-
-  // --- consent prompt ----------------------------------------------------
+  // --- consent: drawn where the button was pressed ------------------------
   // Installing the statusline bridge writes into the user's Claude Code
   // settings. It is never sent to main until this is confirmed, and the
-  // explanation is shown BEFORE the affirmative control, not after it.
+  // explanation is shown BEFORE the affirmative control. It is moved into the
+  // card whose "Bağla" was pressed (or into the first-run card), so the user
+  // reads the question where they acted.
   const consentTitle = el('strong', { class: 'consent__title', id: 'consent-title' }, '');
   const consentDetail = el('span', { class: 'consent__detail', id: 'consent-detail' }, '');
-  const consentCancel = el(
-    'button',
-    { type: 'button', class: 'btn' },
-    t('panel.consentCancel'),
-  ) as HTMLButtonElement;
-  const consentConfirm = el(
-    'button',
-    { type: 'button', class: 'btn btn--primary' },
-    t('panel.consentConfirm'),
-  ) as HTMLButtonElement;
+  const consentCancel = el('button', { type: 'button', class: 'btn' }, t('panel.consentCancel')) as HTMLButtonElement;
+  const consentConfirm = el('button', { type: 'button', class: 'btn btn--primary' }, t('panel.consentConfirm')) as HTMLButtonElement;
   on(consentCancel, 'click', () => ctx.onConsentCancel());
   on(consentConfirm, 'click', () => ctx.onConsentConfirm());
-
   const consentBox = el(
     'div',
     {
@@ -315,28 +281,65 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   );
   consentBox.hidden = true;
 
-  const scanText = el('span', {}, '');
-  /**
-   * The pin promise, in words, in the one place the user is already reading
-   * small print. The icon carries it too, but "this window disappears when my
-   * mouse leaves" is a surprising rule to infer from a 14px glyph, and it is
-   * now the DEFAULT state after a tray click.
-   */
-  const modeText = el('span', { class: 'foot__mode' }, '');
-  const refreshButton = el(
-    'button',
-    { type: 'button', class: 'btn', 'aria-label': t('panel.refreshLabel') },
-    t('panel.refresh'),
-  ) as HTMLButtonElement;
-  on(refreshButton, 'click', () => ctx.onRefresh());
+  // --- the first-run card -------------------------------------------------
+  const setupLater = el('button', { type: 'button', class: 'btn' }, t('coach.later')) as HTMLButtonElement;
+  const setupConnect = el('button', { type: 'button', class: 'btn btn--primary' }, t('coach.connect')) as HTMLButtonElement;
+  const setupMessage = el('p', { class: 'setup__message', role: 'status' }, '');
+  setupMessage.hidden = true;
+  const setupActions = el('div', { class: 'setup__actions' }, setupLater, setupConnect);
+  const setupMark = el('span', { class: 'setup__mark', 'aria-hidden': 'true' }, providerMark('claude', true));
+  const setupCard = el(
+    'section',
+    { class: 'setup', 'aria-labelledby': 'setup-title', 'data-connected': 'true' },
+    el(
+      'div',
+      { class: 'setup__head' },
+      setupMark,
+      el('h2', { class: 'setup__title', id: 'setup-title' }, t('coach.title')),
+    ),
+    el('p', { class: 'setup__text' }, t('coach.text')),
+    setupMessage,
+    setupActions,
+  );
+  setupCard.hidden = true;
+  on(setupLater, 'click', () => ctx.onCoachDismiss());
+  on(setupConnect, 'click', () => ctx.onCoachConnect('claude'));
+
+  const listBand = el(
+    'div',
+    { class: 'panel__band panel__band--list' },
+    reorderHelp,
+    setupCard,
+    skeletonList,
+    rowList,
+    emptyState,
+    settings.el,
+  );
+  listBand.style.setProperty('--band-delay', '40ms');
+
+  // --- toasts -------------------------------------------------------------
+  // The outcome of something the user just did. `role="status"` on the text
+  // alone, so the close control is never part of the announcement and is never
+  // rewritten under focus. An error stays until closed; anything else leaves
+  // after OUTCOME_TOAST_MS. No Esc binding: Esc already unwinds consent ->
+  // settings -> close the panel, and a toast has no claim on it.
+  const noticeText = el('p', { class: 'toast__text notice__text', role: 'status' }, '');
+  const noticeClose = el('button', {
+    type: 'button',
+    class: 'toast__close',
+    'aria-label': t('panel.noticeClose'),
+    title: t('panel.noticeClose'),
+  }) as HTMLButtonElement;
+  noticeClose.appendChild(closeIcon());
+  const notice = el('div', { class: 'toast notice' }, el('div', { class: 'toast__body' }, noticeText), noticeClose);
+  notice.hidden = true;
+  let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+  let noticeShown: string | null = null;
 
   /**
    * First-run coaching for the tray icon, shown only when we KNOW we are not
    * pointing at one: `anchorSource: 'cursor'` means main could not measure a
-   * plausible tray rect, and on Windows 11 that is most often the hidden-icons
-   * overflow flyout. It matters more now that hover no longer opens anything —
-   * a click target the user cannot find is worse than a hover target they
-   * stumble onto.
+   * plausible tray rect, most often the Windows 11 hidden-icons overflow.
    */
   const coachDismiss = el(
     'button',
@@ -346,11 +349,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   const coach = el(
     'div',
     { class: 'coach', role: 'note' },
-    el(
-      'span',
-      { class: 'coach__text' },
-      t('panel.coach'),
-    ),
+    el('span', { class: 'coach__text' }, t('panel.coach')),
     el('div', { class: 'coach__actions' }, coachDismiss),
   );
   coach.hidden = true;
@@ -359,41 +358,18 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     coach.hidden = true;
   });
 
-  // The refresh bubble. A CALM message, not the error row: the user pressed
-  // Yenile while the Antigravity IDE was closed, so its store cannot be
-  // updating. It says the tool is not open and that nothing is broken.
-  //
-  // What it must NOT do is promise "the values below are your last measurement"
-  // unconditionally. Antigravity's five-hour window rolls over every five hours
-  // while the store only updates with the IDE open, so by the time the user
-  // looks with it closed that window has almost always ENDED — the snapshot
-  // then carries no figure for it and the row honestly shows an absence. The
-  // old wording promised values the row could not show, so the bubble and the
-  // row contradicted each other. The honest claim is narrower: values are shown
-  // ONLY where the last reading is still valid, and an expired window needs the
-  // IDE open. That matches the row in every case, expired or not.
-  //
-  // 2026-09-24, owner's ask: the first version was a four-line paragraph with
-  // an "OK" button, and read like an error report. It is now a small toast: the
-  // tool's own mark, a two-word title, one plain sentence, a close cross, and it
-  // leaves on its own after TOAST_MS. The sentence claims only what is true in
-  // every case — opening the tool updates the numbers — so it cannot
-  // contradict a row whose expired window shows no figure.
-  //
-  // It is shown ONLY on an explicit refresh reply carrying the notice, never
-  // on a push (app.ts reads it off the invoke reply alone).
+  // The "tool is closed" toast: the user pressed Yenile while the Antigravity
+  // IDE was closed, so its store cannot be updating. Calm information, not an
+  // error; it leaves on its own after TOOL_TOAST_MS. Shown ONLY on an explicit
+  // refresh reply carrying the notice, never on a push.
   const refreshBubbleDismiss = el(
     'button',
     { type: 'button', class: 'toast__close', 'aria-label': t('panel.bubbleDismissLabel') },
-    svg(
-      'svg',
-      { viewBox: '0 0 12 12', width: '12', height: '12', 'aria-hidden': 'true' },
-      svg('path', { d: 'M3 3l6 6M9 3l-6 6', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round' }),
-    ),
+    closeIcon(),
   ) as HTMLButtonElement;
   const refreshBubble = el(
     'div',
-    { class: 'toast', role: 'status' },
+    { class: 'toast toast--tool', role: 'status' },
     providerMark('antigravity', true),
     el(
       'div',
@@ -405,25 +381,29 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   );
   refreshBubble.hidden = true;
   on(refreshBubbleDismiss, 'click', () => ctx.onRefreshNoticeDismiss());
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  let toolToastTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const footBand = el(
+  const toasts = el('div', { class: 'toasts' }, coach, refreshBubble, notice);
+
+  // --- footer: last scan and refresh, nothing else -------------------------
+  const scanText = el('span', { class: 'foot__scan' }, '');
+  const refreshLabel = el('span', { class: 'foot__refresh-label' }, t('panel.refresh'));
+  const refreshButton = el(
+    'button',
+    { type: 'button', class: 'btn foot__refresh', 'aria-label': t('panel.refreshLabel') },
+    refreshIcon(),
+    refreshLabel,
+  ) as HTMLButtonElement;
+  on(refreshButton, 'click', () => ctx.onRefresh());
+  const foot = el(
     'div',
-    { class: 'panel__band' },
-    coach,
-    refreshBubble,
-    consentBox,
-    notice,
-    liveRegion,
-    el(
-      'div',
-      { class: 'foot' },
-      scanText,
-      el('span', { class: 'foot__spacer' }),
-      modeText,
-      refreshButton,
-    ),
+    { class: 'foot' },
+    scanText,
+    el('span', { class: 'foot__spacer' }),
+    refreshButton,
   );
+
+  const footBand = el('div', { class: 'panel__band panel__band--foot' }, toasts, liveRegion, foot);
   footBand.style.setProperty('--band-delay', '80ms');
 
   const root = el(
@@ -439,6 +419,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       tabindex: '-1',
     },
     header.el,
+    strip,
     listBand,
     footBand,
   );
@@ -449,20 +430,10 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   const anchorEl = el('div', { class: 'anchor', 'data-open': 'false' }, root, tail);
 
   /**
-   * Dismissal, and where focus goes afterwards.
-   *
-   * The control removes itself: `ctx.onNoticeDismiss()` clears the store,
-   * which re-renders synchronously (store.ts `set` calls its listeners inline)
-   * and hides this whole box. A focused element inside a `hidden` subtree is
-   * blurred by the browser, and focus lands on <body> — outside the dialog,
-   * with no visible ring and no tab position, so the next Tab restarts from
-   * the top of the document. The panel already treats focus survival as
-   * load-bearing (the render suite pins focus surviving a row move), so this
-   * puts focus on the panel itself: it is `tabindex="-1"`, it is the dialog,
-   * and tabbing on from it continues inside the panel.
-   *
-   * Guarded on `contains`, because a mouse user never had focus in here and
-   * yanking it to the dialog root would be a change they did not ask for.
+   * Dismissal, and where focus goes afterwards: a focused control inside a
+   * box that is about to be hidden would drop focus to <body>, outside the
+   * dialog. The panel root is `tabindex="-1"` and tabbing on from it continues
+   * inside the panel. Guarded on `contains`, so a mouse user is not moved.
    */
   on(noticeClose, 'click', () => {
     const hadFocus = notice.contains(document.activeElement);
@@ -471,22 +442,21 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   });
 
   let lastPlacementKey = '';
-  let lastConsentId: string | null = null;
+  let lastConsentKey: string | null = null;
   /** Newest state, so a drag ending can re-render without the app pushing. */
   let lastState: PanelState | null = null;
   let lastNow = Date.now();
+  /** The card whose details were open at the last render, to scroll to a new one. */
+  let lastExpanded: string | null = null;
 
   const reorder: ReorderHandle = createReorder({
     list: rowList,
     scroller: listBand,
-    // The list only holds ADDED providers now, so what the drag produces is a
-    // subset. Persisting that subset would tell main the un-added providers no
-    // longer exist. expandOrder() puts it back into a full order first.
+    // The list only holds ADDED providers, so what the drag produces is a
+    // subset; expandOrder() puts it back into a full order first.
     commit: (ids) => ctx.onReorder(expandOrder(ids)),
     announce: (text) => {
-      // Re-announce identical text by clearing first; a screen reader ignores
-      // a live region whose content did not change, and two moves in a row can
-      // legitimately produce the same sentence.
+      // Re-announce identical text by clearing first.
       setText(liveRegion, '');
       setText(liveRegion, text);
     },
@@ -500,9 +470,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   /** Provider id currently at index 0, i.e. the one main draws the tray from. */
   let trayRowId: string | null = null;
 
-  // The context the rows actually see. Getters, not a spread: the app mutates
-  // `generatedAt` and `staleOverride` on its own object between renders, and a
-  // copy would freeze the values a row reads for its "as of" line.
+  // The context the cards actually see. Getters, not a spread: the app mutates
+  // `generatedAt` and `staleOverride` on its own object between renders.
   const rowCtx: RowContext = {
     onRetry: (id) => ctx.onRetry(id),
     onSetup: (id) => ctx.onSetup(id),
@@ -510,6 +479,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     isPending: (id) => ctx.isPending(id),
     attachGrip: (grip, id, name) => reorder.attach(grip, id, name),
     isTrayRow: (id) => id === trayRowId,
+    isExpanded: (id) => lastState?.expandedProviderId === id,
+    onToggleExpand: (id) => ctx.onToggleExpand(id),
     get generatedAt(): string | null {
       return ctx.generatedAt;
     },
@@ -519,18 +490,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   };
 
   /**
-   * "The pointer is inside the panel."
-   *
-   * NOT the leave detector. Main polls the OS for the cursor position every
-   * 250ms and measures it against the window rect, because these events fire
-   * on movement only: a hand resting still inside the panel emits nothing, and
-   * a design that timed out on this signal would have closed the panel under
-   * it — the over-eager dismissal this whole change exists to remove.
-   *
-   * It is kept as a tighter second signal (it lands the instant the pointer
-   * arrives, ahead of the next poll) and as the "the panel is being used" hint
-   * that raises main's refresh cadence. Nothing here may assume it is the
-   * mechanism holding the panel open. Throttled, because it is an IPC send.
+   * "The pointer is inside the panel" — a tighter second signal for main's own
+   * cursor poll, never the mechanism holding the panel open. Throttled.
    */
   let lastKeepAlive = 0;
   function keepAlive(force: boolean): void {
@@ -557,17 +518,16 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   }
 
   function applyAnchor(state: PanelState): void {
-    // The OS window cannot grow, so the row list — not the panel — absorbs any
-    // excess. Without this a machine with many providers silently clips its
-    // last row, which is the one failure the user would never notice.
+    // The OS window cannot grow, so the list — not the panel — absorbs any
+    // excess. Header and footer stay put; only the list scrolls.
     const canvasHeight = state.anchor
       ? state.anchor.window.height
       : document.documentElement.clientHeight;
-    const chrome = header.el.offsetHeight + footBand.offsetHeight;
+    const chrome = header.el.offsetHeight + footBand.offsetHeight + (strip.hidden ? 0 : strip.offsetHeight);
     const budget = canvasHeight - chrome - 2 * 12 - 8 - 2;
     listBand.style.setProperty('--list-max', `${Math.max(120, budget)}px`);
 
-    const size = { width: root.offsetWidth || 360, height: root.offsetHeight || 0 };
+    const size = { width: root.offsetWidth || 400, height: root.offsetHeight || 0 };
     const placement = state.anchor
       ? placePanel(state.anchor, size)
       : defaultPlacement({
@@ -575,9 +535,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
           height: document.documentElement.clientHeight,
         });
 
-    // Placement is re-applied on every render because the panel's height
-    // changes with its content, but writing identical styles every second
-    // would defeat the compositor. Key on the values that actually move.
+    // Re-applied on every render because the height changes with content, but
+    // keyed so identical styles are not rewritten every second.
     const key = [
       placement.left,
       placement.top,
@@ -596,10 +555,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
 
   function syncList(list: HTMLElement, providers: readonly ProviderSnapshot[], now: number): void {
     // `insertBefore` on an element that contains the focused node detaches it
-    // for an instant, and Chromium drops focus to <body> when it does. That is
-    // fatal for the keyboard path: after one Alt+ArrowUp the grip is gone from
-    // under the user and the second press goes nowhere. Verified in Electron —
-    // this is not defensive coding, it is a bug that was there.
+    // for an instant, and Chromium drops focus to <body> when it does — fatal
+    // for the keyboard reorder path. Verified in Electron.
     const active = document.activeElement;
     const refocus = active instanceof HTMLElement && list.contains(active) ? active : null;
 
@@ -613,8 +570,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
         handle = createRow(provider, rowCtx, now);
         rows.set(provider.id, handle);
       }
-      // Position is stated, not implied by DOM order alone: a reorderable list
-      // is exactly where a screen reader needs "3 of 6" spoken.
+      // Position is stated, not implied by DOM order alone.
       setAttr(handle.el, 'aria-posinset', String(i + 1));
       setAttr(handle.el, 'aria-setsize', String(providers.length));
       if (handle.el === cursor) {
@@ -623,7 +579,6 @@ export function createPanel(ctx: PanelContext): PanelHandle {
         list.insertBefore(handle.el, cursor);
       }
     }
-    // Anything left after the cursor is gone from the snapshot.
     while (cursor) {
       const next = cursor.nextElementSibling;
       list.removeChild(cursor);
@@ -632,53 +587,34 @@ export function createPanel(ctx: PanelContext): PanelHandle {
 
     if (refocus && document.activeElement !== refocus && list.contains(refocus)) {
       refocus.focus({ preventScroll: true });
-      // The row may have moved out of the scrolled viewport; bring it back
-      // without yanking the whole panel around.
       refocus.scrollIntoView({ block: 'nearest' });
     }
   }
 
   /**
-   * The order the panel actually draws.
-   *
-   * `Snapshot.providers` is already in user order and is NEVER re-sorted here.
-   * The one exception is `state.order`: the user's own pending move, held by
-   * the app between the gesture and main's next snapshot. It is applied only
-   * when it names exactly the same set of providers, so a stale override can
-   * never drop or duplicate a row.
-   */
-  /**
-   * Turn the visible (added-only) order a drag produced back into a full one.
-   *
-   * Un-added providers keep their absolute positions and the added ones fill
-   * the slots they already occupied, in their new relative order. That is the
-   * only expansion that leaves `Snapshot.providers` a permutation of itself —
-   * anything else would either drop rows the user cannot see or move rows the
-   * user did not touch.
+   * Turn the visible (added-only) order a drag produced back into a full one:
+   * un-added providers keep their absolute positions and the added ones fill
+   * the slots they already occupied, in their new relative order.
    */
   function expandOrder(visible: readonly string[]): readonly string[] {
     const all = (lastState ? ordered(lastState) : []).map((p) => p.id as string);
     const moving = new Set(visible);
     const slots = all.filter((id) => moving.has(id));
-    // A mismatch means the list and the snapshot have drifted apart; send the
-    // order we are actually drawing rather than a guess built from both.
     if (all.length === 0 || slots.length !== visible.length) return all;
     let k = 0;
     return all.map((id) => (moving.has(id) ? (visible[k++] as string) : id));
   }
 
-  /**
-   * What the main panel actually draws: user order, added rows only.
-   *
-   * The ONE place the enabled filter is applied. Everything that needs the
-   * lead row — the list and the tray marker — reads it from here rather than
-   * re-deriving it, so the surfaces cannot disagree about which provider they
-   * are describing.
-   */
+  /** What the main panel draws: user order, added cards only. */
   function visibleOf(state: PanelState): readonly ProviderSnapshot[] {
     return ordered(state).filter((provider) => enabledOf(state, provider));
   }
 
+  /**
+   * `Snapshot.providers` is already in user order and is NEVER re-sorted here,
+   * except for `state.order`: the user's own pending move, applied only when it
+   * names exactly the same set of providers.
+   */
   function ordered(state: PanelState): readonly ProviderSnapshot[] {
     const providers = state.snapshot?.providers ?? [];
     const order = state.order;
@@ -693,45 +629,93 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     return out;
   }
 
+  function reducedMotion(): boolean {
+    try {
+      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The toast for `state.notice`, and its timer. */
+  function renderNotice(state: PanelState): void {
+    if (!state.notice) {
+      notice.hidden = true;
+      setText(noticeText, '');
+      noticeShown = null;
+      if (noticeTimer !== null) {
+        clearTimeout(noticeTimer);
+        noticeTimer = null;
+      }
+      return;
+    }
+    notice.hidden = false;
+    setAttr(notice, 'data-tone', state.noticeTone);
+    // An error is announced assertively and stays; anything else is polite.
+    setAttr(noticeText, 'role', state.noticeTone === 'error' ? 'alert' : 'status');
+    const key = `${state.noticeTone}|${state.notice}`;
+    if (key === noticeShown) return;
+    noticeShown = key;
+    setText(noticeText, state.notice);
+    if (noticeTimer !== null) clearTimeout(noticeTimer);
+    noticeTimer = null;
+    if (state.noticeTone !== 'error') {
+      noticeTimer = setTimeout(() => {
+        noticeTimer = null;
+        if (lastState?.notice === state.notice) ctx.onNoticeDismiss();
+      }, OUTCOME_TOAST_MS);
+    }
+  }
+
+  /** Where the consent question is drawn: the card, or the first-run card. */
+  function placeConsent(state: PanelState): void {
+    const consent = state.consent;
+    if (!consent) {
+      consentBox.hidden = true;
+      lastConsentKey = null;
+      return;
+    }
+    const host = consent.origin === 'coach' && !setupCard.hidden
+      ? setupCard
+      : rows.get(consent.providerId)?.el ?? setupCard;
+    if (consentBox.parentElement !== host) host.appendChild(consentBox);
+    consentBox.hidden = false;
+    setText(consentTitle, `${consent.providerName}: ${consent.label}`);
+    setText(consentDetail, consent.detail);
+    setText(consentConfirm, consent.label);
+    setAttr(
+      consentConfirm,
+      'aria-label',
+      t('panel.consentConfirmLabel', { provider: consent.providerName, label: consent.label }),
+    );
+    // Moving focus onto the affirmative control would be a trap for anyone
+    // pressing Enter twice; focus the cancel side and let them choose.
+    const key = `${consent.origin}|${consent.providerId}`;
+    if (lastConsentKey !== key) {
+      lastConsentKey = key;
+      consentCancel.focus({ preventScroll: true });
+      consentBox.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
   function render(state: PanelState, now: number): void {
     lastState = state;
     lastNow = now;
 
     const inSettings = state.view === 'settings';
     const all = ordered(state);
-    // The main list shows only what the user ADDED. Settings still sees every
-    // provider, which is why the snapshot carries them all.
+    // The main list shows only what the user ADDED. Settings sees every tool.
     const providers = visibleOf(state);
-    // The contract puts the tray icon on the first ENABLED provider, not on
-    // providers[0]: an un-added provider must never drive an icon whose row
-    // the user cannot see.
+    // The tray icon follows the first ENABLED provider.
     trayRowId = providers.length > 0 ? providers[0].id : null;
 
-    // The header no longer describes the lead row — the readout that did was
-    // redundant with the window blocks below it and was removed. What is left
-    // is the freshness marker and the controls, neither of which depends on
-    // which provider is first.
     header.update(state, now);
 
-    // A drag owns the list's MEMBERSHIP as well as its geometry.
-    //
-    // Every row carries a transform keyed to positions measured at
-    // pointerdown, so nothing may be added, removed or re-ordered until the
-    // gesture ends. The prune below used to run unconditionally, which was
-    // harmless while the set only changed when main dropped a provider
-    // outright — but the enabled filter made a row disappear on a settings
-    // toggle, and pruning then tore the dragged element out from under the
-    // pointer: the element loses pointer capture, so `pointerup` never reaches
-    // it, the session never ends, the surviving rows stay stuck under stale
-    // transforms, and the drag's capture-phase Escape handler stays installed
-    // and swallows every later Esc. Row CONTENT still updates; only the set is
-    // frozen, and the drop's own re-render applies the removal a moment later.
+    // A drag owns the list's MEMBERSHIP as well as its geometry: nothing may be
+    // added, removed or re-ordered until the gesture ends (see reorder.ts).
     if (reorder.isDragging()) {
       for (const provider of providers) rows.get(provider.id)?.update(provider, rowCtx, now);
     } else {
-      // Drop handles for providers that are no longer drawn, so the map cannot
-      // grow. `enabled` is a reason to stop drawing a row, exactly like a
-      // provider vanishing from the snapshot.
       const alive = new Set<string>(providers.map((p) => p.id));
       for (const [id, handle] of rows) {
         if (!alive.has(id)) {
@@ -742,8 +726,18 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       syncList(rowList, providers, now);
     }
 
-    // Before the first snapshot lands the panel is not blank and it does not
-    // wait: it shows the final geometry so nothing moves when data arrives.
+    // --- the first-run card ---
+    const coachFor = coachProviderOf(state);
+    const showSetup = !inSettings && coachFor !== null;
+    setupCard.hidden = !showSetup;
+    const asking = state.consent?.origin === 'coach' && showSetup;
+    setupActions.hidden = asking;
+    setupMessage.hidden = !state.coachMessage || asking;
+    setText(setupMessage, state.coachMessage ?? '');
+    setupConnect.disabled = coachFor ? ctx.isBusy(coachFor.id) : false;
+
+    // Before the first snapshot lands the panel shows the final geometry, so
+    // nothing moves when data arrives.
     skeletonList.hidden = state.hasData || inSettings;
     rowList.hidden = !state.hasData || inSettings || providers.length === 0;
     emptyState.hidden = !state.hasData || inSettings || providers.length > 0;
@@ -753,58 +747,39 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     if (inSettings) settings.render(state, all);
 
     if (!emptyState.hidden) {
-      // Two different absences, never one blank panel. Only the second has a
-      // fix, and it is one control away.
       const nothingKnown = all.length === 0;
-      setText(
-        emptyTitle,
-        nothingKnown ? t('providers.noneFound') : t('panel.empty.noneAdded'),
-      );
+      emptyMode = nothingKnown ? 'none-found' : 'none-added';
+      setText(emptyTitle, nothingKnown ? t('panel.empty.noneFoundTitle') : t('panel.empty.noneAdded'));
       setText(
         emptyDetail,
         nothingKnown
           ? t('panel.empty.noneDetail')
           : t('panel.empty.noneAddedDetail', { count: all.length }),
       );
-      emptyAction.hidden = nothingKnown;
+      setText(emptyAction, nothingKnown ? t('panel.empty.rescan') : t('panel.empty.chooseTools'));
+      emptyAction.disabled = nothingKnown && (state.refreshing || !state.bridgeAvailable);
     }
 
-    // `dismissible` is the whole difference between the two messages that
-    // share this box: an outcome the store owns, versus a live condition it
-    // does not. See the notice block above.
-    if (!state.bridgeAvailable) {
-      notice.hidden = false;
-      noticeClose.hidden = true;
-      setText(
-        noticeText,
-        t('panel.offline'),
-      );
-    } else if (state.notice) {
-      notice.hidden = false;
-      noticeClose.hidden = false;
-      setText(noticeText, state.notice);
-    } else {
-      notice.hidden = true;
-      noticeClose.hidden = true;
-      setText(noticeText, '');
-    }
+    // --- the status strip, the one home of "no connection" ---
+    strip.hidden = state.bridgeAvailable;
 
-    // --- consent prompt ---
-    const consent = state.consent;
-    consentBox.hidden = consent === null;
-    if (consent) {
-      setText(consentTitle, `${consent.providerName}: ${consent.label}`);
-      setText(consentDetail, consent.detail);
-      setText(consentConfirm, consent.label);
-      setAttr(
-        consentConfirm,
-        'aria-label',
-        t('panel.consentConfirmLabel', { provider: consent.providerName, label: consent.label }),
-      );
-    }
+    renderNotice(state);
+    placeConsent(state);
 
-    refreshButton.disabled = state.refreshing || !state.bridgeAvailable;
-    setText(refreshButton, state.refreshing ? t('panel.refreshing') : t('panel.refresh'));
+    // --- footer ---
+    // While the first scan runs, the button says so and waits; while the
+    // service is unreachable it cannot do anything and its tooltip says why.
+    // Hidden where the empty state already offers "Yeniden tara".
+    const scanning = !state.hasData && state.bridgeAvailable;
+    // Hidden in both empty states: each offers its own one action.
+    refreshButton.hidden = !emptyState.hidden;
+    refreshButton.disabled = state.refreshing || !state.bridgeAvailable || scanning;
+    setAttr(refreshButton, 'data-busy', state.refreshing || scanning ? 'true' : null);
+    setText(
+      refreshLabel,
+      scanning ? t('panel.scanning') : state.refreshing ? t('panel.refreshing') : t('panel.refresh'),
+    );
+    setAttr(refreshButton, 'title', !state.bridgeAvailable ? t('panel.refreshOffline') : t('panel.refreshLabel'));
 
     const generatedAt = state.snapshot?.generatedAt ?? null;
     setText(
@@ -812,47 +787,39 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       generatedAt ? t('panel.lastScan', { time: clockTime(generatedAt) }) : t('panel.noScan'),
     );
 
-    // The same promise the pin button makes, written out.
-    setText(
-      modeText,
-      state.pinned ? t('panel.modePinned') : t('panel.modeHover'),
-    );
-    setAttr(
-      modeText,
-      'title',
-      state.pinned ? t('panel.modePinnedTitle') : t('panel.modeHoverTitle'),
-    );
-
     // Only when we know we are NOT pointing at a measured tray icon.
     coach.hidden = ctx.coachDismissed || state.anchor?.anchorSource !== 'cursor';
 
     // Driven purely by the store flag, which app.ts sets only from a refresh
     // reply and clears at the next refresh or on dismissal — never from a push.
-    const showToast = state.refreshNotice === 'ANTIGRAVITY_NOT_RUNNING';
-    if (showToast && refreshBubble.hidden) {
-      if (toastTimer !== null) clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => {
-        toastTimer = null;
+    const showToolToast = state.refreshNotice === 'ANTIGRAVITY_NOT_RUNNING';
+    if (showToolToast && refreshBubble.hidden) {
+      if (toolToastTimer !== null) clearTimeout(toolToastTimer);
+      toolToastTimer = setTimeout(() => {
+        toolToastTimer = null;
         ctx.onRefreshNoticeDismiss();
-      }, TOAST_MS);
-    } else if (!showToast && toastTimer !== null) {
-      clearTimeout(toastTimer);
-      toastTimer = null;
+      }, TOOL_TOAST_MS);
+    } else if (!showToolToast && toolToastTimer !== null) {
+      clearTimeout(toolToastTimer);
+      toolToastTimer = null;
     }
-    refreshBubble.hidden = !showToast;
+    refreshBubble.hidden = !showToolToast;
 
-    // Moving focus onto the affirmative control would be a trap for anyone
-    // pressing Enter twice; focus the cancel side and let them choose.
-    if (state.consent && lastConsentId !== state.consent.providerId) {
-      lastConsentId = state.consent.providerId;
-      consentCancel.focus({ preventScroll: true });
-    } else if (!state.consent) {
-      lastConsentId = null;
+    // A card whose details just opened is brought into view, gently.
+    const expanded = inSettings ? null : state.expandedProviderId;
+    if (expanded && expanded !== lastExpanded) {
+      const handle = rows.get(expanded);
+      if (handle) {
+        requestAnimationFrame(() => {
+          handle.el.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
+        });
+      }
     }
+    lastExpanded = expanded;
 
     // Content just changed, so the panel's height did too. Re-place last —
-    // except mid-drag, where moving the whole panel under a captured pointer
-    // would shift every row the user is aiming at.
+    // except mid-drag, where moving the panel under a captured pointer would
+    // shift every card the user is aiming at.
     if (!reorder.isDragging()) applyAnchor(state);
   }
 
@@ -882,9 +849,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     },
     /**
      * Focus after a view switch. Going in, the back control: it is the first
-     * thing in the settings view, so tab runs forwards from it into the
-     * switches, and it is also the way out. Coming back, the control that got
-     * the user there, which is where they expect to land.
+     * thing in the settings view and also the way out. Coming back, the
+     * control that got the user there.
      */
     focusView(view: PanelView): void {
       if (view === 'settings') settings.focusFirst();
@@ -894,6 +860,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       settings.focusLanguage();
     },
     destroy(): void {
+      if (noticeTimer !== null) clearTimeout(noticeTimer);
+      if (toolToastTimer !== null) clearTimeout(toolToastTimer);
       reorder.destroy();
       anchorEl.remove();
     },
