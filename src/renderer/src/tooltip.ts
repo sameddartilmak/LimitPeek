@@ -129,6 +129,42 @@ export function installTooltips(doc: Document = document): () => void {
     if (event.key === 'Escape' && !bubble.hidden) hide();
   }
 
+  /**
+   * Lift every `title` the moment it is written, not only on hover. Several
+   * components rewrite theirs on the 1 Hz tick (the header's freshness dot
+   * does, owner 2026-09-29): a title lifted on hover came straight back a
+   * second later, and the native tooltip then opened beside ours. New subtrees
+   * are swept too, since `el()` sets a title before the node is inserted.
+   */
+  let observer: MutationObserver | null = null;
+  const sweep = (root: ParentNode): void => {
+    if (typeof root.querySelectorAll !== 'function') return;
+    root.querySelectorAll('[title]').forEach((node) => {
+      takeTitle(node);
+    });
+  };
+  if (typeof MutationObserver === 'function') {
+    observer = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === 'attributes') {
+          const target = record.target as Element;
+          if (!target.hasAttribute('title')) continue;
+          takeTitle(target);
+          // A tooltip already on screen follows its source's new words.
+          if (target === shownFor) bubble.textContent = target.getAttribute('data-tip') ?? '';
+        } else {
+          record.addedNodes.forEach((node) => {
+            if (!(node instanceof Element)) return;
+            if (node.hasAttribute('title')) takeTitle(node);
+            sweep(node);
+          });
+        }
+      }
+    });
+    observer.observe(doc.body, { attributes: true, attributeFilter: ['title'], childList: true, subtree: true });
+    sweep(doc.body);
+  }
+
   doc.addEventListener('pointerover', onOver, true);
   doc.addEventListener('pointerout', onOut, true);
   doc.addEventListener('focusin', onFocusIn, true);
@@ -138,6 +174,7 @@ export function installTooltips(doc: Document = document): () => void {
   doc.addEventListener('scroll', hide, true);
 
   return () => {
+    observer?.disconnect();
     hide();
     doc.removeEventListener('pointerover', onOver, true);
     doc.removeEventListener('pointerout', onOut, true);
