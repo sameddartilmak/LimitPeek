@@ -11,6 +11,8 @@ const RETENTION_DAYS = 8;
 /** A failed, unterminated last line in a file written this recently is a write
  *  in progress, not a lost record (ADR-002 A3.15). */
 const TORN_WRITE_GRACE_MS = 5 * 60 * 1000;
+/** The archive's name for the desktop app's Cowork transcript trees. */
+const COWORK_SOURCE = 'cowork';
 
 /**
  * Incremental scan of the transcript tree.
@@ -55,6 +57,12 @@ const TORN_WRITE_GRACE_MS = 5 * 60 * 1000;
  *                                   the archive is built from scratch;
  *                                   omitted: no archive is kept at all and
  *                                   the raw store is cut at exactly 8 days
+ * @param {string[]} [opts.extraRoots] further transcript trees in the same
+ *                                   format (the desktop app's Cowork sessions).
+ *                                   One that cannot be read is a known gap,
+ *                                   never a failed scan. The first archiving
+ *                                   scan that has them folds their history
+ *                                   before the frontier into the archive once.
  * @param {number} opts.now          epoch ms
  *
  * The raw store keeps records from a local midnight (`frontier`, 8 days back)
@@ -100,6 +108,20 @@ async function scan(opts) {
       : { fromMs: Math.min(gapUnread.fromMs, from), throughMs: Math.max(gapUnread.throughMs, at) };
   };
   const priorCursors = opts.cursors && typeof opts.cursors === 'object' ? opts.cursors : {};
+  const extraRoots = Array.isArray(opts.extraRoots) ? opts.extraRoots.filter((r) => typeof r === 'string') : null;
+  // An archive built before the Cowork trees were read has none of their
+  // history: their files are read once, whatever their cursors say, and what
+  // predates the archive's frontier is folded in (owner, 2026-09-29).
+  const extraFold = archiving && !backfill && extraRoots !== null
+    && !archiveMod.hasSource(priorArchive, COWORK_SOURCE);
+  let extraUnread = null;
+  const extraUnreadThrough = (ms) => {
+    if (!extraFold) return;
+    const at = Number.isFinite(ms) ? Math.min(ms, priorArchive.frontierMs) : priorArchive.frontierMs;
+    extraUnread = extraUnread === null
+      ? { fromMs: 0, throughMs: at }
+      : { fromMs: 0, throughMs: Math.max(extraUnread.throughMs, at) };
+  };
 
   const priorByFile = new Map();
   for (const ev of opts.priorEvents || []) {
@@ -138,6 +160,24 @@ async function scan(opts) {
     };
   }
 
+  const extraIds = new Set();
+  for (const extraRoot of extraRoots || []) {
+    let w;
+    try {
+      w = await walkJsonlFiles(extraRoot, { maxDepth: opts.maxDepth });
+    } catch (err) {
+      log.fileFailure('extra-root', err);
+      w = { files: [], truncated: false, unreadable: 1, rootError: null };
+    }
+    if (w.rootError && w.rootError !== 'ENOENT') w.unreadable += 1;
+    for (const f of w.files) {
+      extraIds.add(f.id);
+      walked.files.push(f);
+    }
+    if (w.truncated) walked.truncated = true;
+    walked.unreadable += w.unreadable;
+  }
+
   const cursors = Object.create(null);
   const events = [];
   let filesParsed = 0;
@@ -157,15 +197,18 @@ async function scan(opts) {
   if (walked.truncated || walked.unreadable > 0) {
     unreadThrough(now);
     gapUnreadThrough(now);
+    extraUnreadThrough(now);
   }
 
   for (const file of walked.files) {
     const prev = priorCursors[file.id];
+    const folding = extraFold && extraIds.has(file.id);
+    const forceRead = backfill || folding;
     const sameFile = prev && prev.size === file.size && prev.mtimeMs === file.mtimeMs;
     // A cursor from before the loss accounting carries no `droppedLines`: its
     // file is re-read once while inside retention, so an old loss is counted.
     const accounted = Boolean(prev) && Number.isSafeInteger(prev.droppedLines);
-    const unchanged = !backfill && sameFile && (accounted || file.mtimeMs < cutoff)
+    const unchanged = !forceRead && sameFile && (accounted || file.mtimeMs < cutoff)
       && !(rewound && file.mtimeMs >= frontier);
 
     if (unchanged) {
@@ -196,7 +239,7 @@ async function scan(opts) {
     // archive's frontier: record the cursor so we do not consider it again,
     // but never open it. One written after the archive's frontier may hold a
     // day the archive is about to take in (the app was closed for a while).
-    if (!backfill && !prev && file.mtimeMs < cutoff && file.mtimeMs < gapFrom) {
+    if (!forceRead && !prev && file.mtimeMs < cutoff && file.mtimeMs < gapFrom) {
       cursors[file.id] = { size: file.size, mtimeMs: file.mtimeMs };
       continue;
     }
@@ -220,11 +263,13 @@ async function scan(opts) {
       // the frontier it is not in any day the archive holds (review F5).
       const tornLost = torn > 0 ? 0 : (res.failedUnterminated || 0);
       if (dropped - (file.mtimeMs >= frontier ? tornLost : 0) > 0) gapUnreadThrough(file.mtimeMs);
+      if (folding && dropped > 0) extraUnreadThrough(file.mtimeMs);
     } catch (err) {
       filesFailed += 1;
       if (!err || err.code !== 'ENOENT') {
         unreadThrough(file.mtimeMs);
         gapUnreadThrough(file.mtimeMs);
+        if (folding) extraUnreadThrough(file.mtimeMs);
       }
       log.fileFailure(file.id, err);
       // Keep whatever we already had for this file rather than dropping it,
@@ -290,6 +335,12 @@ async function scan(opts) {
     archive = archiveMod.advance(priorArchive, frontier, gap, gapUnread);
   } else if (rewound) {
     archive = priorArchive;
+  }
+  if (extraFold) {
+    const before = events.filter((ev) => extraIds.has(ev.f) && firstTs.get(ev.key) < gapFrom);
+    archive = archiveMod.foldSource(archive, COWORK_SOURCE, before, extraUnread);
+  } else if (backfill && extraRoots !== null) {
+    archive = archiveMod.withSource(archive, COWORK_SOURCE);
   }
   return result(kept, archive);
 }

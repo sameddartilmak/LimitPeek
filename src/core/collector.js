@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { Worker } = require('node:worker_threads');
@@ -7,7 +8,8 @@ const { Worker } = require('node:worker_threads');
 const store = require('./store');
 const log = require('./log');
 const paths = require('./paths');
-const { readClaudeRateLimits, retainClaudeFigures, readAntigravityQuota } = require('./ratelimits');
+const { readClaudeRateLimits, retainClaudeFigures, mergeDesktopReading, readAntigravityQuota } = require('./ratelimits');
+const claudeDesktop = require('./claude-desktop');
 const { readAntigravityIdeQuota } = require('./antigravity/ide-quota');
 const { resolveAntigravityIdeStore } = require('./antigravity/install');
 const { readCodexRateLimits, codexSessionsDir, resolveLocalDir } = require('./codex/rollout');
@@ -98,6 +100,21 @@ class Collector extends EventEmitter {
     this.userDataDir = options.userDataDir;
     this.projectsRoot = options.projectsRoot || paths.claudeProjectsDir();
     this.rateLimitsFile = options.rateLimitsFile || paths.rateLimitsFile();
+    /**
+     * The Claude desktop app's data directories (`claude-desktop.js`): its
+     * plan-usage samples and its Cowork transcripts. An array is used as given
+     * (tests); null finds the real ones. A collector pointed at its own
+     * `projectsRoot` gets none unless it asks, so no test reads the
+     * developer's desktop app.
+     */
+    this.claudeDesktopDirs = options.claudeDesktopDirs !== undefined
+      ? options.claudeDesktopDirs
+      : (options.projectsRoot ? [] : null);
+    /** `~/.claude.json`, for its organization id only; null: no org filter. */
+    this.claudeJsonFile = options.claudeJsonFile !== undefined
+      ? options.claudeJsonFile
+      : (this.claudeDesktopDirs === null ? path.join(os.homedir(), '.claude.json') : null);
+    this._desktopDirsCache = null;
     this.rateLimitsDir = options.rateLimitsDir || paths.rateLimitsDir();
     /** The Antigravity bridge's capture. Same directory, separate file: the
      *  two hooks are run by two different programs at two different cadences,
@@ -395,7 +412,8 @@ class Collector extends EventEmitter {
     // `used_percentage` for a render) does not wipe a figure that is still true.
     // Held on this instance across rebuilds and reset when the window changes;
     // see `retainClaudeFigures`.
-    const read = readClaudeRateLimits({ file: this.rateLimitsFile, now });
+    const bridgeRead = readClaudeRateLimits({ file: this.rateLimitsFile, now });
+    const read = mergeDesktopReading(bridgeRead, this._readDesktopUsage(now), now);
     const retained = retainClaudeFigures(read, this._claudeRetained, now);
     this._claudeRetained = retained.retained;
     const rateLimits = retained.rateLimits;
@@ -441,6 +459,42 @@ class Collector extends EventEmitter {
     });
     this.emit('snapshot', this.snapshot);
     return this.snapshot;
+  }
+
+  /** The desktop data directories, re-resolved at most once a minute. */
+  _desktopDirs(now = Date.now()) {
+    if (Array.isArray(this.claudeDesktopDirs)) return this.claudeDesktopDirs;
+    const c = this._desktopDirsCache;
+    if (c && now - c.atMs < 60 * 1000) return c.dirs;
+    let dirs = [];
+    try { dirs = claudeDesktop.claudeDesktopDirs(); } catch { /* none */ }
+    this._desktopDirsCache = { atMs: now, dirs };
+    return dirs;
+  }
+
+  /**
+   * The desktop app's newest plan-usage sample for Claude Code's account, or
+   * null. Its failures stay here: the bridge reading stands without it.
+   */
+  _readDesktopUsage(now) {
+    try {
+      const dirs = this._desktopDirs(now);
+      if (dirs.length === 0) return null;
+      const org = this.claudeJsonFile ? claudeDesktop.claudeCodeOrg(this.claudeJsonFile) : null;
+      return claudeDesktop.readDesktopPlanUsage({ dirs, now, org });
+    } catch (err) {
+      log.warn(`claude desktop usage unreadable: code=${(err && err.code) || 'UNKNOWN'}`);
+      return null;
+    }
+  }
+
+  /** Cowork transcript roots for the scan, or none. */
+  _extraRoots() {
+    try {
+      return claudeDesktop.coworkProjectRoots(this._desktopDirs());
+    } catch {
+      return [];
+    }
   }
 
   /**
@@ -665,6 +719,7 @@ class Collector extends EventEmitter {
         worker = new Worker(this.workerPath, {
           workerData: {
             root: this.projectsRoot,
+            extraRoots: this._extraRoots(),
             cursors: this.store.cursors,
             priorEvents: this.store.events,
             archive: this.store.archive || null,

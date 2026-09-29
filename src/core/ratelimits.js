@@ -220,6 +220,60 @@ function retainClaudeFigures(rl, held, now) {
   };
 }
 
+/** Window lengths, for placing a desktop sample inside a bridge window. */
+const WINDOW_MS = {
+  fiveHour: 5 * 60 * 60 * 1000,
+  sevenDay: 7 * 24 * 60 * 60 * 1000,
+};
+
+/**
+ * Folds the Claude desktop app's newest plan-usage sample
+ * (`claude-desktop.readDesktopPlanUsage`) into the bridge reading.
+ *
+ * Both are server-computed figures for the same account; the NEWER one wins.
+ * The bridge only writes while a Claude Code session renders, the desktop app
+ * every 15 minutes while it is open, so either can be the fresher one.
+ *
+ * The desktop sample carries no reset instant. When it falls inside the
+ * window the bridge last named, that window's instant is kept (and, since a
+ * window's usage only grows, the larger figure); otherwise the window is a
+ * new one and its instant is unknown, which `windowFrom` accepts only while
+ * the reading is fresh.
+ *
+ * @param {object} rl       result of `readClaudeRateLimits()`
+ * @param {{atMs:number, fiveHour:number|null, sevenDay:number|null}|null} desktop
+ * @param {number} now
+ * @returns {object} the reading to use, same shape as `rl`
+ */
+function mergeDesktopReading(rl, desktop, now, maxAgeMs = MAX_AGE_MS) {
+  if (!desktop || !Number.isFinite(desktop.atMs)) return rl;
+  const bridge = rl.state === 'fresh' || rl.state === 'stale';
+  if (bridge && Number.isFinite(rl.capturedAtMs) && rl.capturedAtMs >= desktop.atMs) return rl;
+
+  const windowOfSample = (key) => {
+    const b = bridge ? rl[key] : null;
+    const pct = desktop[key];
+    if (pct === null) return b || null;
+    if (b && Number.isFinite(b.resetsAtMs)
+      && desktop.atMs < b.resetsAtMs && desktop.atMs >= b.resetsAtMs - WINDOW_MS[key]) {
+      const used = typeof b.usedPercentage === 'number' ? Math.max(b.usedPercentage, pct) : pct;
+      return { usedPercentage: used, resetsAtMs: b.resetsAtMs };
+    }
+    return { usedPercentage: pct, resetsAtMs: null };
+  };
+
+  const ageMs = now - desktop.atMs;
+  return {
+    state: (ageMs > maxAgeMs || ageMs < -maxAgeMs) ? 'stale' : 'fresh',
+    capturedAt: new Date(desktop.atMs).toISOString(),
+    capturedAtMs: desktop.atMs,
+    ageMs,
+    fiveHour: windowOfSample('fiveHour'),
+    sevenDay: windowOfSample('sevenDay'),
+    source: 'desktop',
+  };
+}
+
 /* ------------------------------------------------------------ Antigravity */
 
 /**
@@ -450,6 +504,7 @@ function readAntigravityQuota(options = {}) {
 module.exports = {
   readClaudeRateLimits,
   retainClaudeFigures,
+  mergeDesktopReading,
   readAntigravityQuota,
   usedFromRemaining,
   MAX_AGE_MS,

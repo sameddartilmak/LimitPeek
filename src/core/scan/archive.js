@@ -68,12 +68,50 @@ function fromStored(raw) {
   if (!raw || typeof raw !== 'object' || raw.version !== ARCHIVE_VERSION) return null;
   if (!Number.isFinite(raw.frontierMs) || !Array.isArray(raw.rows)) return null;
   if (raw.rows.length > MAX_ROWS || !raw.rows.every(isRow)) return null;
-  return {
+  const out = {
     version: ARCHIVE_VERSION,
     frontierMs: raw.frontierMs,
     rows: raw.rows,
     unread: isRange(raw.unread) ? { fromMs: raw.unread.fromMs, throughMs: raw.unread.throughMs } : null,
   };
+  const sources = sourcesOf(raw);
+  if (sources.length > 0) out.sources = sources;
+  return out;
+}
+
+/**
+ * Transcript sources whose history before the frontier the archive already
+ * holds, beyond Claude Code's own `projects` tree (always included). A source
+ * added later (Cowork, 2026-09-29) is folded in once, from its files, by
+ * `foldSource`; its name here is what stops a second fold.
+ */
+function sourcesOf(archive) {
+  const s = archive && archive.sources;
+  return Array.isArray(s) ? s.filter((x) => typeof x === 'string' && x.length <= 32).slice(0, 8) : [];
+}
+
+function hasSource(archive, name) {
+  return sourcesOf(archive).includes(name);
+}
+
+/** The archive, recorded as holding `name`'s history. */
+function withSource(archive, name) {
+  if (hasSource(archive, name)) return archive;
+  return { ...archive, sources: [...sourcesOf(archive), name] };
+}
+
+/**
+ * A new source's records from before the archive's frontier, folded in once.
+ * `events` are raw (every line of each response); deduped here, and only the
+ * ones before the frontier are taken: the rest belong to the raw store.
+ */
+function foldSource(prior, name, events, unread) {
+  const before = agg.dedupe(events).filter((ev) => ev.ts < prior.frontierMs);
+  return withSource({
+    ...prior,
+    rows: fold(prior.rows, before),
+    unread: hull(prior.unread, unread),
+  }, name);
 }
 
 function rowKey(ts, model, speed) {
@@ -149,12 +187,15 @@ function advance(prior, frontierMs, gapEvents, gapUnread) {
   // Rows older than any period the history can show are let go, so the
   // archive stays small for good instead of one day failing its row bound.
   const keepFrom = frontierMs - KEEP_DAYS * DAY_MS;
-  return {
+  const out = {
     version: ARCHIVE_VERSION,
     frontierMs,
     rows: fold(base.rows.filter((r) => r.ts >= keepFrom), inGap),
     unread: hull(base.unread, gapUnread),
   };
+  const sources = sourcesOf(base);
+  if (sources.length > 0) out.sources = sources;
+  return out;
 }
 
 function num(v) {
@@ -171,4 +212,7 @@ module.exports = {
   fold,
   advance,
   isRow,
+  hasSource,
+  withSource,
+  foldSource,
 };

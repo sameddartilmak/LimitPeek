@@ -19,6 +19,7 @@ log.setSink((level, msg) => {
   try {
     const result = await scan({
       root: workerData.root,
+      extraRoots: workerData.extraRoots,
       cursors: workerData.cursors,
       priorEvents: workerData.priorEvents,
       archive: workerData.archive,

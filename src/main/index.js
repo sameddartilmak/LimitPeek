@@ -629,6 +629,9 @@ function bootstrap() {
   collector = new Collector({
     userDataDir: userDataDir(),
     projectsRoot: paths.claudeProjectsDir(),
+    // The Claude desktop app's plan-usage samples and Cowork transcripts,
+    // found on this machine (core/claude-desktop.js).
+    claudeDesktopDirs: null,
     planLabels: settings.planLabels,
     order: settings.providerOrder,
     enabled: settings.enabledProviders,
