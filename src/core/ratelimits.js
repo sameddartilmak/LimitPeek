@@ -230,15 +230,20 @@ const WINDOW_MS = {
  * Folds the Claude desktop app's newest plan-usage sample
  * (`claude-desktop.readDesktopPlanUsage`) into the bridge reading.
  *
- * Both are server-computed figures for the same account; the NEWER one wins.
- * The bridge only writes while a Claude Code session renders, the desktop app
- * every 15 minutes while it is open, so either can be the fresher one.
+ * Both are server-computed figures for the same account, but neither says
+ * when its figure was computed. The bridge stamps the moment a status line
+ * RENDERED, and Claude Code re-renders an idle session with the rate limits
+ * of its last request: owner, 2026-09-29, the panel read 25% at 11:05 from
+ * such a render while the desktop app had written 67% at 11:00 and claude.ai
+ * read 70%. So "the newer stamp wins" is wrong. Within one window usage only
+ * grows, so:
  *
- * The desktop sample carries no reset instant. When it falls inside the
- * window the bridge last named, that window's instant is kept (and, since a
- * window's usage only grows, the larger figure); otherwise the window is a
- * new one and its instant is unknown, which `windowFrom` accepts only while
- * the reading is fresh.
+ *   - a sample inside the window the bridge names: the HIGHER figure, with
+ *     the bridge's reset instant;
+ *   - a sample from before that window: the bridge's figure;
+ *   - a sample after that window reset: the desktop's, with no known reset
+ *     instant (`windowFrom` accepts that only while the reading is fresh);
+ *   - a bridge window with no reset instant: the newer stamp.
  *
  * @param {object} rl       result of `readClaudeRateLimits()`
  * @param {{atMs:number, fiveHour:number|null, sevenDay:number|null}|null} desktop
@@ -248,28 +253,36 @@ const WINDOW_MS = {
 function mergeDesktopReading(rl, desktop, now, maxAgeMs = MAX_AGE_MS) {
   if (!desktop || !Number.isFinite(desktop.atMs)) return rl;
   const bridge = rl.state === 'fresh' || rl.state === 'stale';
-  if (bridge && Number.isFinite(rl.capturedAtMs) && rl.capturedAtMs >= desktop.atMs) return rl;
+  const bridgeAtMs = bridge && Number.isFinite(rl.capturedAtMs) ? rl.capturedAtMs : null;
 
-  const windowOfSample = (key) => {
+  const slot = (key) => {
     const b = bridge ? rl[key] : null;
     const pct = desktop[key];
-    if (pct === null) return b || null;
-    if (b && Number.isFinite(b.resetsAtMs)
-      && desktop.atMs < b.resetsAtMs && desktop.atMs >= b.resetsAtMs - WINDOW_MS[key]) {
-      const used = typeof b.usedPercentage === 'number' ? Math.max(b.usedPercentage, pct) : pct;
-      return { usedPercentage: used, resetsAtMs: b.resetsAtMs };
+    if (pct === null) return { win: b || null, desktop: false };
+    const fromDesktop = (resetsAtMs) => ({ win: { usedPercentage: pct, resetsAtMs }, desktop: true });
+    if (b && Number.isFinite(b.resetsAtMs)) {
+      if (desktop.atMs < b.resetsAtMs - WINDOW_MS[key]) return { win: b, desktop: false };
+      if (desktop.atMs >= b.resetsAtMs) return fromDesktop(null);
+      const bPct = typeof b.usedPercentage === 'number' ? b.usedPercentage : null;
+      return bPct === null || pct > bPct ? fromDesktop(b.resetsAtMs) : { win: b, desktop: false };
     }
-    return { usedPercentage: pct, resetsAtMs: null };
+    if (b && bridgeAtMs !== null && bridgeAtMs >= desktop.atMs) return { win: b, desktop: false };
+    return fromDesktop(null);
   };
 
-  const ageMs = now - desktop.atMs;
+  const five = slot('fiveHour');
+  const seven = slot('sevenDay');
+  if (!five.desktop && !seven.desktop) return rl;
+  // Both sources were seen; the reading is as current as the newer of them.
+  const atMs = bridgeAtMs !== null ? Math.max(bridgeAtMs, desktop.atMs) : desktop.atMs;
+  const ageMs = now - atMs;
   return {
     state: (ageMs > maxAgeMs || ageMs < -maxAgeMs) ? 'stale' : 'fresh',
-    capturedAt: new Date(desktop.atMs).toISOString(),
-    capturedAtMs: desktop.atMs,
+    capturedAt: new Date(atMs).toISOString(),
+    capturedAtMs: atMs,
     ageMs,
-    fiveHour: windowOfSample('fiveHour'),
-    sevenDay: windowOfSample('sevenDay'),
+    fiveHour: five.win,
+    sevenDay: seven.win,
     source: 'desktop',
   };
 }

@@ -105,9 +105,19 @@ function bridge(capturedAtMs, five, seven, state = 'fresh') {
   };
 }
 
-test('a newer bridge capture wins over an older desktop sample', () => {
+test('a bridge capture with the higher figure stands', () => {
   const rl = bridge(NOW - 60000, 40, 20);
   assert.equal(mergeDesktopReading(rl, { atMs: NOW - 10 * 60000, fiveHour: 30, sevenDay: 19 }, NOW), rl);
+});
+
+test('an idle session re-render never hides a higher desktop figure for the same window', () => {
+  // Owner, 2026-09-29: an idle Claude Code session re-rendered its last
+  // request's 25% at 11:05; the desktop app had written 67% at 11:00.
+  const out = mergeDesktopReading(bridge(NOW - 60000, 25, 35), { atMs: NOW - 6 * 60000, fiveHour: 67, sevenDay: 44 }, NOW);
+  assert.equal(out.state, 'fresh');
+  assert.equal(out.capturedAtMs, NOW - 60000);
+  assert.deepEqual(out.fiveHour, { usedPercentage: 67, resetsAtMs: H5 });
+  assert.deepEqual(out.sevenDay, { usedPercentage: 44, resetsAtMs: D7 });
 });
 
 test('a newer desktop sample in the same windows keeps their reset instants', () => {
@@ -117,6 +127,12 @@ test('a newer desktop sample in the same windows keeps their reset instants', ()
   assert.equal(out.capturedAtMs, NOW - 60000);
   assert.deepEqual(out.fiveHour, { usedPercentage: 37, resetsAtMs: H5 });
   assert.deepEqual(out.sevenDay, { usedPercentage: 17, resetsAtMs: D7 });
+});
+
+test('a desktop sample from before the bridge window says nothing about it', () => {
+  const rl = bridge(NOW - 60000, 5, 35);
+  const out = mergeDesktopReading(rl, { atMs: H5 - 6 * HOUR, fiveHour: 90, sevenDay: 30 }, NOW);
+  assert.equal(out, rl);
 });
 
 test('a desktop sample past the bridge\'s reset is a new window with no known reset', () => {
