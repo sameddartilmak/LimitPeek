@@ -47,9 +47,10 @@
 /* The identity mark is the provider's REAL brand logo, shipped as a build-time
  * asset (assets/logos/) and painted here — never fetched, never innerHTML'd.
  * See components/logo.ts. Each is a multi-colour SVG shown as a
- * background-image (claude/codex/antigravity/kimi). Qwen Code and Grok Build
- * get a neutral monogram in the same treatment instead: there is no permission
- * to use either vendor's logo.
+ * background-image (claude/codex/antigravity/kimi/qwen/grok). Grok's mark is
+ * one colour, so it sits on a white tile like Codex's and reads on either
+ * theme. No vendor has granted logo permission yet (docs/marka-izin-
+ * basvurulari.md): a public release swaps these for neutral marks.
  * Grey vs brand-colour is the connected/unconnected treatment; see below. */
 .mark {
   width: 24px; height: 24px;
@@ -63,8 +64,8 @@
 .mark[data-logo="codex"]       { background-image: url(../assets/logos/codex-color.svg); }
 .mark[data-logo="antigravity"] { background-image: url(../assets/logos/antigravity-color.svg); }
 .mark[data-logo="kimi"]        { background-image: url(../assets/logos/kimi-color.svg); }
-.mark[data-logo="qwen"]        { background-image: url(../assets/logos/qwen-mono.svg); }
-.mark[data-logo="grok"]        { background-image: url(../assets/logos/grok-mono.svg); }
+.mark[data-logo="qwen"]        { background-image: url(../assets/logos/qwen-color.svg); }
+.mark[data-logo="grok"]        { background-image: url(../assets/logos/grok-color.svg); }
 
 /* An id with no shipped asset: a neutral ring, never a broken image or a
  * letter. logo.ts adds this class; today every provider has art, so it is

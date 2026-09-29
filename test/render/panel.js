@@ -304,7 +304,7 @@ app.whenReady().then(async () => {
   check('connected marks are not desaturated', colours.claude.filter === 'none' && colours.codex.filter === 'none',
     [colours.claude.filter, colours.codex.filter]);
   check('unconnected qwen mark is the same art, in grey',
-    /qwen-mono\.svg/.test(colours.qwen.bg) && /grayscale/.test(colours.qwen.filter), [colours.qwen.bg, colours.qwen.filter]);
+    /qwen-color\.svg/.test(colours.qwen.bg) && /grayscale/.test(colours.qwen.filter), [colours.qwen.bg, colours.qwen.filter]);
   check('unconnected kimi mark is the same art, in grey',
     /kimi-color\.svg/.test(colours.kimi.bg) && /grayscale/.test(colours.kimi.filter), [colours.kimi.bg, colours.kimi.filter]);
   check('connected mark is at full opacity, unconnected is not',

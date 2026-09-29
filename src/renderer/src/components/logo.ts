@@ -50,8 +50,6 @@ const HAS_LOGO: ReadonlySet<string> = new Set<ProviderId>([
   'codex',
   'antigravity',
   'kimi',
-  // Neutral monograms, not brand logos: there is no permission to use Qwen's
-  // or xAI's marks (assets/logos/qwen-mono.svg, grok-mono.svg).
   'qwen',
   'grok',
 ]);
