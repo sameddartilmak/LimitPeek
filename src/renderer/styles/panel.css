@@ -551,8 +551,9 @@
   gap: var(--s-2);
   margin: 0;
   padding: var(--s-3);
+  /* An even frame all round. The amber left stripe it used to carry read as
+   * an alarm bar glued to the box (owner, 2026-09-30). */
   border: 1px solid var(--ink-600);
-  border-left: 2px solid var(--watch);
   border-radius: 8px;
   background: var(--ink-850);
 }
@@ -880,6 +881,30 @@
 /* The app's own "Bağlantıyı kaldır?" box, drawn full-width inside the tool's
  * item, under the plan line. */
 .settings__confirm { flex: 1 0 100%; }
+/* A small "!" badge before the question instead of a coloured stripe: it marks
+ * the box as a removal without colouring the whole frame. Decorative; the
+ * words carry the meaning. */
+.settings__confirm .consent__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.settings__confirm .consent__title::before {
+  content: "!" / "";
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--spent) 18%, transparent);
+  color: var(--spent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+/* The body text lines up under the question, not under the badge. */
+.settings__confirm .consent__detail { padding-left: calc(18px + var(--s-2)); }
 /* Removing something: the one button that says so in colour. */
 .btn--danger { border-color: var(--spent); color: var(--spent); font-weight: 600; }
 .btn--danger:hover { background: var(--spent); border-color: var(--spent); color: var(--ink-900); }
