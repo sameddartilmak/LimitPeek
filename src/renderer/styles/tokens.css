@@ -196,6 +196,14 @@
   --dur-hover: 120ms;
 }
 
+/* Chinese panel (html lang="zh", set by app.ts): Plex keeps the figures and
+ * Latin names, Windows' own UI face draws the Han characters instead of
+ * whatever the glyph fallback happens to pick. */
+:root:lang(zh) {
+  --font: "IBM Plex Sans", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
 /* ------------------------------------------------------------ light theme */
 /* Applied by src/theme.ts as `data-theme` on <html>, from the SYNCHRONOUS
  * initialPreferences() call, before first paint. 'system' resolves to one of

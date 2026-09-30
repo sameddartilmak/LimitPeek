@@ -28,9 +28,11 @@
 
   "language.endonym.tr": "Türkçe",
   "language.endonym.en": "English",
+  "language.endonym.zh": "中文",
   "language.system": "System",
   "language.name.tr": "Turkish",
   "language.name.en": "English",
+  "language.name.zh": "Chinese",
 
   "header.pin.labelOff": "Keep the panel on screen",
   "header.pin.labelOn": "Stop keeping the panel on screen",

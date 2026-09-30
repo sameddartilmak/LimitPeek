@@ -10,8 +10,9 @@ const log = require('./log');
  * which runs both over every key both load, both languages and the counts
  * where plural rules diverge. Not by this comment. The rules both obey:
  *
- *   1. Lookup: current language, then the other language, then the key itself.
- *      A miss is reported (once per message) and is never an empty string.
+ *   1. Lookup: current language, then English (Turkish when the current one
+ *      is English), then the key itself. A miss is reported (once per
+ *      message) and is never an empty string.
  *   2. A value is a string or a plural record `{ one?, other, ... }`. The
  *      category comes from `Intl.PluralRules(language)` applied to the NUMBER
  *      param `count`; a category the record lacks falls back to `other`; a
@@ -22,7 +23,7 @@ const log = require('./log');
  *      reported.
  *   4. In 'throw' mode (tests) every report is an Error whose message starts
  *      with `i18n: `.
- *   5. An unusable format locale falls back to tr-TR or en-US.
+ *   5. An unusable format locale falls back to tr-TR, en-US or zh-CN.
  *
  * Main loads `common.json` (shared with the renderer) and `main.json` (the
  * tray, the dialogs, the setup notices). Language and format locale are
@@ -46,7 +47,7 @@ function loadCatalog(language) {
   return Object.freeze(out);
 }
 
-const LOADED = Object.freeze({ tr: loadCatalog('tr'), en: loadCatalog('en') });
+const LOADED = Object.freeze({ tr: loadCatalog('tr'), en: loadCatalog('en'), zh: loadCatalog('zh') });
 
 /** What `t()` reads. Only `__setCatalogsForTest` ever points it elsewhere. */
 let catalogs = LOADED;
@@ -55,11 +56,18 @@ const DEFAULT_LANGUAGE = 'tr';
 const DEFAULT_FORMAT_LOCALE = 'tr-TR';
 
 function isResolvedLanguage(value) {
-  return value === 'tr' || value === 'en';
+  return value === 'tr' || value === 'en' || value === 'zh';
 }
 
 function defaultFormatLocale(language) {
-  return language === 'tr' ? 'tr-TR' : 'en-US';
+  if (language === 'tr') return 'tr-TR';
+  if (language === 'zh') return 'zh-CN';
+  return 'en-US';
+}
+
+/** Where a key missing from one catalog is looked up next. */
+function fallbackOf(language) {
+  return language === 'en' ? 'tr' : 'en';
 }
 
 /** Same test as `isUsableLocale` in `src/renderer/src/sanitize.ts`. */
@@ -140,7 +148,7 @@ function t(key, params) {
   let entry = has(catalogs[currentLanguage], id) ? catalogs[currentLanguage][id] : undefined;
   if (entry === undefined) {
     miss(`missing key "${id}" in ${currentLanguage}`);
-    const other = catalogs[currentLanguage === 'tr' ? 'en' : 'tr'];
+    const other = catalogs[fallbackOf(currentLanguage)];
     entry = has(other, id) ? other[id] : undefined;
     if (entry === undefined) return id;
   }
@@ -167,7 +175,8 @@ function keys(lang = currentLanguage) {
  * `src/renderer/src/i18n.ts`) alike. Nothing is loaded here: the files on disk
  * are still only ever required by the two literal languages above.
  *
- * @param {{tr: object, en: object}} next  both required
+ * @param {{tr: object, en: object, zh?: object}} next  tr and en required;
+ *   zh keeps the loaded catalog when not given
  * @returns {() => void}
  */
 function __setCatalogsForTest(next) {
@@ -176,7 +185,7 @@ function __setCatalogsForTest(next) {
     throw new TypeError('i18n: __setCatalogsForTest needs { tr, en } catalog objects');
   }
   const previous = catalogs;
-  catalogs = Object.freeze({ tr: next.tr, en: next.en });
+  catalogs = Object.freeze({ tr: next.tr, en: next.en, zh: isCatalog(next.zh) ? next.zh : previous.zh });
   return () => { catalogs = previous; };
 }
 

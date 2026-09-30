@@ -1278,7 +1278,7 @@ export const IPC = {
 export type ThemeChoice = 'dark' | 'light' | 'system';
 
 /** ADR-004. 'system' resolves in MAIN from the OS display language. */
-export type LanguageChoice = 'tr' | 'en' | 'system';
+export type LanguageChoice = 'tr' | 'en' | 'zh' | 'system';
 
 export interface Preferences {
   theme: ThemeChoice;
@@ -1290,9 +1290,10 @@ export interface Preferences {
    * labels carried in the snapshot) — two resolvers could disagree, and the
    * tooltip would then speak a different language from the panel.
    */
-  resolvedLanguage: 'tr' | 'en';
+  resolvedLanguage: 'tr' | 'en' | 'zh';
   /**
-   * BCP 47 locale for numbers, currency, percent, dates and clocks. tr -> tr-TR.
+   * BCP 47 locale for numbers, currency, percent, dates and clocks. tr -> tr-TR,
+   * zh -> zh-CN (Simplified Chinese, the only Chinese catalog).
    * en -> the OS region when the OS locale is en-* (en-GB, en-AU, ...),
    * otherwise en-US. Resolved in main for the same reason as resolvedLanguage.
    */

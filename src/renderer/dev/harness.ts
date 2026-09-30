@@ -20,6 +20,7 @@ import type {
 import { mountApp, type AppHandle } from '../src/app.js';
 import type { Bridge, SetupResult } from '../src/bridge.js';
 import { el, on, setAttr } from '../src/dom.js';
+import { defaultFormatLocale, fallbackLanguage } from '../src/sanitize.js';
 import { SCENARIOS, anchorFor, drift, type Scenario } from './mock.js';
 
 const stage = document.getElementById('stage');
@@ -281,13 +282,12 @@ function makeBridge(scenario: Scenario): Bridge {
     async setLanguage(next: LanguageChoice): Promise<boolean> {
       log(`setLanguage("${next}")`);
       await new Promise((resolve) => setTimeout(resolve, 300));
-      const resolvedLanguage =
-        next === 'system' ? (/^tr/i.test(navigator.language) ? 'tr' : 'en') : next;
+      const resolvedLanguage = next === 'system' ? fallbackLanguage(navigator.language) : next;
       prefs = {
         ...prefs,
         language: next,
         resolvedLanguage,
-        formatLocale: resolvedLanguage === 'tr' ? 'tr-TR' : 'en-US',
+        formatLocale: defaultFormatLocale(resolvedLanguage),
       };
       prefsCb?.(prefs);
       log('setLanguage() -> ok');
@@ -525,7 +525,10 @@ controls.appendChild(logBox);
 const params = new URLSearchParams(window.location.search);
 const themeParam = params.get('theme');
 if (themeParam === 'light' || themeParam === 'dark') prefs = { ...prefs, theme: themeParam };
-if (params.get('lang') === 'en') prefs = { ...prefs, language: 'en', resolvedLanguage: 'en', formatLocale: 'en-US' };
+const langParam = params.get('lang');
+if (langParam === 'en' || langParam === 'zh') {
+  prefs = { ...prefs, language: langParam, resolvedLanguage: langParam, formatLocale: defaultFormatLocale(langParam) };
+}
 if (params.get('coach') === 'done') prefs = { ...prefs, setupCoachDismissed: true };
 if (params.get('shot') === '1') document.body.classList.add('hx--shot');
 remount(SCENARIOS.find((s) => s.id === params.get('s')) ?? (SCENARIOS[0] as Scenario));

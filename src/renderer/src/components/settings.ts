@@ -598,6 +598,8 @@ function createLanguageControl(ctx: SettingsContext): LanguageHandleLocal {
   const CHOICES: ReadonlyArray<{ v: LanguageChoice; label: string }> = [
     { v: 'tr', label: t('language.endonym.tr') },
     { v: 'en', label: t('language.endonym.en') },
+    // Simplified Chinese; `lang` below marks it zh for pronunciation and fonts.
+    { v: 'zh', label: t('language.endonym.zh') },
     { v: 'system', label: t('language.system') },
   ];
 
@@ -644,8 +646,9 @@ function createLanguageControl(ctx: SettingsContext): LanguageHandleLocal {
     setAttr(root, 'data-revert', state.languageReverted ? 'true' : null);
     setAttr(root, 'aria-busy', state.languagePending ? 'true' : null);
 
+    const current = currentLanguage();
     const resolvedName =
-      currentLanguage() === 'tr' ? t('language.name.tr') : t('language.name.en');
+      current === 'tr' ? t('language.name.tr') : current === 'zh' ? t('language.name.zh') : t('language.name.en');
     setText(
       help,
       state.language === 'system'

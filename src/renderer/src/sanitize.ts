@@ -96,7 +96,7 @@ const ROW_STATUSES = new Set<RowStatus>(['loading', 'ok', 'stale', 'error', 'pas
 const CERTAINTIES = new Set<Certainty>(['known', 'estimated', 'unknown']);
 const SETUP_KINDS = new Set<SetupKind>(['install-bridge', 'not-installed']);
 const THEME_CHOICES = new Set<ThemeChoice>(['dark', 'light', 'system']);
-const LANGUAGE_CHOICES = new Set<LanguageChoice>(['tr', 'en', 'system']);
+const LANGUAGE_CHOICES = new Set<LanguageChoice>(['tr', 'en', 'zh', 'system']);
 
 /**
  * The three discriminants the contract added for the Antigravity IDE reader.
@@ -981,23 +981,28 @@ export function isLanguageChoice(value: unknown): value is LanguageChoice {
 }
 
 /** A language the catalogs carry. 'system' is a choice, never a resolution. */
-export function isResolvedLanguage(value: unknown): value is 'tr' | 'en' {
-  return value === 'tr' || value === 'en';
+export function isResolvedLanguage(value: unknown): value is 'tr' | 'en' | 'zh' {
+  return value === 'tr' || value === 'en' || value === 'zh';
 }
 
 /**
  * ADR-004's resolution rule, for the ONE case main did not resolve for us (an
- * absent or older preload): `tr*` -> tr, anything else -> en. Everywhere else
+ * absent or older preload): `tr*` -> tr, `zh*` -> zh, anything else -> en. Everywhere else
  * the renderer takes main's `resolvedLanguage` and never decides on its own,
  * because the tray tooltip is written by main and must match the panel.
  */
-export function fallbackLanguage(tag: unknown): 'tr' | 'en' {
-  return typeof tag === 'string' && /^tr(?:[-_]|$)/i.test(tag) ? 'tr' : 'en';
+export function fallbackLanguage(tag: unknown): 'tr' | 'en' | 'zh' {
+  if (typeof tag !== 'string') return 'en';
+  if (/^tr(?:[-_]|$)/i.test(tag)) return 'tr';
+  if (/^zh(?:[-_]|$)/i.test(tag)) return 'zh';
+  return 'en';
 }
 
 /** The format locale main would choose when it has no OS region to offer. */
-export function defaultFormatLocale(language: 'tr' | 'en'): string {
-  return language === 'tr' ? 'tr-TR' : 'en-US';
+export function defaultFormatLocale(language: 'tr' | 'en' | 'zh'): string {
+  if (language === 'tr') return 'tr-TR';
+  if (language === 'zh') return 'zh-CN';
+  return 'en-US';
 }
 
 /**

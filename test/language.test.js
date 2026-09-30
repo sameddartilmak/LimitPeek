@@ -104,7 +104,16 @@ test.describe("resolving 'system' and the format locale", () => {
     assert.equal(resolveLanguage('system', { preferredLanguages: ['trv'] }).resolvedLanguage, 'en');
   });
 
-  test('anything that is not Turkish resolves to en', () => {
+  test('every Chinese display language resolves to zh and zh-CN (the one Chinese catalog)', () => {
+    for (const tag of ['zh-CN', 'zh-Hans-CN', 'zh-TW', 'zh-HK', 'zh']) {
+      assert.deepEqual(resolveLanguage('system', { preferredLanguages: [tag] }),
+        { language: 'system', resolvedLanguage: 'zh', formatLocale: 'zh-CN' }, tag);
+    }
+    assert.deepEqual(resolveLanguage('zh', TURKISH_MACHINE),
+      { language: 'zh', resolvedLanguage: 'zh', formatLocale: 'zh-CN' });
+  });
+
+  test('anything that is not Turkish or Chinese resolves to en', () => {
     for (const tag of ['en-US', 'de-DE', 'ar-AE', 'ja']) {
       assert.equal(resolveLanguage('system', { preferredLanguages: [tag] }).resolvedLanguage, 'en', tag);
     }
