@@ -214,7 +214,8 @@ function shapeKeyOf(p: ProviderSnapshot): string {
     p.fiveHour?.resetsAt ? 'r5' : 'no-r5',
     p.sevenDay?.resetsAt ? 'r7' : 'no-r7',
     p.setupAction ? p.setupAction.kind : 'no-setup',
-    p.planLabel ? 'plan' : 'no-plan',
+    // Where the plan came from decides the spoken prefix, so it is structure.
+    p.planLabel ? `plan-${p.planSource ?? 'user'}` : 'no-plan',
     // WHICH window the token item describes is structure, not content: the
     // weekly and the five-hour figure are different claims, and a row that
     // silently swapped one for the other in place would relabel a number
@@ -542,7 +543,8 @@ function buildLive(
     ? el(
         'span',
         { class: 'row__plan' },
-        el('span', { class: 'u-sr' }, `${t('row.planSpoken')} `),
+        // Whose statement it is: the user's, or the tool's own record.
+        el('span', { class: 'u-sr' }, `${t(p.planSource === 'tool' ? 'row.planSpokenTool' : 'row.planSpoken')} `),
         p.planLabel,
       )
     : null;

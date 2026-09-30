@@ -453,6 +453,7 @@ class Collector extends EventEmitter {
       scanGoodAtMs: this.scanGoodAtMs,
       scanUnreadRange: this.scanUnreadRange,
       planLabels: this.planLabels,
+      claudePlan: this._claudePlan(),
       order: this.order,
       enabled: this.enabled,
       hooks: this.hooksInput(),
@@ -484,6 +485,16 @@ class Collector extends EventEmitter {
       return claudeDesktop.readDesktopPlanUsage({ dirs, now, org });
     } catch (err) {
       log.warn(`claude desktop usage unreadable: code=${(err && err.code) || 'UNKNOWN'}`);
+      return null;
+    }
+  }
+
+  /** The plan Claude Code recorded for the account (`~/.claude.json`), or null. */
+  _claudePlan() {
+    if (!this.claudeJsonFile) return null;
+    try {
+      return claudeDesktop.claudeCodeAccount(this.claudeJsonFile).plan;
+    } catch {
       return null;
     }
   }

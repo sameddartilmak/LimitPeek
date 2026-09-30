@@ -17,6 +17,7 @@ const antigravityUsage = require('./antigravity/usage');
 const antigravityCostMod = require('./antigravity/cost');
 const { RETENTION_DAYS, DAY_MS } = require('./scan/scanner');
 const { sanitizePlanLabels } = require('./plan-labels');
+const { codexPlanFrom, planFields } = require('./plan-detect');
 
 /** One shared empty list, so "no events" keeps the same identity across builds. */
 const EMPTY_EVENTS = Object.freeze([]);
@@ -1145,7 +1146,12 @@ function buildSnapshot(input) {
 
   return {
     generatedAt: new Date(now).toISOString(),
-    providers: applyOrder(withHooks(providers, input.hooks), input.order),
+    providers: applyOrder(withPlans(withHooks(providers, input.hooks), planLabels, {
+      // The plan each tool RECORDS for the account (plan-detect.js); the user's
+      // own label in Settings still wins.
+      claude: typeof input.claudePlan === 'string' ? input.claudePlan : null,
+      codex: codexPlanFrom(cx.planType),
+    }), input.order),
     // Week/month notional cost from the SAME deduped local corpus every other
     // figure uses — so the 115.3% resume-replay inflation cannot land on the
     // history any more than it can on the weekly total. Codex joins it from the
@@ -1182,6 +1188,19 @@ function buildSnapshot(input) {
   };
 }
 
+/**
+ * Every row's plan fields: the user's label from Settings, else the plan the
+ * tool itself recorded (`detected`), with where it came from and the tool's
+ * value kept for Settings' "Otomatik (…)" option. A label only — nothing reads
+ * it to compute anything (plan-labels.js, plan-detect.js).
+ */
+function withPlans(providers, userLabels, detected) {
+  return providers.map((row) => ({
+    ...row,
+    ...planFields(userLabels[row.id], Object.prototype.hasOwnProperty.call(detected, row.id) ? detected[row.id] : null),
+  }));
+}
+
 /** Shown before the first scan completes, and if the store is empty. */
 function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage, planLabelsRaw) {
   // Same resolution as buildSnapshot: the skeleton must show exactly the rows
@@ -1207,7 +1226,7 @@ function loadingSnapshot(now = Date.now(), order, enabledRaw, pendingUsage, plan
       // the same skeleton the first real snapshot will replace, or its row
       // visibly changes shape a moment after the panel opens.
       status: p.live ? 'loading' : 'passive',
-      planLabel: planLabels[p.id] === undefined ? null : planLabels[p.id],
+      ...planFields(planLabels[p.id], null),
       fiveHour: p.live ? unknownWindow() : null,
       sevenDay: p.live ? unknownWindow() : null,
       tokens: null,

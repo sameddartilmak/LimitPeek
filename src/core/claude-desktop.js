@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { claudePlanFrom } = require('./plan-detect');
 
 /**
  * What the Claude desktop app leaves on disk that this app may read.
@@ -150,31 +151,45 @@ function readDesktopPlanUsage(opts) {
   return best;
 }
 
-let orgCache = null;
+let accountCache = null;
 
 /**
- * Claude Code's organization id from `~/.claude.json`, or null. Only that one
- * field is kept; the file is parsed and dropped.
+ * Two fields of `~/.claude.json`'s `oauthAccount`, and nothing else: the
+ * organization id (so a desktop reading for another account is not used) and
+ * the plan Claude Code recorded for it (`plan-detect.js`). The file is parsed
+ * and dropped; no other field is kept, and the token file is never opened.
+ *
+ * @returns {{ org: string|null, plan: string|null }}
  */
-function claudeCodeOrg(file = path.join(os.homedir(), '.claude.json')) {
+function claudeCodeAccount(file = path.join(os.homedir(), '.claude.json')) {
+  const none = { org: null, plan: null };
   let st;
-  try { st = fs.statSync(file); } catch { return null; }
-  if (!st.isFile() || st.size > MAX_CLAUDE_JSON_BYTES) return null;
-  if (orgCache && orgCache.file === file && orgCache.size === st.size && orgCache.mtimeMs === st.mtimeMs) {
-    return orgCache.org;
+  try { st = fs.statSync(file); } catch { return none; }
+  if (!st.isFile() || st.size > MAX_CLAUDE_JSON_BYTES) return none;
+  if (accountCache && accountCache.file === file && accountCache.size === st.size && accountCache.mtimeMs === st.mtimeMs) {
+    return accountCache.value;
   }
-  let org = null;
+  let value;
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const v = raw && raw.oauthAccount && raw.oauthAccount.organizationUuid;
-    if (typeof v === 'string' && /^[0-9a-f-]{8,64}$/i.test(v)) org = v;
+    const account = raw && raw.oauthAccount;
+    const v = account && account.organizationUuid;
+    value = {
+      org: typeof v === 'string' && /^[0-9a-f-]{8,64}$/i.test(v) ? v : null,
+      plan: claudePlanFrom(account),
+    };
   } catch {
-    // Caught mid-write: the last known org still stands, and the next change
-    // to the file is read again.
-    return orgCache && orgCache.file === file ? orgCache.org : null;
+    // Caught mid-write: the last known answer still stands, and the next
+    // change to the file is read again.
+    return accountCache && accountCache.file === file ? accountCache.value : none;
   }
-  orgCache = { file, size: st.size, mtimeMs: st.mtimeMs, org };
-  return org;
+  accountCache = { file, size: st.size, mtimeMs: st.mtimeMs, value };
+  return value;
+}
+
+/** Claude Code's organization id from `~/.claude.json`, or null. */
+function claudeCodeOrg(file) {
+  return claudeCodeAccount(file).org;
 }
 
 module.exports = {
@@ -182,5 +197,6 @@ module.exports = {
   coworkProjectRoots,
   readDesktopPlanUsage,
   claudeCodeOrg,
+  claudeCodeAccount,
   MAX_HISTORY_BYTES,
 };

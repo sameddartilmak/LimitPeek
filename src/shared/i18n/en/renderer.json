@@ -213,7 +213,7 @@
   "settings.disconnect": "Disconnect",
   "settings.disconnectLabel": "{provider}: disconnect",
   "settings.plan.placeholder": "Not set",
-  "settings.plan.hint": "Your own note; we cannot read it from the tool.",
+  "settings.plan.hint": "Automatic shows the plan the tool recorded for your account; you can pick one yourself.",
   "settings.usage.intro": "What each period's usage would have cost at published API prices. This is not a bill — you do not pay this amount (US dollars) under your subscription.",
   "settings.usage.sources": "Calculated only from local logs.",
   "settings.grain.legend": "Period length",
@@ -297,5 +297,8 @@
   "settings.tabs.general": "General",
   "settings.plan.labelShort": "Plan",
 
-  "app.coachNotSaved": "The card was closed, but the choice could not be saved; it may appear again after a restart."
+  "app.coachNotSaved": "The card was closed, but the choice could not be saved; it may appear again after a restart.",
+
+  "settings.plan.auto": "Automatic ({plan})",
+  "row.planSpokenTool": "Plan read from the tool:"
 }

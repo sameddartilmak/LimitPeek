@@ -854,6 +854,10 @@ function provider(raw: unknown): ProviderSnapshot | null {
     connected: source.connected === true,
     status: ROW_STATUSES.has(source.status as RowStatus) ? (source.status as RowStatus) : 'loading',
     planLabel: text(source.planLabel, 24),
+    // Where the label came from, and the tool's own value. Carried only when
+    // valid, so an older main's payload reads exactly as it did.
+    ...(source.planSource === 'user' || source.planSource === 'tool' ? { planSource: source.planSource } : {}),
+    ...(text(source.planDetected, 24) !== null ? { planDetected: text(source.planDetected, 24) } : {}),
     fiveHour: windowUsage(source.fiveHour),
     sevenDay: windowUsage(source.sevenDay),
     tokens: tokenBreakdown(source.tokens),

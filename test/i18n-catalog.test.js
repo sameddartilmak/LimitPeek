@@ -415,7 +415,7 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // and no vendor tells us. The hint is what stops the select reading as
     // something we verified: it says the value is their note and that we cannot
     // read it from the tool. Short on purpose (owner, 2026-09-23).
-    { file: 'renderer.json', key: 'settings.plan.hint', en: [/\byour own\b/i, /\bcannot read it\b/i], tr: [/[Kk]endi notunuz/, /okuyamıyoruz/] },
+    { file: 'renderer.json', key: 'settings.plan.hint', en: [/\bAutomatic\b/, /\brecorded\b/i, /\byourself\b/i], tr: [/Otomatik/, /kaydettiği/, /kendiniz/] },
     // Never a default and never a guess: the empty option says 'not set',
     // which is a fact about us, not a prompt that something is missing.
     { file: 'renderer.json', key: 'settings.plan.placeholder', en: [/\bnot set\b/i], tr: [/[Bb]elirtilmedi/] },

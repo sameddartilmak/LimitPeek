@@ -868,16 +868,15 @@ export interface ProviderSnapshot {
    * as NOTHING: no "bilinmiyor", no placeholder, no dash. An absent fact is
    * absent, not a labelled gap.
    *
-   * IT IS NOT A READING, AND IT IS NEVER GUESSED. The plan appears nowhere in
-   * anything this app reads: Claude Code's transcripts carry no plan,
-   * subscription, tier or account field, and the one file that does carry a tier
-   * is `~/.claude/.credentials.json`, which ADR-001 security F1 forbids opening
-   * at all. Codex's rollout and Antigravity's payload each state a plan we
-   * deliberately do NOT read, for the same reason. So there are two honest
-   * options — the user tells us, or the row says nothing — and this field is the
-   * first one. Its only source is app settings (`src/main/settings.js`
-   * `planLabels`, validated by `src/core/plan-labels.js`). Inferring it from
-   * usage volume would be a guess printed as a fact.
+   * IT IS NEVER GUESSED. Two sources, in this order (owner, 2026-09-30):
+   * the label the user chose in Settings (`src/main/settings.js` `planLabels`,
+   * validated by `src/core/plan-labels.js`), else the plan the tool itself
+   * RECORDS for the account — Claude Code's tier in `~/.claude.json`
+   * `oauthAccount`, Codex's `plan_type` in its rollout (`src/core/plan-detect.js`).
+   * An unrecognised tier maps to nothing rather than being printed raw. The
+   * token file `~/.claude/.credentials.json` is still never opened (ADR-001
+   * security F1), and inferring a plan from usage volume would be a guess
+   * printed as a fact. `planSource` says which source this is.
    *
    * IT MUST NEVER TOUCH A NUMBER. No quota, no denominator, no price, no cost,
    * no floor and no limit may read it — there is no `if (plan === 'Max 20x')`
@@ -900,6 +899,18 @@ export interface ProviderSnapshot {
    * label sits inline in a fixed-width row header.
    */
   planLabel: string | null;
+  /**
+   * Where `planLabel` came from: 'user' (Settings), 'tool' (the tool's own
+   * record of the account), or null when there is none. Optional: a main that
+   * predates plan detection sends neither field.
+   */
+  planSource?: 'user' | 'tool' | null;
+  /**
+   * The plan the tool recorded, even when the user's own label wins — so
+   * Settings can offer "Otomatik (Max 5x)". Null when the tool records none we
+   * recognise. Same 24-character label discipline as `planLabel`.
+   */
+  planDetected?: string | null;
   fiveHour: WindowUsage | null;
   sevenDay: WindowUsage | null;
   /** Absolute tokens inside the 5h window, from local transcripts. */

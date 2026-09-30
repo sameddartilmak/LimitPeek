@@ -192,7 +192,7 @@
   "settings.disconnect": "Bağlantıyı kaldır",
   "settings.disconnectLabel": "{provider}: bağlantıyı kaldır",
   "settings.plan.placeholder": "Belirtilmedi",
-  "settings.plan.hint": "Kendi notunuz; bunu araçtan okuyamıyoruz.",
+  "settings.plan.hint": "Otomatik, aracın hesabınız için kaydettiği paketi gösterir; isterseniz kendiniz seçebilirsiniz.",
   "settings.usage.intro": "Her dönemdeki kullanımın yayımlanan API fiyatlarıyla ne tutacağı. Bu bir fatura değildir — abonelik kapsamında bu tutar (ABD doları) ödenmez.",
   "settings.usage.sources": "Yalnızca yerel kayıtlardan hesaplanır.",
   "settings.grain.legend": "Dönem aralığı",
@@ -276,5 +276,8 @@
   "settings.tabs.general": "Genel",
   "settings.plan.labelShort": "Plan",
 
-  "app.coachNotSaved": "Kart kapatıldı ama bu tercih kaydedilemedi; uygulama yeniden başlayınca tekrar görünebilir."
+  "app.coachNotSaved": "Kart kapatıldı ama bu tercih kaydedilemedi; uygulama yeniden başlayınca tekrar görünebilir.",
+
+  "settings.plan.auto": "Otomatik ({plan})",
+  "row.planSpokenTool": "Araçtan okunan plan:"
 }

@@ -269,7 +269,7 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
    * stored value without a second copy of main's rules here. If main refuses
    * outright, the app reverts and says so.
    */
-  let planCommitted = provider.planLabel ?? '';
+  let planCommitted = provider.planSource === 'tool' ? '' : (provider.planLabel ?? '');
   on(planSelect, 'change', () => {
     const value = planSelect.value;
     if (value === planCommitted) return;
@@ -335,21 +335,29 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
    */
   function updatePlan(next: ProviderSnapshot, state: PanelState): void {
     lastPlan = { next, state };
-    const stored = next.planLabel ?? '';
+    // The USER'S choice only: a plan the tool recorded is not a choice the
+    // user made, so it is offered as the empty value ("Otomatik (Max 5x)")
+    // rather than selected as if they had picked it.
+    const stored = next.planSource === 'tool' ? '' : (next.planLabel ?? '');
+    const detected = next.planDetected ?? null;
     const known = planChoices(next.id);
     const extra = stored !== '' && !known.includes(stored) ? stored : null;
     const values = extra === null ? known : [...known, extra];
-    // No known plans and nothing stored: no control at all.
-    planBlock.hidden = values.length === 0;
+    // No known plans, nothing stored and nothing detected: no control at all.
+    planBlock.hidden = values.length === 0 && detected === null;
     // `setAttr`, not `dataset`: the DOM shim the node-level tests mount this
     // component on implements attributes, and a component that needs `dataset`
     // to render is a component those tests cannot reach.
-    const signature = JSON.stringify(values);
+    const signature = JSON.stringify([detected, ...values]);
     const focused = document.activeElement === planSelect;
     if (!focused && signature !== planSelect.getAttribute('data-of')) {
       setAttr(planSelect, 'data-of', signature);
       replaceChildrenWith(planSelect, [
-        el('option', { value: '' }, t('settings.plan.placeholder')),
+        el(
+          'option',
+          { value: '' },
+          detected ? t('settings.plan.auto', { plan: detected }) : t('settings.plan.placeholder'),
+        ),
         ...values.map((value) => el('option', { value }, value)),
       ]);
     }
