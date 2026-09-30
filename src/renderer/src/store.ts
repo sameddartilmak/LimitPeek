@@ -95,6 +95,12 @@ export interface PanelState {
    */
   coachMessage: string | null;
   /**
+   * The first-run introduction's current step, 0-based (onboarding.ts). Shown
+   * while `setupCoachDismissed` is false; not persisted, so a restart before
+   * the user finished starts it again from the welcome.
+   */
+  onboardingStep: number;
+  /**
    * A notice about the last EXPLICIT refresh — not about the data. Set from
    * `Snapshot.refreshNotices` on a `requestRefresh()` reply and never from a
    * push, so it describes one action the user just took (pressing Yenile) and
@@ -202,6 +208,7 @@ const INITIAL: PanelState = {
   settingsTab: 'providers',
   setupCoachDismissed: true,
   coachMessage: null,
+  onboardingStep: 0,
   refreshNotice: null,
   consent: null,
   order: null,

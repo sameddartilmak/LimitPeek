@@ -378,38 +378,117 @@
   color: var(--ink-200);
 }
 
-/* --------------------------------------------------------- first-run card */
-/* Above the Claude card on a fresh install, until it is answered. Neutral
- * surface: the provider's colour lives in its mark only, never in the call to
- * action. */
-.setup {
+/* ------------------------------------------------- first-run introduction */
+/* Three steps in the list area on a fresh install (onboarding.ts). Neutral
+ * surface, even frame, no stripes: a tool's colour lives in its mark only. */
+.onb {
   display: flex;
   flex-direction: column;
-  gap: var(--s-2);
+  gap: var(--s-3);
   margin: var(--s-1) var(--s-3) 0;
-  padding: var(--s-3);
+  padding: var(--s-4) var(--s-4) var(--s-3);
   border: 1px solid var(--ink-600);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--ink-800);
 }
-.setup__head { display: flex; align-items: center; gap: var(--s-3); }
-.setup__mark { display: grid; place-items: center; width: var(--tile); height: var(--tile); }
-.setup__title {
-  margin: 0;
-  font-size: var(--fs-name);
-  font-weight: 600;
-  color: var(--ink-100);
+.onb[hidden] { display: none !important; }
+.onb__progress { display: flex; align-items: center; gap: var(--s-2); }
+.onb__dots { display: inline-flex; gap: 6px; }
+.onb__dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--ink-600);
+  transition: background-color var(--dur-hover) linear, width var(--dur-disclosure) var(--ease-open);
 }
-.setup__text,
-.setup__message {
+/* The current and past steps are filled; the current one is a short bar. */
+.onb__dot[data-on="true"] { background: var(--ink-300); }
+.onb[data-step="1"] .onb__dot:nth-child(1),
+.onb[data-step="2"] .onb__dot:nth-child(2),
+.onb[data-step="3"] .onb__dot:nth-child(3) { width: 16px; border-radius: 3px; background: var(--ink-100); }
+.onb__count { font-size: var(--fs-micro); color: var(--ink-400); }
+.onb__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink-100);
+  outline: none;
+}
+.onb__body { display: flex; flex-direction: column; gap: var(--s-3); }
+.onb__text {
   margin: 0;
   font-size: var(--fs-meta);
-  line-height: 1.45;
-  color: var(--ink-300);
+  line-height: 1.5;
+  color: var(--ink-200);
 }
-.setup__message { color: var(--ink-200); padding-left: var(--s-2); border-left: 2px solid var(--watch); }
-.setup__actions { display: flex; justify-content: flex-end; gap: var(--s-2); }
-.setup > .consent { margin: var(--s-1) 0 0; }
+.onb__promise {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+  padding: var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  background: var(--ink-850);
+}
+/* A padlock drawn in CSS (shackle + body), in the "calm" colour. */
+.onb__lock {
+  position: relative;
+  flex: none;
+  width: 22px; height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--calm) 18%, transparent);
+}
+.onb__lock::before {
+  content: "";
+  position: absolute;
+  left: 7px; top: 4px;
+  width: 8px; height: 7px;
+  border: 1.5px solid var(--calm);
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  box-sizing: border-box;
+}
+.onb__lock::after {
+  content: "";
+  position: absolute;
+  left: 5px; top: 10px;
+  width: 12px; height: 8px;
+  border-radius: 2px;
+  background: var(--calm);
+}
+.onb__promise-title { display: block; font-size: var(--fs-meta); color: var(--ink-100); }
+.onb__promise-text { margin: 2px 0 0; font-size: var(--fs-meta); line-height: 1.45; color: var(--ink-300); }
+.onb__tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.onb__tool {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  background: var(--ink-850);
+}
+.onb__mark { display: grid; place-items: center; width: 24px; height: 24px; }
+.onb__mark .mark { width: 24px; height: 24px; }
+.onb__tool-name { flex: 1; min-width: 0; font-size: var(--fs-name); color: var(--ink-100); }
+.onb__tool[data-enabled="false"] .onb__tool-name { color: var(--ink-300); }
+.onb__missing { margin: 0; font-size: var(--fs-micro); line-height: 1.45; color: var(--ink-400); }
+.onb__message { margin: 0; font-size: var(--fs-meta); line-height: 1.45; color: var(--ink-200); }
+.onb__consent:empty { display: none; }
+.onb__actions { display: flex; align-items: center; gap: var(--s-2); }
+.onb__actions[hidden] { display: none !important; }
+.onb__gap { flex: 1; }
+/* "Atla" is the quiet way out, not a third equal button. */
+.onb .onb__skip { border-color: transparent; color: var(--ink-300); }
+.onb .onb__skip:hover { color: var(--ink-100); background: var(--ink-700); }
 
 /* --------------------------------------------------------------- footer */
 

@@ -39,6 +39,7 @@ import { enabledOf, type PanelState, type PanelView, type SettingsTab } from '..
 import { createHeader, type HeaderHandle } from './header.js';
 import { providerMark } from './logo.js';
 import { createSettings, type SettingsHandle } from './settings.js';
+import { createOnboarding, type OnboardingHandle } from './onboarding.js';
 import {
   createRow,
   createSkeletonRow,
@@ -89,8 +90,12 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onToggleExpand(providerId: string): void;
   /** "Bağla" on the first-run card: the same consent path, drawn in the card. */
   onCoachConnect(providerId: string): void;
-  /** "Şimdi değil" on the first-run card: persisted, it does not come back. */
+  /** "Atla" / "Başla" in the first-run introduction: persisted, it does not come back. */
   onCoachDismiss(): void;
+  /** The introduction moved to another step (0-based). */
+  onOnboardingStep(step: number): void;
+  /** Settings → Genel "Tanıtımı yeniden göster". */
+  onReplayOnboarding(): void;
   /**
    * Whether the first-run tray coach was dismissed. Held by the app, not the
    * panel, because a language change rebuilds the panel and a tip the user
@@ -175,21 +180,6 @@ function refreshIcon(): SVGElement {
   );
 }
 
-/**
- * Should the first-run card show? Only when main says the user has not
- * answered it (`setupCoachDismissed === false`, a fresh install), Claude Code
- * can be connected through its bridge, and no tool is giving a limit figure
- * yet — the moment one is, the card has nothing left to offer.
- */
-export function coachProviderOf(state: PanelState): ProviderSnapshot | null {
-  if (state.setupCoachDismissed || !state.hasData) return null;
-  const providers = state.snapshot?.providers ?? [];
-  const claude = providers.find((p) => p.id === 'claude') ?? null;
-  if (!claude || claude.setupAction?.kind !== 'install-bridge') return null;
-  const anyFigure = providers.some((p) => isDrawable(p.fiveHour) || isDrawable(p.sevenDay));
-  return anyFigure ? null : claude;
-}
-
 export function createPanel(ctx: PanelContext): PanelHandle {
   const rows = new Map<string, RowHandle>();
 
@@ -203,6 +193,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onToggle: (id, enabled) => ctx.onToggleProvider(id, enabled),
     onDisconnect: (id) => ctx.onDisconnect(id),
     onConnect: (id) => ctx.onConnectFromSettings(id),
+    onReplayIntro: () => ctx.onReplayOnboarding(),
     onPlanLabel: (id, label) => ctx.onPlanLabel(id, label),
     onTheme: (theme) => ctx.onThemeChange(theme),
     onLanguage: (choice) => ctx.onLanguageChange(choice),
@@ -285,35 +276,21 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   );
   consentBox.hidden = true;
 
-  // --- the first-run card -------------------------------------------------
-  const setupLater = el('button', { type: 'button', class: 'btn' }, t('coach.later')) as HTMLButtonElement;
-  const setupConnect = el('button', { type: 'button', class: 'btn btn--primary' }, t('coach.connect')) as HTMLButtonElement;
-  const setupMessage = el('p', { class: 'setup__message', role: 'status' }, '');
-  setupMessage.hidden = true;
-  const setupActions = el('div', { class: 'setup__actions' }, setupLater, setupConnect);
-  const setupMark = el('span', { class: 'setup__mark', 'aria-hidden': 'true' }, providerMark('claude', true));
-  const setupCard = el(
-    'section',
-    { class: 'setup', 'aria-labelledby': 'setup-title', 'data-connected': 'true' },
-    el(
-      'div',
-      { class: 'setup__head' },
-      setupMark,
-      el('h2', { class: 'setup__title', id: 'setup-title' }, t('coach.title')),
-    ),
-    el('p', { class: 'setup__text' }, t('coach.text')),
-    setupMessage,
-    setupActions,
-  );
-  setupCard.hidden = true;
-  on(setupLater, 'click', () => ctx.onCoachDismiss());
-  on(setupConnect, 'click', () => ctx.onCoachConnect('claude'));
+  // --- the first-run introduction (onboarding.ts) -------------------------
+  // It replaced the single "Claude Code'u bağla" card: its third step asks the
+  // same question, through the same consent path.
+  const onboarding: OnboardingHandle = createOnboarding({
+    onStep: (step) => ctx.onOnboardingStep(step),
+    onDone: () => ctx.onCoachDismiss(),
+    onToggle: (id, enabled) => ctx.onToggleProvider(id, enabled),
+    onConnect: (id) => ctx.onCoachConnect(id),
+  });
 
   const listBand = el(
     'div',
     { class: 'panel__band panel__band--list' },
     reorderHelp,
-    setupCard,
+    onboarding.el,
     skeletonList,
     rowList,
     emptyState,
@@ -679,9 +656,9 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       lastConsentKey = null;
       return;
     }
-    const host = consent.origin === 'coach' && !setupCard.hidden
-      ? setupCard
-      : rows.get(consent.providerId)?.el ?? setupCard;
+    const host = consent.origin === 'coach' && !onboarding.el.hidden
+      ? onboarding.consentHost
+      : rows.get(consent.providerId)?.el ?? onboarding.consentHost;
     if (consentBox.parentElement !== host) host.appendChild(consentBox);
     consentBox.hidden = false;
     // A question, asked once, in the app's own words: the native dialog that
@@ -736,22 +713,16 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       syncList(rowList, providers, now);
     }
 
-    // --- the first-run card ---
-    const coachFor = coachProviderOf(state);
-    const showSetup = !inSettings && coachFor !== null;
-    setupCard.hidden = !showSetup;
-    const asking = state.consent?.origin === 'coach' && showSetup;
-    setupActions.hidden = asking;
-    setupMessage.hidden = !state.coachMessage || asking;
-    setText(setupMessage, state.coachMessage ?? '');
-    setupConnect.disabled = coachFor ? ctx.isBusy(coachFor.id) : false;
+    // --- the first-run introduction: it owns the list area while it runs ---
+    onboarding.update(state);
+    const introducing = !onboarding.el.hidden;
 
     // Before the first snapshot lands the panel shows the final geometry, so
     // nothing moves when data arrives.
-    skeletonList.hidden = state.hasData || inSettings;
-    rowList.hidden = !state.hasData || inSettings || providers.length === 0;
-    emptyState.hidden = !state.hasData || inSettings || providers.length > 0;
-    reorderHelp.hidden = inSettings;
+    skeletonList.hidden = state.hasData || inSettings || introducing;
+    rowList.hidden = !state.hasData || inSettings || introducing || providers.length === 0;
+    emptyState.hidden = !state.hasData || inSettings || introducing || providers.length > 0;
+    reorderHelp.hidden = inSettings || introducing;
     settings.el.hidden = !inSettings;
     setAttr(root, 'data-view', state.view);
     if (inSettings) settings.render(state, all);

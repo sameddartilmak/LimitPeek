@@ -142,6 +142,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     },
     onCoachConnect: (id) => beginSetup(id, 'coach'),
     onCoachDismiss: () => void dismissCoach(),
+    onOnboardingStep: (step) => store.set({ onboardingStep: step, coachMessage: null }),
+    onReplayOnboarding: () => void replayOnboarding(),
     onToggleProvider: (id, enabled) => void applyEnabled(id, enabled),
     onThemeChange: (choice) => void applyTheme(choice),
     onLanguageChange: (choice) => void applyLanguage(choice),
@@ -265,6 +267,17 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    * write is said, but the card stays closed for this session: re-showing a
    * suggestion the user just declined would be the worse outcome.
    */
+  /**
+   * Settings → Genel "Tanıtımı yeniden göster": the stored answer is taken
+   * back, so the introduction starts again from the welcome on the main list.
+   */
+  async function replayOnboarding(): Promise<void> {
+    store.set({ setupCoachDismissed: false, onboardingStep: 0, coachMessage: null, view: 'main', notice: null });
+    panel.focusView('main');
+    const ok = await bridge.setSetupCoachDismissed(false);
+    if (!ok && bridge.available) say(t('app.coachNotSaved'), 'error');
+  }
+
   async function dismissCoach(): Promise<void> {
     store.set({ setupCoachDismissed: true, coachMessage: null });
     const ok = await bridge.setSetupCoachDismissed(true);

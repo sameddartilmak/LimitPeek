@@ -274,32 +274,93 @@ test.describe('a stale card says so in words, not only in colour', () => {
   });
 });
 
-test.describe('the first-run card', () => {
+test.describe('the first-run introduction (onboarding, 2026-09-30)', () => {
+  let onb;
+  test.before(async () => { onb = await mirror.load('components', 'onboarding.js'); });
+
   const claudeUnconnected = () => provider({
-    connected: false, status: 'ok',
-    fiveHour: { ...win(null), usedPercentage: null, certainty: 'unknown', absence: 'no-capture' },
+    connected: false, status: 'passive',
     setupAction: { kind: 'install-bridge', label: 'Bağla', detail: 'x' },
   });
-  const stateWith = (providers, over = {}) => ({
-    setupCoachDismissed: false, hasData: true, snapshot: { providers }, ...over,
+  const state = (providers, over = {}) => ({
+    setupCoachDismissed: false, hasData: true, view: 'main', onboardingStep: 0, consent: null,
+    coachMessage: null, busy: [], enabledOverride: {}, enabledPending: [],
+    snapshot: { providers }, ...over,
+  });
+  function mount() {
+    const calls = [];
+    const handle = onb.createOnboarding({
+      onStep: (s) => calls.push(['step', s]),
+      onDone: () => calls.push(['done']),
+      onToggle: (id, on) => calls.push(['toggle', id, on]),
+      onConnect: (id) => calls.push(['connect', id]),
+    });
+    const shown = (n) => { for (let x = n; x; x = x.parentNode) if (x.hidden) return false; return true; };
+    const buttons = () => walk(handle.el).filter((n) => n.tagName === 'BUTTON' && shown(n) && cls(n).includes('btn'));
+    const press = (label) => buttons().find((b) => b.textContent === label).click();
+    return { handle, calls, buttons, press };
+  }
+
+  test('shown on a fresh install only, and never inside Settings', () => {
+    assert.equal(onb.onboardingActive(state([])), true);
+    assert.equal(onb.onboardingActive(state([], { setupCoachDismissed: true })), false);
+    assert.equal(onb.onboardingActive(state([], { view: 'settings' })), false);
   });
 
-  test('shows on a fresh install while Claude Code can be connected and no tool gives a limit', () => {
-    assert.equal(panelMod.coachProviderOf(stateWith([claudeUnconnected()])).id, 'claude');
+  test('step 1 welcomes and makes the privacy promise; "İleri" moves on, "Atla" ends it', () => {
+    const m = mount();
+    m.handle.update(state([claudeUnconnected()]));
+    assert.equal(m.handle.el.hidden, false);
+    assert.match(m.handle.el.textContent, new RegExp(i18n.t('onboarding.welcome.privacyTitle')));
+    m.press(i18n.t('onboarding.next'));
+    m.press(i18n.t('onboarding.skip'));
+    assert.deepEqual(m.calls, [['step', 1], ['done']]);
   });
 
-  test('never after "Şimdi değil", never before the first scan', () => {
-    assert.equal(panelMod.coachProviderOf(stateWith([claudeUnconnected()], { setupCoachDismissed: true })), null);
-    assert.equal(panelMod.coachProviderOf(stateWith([claudeUnconnected()], { hasData: false })), null);
+  test('step 2 lists the tools found here with a switch each, and names the missing ones', () => {
+    const codex = provider({ id: 'codex', displayName: 'Codex', connected: true, status: 'ok', enabled: false });
+    const kimi = provider({ id: 'kimi', displayName: 'Kimi', connected: false, status: 'passive',
+      setupAction: { kind: 'not-installed', label: 'Ekle', detail: 'x' } });
+    const m = mount();
+    m.handle.update(state([claudeUnconnected(), codex, kimi], { onboardingStep: 1 }));
+    const tools = walk(m.handle.el).filter((n) => cls(n).includes('onb__tool') && n.tagName === 'LI');
+    assert.deepEqual(tools.map((n) => n.getAttribute('data-provider')), ['claude', 'codex']);
+    const codexSwitch = walk(tools[1]).find((n) => n.getAttribute('role') === 'switch');
+    assert.equal(codexSwitch.getAttribute('aria-checked'), 'false');
+    codexSwitch.click();
+    assert.deepEqual(m.calls, [['toggle', 'codex', true]]);
+    assert.match(m.handle.el.textContent, /Kimi/);
+    // Updated in place: the switch the user pressed is the same element afterwards.
+    m.handle.update(state([claudeUnconnected(), codex, kimi], { onboardingStep: 1, enabledOverride: { codex: true } }));
+    const again = walk(m.handle.el).find((n) => n.getAttribute('role') === 'switch' && n === codexSwitch);
+    assert.ok(again, 'the switch was rebuilt under the user');
+    assert.equal(codexSwitch.getAttribute('aria-checked'), 'true');
   });
 
-  test('not once any tool is giving a limit figure', () => {
-    const codex = provider({ id: 'codex', displayName: 'Codex', fiveHour: win(30) });
-    assert.equal(panelMod.coachProviderOf(stateWith([claudeUnconnected(), codex])), null);
+  test('step 3 offers "Bağla" while Claude Code is not connected, and "Başla" once it is', () => {
+    const m = mount();
+    m.handle.update(state([claudeUnconnected()], { onboardingStep: 2 }));
+    m.press(i18n.t('coach.connect'));
+    assert.deepEqual(m.calls, [['connect', 'claude']]);
+    const connected = provider({ connected: true, status: 'ok', fiveHour: win(10), sevenDay: win(20) });
+    const m2 = mount();
+    m2.handle.update(state([connected], { onboardingStep: 2 }));
+    assert.match(m2.handle.el.textContent, new RegExp(i18n.t('onboarding.ready.title')));
+    m2.press(i18n.t('onboarding.finish'));
+    assert.deepEqual(m2.calls, [['done']]);
   });
 
-  test('not when Claude Code has nothing to connect', () => {
-    const connected = provider({ fiveHour: { ...win(null), usedPercentage: null, certainty: 'unknown' } });
-    assert.equal(panelMod.coachProviderOf(stateWith([connected])), null);
+  test('while the consent question is open, it alone asks', () => {
+    const m = mount();
+    m.handle.update(state([claudeUnconnected()], {
+      onboardingStep: 2,
+      consent: { providerId: 'claude', providerName: 'Claude Code', label: 'Bağla', detail: 'x', origin: 'coach' },
+    }));
+    assert.equal(m.buttons().length, 0, 'the step buttons compete with the consent box');
+  });
+
+  test('the panel no longer shows cards under the introduction', () => {
+    assert.equal(typeof panelMod.createPanel, 'function');
+    assert.equal(panelMod.coachProviderOf, undefined, 'the old single first-run card is gone');
   });
 });

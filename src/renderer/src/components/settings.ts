@@ -117,6 +117,8 @@ export interface SettingsContext {
    * usual setup question. Offered only while the hook is not in place.
    */
   onConnect(providerId: string): void;
+  /** "Tanıtımı yeniden göster": back to the main list, introduction from step 1. */
+  onReplayIntro(): void;
   /**
    * The user told us which plan they are on, or picked "Belirtilmedi" (the
    * empty string) to clear it.
@@ -1594,6 +1596,11 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   const theme = createThemeControl(ctx);
   const languageControl = createLanguageControl(ctx);
   const autostart = createAutostartControl(ctx);
+  // The first-run introduction, on request: it runs once, so this is the way
+  // back to it (and how the owner can look at it again).
+  const replayButton = el('button', { type: 'button', class: 'btn' }, t('settings.replayIntro')) as HTMLButtonElement;
+  on(replayButton, 'click', () => ctx.onReplayIntro());
+  const replayIntro = el('div', { class: 'settings__replay' }, replayButton);
 
   let current: SettingsTab = 'providers';
   const tabs = createTabs(
@@ -1609,6 +1616,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
           el('h3', { class: 'settings__heading' }, t('settings.language.legend')),
           languageControl.el,
           autostart.el,
+          replayIntro,
         ],
       },
     ],
