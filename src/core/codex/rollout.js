@@ -334,40 +334,92 @@ function newestDayDirs(sessionsDir, wanted) {
   return out;
 }
 
+/** The rollout files of one day-folder, as full paths. */
+function rolloutsIn(dir) {
+  let files;
+  try {
+    files = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return files.filter((f) => /^rollout-.*\.jsonl$/.test(f)).map((f) => path.join(dir, f));
+}
+
+/** A regular (non-link) file's mtime, or null. */
+function mtimeOf(full) {
+  try {
+    const stat = fs.lstatSync(full);
+    return stat.isFile() && !stat.isSymbolicLink() ? stat.mtimeMs : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The most recently WRITTEN `rollout-*.jsonl`. The two newest DATES are the
- * candidates — computed across month/year boundaries, so a session opened at
- * 23:xx on a month's last day and still active is not stranded once a session
- * starts in the new month — and the winner among their files is chosen by
- * mtime, i.e. by which session last took a turn.
+ * How often every day-folder is re-listed, and how much of it is kept.
+ *
+ * A Codex session writes to the rollout in the folder of the day it STARTED,
+ * for as long as it runs or whenever it is resumed. Owner, 2026-09-30: a
+ * session opened on 09-23 was still taking turns a week later, and a reader
+ * that looked only at the two newest day-folders (09-26, 09-24) showed that
+ * week-old 09-26 session instead — its windows long rolled over, so the row
+ * had no figure at all while Codex was writing 2% / 21% every turn.
+ *
+ * So every folder counts, but walking all of them on the main thread every
+ * rebuild would not scale with months of history. The full walk runs at most
+ * once a minute and keeps the few most recently written files ("hot"); each
+ * read then stats only those plus the two newest folders, where a brand-new
+ * session always lands. A resumed old session is picked up within a minute.
  */
-function newestRollout(sessionsDir) {
+const HOT_LIST_TTL_MS = 60 * 1000;
+const HOT_FILES = 3;
+const MAX_LISTED_DAYS = 800;
+const hotCache = new Map();
+
+function hotRollouts(sessionsDir, now) {
+  const key = String(sessionsDir);
+  const cached = hotCache.get(key);
+  if (cached && now >= cached.atMs && now - cached.atMs < HOT_LIST_TTL_MS) return cached.files;
+  const ranked = [];
+  for (const { dir } of newestDayDirs(sessionsDir, MAX_LISTED_DAYS)) {
+    for (const full of rolloutsIn(dir)) {
+      const ms = mtimeOf(full);
+      if (ms !== null) ranked.push({ full, ms });
+    }
+  }
+  ranked.sort((a, b) => b.ms - a.ms);
+  const files = ranked.slice(0, HOT_FILES).map((r) => r.full);
+  hotCache.set(key, { atMs: now, files });
+  return files;
+}
+
+/**
+ * The most recently WRITTEN `rollout-*.jsonl`, chosen by mtime — i.e. by which
+ * session last took a turn — among the two newest day-folders (computed across
+ * month/year boundaries) and the most recently written files of ALL folders
+ * (see `hotRollouts`).
+ */
+function newestRollout(sessionsDir, now = Date.now()) {
+  const candidates = new Set();
+  for (const { dir } of newestDayDirs(sessionsDir, 2)) {
+    for (const full of rolloutsIn(dir)) candidates.add(full);
+  }
+  for (const full of hotRollouts(sessionsDir, now)) candidates.add(full);
   let best = null;
   let bestMs = -1;
-  for (const { dir } of newestDayDirs(sessionsDir, 2)) {
-    let files;
-    try {
-      files = fs.readdirSync(dir);
-    } catch {
-      continue;
-    }
-    for (const f of files) {
-      if (!/^rollout-.*\.jsonl$/.test(f)) continue;
-      const full = path.join(dir, f);
-      let stat;
-      try {
-        stat = fs.lstatSync(full);
-      } catch {
-        continue;
-      }
-      if (!stat.isFile() || stat.isSymbolicLink()) continue;
-      if (stat.mtimeMs > bestMs) {
-        bestMs = stat.mtimeMs;
-        best = { file: full, mtimeMs: stat.mtimeMs };
-      }
+  for (const full of candidates) {
+    const ms = mtimeOf(full);
+    if (ms !== null && ms > bestMs) {
+      bestMs = ms;
+      best = { file: full, mtimeMs: ms };
     }
   }
   return best;
+}
+
+/** Test seam: forget the once-a-minute listing. */
+function _resetRolloutCacheForTests() {
+  hotCache.clear();
 }
 
 /** At most this much of a rollout is read: the last `rate_limits` sits at the
@@ -507,7 +559,7 @@ function readCodexRateLimits(options = {}) {
   let file = options.file || null;
   let mtimeMs = null;
   if (!file) {
-    const found = newestRollout(codexSessionsDir(options.home));
+    const found = newestRollout(codexSessionsDir(options.home), now);
     if (!found) return { state: 'missing', ...empty };
     file = found.file;
     mtimeMs = found.mtimeMs;
@@ -574,6 +626,7 @@ module.exports = {
   _resetPathGuardForTests,
   newestRollout,
   newestDayDirs,
+  _resetRolloutCacheForTests,
   classifyWindow,
   MAX_AGE_MS,
 };
