@@ -109,7 +109,7 @@ export interface SettingsContext {
   onTab(tab: SettingsTab): void;
   /**
    * Take our statusLine hook out of this tool's settings (Claude Code, agy).
-   * Main asks natively before it writes anything.
+   * Called only from the item's own confirmation box, after the user said yes.
    */
   onDisconnect(providerId: string): void;
   /**
@@ -251,15 +251,69 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
   planBlock.hidden = true;
 
   // The way back from the setup's hook, offered only while main reports the
-  // hook is in the tool's settings (ProviderSnapshot.hookInstalled). Main
-  // raises the confirmation, so one button is enough here.
+  // hook is in the tool's settings (ProviderSnapshot.hookInstalled). The
+  // button opens a confirmation drawn in the item itself — the app's own
+  // words and look, not the system's message box (owner, 2026-09-30) — and it
+  // is that box's confirm button that asks main to write.
   const disconnect = el(
     'button',
-    { type: 'button', class: 'settings__disconnect' },
+    { type: 'button', class: 'settings__disconnect', 'aria-expanded': 'false' },
     t('settings.disconnect'),
   ) as HTMLButtonElement;
   disconnect.hidden = true;
-  on(disconnect, 'click', () => ctx.onDisconnect(provider.id));
+
+  const confirmTitleId = 'settings-disconnect-title-' + provider.id;
+  const confirmDetailId = 'settings-disconnect-detail-' + provider.id;
+  const confirmTitle = el('strong', { class: 'consent__title', id: confirmTitleId }, '');
+  const confirmDetail = el('span', { class: 'consent__detail', id: confirmDetailId }, '');
+  const confirmCancel = el('button', { type: 'button', class: 'btn' }, t('panel.consentCancel')) as HTMLButtonElement;
+  const confirmGo = el(
+    'button',
+    { type: 'button', class: 'btn btn--danger' },
+    t('settings.disconnect'),
+  ) as HTMLButtonElement;
+  const confirmBox = el(
+    'div',
+    {
+      class: 'consent settings__confirm',
+      role: 'group',
+      'aria-labelledby': confirmTitleId,
+      'aria-describedby': confirmDetailId,
+    },
+    confirmTitle,
+    confirmDetail,
+    el('div', { class: 'consent__actions' }, confirmCancel, confirmGo),
+  );
+  confirmBox.hidden = true;
+
+  let displayName = provider.displayName;
+  function setConfirmOpen(open: boolean, focusBack = false): void {
+    confirmBox.hidden = !open;
+    setAttr(disconnect, 'aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      setText(confirmTitle, t('settings.disconnectConfirm.title', { provider: displayName }));
+      setText(confirmDetail, t('settings.disconnectConfirm.detail', { provider: displayName }));
+      // The safe answer takes the focus, as in the setup consent.
+      confirmCancel.focus({ preventScroll: true });
+      confirmBox.scrollIntoView({ block: 'nearest' });
+    } else if (focusBack && !disconnect.hidden) {
+      disconnect.focus({ preventScroll: true });
+    }
+  }
+  on(disconnect, 'click', () => setConfirmOpen(confirmBox.hidden));
+  on(confirmCancel, 'click', () => setConfirmOpen(false, true));
+  on(confirmGo, 'click', () => {
+    setConfirmOpen(false);
+    ctx.onDisconnect(provider.id);
+  });
+  // Esc closes this box first; the app's own Esc (leave settings) must not
+  // run underneath it.
+  on(confirmBox, 'keydown', (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    setConfirmOpen(false, true);
+  });
 
   /**
    * Committed on `change`: one write per choice, the empty value clearing it.
@@ -312,6 +366,7 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     // item wraps it onto its own full-width line below (panel.css), which also
     // gives the field more room than the text column had.
     planBlock,
+    confirmBox,
   ) as HTMLLIElement;
 
   on(control, 'click', () => {
@@ -369,6 +424,7 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
 
   function update(next: ProviderSnapshot, state: PanelState, isEnabled: boolean): void {
     setText(name, next.displayName);
+    displayName = next.displayName;
     const metaText = metaFor(next, isEnabled);
     setText(meta, metaText);
     setAttr(meta, 'title', metaText);
@@ -377,6 +433,9 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     setAttr(root, 'data-connected', next.connected ? 'true' : 'false');
     root.style.setProperty('--accent', next.accent);
     disconnect.hidden = next.hookInstalled !== true;
+    // Nothing left to disconnect: a box still asking about it would be a
+    // question about a state that no longer exists.
+    if (disconnect.hidden && !confirmBox.hidden) setConfirmOpen(false);
     setAttr(disconnect, 'aria-label', t('settings.disconnectLabel', { provider: next.displayName }));
 
     // In flight. The switch stays operable — a control that goes dead under

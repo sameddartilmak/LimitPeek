@@ -52,7 +52,7 @@ export interface Bridge {
    */
   runSetup(providerId: string, confirmed: boolean): Promise<SetupResult>;
   /** Remove our statusLine hook from a tool's settings (IPC.DISCONNECT_PROVIDER). */
-  disconnectProvider(providerId: string): Promise<SetupResult>;
+  disconnectProvider(providerId: string, confirmed: boolean): Promise<SetupResult>;
   /**
    * Persist the user's provider order (IPC.SET_ORDER, 'providers:set-order').
    * Resolves false on any failure, including a preload that does not expose
@@ -244,9 +244,9 @@ export function createBridge(): Bridge {
       return { ok: false, message: t('app.setupFailed') };
     },
 
-    async disconnectProvider(providerId: string): Promise<SetupResult> {
+    async disconnectProvider(providerId: string, confirmed: boolean): Promise<SetupResult> {
       try {
-        const result = await api.disconnectProvider(providerId);
+        const result = await api.disconnectProvider(providerId, confirmed);
         if (result && typeof result === 'object') {
           return { ok: result.ok === true, message: typeof result.message === 'string' ? result.message : '' };
         }

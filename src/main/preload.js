@@ -232,7 +232,8 @@ contextBridge.exposeInMainWorld('usageNotch', {
     ipcRenderer.invoke(CH.SET_PLAN_LABEL, String(providerId), String(label == null ? '' : label)),
 
   /** Takes our statusLine hook out of a tool's settings; main confirms natively. */
-  disconnectProvider: (providerId) => ipcRenderer.invoke(CH.DISCONNECT_PROVIDER, String(providerId)),
+  disconnectProvider: (providerId, confirmed) =>
+    ipcRenderer.invoke(CH.DISCONNECT_PROVIDER, String(providerId), confirmed === true),
 
   close: () => ipcRenderer.send(CH.PANEL_CLOSE),
   pin: () => ipcRenderer.send(CH.PANEL_PIN),

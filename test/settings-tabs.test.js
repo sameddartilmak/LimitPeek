@@ -124,6 +124,7 @@ class FakeElement {
     this.dispatch('click');
   }
   focus() {}
+  scrollIntoView() {}
 
   get hidden() {
     return this._hidden;
@@ -349,4 +350,70 @@ test('after a language change the language control is found on the "Genel" tab',
   handle.focusLanguage();
   assert.deepEqual(selectedOf(tabs), ['general']);
   assert.deepEqual(picked, ['general']);
+});
+
+// --------------------------------------------- "Bağlantıyı kaldır" confirmation
+
+test.describe('"Bağlantıyı kaldır" asks in the app\'s own box, not the system\'s', () => {
+  const claude = {
+    id: 'claude', displayName: 'Claude Code', accent: '#D97757', connected: true, enabled: true,
+    hookInstalled: true, planLabel: null, planSource: null, planDetected: null,
+  };
+
+  function mountWithClaude() {
+    const asked = [];
+    const handle = settingsMod.createSettings({
+      onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
+      onDisconnect(id) { asked.push(id); },
+    });
+    const snap = { providers: [claude], usageHistory: null };
+    handle.render(state({ snapshot: snap, hasData: true }), [claude]);
+    const item = walk(handle.el).find((el) => el.getAttribute('data-provider') === 'claude' && el.tagName === 'LI');
+    assert.ok(item, 'no Claude Code item');
+    const button = walk(item).find((el) => (el.getAttribute('class') || '').includes('settings__disconnect'));
+    const box = walk(item).find((el) => (el.getAttribute('class') || '').includes('settings__confirm'));
+    const buttons = walk(box).filter((el) => el.tagName === 'BUTTON');
+    return { handle, item, button, box, cancel: buttons[0], confirm: buttons[1], asked, snap };
+  }
+
+  test('the button only opens the box; nothing is sent until its confirm is pressed', () => {
+    const { button, box, confirm, asked } = mountWithClaude();
+    assert.equal(button.hidden, false);
+    assert.equal(box.hidden, true, 'the box is open before anything was pressed');
+    button.click();
+    assert.equal(box.hidden, false);
+    assert.equal(button.getAttribute('aria-expanded'), 'true');
+    assert.deepEqual(asked, [], 'opening the box disconnected');
+    assert.match(box.textContent, /Claude Code/);
+    confirm.click();
+    assert.deepEqual(asked, ['claude']);
+    assert.equal(box.hidden, true);
+  });
+
+  test('"Vazgeç" and Esc close it and send nothing', () => {
+    const { button, box, cancel, asked } = mountWithClaude();
+    button.click();
+    cancel.click();
+    assert.equal(box.hidden, true);
+    button.click();
+    press(box, 'Escape');
+    assert.equal(box.hidden, true);
+    assert.deepEqual(asked, []);
+  });
+
+  test('the box says what the connection is, in plain words', () => {
+    const { button, box } = mountWithClaude();
+    button.click();
+    assert.match(box.textContent, /tek bir satır|single line/);
+    assert.match(box.textContent, /yedeğ|backup/);
+  });
+
+  test('once the hook is gone the question goes with it', () => {
+    const { handle, button, box } = mountWithClaude();
+    button.click();
+    const gone = { ...claude, hookInstalled: false };
+    handle.render(state({ snapshot: { providers: [gone], usageHistory: null }, hasData: true }), [gone]);
+    assert.equal(button.hidden, true);
+    assert.equal(box.hidden, true);
+  });
 });

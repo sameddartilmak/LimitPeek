@@ -141,8 +141,8 @@ function makeBridge(scenario: Scenario): Bridge {
       return { ok: true, message: 'Köprü kuruldu. İlk ölçüm birkaç saniye içinde gelecek.' };
     },
 
-    async disconnectProvider(providerId: string): Promise<SetupResult> {
-      log(`disconnectProvider("${providerId}")`);
+    async disconnectProvider(providerId: string, confirmed: boolean): Promise<SetupResult> {
+      log(`disconnectProvider("${providerId}", confirmed=${confirmed})`);
       return { ok: true, message: 'Claude Code bağlantısı kaldırıldı.' };
     },
 

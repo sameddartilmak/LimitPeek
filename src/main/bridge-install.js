@@ -330,26 +330,20 @@ function hookInstalled(providerId) {
 }
 
 /**
- * The DISCONNECT_PROVIDER implementation: behind a native confirmation, takes
- * our line out of the tool's settings (and puts the user's own line back when
- * the setup kept one). A declined dialog changes nothing.
+ * The DISCONNECT_PROVIDER implementation: takes our line out of the tool's
+ * settings (and puts the user's own line back when the setup kept one).
+ *
+ * The question is asked in the panel, by the app's own confirmation box
+ * (owner, 2026-09-30: the system message box looked foreign), and only its
+ * confirm button sends `confirmed: true`. Anything else changes nothing. No
+ * native dialog here: removing our own line, after a backup, is the one write
+ * that only ever undoes what this app did.
  */
-async function runDisconnect({ providerId, parentWindow, beforePrompt }) {
+async function runDisconnect({ providerId, confirmed }) {
   const d = DISCONNECT[providerId];
   if (!d) return { ok: false, message: t('ipc.actionUnsupported') };
+  if (confirmed !== true) return { ok: false, message: t('setup.cancelled') };
   if (!hookInstalled(providerId)) return { ok: true, message: t('setup.alreadyAbsent') };
-  if (typeof beforePrompt === 'function') beforePrompt();
-  const choice = await dialog.showMessageBox(parentWindow || undefined, {
-    type: 'question',
-    buttons: [t('dialog.cancel'), t('dialog.disconnect.confirm')],
-    defaultId: 0,
-    cancelId: 0,
-    noLink: true,
-    title: t('dialog.disconnect.title', { tool: d.tool }),
-    message: t('dialog.disconnect.message', { tool: d.tool }),
-    detail: t('dialog.disconnect.detail', { tool: d.tool }),
-  });
-  if (choice.response !== 1) return { ok: false, message: t('setup.cancelled') };
   const result = d.remove();
   return { ok: result.ok, message: result.message };
 }

@@ -1255,10 +1255,10 @@ export const IPC = {
   SET_AUTOSTART: 'prefs:set-autostart',
   SET_PLAN_LABEL: 'prefs:set-plan-label',
   /**
-   * renderer -> main invoke(providerId): take our statusLine hook out of the
-   * tool's settings (Claude Code, agy), putting the user's own line back when
-   * the setup kept one. Main asks natively first; a declined dialog changes
-   * nothing. Returns { ok, message }; the row's `hookInstalled` follows on the
+   * renderer -> main invoke(providerId, confirmed): take our statusLine hook
+   * out of the tool's settings (Claude Code, agy), putting the user's own line
+   * back when the setup kept one. The panel asks in its own confirmation box;
+   * anything but `confirmed === true` changes nothing. Returns { ok, message }; the row's `hookInstalled` follows on the
    * next snapshot.
    */
   DISCONNECT_PROVIDER: 'provider:disconnect',
@@ -1443,7 +1443,7 @@ export interface UsageNotchApi {
    */
   setPlanLabel(providerId: string, label: string): Promise<{ ok: boolean }>;
   /** Remove our statusLine hook from a tool's settings. See IPC.DISCONNECT_PROVIDER. */
-  disconnectProvider(providerId: string): Promise<{ ok: boolean; message: string }>;
+  disconnectProvider(providerId: string, confirmed: boolean): Promise<{ ok: boolean; message: string }>;
   /** Tell main the panel opened, so it can raise its refresh cadence. */
   panelOpened(): void;
   close(): void;

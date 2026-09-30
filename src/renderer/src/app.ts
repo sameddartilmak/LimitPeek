@@ -766,13 +766,16 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     await bridge.setSetupCoachDismissed(true);
   }
 
-  /** Same busy guard and notice as runSetup; main raises the confirmation. */
+  /**
+   * Same busy guard and notice as runSetup. Reached only from the settings
+   * item's own confirmation box, after its confirm button.
+   */
   async function disconnectProvider(providerId: string): Promise<void> {
     if (store.get().busy.includes(providerId)) return;
     store.markBusy(providerId, true);
     store.set({ notice: null });
     try {
-      const result = await bridge.disconnectProvider(providerId);
+      const result = await bridge.disconnectProvider(providerId, true);
       const message = trimMessage(result.message);
       if (message) say(message, result.ok ? 'success' : 'error');
       const snapshot = await bridge.requestRefresh();

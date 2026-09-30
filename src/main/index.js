@@ -521,15 +521,15 @@ function registerIpc() {
     return { ok: false, message: i18n.t('ipc.actionUnsupported') };
   });
 
-  // The way back from RUN_SETUP for the two hook-writing rows. Pinned only on
-  // the path that raises the native confirmation, as RUN_SETUP is.
-  ipcMain.handle(IPC.DISCONNECT_PROVIDER, async (event, providerId) => {
+  // The way back from RUN_SETUP for the two hook-writing rows. The panel asks
+  // in its own confirmation box; `confirmed` is true only from its button.
+  ipcMain.handle(IPC.DISCONNECT_PROVIDER, async (event, providerId, confirmed) => {
     if (!fromPanel(event)) return { ok: false, message: i18n.t('ipc.invalidRequest') };
     if (providerId !== 'claude' && providerId !== 'antigravity') {
       return { ok: false, message: i18n.t('ipc.actionUnsupported') };
     }
     try {
-      const result = await runDisconnect({ providerId, parentWindow: panel.win, beforePrompt: () => openPinned() });
+      const result = await runDisconnect({ providerId, confirmed: confirmed === true });
       collector.rebuild();
       return result;
     } catch (err) {

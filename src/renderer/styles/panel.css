@@ -877,6 +877,12 @@
 }
 .settings__disconnect:hover { color: var(--ink-100); }
 .settings__disconnect[hidden] { display: none !important; }
+/* The app's own "Bağlantıyı kaldır?" box, drawn full-width inside the tool's
+ * item, under the plan line. */
+.settings__confirm { flex: 1 0 100%; }
+/* Removing something: the one button that says so in colour. */
+.btn--danger { border-color: var(--spent); color: var(--spent); font-weight: 600; }
+.btn--danger:hover { background: var(--spent); border-color: var(--spent); color: var(--ink-900); }
 .settings__name {
   font-size: var(--fs-name);
   color: var(--ink-200);

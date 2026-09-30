@@ -191,6 +191,8 @@
   "settings.autostart.byWindows": "Microsoft Store sürümünde bunu Windows yönetir: Ayarlar → Uygulamalar → Başlangıç.",
   "settings.disconnect": "Bağlantıyı kaldır",
   "settings.disconnectLabel": "{provider}: bağlantıyı kaldır",
+  "settings.disconnectConfirm.title": "{provider} bağlantısı kaldırılsın mı?",
+  "settings.disconnectConfirm.detail": "Usage Notch, limit yüzdelerini okuyabilmek için {provider} ayarlarına tek bir satır ekledi; bağlantı bu satırdır. Kaldırılırsa önce ayar dosyasının yedeği alınır; kendi durum satırınız varsa geri gelir. Yüzdeler artık görünmez; token ve maliyet görünmeye devam eder.",
   "settings.plan.placeholder": "Belirtilmedi",
   "settings.plan.hint": "Otomatik, aracın hesabınız için kaydettiği paketi gösterir; isterseniz kendiniz seçebilirsiniz.",
   "settings.usage.intro": "Her dönemdeki kullanımın yayımlanan API fiyatlarıyla ne tutacağı. Bu bir fatura değildir — abonelik kapsamında bu tutar (ABD doları) ödenmez.",

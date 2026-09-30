@@ -212,6 +212,8 @@
   "settings.autostart.byWindows": "In the Microsoft Store version, Windows manages this: Settings → Apps → Startup.",
   "settings.disconnect": "Disconnect",
   "settings.disconnectLabel": "{provider}: disconnect",
+  "settings.disconnectConfirm.title": "Disconnect {provider}?",
+  "settings.disconnectConfirm.detail": "To read the limit percentages, Usage Notch added a single line to the {provider} settings; that line is the connection. Removing it takes a backup of the settings file first, and brings back your own status line if you had one. The percentages stop showing; tokens and cost keep showing.",
   "settings.plan.placeholder": "Not set",
   "settings.plan.hint": "Automatic shows the plan the tool recorded for your account; you can pick one yourself.",
   "settings.usage.intro": "What each period's usage would have cost at published API prices. This is not a bill — you do not pay this amount (US dollars) under your subscription.",
