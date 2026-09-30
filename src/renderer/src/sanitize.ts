@@ -890,7 +890,8 @@ function provider(raw: unknown): ProviderSnapshot | null {
     setupAction: setupAction(source.setupAction),
     errorCode: text(source.errorCode, 48) ?? undefined,
     lastGoodAt: isoInstant(source.lastGoodAt),
-    hookInstalled: source.hookInstalled === true ? true : undefined,
+    // Both answers are kept: `false` is what offers "Bağla" again in Settings.
+    hookInstalled: typeof source.hookInstalled === 'boolean' ? source.hookInstalled : undefined,
     // Qwen Code with no usage log at all: only a literal true is that claim.
     usageLogAbsent: source.usageLogAbsent === true ? true : undefined,
   };

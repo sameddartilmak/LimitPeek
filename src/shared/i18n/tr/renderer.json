@@ -178,6 +178,7 @@
   "settings.where.notEnabled": "Ana panelde değil",
   "settings.connected": "bağlı",
   "settings.notConnected": "henüz bağlı değil",
+  "settings.disconnected": "bağlı değil",
   "settings.models.help": "Ana panelde hangi araçların görüneceğini seçin. Kaldırılan araç yalnızca listeden çıkar — bağlantısı kesilmez, hiçbir veri silinmez.",
   "settings.scanning": "Araçlar taranıyor…",
   "settings.theme.legend": "Görünüm",

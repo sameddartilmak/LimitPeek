@@ -116,6 +116,12 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onSetup: (providerId) => beginSetup(providerId),
     onPlanLabel: (providerId, label) => void applyPlanLabel(providerId, label),
     onDisconnect: (providerId) => void disconnectProvider(providerId),
+    // The setup question is drawn in the tool's card, so show the list first.
+    onConnectFromSettings: (providerId) => {
+      store.set({ view: 'main', notice: null, revertedId: null });
+      panel.focusView('main');
+      beginSetup(providerId);
+    },
     onRefresh: () => void runRefresh(null),
     onPinToggle: () => {
       // Main owns pinned mode and answers by pushing a new anchor — mode:'pin'

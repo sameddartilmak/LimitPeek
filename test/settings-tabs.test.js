@@ -417,3 +417,31 @@ test.describe('"Bağlantıyı kaldır" asks in the app\'s own box, not the syste
     assert.equal(box.hidden, true);
   });
 });
+
+test.describe('after "Bağlantıyı kaldır" the way back is right there', () => {
+  const gone = {
+    id: 'claude', displayName: 'Claude Code', accent: '#D97757', connected: true, enabled: true,
+    hookInstalled: false, planLabel: null, planSource: null, planDetected: null,
+    setupAction: { kind: 'install-bridge', label: 'Bağla', detail: 'Durum satırına bir köprü eklenir.' },
+  };
+
+  test('"Bağla" replaces "Bağlantıyı kaldır", the line no longer says "bağlı", and a press goes to the card', () => {
+    const asked = [];
+    const handle = settingsMod.createSettings({
+      onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
+      onDisconnect() {}, onConnect(id) { asked.push(id); },
+    });
+    handle.render(state({ snapshot: { providers: [gone], usageHistory: null }, hasData: true, enabledOverride: { claude: true } }), [gone]);
+    const item = walk(handle.el).find((el) => el.getAttribute('data-provider') === 'claude' && el.tagName === 'LI');
+    const cls = (el) => el.getAttribute('class') || '';
+    const off = walk(item).find((el) => cls(el) === 'settings__disconnect');
+    const on = walk(item).find((el) => cls(el).includes('settings__connect'));
+    assert.equal(off.hidden, true);
+    assert.equal(on.hidden, false);
+    assert.equal(on.textContent, 'Bağla');
+    const meta = walk(item).find((el) => cls(el) === 'settings__meta');
+    assert.match(meta.textContent, /bağlı değil|not connected/);
+    on.click();
+    assert.deepEqual(asked, ['claude']);
+  });
+});

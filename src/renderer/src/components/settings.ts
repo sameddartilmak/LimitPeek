@@ -113,6 +113,11 @@ export interface SettingsContext {
    */
   onDisconnect(providerId: string): void;
   /**
+   * Connect this tool again: back to the main panel, where its card asks the
+   * usual setup question. Offered only while the hook is not in place.
+   */
+  onConnect(providerId: string): void;
+  /**
    * The user told us which plan they are on, or picked "Belirtilmedi" (the
    * empty string) to clear it.
    * Persist-then-apply: the app writes through main and puts the control back
@@ -187,7 +192,11 @@ function asClause(detail: string): string {
  */
 function metaFor(provider: ProviderSnapshot, enabled: boolean): string {
   const where = enabled ? t('settings.where.enabled') : t('settings.where.notEnabled');
-  const how = provider.connected
+  // A tool whose hook was removed is not "bağlı", even while an older figure
+  // (or, for Claude, the desktop app's) still fills its card.
+  const how = provider.hookInstalled === false && provider.setupAction?.kind === 'install-bridge'
+    ? t('settings.disconnected')
+    : provider.connected
     ? t('settings.connected')
     : asClause(provider.setupAction?.detail ?? '') || t('settings.notConnected');
   return where + ' · ' + how;
@@ -261,6 +270,18 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     t('settings.disconnect'),
   ) as HTMLButtonElement;
   disconnect.hidden = true;
+
+  // The way back IN, offered where the way out was (owner, 2026-09-30: after
+  // "Bağlantıyı kaldır" nothing here could undo it). It does not connect from
+  // here: it takes the user to the tool's card, where the usual setup
+  // question is asked.
+  const connect = el(
+    'button',
+    { type: 'button', class: 'settings__disconnect settings__connect' },
+    '',
+  ) as HTMLButtonElement;
+  connect.hidden = true;
+  on(connect, 'click', () => ctx.onConnect(provider.id));
 
   const confirmTitleId = 'settings-disconnect-title-' + provider.id;
   const confirmDetailId = 'settings-disconnect-detail-' + provider.id;
@@ -356,7 +377,7 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     'li',
     { class: 'settings__item', role: 'listitem', 'data-provider': provider.id },
     mark,
-    el('span', { class: 'settings__text' }, title, meta, disconnect),
+    el('span', { class: 'settings__text' }, title, meta, disconnect, connect),
     control,
     // AFTER the switch, deliberately, and this is a keyboard decision rather
     // than a layout one. The switch decides whether the tool appears at all;
@@ -436,6 +457,14 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     // Nothing left to disconnect: a box still asking about it would be a
     // question about a state that no longer exists.
     if (disconnect.hidden && !confirmBox.hidden) setConfirmOpen(false);
+    // Only for a card that is on the main panel: that card is where the setup
+    // question is drawn.
+    const canConnect = next.hookInstalled === false && next.setupAction?.kind === 'install-bridge' && isEnabled;
+    connect.hidden = !canConnect;
+    if (canConnect && next.setupAction) {
+      setText(connect, next.setupAction.label);
+      setAttr(connect, 'aria-label', `${next.displayName}: ${next.setupAction.label}`);
+    }
     setAttr(disconnect, 'aria-label', t('settings.disconnectLabel', { provider: next.displayName }));
 
     // In flight. The switch stays operable — a control that goes dead under

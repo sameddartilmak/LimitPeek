@@ -64,6 +64,8 @@ const OUTCOME_TOAST_MS = 3000;
 export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow' | 'isExpanded' | 'onToggleExpand'> {
   /** Take our statusLine hook out of a tool's settings. */
   onDisconnect(providerId: string): void;
+  /** From settings: back to the main list and ask this tool's setup question. */
+  onConnectFromSettings(providerId: string): void;
   /** The user stated the plan they are on for this tool, or cleared it. */
   onPlanLabel(providerId: string, label: string): void;
   onPinToggle(pinned: boolean): void;
@@ -200,6 +202,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   const settings: SettingsHandle = createSettings({
     onToggle: (id, enabled) => ctx.onToggleProvider(id, enabled),
     onDisconnect: (id) => ctx.onDisconnect(id),
+    onConnect: (id) => ctx.onConnectFromSettings(id),
     onPlanLabel: (id, label) => ctx.onPlanLabel(id, label),
     onTheme: (theme) => ctx.onThemeChange(theme),
     onLanguage: (choice) => ctx.onLanguageChange(choice),

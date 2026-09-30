@@ -199,6 +199,7 @@
   "settings.where.notEnabled": "Not on the main panel",
   "settings.connected": "connected",
   "settings.notConnected": "not connected yet",
+  "settings.disconnected": "not connected",
   "settings.models.help": "Choose which tools appear on the main panel. Removing a tool only takes it off the list — it stays connected and no data is deleted.",
   "settings.scanning": "Scanning for tools…",
   "settings.theme.legend": "Appearance",

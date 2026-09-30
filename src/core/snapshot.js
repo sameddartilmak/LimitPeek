@@ -89,12 +89,25 @@ function boundCost(cost) {
 /**
  * `hookInstalled` on the two rows whose setup writes a statusLine hook into
  * another tool's settings, when main says (input.hooks); absent otherwise.
+ *
+ * A row whose hook is NOT in place always offers its connect action, even
+ * while it still draws a figure (owner, 2026-09-30: after "Bağlantıyı kaldır"
+ * there was no way back). The figure can outlive the hook — the last bridge
+ * capture, or for Claude the desktop app's plan-usage file — and deciding
+ * "connected, nothing to set up" from the figure left no button anywhere.
  */
 function withHooks(providers, hooks) {
   if (!hooks || typeof hooks !== 'object') return providers;
-  return providers.map((p) => (p.id === 'claude' || p.id === 'antigravity'
-    ? { ...p, hookInstalled: hooks[p.id] === true }
-    : p));
+  return providers.map((p) => {
+    if (p.id !== 'claude' && p.id !== 'antigravity') return p;
+    const installed = hooks[p.id] === true;
+    const out = { ...p, hookInstalled: installed };
+    if (!installed && !p.setupAction) {
+      const def = PROVIDERS.find((d) => d.id === p.id);
+      if (def) out.setupAction = { ...def.setupAction };
+    }
+    return out;
+  });
 }
 
 /** Test seam: forget the memoised history. */
