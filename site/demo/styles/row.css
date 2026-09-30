@@ -1,0 +1,1191 @@
+/* Provider rows: live and passive, plus the per-window usage blocks. */
+
+/* A CARD, not a ruled line (UI plan 2026-09-29): an 8px gap between cards, the
+ * raised surface, an 8px radius. A grid, so the mark sits beside the title line
+ * and everything under it — the two windows, the error, "Ayrıntılar" and the
+ * details — runs the card's full width. `.row__body` is `display: contents`,
+ * so the builders' lines are laid straight onto this grid. */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-1) var(--s-3) var(--s-3);
+}
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--tile) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--s-3);
+  row-gap: var(--s-2);
+  min-height: 44px;
+  padding: var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  background: var(--ink-800);
+}
+.row > .grip { grid-column: 1; grid-row: 1; }
+.row__body { display: contents; }
+.row .row__line { grid-column: 2; grid-row: 1; min-height: var(--tile); align-items: center; }
+.row .meter,
+.row .row__primary,
+.row .row__err,
+.row .row__more,
+.row .row__detail,
+.row > .consent { grid-column: 1 / -1; }
+.row--passive .row__meta { grid-column: 2; margin-top: calc(var(--s-2) * -1); }
+
+/* ------------------------------------------------- identity mark / grip */
+/* The 2px brand spine is gone. It existed to carry identity next to a letter
+ * tile; the mark now carries it, in the brand hue, at four times the area. A
+ * second brand-coloured element in the same gutter formed a colour column that
+ * competed with the meters for the eye — and the meters are the marks that
+ * have to stay comparable across rows.
+ *
+ * The tile IS the drag grip, so the hit target is a constant 32px box on every
+ * row and the marks line up in one column whatever the row height. */
+
+.grip {
+  flex: 0 0 auto;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--tile); height: var(--tile);
+  padding: 0;
+  border-radius: var(--radius-tile);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-400);
+  cursor: grab;
+  /* The gesture is vertical and captured; never let the OS treat it as a
+   * pan or a text selection. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background-color 120ms linear, border-color 120ms linear, color 120ms linear;
+}
+.grip[disabled] { cursor: default; }
+.grip--empty { display: block; }
+
+/* The identity mark is the provider's REAL brand logo, shipped as a build-time
+ * asset (assets/logos/) and painted here — never fetched, never innerHTML'd.
+ * See components/logo.ts. Each is a multi-colour SVG shown as a
+ * background-image (claude/codex/antigravity/kimi/qwen/grok). Grok's mark is
+ * one colour, so it sits on a white tile like Codex's and reads on either
+ * theme. No vendor has granted logo permission yet (docs/marka-izin-
+ * basvurulari.md): a public release swaps these for neutral marks.
+ * Grey vs brand-colour is the connected/unconnected treatment; see below. */
+.mark {
+  width: 24px; height: 24px;
+  display: block;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+.mark[data-logo="claude"]      { background-image: url(../assets/logos/claude-color.svg); }
+.mark[data-logo="codex"]       { background-image: url(../assets/logos/codex-color.svg); }
+.mark[data-logo="antigravity"] { background-image: url(../assets/logos/antigravity-color.svg); }
+.mark[data-logo="kimi"]        { background-image: url(../assets/logos/kimi-color.svg); }
+.mark[data-logo="qwen"]        { background-image: url(../assets/logos/qwen-color.svg); }
+.mark[data-logo="grok"]        { background-image: url(../assets/logos/grok-color.svg); }
+
+/* An id with no shipped asset: a neutral ring, never a broken image or a
+ * letter. logo.ts adds this class; today every provider has art, so it is
+ * defensive. */
+.mark--fallback {
+  border: 1.5px solid var(--ink-400);
+  border-radius: 50%;
+}
+
+/* CONNECTED: brand hue, full-weight stroke, a tile to sit on.
+ * UNCONNECTED: the same geometry in ink, lighter stroke, no tile.
+ * Three signals move together — hue, weight, ground — so the distinction
+ * survives a greyscale screenshot and a colour-blind reader. The absence of a
+ * meter on the same row is the fourth. */
+.row[data-connected="true"] .grip {
+  background: color-mix(in srgb, var(--accent, #666666) var(--accent-tint), var(--ink-800));
+  border-color: color-mix(in srgb, var(--accent, #666666) 40%, transparent);
+  color: var(--accent, var(--ink-200));
+}
+/* The brand hexes were chosen against a dark ground and four of the five are
+ * illegible on a light one, so the light theme darkens the SAME hue rather than
+ * inventing a second accent the contract does not give it. See --accent-shade
+ * in tokens.css for the ratio and why it is that number.
+ *
+ * Written as a second rule rather than a color-mix in the first: at 100% the
+ * mix is a no-op by value, but it still serialises as color(srgb ...) instead
+ * of rgb(...), which changes what every consumer of the computed style sees
+ * for a theme that did not change. A theme should not alter the dark one. */
+:root[data-theme="light"] .row[data-connected="true"] .grip {
+  color: color-mix(in srgb, var(--accent, #666666) var(--accent-shade), #000000);
+}
+/* CONNECTED vs UNCONNECTED — the mark's colour treatment.
+ * Grey by default (the same brand SVG, desaturated); full brand colour when the
+ * provider's account is wired up. "Connected" is carried by a [data-connected]
+ * ancestor — set every render by the row (applyChrome) and by the settings list
+ * — which is therefore always fresh; the mark's own data-active is a redundant
+ * self-descriptor the row stamps at creation. The ancestor is authoritative, so
+ * a provider that later disconnects greys correctly even though data-active is
+ * stale. Grey is the same art through a grayscale filter, so it stays visible
+ * on both the dark and light ground. */
+.mark { filter: grayscale(1); opacity: .6; }
+
+.mark[data-active="true"],
+[data-connected="true"] .mark { filter: none; opacity: 1; }
+
+/* The ancestor is authoritative: a disconnected row/item greys its mark even if
+ * a stale data-active still says active. Same specificity as the active rules,
+ * so it must come AFTER them to win. */
+[data-connected="false"] .mark { filter: grayscale(1); opacity: .6; }
+
+.row[data-status="loading"] .grip {
+  background: var(--ink-800);
+  border-color: var(--ink-700);
+}
+
+/* The row whose 5-hour window main draws into the tray icon. A dot, not a
+ * word: the row already carries its name, and the grip's title and its
+ * aria-label say the rest for anyone who cannot see a 5px mark. */
+.grip[data-tray="true"]::after {
+  content: "";
+  position: absolute;
+  top: -2px; right: -2px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  border: 1px solid var(--ink-900);
+}
+
+/* Grip affordance: six dots fade in over the mark when the pointer is ON THE
+ * MARK, so a resting row shows six clean logos and nothing else.
+ *
+ * The reveal is the only thing scoped to hover. The drag TARGET is still the
+ * whole 32px tile, unconditionally: an affordance that appears on hover is
+ * fine, a hit area that appears on hover is a target you can lose by moving
+ * one pixel. And the keyboard path never consults hover at all - the grip is a
+ * real <button>, so :focus-visible reveals the same dots and Alt+Arrow works
+ * with no pointer anywhere near the window. */
+.grip__dots {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 6px; height: 16px;
+  transform: translate(-50%, -50%);
+  color: var(--ink-200);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms linear;
+}
+/* Was `.row:hover .grip` - anywhere on the 360px row lit the grip up, which is
+ * what made the drag affordance feel permanent. */
+.grip:hover:not([disabled]) .mark { opacity: .18; }
+.grip:hover:not([disabled]) .grip__dots { opacity: .9; }
+.grip:focus-visible .mark { opacity: .18; }
+.grip:focus-visible .grip__dots { opacity: .9; }
+.grip:hover:not([disabled]) { background: var(--ink-700); border-color: var(--ink-600); }
+
+/* ---------------------------------------------------------------- drag */
+
+.rows[data-dragging="true"] { cursor: grabbing; }
+.rows[data-dragging="true"] .row.is-shifting {
+  transition: transform 160ms var(--ease-fill);
+}
+.row.is-dragging {
+  position: relative;
+  z-index: 2;
+  cursor: grabbing;
+  background: var(--ink-700);
+  box-shadow: var(--shadow-lift);
+}
+.row.is-dragging .grip { cursor: grabbing; }
+.row.is-dragging .grip__dots { opacity: .9; }
+.row.is-dragging .mark { opacity: .18; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rows[data-dragging="true"] .row.is-shifting { transition: none; }
+}
+
+/* ----------------------------------------------------------------- body */
+
+.row__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.row__name {
+  font-size: var(--fs-name);
+  font-weight: 500;
+  color: var(--ink-100);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The plan the user told us they are on. Subdued on purpose: the tool's NAME is
+ * the identity and this is a qualifier beside it, so it takes the micro size and
+ * the meta ink rather than competing for the line.
+ *
+ * It YIELDS BEFORE THE NAME. The backend caps the label at 24 characters, and at
+ * that length on a 360px panel it would otherwise push a long tool name into its
+ * ellipsis — the identity losing characters to an annotation. `flex: 0 1 auto`
+ * plus a max-width means the plan is what shortens when the line runs out, and
+ * it is the safe thing to shorten: it is a label, not a claim, and the full text
+ * is one line down in Settings where the user set it. */
+.row__plan {
+  flex: 0 1 auto;
+  max-width: 40%;
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+  padding: 1px var(--s-1);
+  border: 1px solid var(--ink-700);
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row__gap { flex: 1 1 auto; }
+
+/* ADR-003 A6.4: a reader not yet confirmed on a real install. A statement
+ * about the reader, not an alert: ink outline, no warning colour, no icon.
+ * Shared by the panel row and Settings → Model Yönetimi. */
+.tag-experimental {
+  flex: 0 0 auto;
+  font-size: var(--fs-micro);
+  line-height: 1.3;
+  color: var(--ink-400);
+  padding: 0 var(--s-1);
+  border: 1px dashed var(--ink-600);
+  border-radius: 4px;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* The row-level percentage is gone. With two windows to report there is no
+ * honest single figure to put beside the provider's name, and the one that was
+ * there described the five-hour window without ever saying so. See .win__pct. */
+
+.row__meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+  min-width: 0;
+  /* Each item on this line now NAMES ITS WINDOW ("Kota haftası: 6,2M token",
+   * "5 saat: 240 B token/sa"), because the count is the week's and the rate
+   * beside it is the five-hour window's. Those labels are the claim, and the
+   * per-span ellipsis below would cut the number or the label off the end of
+   * whichever item ran out of room — a claim cut to fit is a claim dropped
+   * (ADR-004 A2.3). So the line takes a second row before anything is cut. */
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+.row__meta > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The five-hour reset used to sit at the end of this line. Each window block
+ * now prints its own countdown under its own bar, so a single one here would
+ * have been the third figure describing the five-hour window and none
+ * describing the weekly one. */
+/* The separator is a TRAILING one, on every item but the last.
+ *
+ * It used to be `span + span::before`, a LEADING dot on each item after the
+ * first. That broke when this line started wrapping: a pseudo-element cannot
+ * know it is first on a line, so a wrapped second line opened with a stray
+ * dot. A trailing separator has no such state — it belongs to the item it
+ * follows, exactly like a comma, so a break after it leaves it correctly at the
+ * end of the line above and never at the start of the next.
+ *
+ * The text stream gets its own separator: a real space is inserted between the
+ * items in row.ts, because pseudo-element content is invisible to `textContent`
+ * and to anything reading this line as a string. */
+.row__meta > span:not(:last-child)::after {
+  content: " ·";
+  color: var(--ink-600);
+}
+
+/* -------------------------------------------------------- window blocks */
+/* One block per usage window, five-hour and weekly, drawn identically:
+ *
+ *     5 saatlik pencere                                        %62
+ *     [==========================.....................]
+ *     1 sa 32 dk kaldi
+ *
+ * The weekly window used to be a 2px hairline under the five-hour rail with no
+ * figure and no countdown of its own, and the verdict on that was that the app
+ * did not show weekly usage. Nothing here makes one window quieter than the
+ * other: same bar height, same figure size, same countdown.
+ *
+ * The hierarchy is carried by SIZE, WEIGHT and INK - never by
+ * text-transform: uppercase, which maps i -> I and is wrong in Turkish:
+ *   provider name  13px / 500 / ink-100
+ *   window label   11px / 500 / ink-300
+ *   figure         14px / 600 / state ramp
+ *   countdown      10px / 400 / ink-400 */
+
+/* The two windows SIDE BY SIDE, as two equal columns (UI plan 2026-09-29):
+ * label and figure, the 8px bar, the reset countdown under it. Below a 380px
+ * panel they stack instead, so neither column is squeezed past its words. */
+.meter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--s-4);
+  row-gap: var(--s-3);
+  width: 100%;
+}
+.meter > .win:only-child { grid-column: 1 / -1; }
+@container panel (max-width: 379px) {
+  .meter { grid-template-columns: minmax(0, 1fr); }
+}
+
+.win { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+.win__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.win__gap { flex: 1 1 auto; }
+
+.win__label {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  color: var(--ink-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The figure. The one thing in the row allowed to carry the state ramp, and it
+ * takes it from its OWN window: %19 weekly beside %91 five-hourly are two
+ * different answers and one colour cannot carry both. */
+.win__pct {
+  flex: 0 0 auto;
+  font-size: var(--fs-figure);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--state, var(--ink-100));
+  font-variant-numeric: tabular-nums lining-nums;
+}
+/* "We cannot say" is not a level on the ramp. No ramp colour, no figure
+ * weight, and no bar underneath - but the window is still named, because an
+ * omitted line reads as an absent feature. */
+.win__pct--none {
+  font-size: var(--fs-meta);
+  font-weight: 400;
+  color: var(--ink-400);
+}
+
+.win__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--s-2);
+  row-gap: 0;
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+  min-width: 0;
+}
+.win__foot[hidden] { display: none !important; }
+.win__foot > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.win__reset { color: var(--ink-300); }
+.win__reset[hidden] { display: none !important; }
+
+/* Per-window state ramp. Scoped to the block, so the weekly bar is never
+ * coloured by the five-hour window's pressure. */
+/* THE RAMP IS CONTINUOUS, AND IT IS THE SAME RAMP.
+ *
+ * Each step still OWNS its anchor colour at its own threshold — every contrast
+ * ratio measured in tokens.css is a property of those four values and none of
+ * them moved. What changed is the space between them: the fill mixes toward the
+ * NEXT anchor by `--mix`, the reading's position inside its step, so the colour
+ * moves with every percent instead of holding flat across a whole band. Below
+ * 60% that band was the entire calm range, which is where most readings live
+ * and why the bar looked static.
+ *
+ * Mixed in OKLAB, not sRGB: a straight sRGB blend between two saturated hues
+ * dips through a muddy, darker midpoint, and the midpoint is exactly where most
+ * readings sit. OKLAB keeps the path perceptually even, which is also what keeps
+ * LUMINANCE moving monotonically along the ramp — the property that makes this
+ * legible as a ramp to a reader who cannot separate the hues. Colour is never
+ * the only signal here anyway: the percentage is printed beside the bar.
+ *
+ * `spent` has no next anchor, so it does not mix. A row with no step at all
+ * takes the fallback ink and no ramp colour: "we cannot say" is not a level. */
+.win[data-state="calm"]  { --state: color-mix(in oklab, var(--calm),  var(--watch) calc(var(--mix, 0) * 100%)); }
+.win[data-state="watch"] { --state: color-mix(in oklab, var(--watch), var(--ember) calc(var(--mix, 0) * 100%)); }
+.win[data-state="ember"] { --state: color-mix(in oklab, var(--ember), var(--spent) calc(var(--mix, 0) * 100%)); }
+.win[data-state="spent"] { --state: var(--spent); }
+
+/* ------------------------------------------------------------------ bar */
+
+.rail {
+  position: relative;
+  width: 100%;
+  height: var(--rail-h);
+  background: var(--ink-600);
+  border-radius: var(--radius-rail);
+  overflow: hidden;
+}
+
+.rail__fill {
+  position: absolute;
+  inset: 0;
+  background: var(--state, var(--calm));
+  transform-origin: left center;
+  transform: scaleX(var(--f, 0));
+  /* square: the rail already clips to its own radius */
+  border-radius: 0;
+}
+
+/* Fill only animates once the panel is open AND past first paint. */
+.panel.is-animatable[data-open="true"] .rail__fill,
+.panel.is-animatable[data-open="true"] .rail__band {
+  transition: transform var(--dur-fill) var(--ease-fill);
+}
+
+/* certainty: known -- a crisp terminal tick. Square, full rail height, the
+ * brightest ink. It reads as a machined index mark. */
+.rail__tick {
+  position: absolute;
+  top: 0; bottom: 0;
+  right: 0;
+  width: 2px;
+  background: var(--tick);
+  transform-origin: right center;
+  /* counter-scale so the tick stays exactly 2px wide inside the scaled fill */
+  transform: scaleX(calc(1 / max(var(--f, 1), .02)));
+}
+
+/* certainty: estimated -- a dithered shoulder instead of a tick. The fill
+ * frays out over its last stretch so the eye cannot read a hard number off
+ * it. Currently unused by every provider; kept as a live code path. */
+.rail__fill--estimated {
+  /* Three mask layers, composited as: fade INTERSECT (shoulder ADD body).
+   *   body     solid up to 64% of the fill
+   *   shoulder a 1px hatch confined to the last 36%, right-aligned
+   *   fade     leaves the body alone and thins the hatch toward the terminus
+   * The result is a bar that is crisp where the estimate is safe and frays
+   * out where it is not, with no terminal tick to read a number off. */
+  -webkit-mask-image:
+    linear-gradient(90deg, #000000 0 64%, rgba(0, 0, 0, .15) 100%),
+    repeating-linear-gradient(90deg, #000000 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, #000000 0 64%, transparent 64%);
+  mask-image:
+    linear-gradient(90deg, #000000 0 64%, rgba(0, 0, 0, .15) 100%),
+    repeating-linear-gradient(90deg, #000000 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, #000000 0 64%, transparent 64%);
+  -webkit-mask-size: 100% 100%, 36% 100%, 100% 100%;
+  mask-size: 100% 100%, 36% 100%, 100% 100%;
+  -webkit-mask-position: left center, right center, left center;
+  mask-position: left center, right center, left center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-composite: source-in, source-over;
+  mask-composite: intersect, add;
+}
+.rail__fill--estimated .rail__tick { display: none; }
+
+/* The confidence interval, drawn as a faint extent behind the fill. */
+.rail__band {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 0;
+  width: 100%;
+  background: var(--state, var(--calm));
+  opacity: .2;
+  transform-origin: left center;
+  transform: scaleX(var(--band-hi, 0));
+}
+
+/* The row's headline state, from the five-hour window: the one main draws the
+ * tray icon from. Every block overrides it with its own, so this is a
+ * fallback and a hook, never the colour of a bar that has its own. */
+/* The row-level ramp, same rule — see the note above the .win block. */
+.row[data-state="calm"]  { --state: color-mix(in oklab, var(--calm),  var(--watch) calc(var(--mix, 0) * 100%)); }
+.row[data-state="watch"] { --state: color-mix(in oklab, var(--watch), var(--ember) calc(var(--mix, 0) * 100%)); }
+.row[data-state="ember"] { --state: color-mix(in oklab, var(--ember), var(--spent) calc(var(--mix, 0) * 100%)); }
+.row[data-state="spent"] { --state: var(--spent); }
+
+/* UNCERTAIN READINGS DESATURATE — they do not hold the neutral.
+ *
+ * Colour may only say what the number says, and these states say it with less
+ * confidence in words already: "about", "as of 13:09", a frayed fill. A
+ * saturated red beside "about" is the colour contradicting the sentence.
+ *
+ * Holding the neutral instead was the other option and it is worse: it would
+ * paint an uncertain 90% exactly like a calm 10%, which understates. Pulling
+ * the ramp colour toward the meta ink keeps the POSITION and withdraws the
+ * CONFIDENCE, which is the honest half-measure — and it matters more now that
+ * the sub-60 band moves, because that band used to be flat and could not
+ * overstate by drifting.
+ *
+ * `error` is not here: it already drains to a flat ink below, which is the
+ * strongest form of the same idea. */
+.rail__fill--estimated {
+  background: color-mix(in oklab, var(--state, var(--calm)), var(--ink-400) 45%);
+}
+.win__pct[data-estimated="true"] {
+  color: color-mix(in oklab, var(--state, var(--ink-100)), var(--ink-400) 45%);
+}
+
+/* --------------------------------------------------------- state: stale */
+/* A figure that is still TRUE but no longer CURRENT (UI plan 2026-09-29):
+ *   - the figure drops to neutral ink: colour may only say what the number
+ *     says, and a saturated red beside "as of 14:10" contradicts the sentence;
+ *   - the bar keeps its state colour at 45%, under a light diagonal hatch, so
+ *     the position survives but reads as a record rather than a live gauge;
+ *   - the card's title line says "Güncel değil · 22 dk", and every window
+ *     prints the instant it was measured.
+ * Colour is never the only carrier: the chip's words and the hatch say it. */
+.row[data-status="stale"] .win__pct { color: var(--ink-300); }
+.row[data-status="stale"] .rail__fill,
+.row[data-status="error"] .rail__fill {
+  opacity: .45;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(0, 0, 0, .38) 0 2px,
+    transparent 2px 5px
+  );
+}
+:root[data-theme="light"] .row[data-status="stale"] .rail__fill,
+:root[data-theme="light"] .row[data-status="error"] .rail__fill {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, .55) 0 2px,
+    transparent 2px 5px
+  );
+}
+.row[data-status="stale"] .win__label { color: var(--ink-400); }
+
+/* The status chip in the title line. Words first, and a watch dot as a second
+ * carrier; never the only one. */
+.row__chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 1px var(--s-2) 1px 6px;
+  border: 1px solid var(--ink-600);
+  border-radius: 999px;
+  font-size: var(--fs-micro);
+  line-height: 1.3;
+  color: var(--ink-200);
+  white-space: nowrap;
+}
+.row__chip--stale::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--watch);
+}
+
+/* --------------------------------------------------------- state: error */
+/* The value is kept but drained of state colour: it is still a real
+ * measurement, it is just no longer answerable for. It must stay readable -
+ * dimming a dark ink on a dark track produced an empty-looking rail. */
+.row[data-status="error"] .win__pct { opacity: .7; color: var(--ink-300); }
+.row[data-status="error"] .rail { opacity: .8; }
+.row[data-status="error"] .rail__fill { background-color: var(--ink-400); }
+.row[data-status="error"] .rail__tick { background: var(--ink-200); }
+.row__err {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-meta);
+  color: var(--ember);
+  min-width: 0;
+}
+.row__err > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row__err .btn {
+  height: 18px;
+  padding: 0 var(--s-2);
+  font-size: var(--fs-micro);
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* ---------------------------------------------------- the main measure */
+/* A tool that publishes no quota (Kimi, Qwen Code, Grok Build) gets no empty
+ * rail pretending to be one. Its closed card shows the most trustworthy thing
+ * we have: the week's tokens, the cost the tool reported, or the reason there
+ * is nothing — a figure in primary ink, and its window named under it. */
+.row__primary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: var(--s-2);
+  row-gap: 2px;
+  min-width: 0;
+}
+.row__primary-value {
+  font-size: var(--fs-figure);
+  font-weight: 600;
+  color: var(--ink-100);
+}
+.row__primary[data-kind="absent"] .row__primary-value,
+.row__primary[data-kind="none"] .row__primary-value,
+.row__primary[data-kind="uncounted"] .row__primary-value,
+.row__primary[data-kind="pending"] .row__primary-value {
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  color: var(--ink-300);
+}
+.row__primary-caption {
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+}
+
+/* ------------------------------------------------------------ "Ayrıntılar" */
+.row__more {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  min-height: 28px;
+  margin: calc(var(--s-1) * -1) calc(var(--s-2) * -1);
+  padding: 0 var(--s-2);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-300);
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--dur-hover) linear, background-color var(--dur-hover) linear;
+}
+.row__more:hover { color: var(--ink-100); background: var(--ink-700); }
+.row__more[hidden] { display: none !important; }
+.row__more-chev { display: inline-flex; transition: transform var(--dur-disclosure) var(--ease-open); }
+.row__more-chev svg { width: 12px; height: 12px; display: block; }
+.row__more[aria-expanded="true"] { color: var(--ink-100); }
+.row__more[aria-expanded="true"] .row__more-chev { transform: rotate(90deg); }
+
+/* The details, in the plan's order: tokens, the model split, the per-model
+ * quotas, the cost, then where the figures came from. */
+.row__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--ink-700);
+  animation: detail-in var(--dur-disclosure) var(--ease-open) both;
+}
+.row__detail[hidden] { display: none !important; }
+@keyframes detail-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.row__detail-tokens { display: flex; flex-direction: column; gap: var(--s-2); min-width: 0; }
+.row__detail .row__meta { color: var(--ink-200); }
+.row__classes,
+.row__model-list,
+.row__notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.row__class {
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-400);
+  overflow-wrap: anywhere;
+}
+.row__subhead {
+  margin: 0 0 var(--s-1);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--ink-300);
+}
+.row__model {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--s-2);
+  font-size: var(--fs-micro);
+  color: var(--ink-300);
+}
+.row__model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row__model-count { color: var(--ink-200); }
+.row__note { font-size: var(--fs-micro); line-height: 1.45; color: var(--ink-400); }
+.row__notes[hidden] { display: none !important; }
+.row__detail .cost,
+.row__detail .quota { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* ------------------------------------------------------- state: passive */
+.row--passive { min-height: var(--row-passive-h); row-gap: var(--s-1); }
+/* The grip box stays 32px so every mark sits on one vertical axis and the hit
+ * target does not shrink; only the mark inside it steps down. */
+.row--passive .mark { width: 20px; height: 20px; }
+.row--passive .row__name { color: var(--ink-300); font-weight: 400; }
+.row--passive .row__body { gap: 2px; }
+.row--passive .row__meta { font-size: var(--fs-micro); }
+
+
+/* ------------------------------------------------------ state: loading */
+/* Skeleton occupies the FINAL geometry so nothing reflows when data lands. */
+.sk {
+  position: relative;
+  background: var(--ink-700);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.sk::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--sk-sweep) 50%,
+    transparent 100%);
+  transform: translateX(-100%);
+  animation: sk-sweep 1400ms var(--ease-fill) infinite;
+}
+@keyframes sk-sweep { to { transform: translateX(100%); } }
+/* Reduced motion: plain blocks, no sweep at all (not a 1ms flash of one). */
+@media (prefers-reduced-motion: reduce) {
+  .sk::after { animation: none; display: none; }
+}
+
+.sk--name  { width: 92px; height: 11px; }
+.sk--label { width: 84px; height: 9px; }
+.sk--pct   { width: 34px; height: 12px; }
+.sk--meta  { width: 132px; height: 9px; }
+.sk--foot  { width: 76px; height: 8px; }
+.sk--rail  { width: 100%; height: var(--rail-h); border-radius: var(--radius-rail); }
+
+/* The passive row explanation and the stale row "as of" line. */
+.row__meta-detail { color: var(--ink-400); }
+.row__stale { color: var(--ink-500); font-style: normal; }
+
+/* A pending action keeps its label and its width; only the ink dims. */
+.btn.is-busy { opacity: .7; }
+
+/* --------------------------------- stale capture (ADR-001 amendment 2) --- */
+/* A percentage that is still TRUE but no longer CURRENT: the window it
+ * describes has not rolled over, so the figure stands, but it is shown at the
+ * stale weight and never without the instant it was measured.
+ *
+ * It sits in the block's foot, beside that window's countdown, because it
+ * qualifies ONE window's figure. On the name line it qualified whichever
+ * window happened to be primary and said nothing about the other. It is never
+ * dimmed with the figure it qualifies - see the stale rules above. */
+.win__asof {
+  flex: 0 0 auto;
+  color: var(--ink-400);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.win__asof[hidden] { display: none !important; }
+/* A window with a capture instant but no reset instant would otherwise open
+ * its foot with a separator that separates nothing. */
+.win__reset[hidden] + .win__asof::before { content: none; }
+.win__asof::before {
+  content: "\00B7";
+  margin-right: var(--s-2);
+  color: var(--ink-600);
+}
+
+/* WHY A WINDOW WITH NO FIGURE GETS A SENTENCE UNDER IT
+ *
+ * "bildirilmiyor" alone answers "is there a number" and not "why not", and an
+ * absence with no stated cause is the failure this project keeps finding: it
+ * is indistinguishable from the app being broken. It is only drawn for the one
+ * cause where the answer is actionable - the tool does not publish this limit -
+ * so it never becomes a line the eye learns to skip.
+ *
+ * It takes the remaining width instead of `flex: 0 0 auto`, because unlike a
+ * countdown or a capture instant it is a sentence, and the inherited
+ * nowrap/ellipsis from `.win__foot > span` would clip it mid-word. */
+.win__reason {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink-400);
+}
+.win__reason[hidden] { display: none !important; }
+/* Same rule as the "as of" label: no separator when there is nothing to its
+ * left to separate it from. */
+.win__reset[hidden] + .win__reason::before { content: none; }
+.win__reason::before {
+  content: "\00B7";
+  margin-right: var(--s-2);
+  color: var(--ink-600);
+}
+
+/* The measured floor on consumption since the capture. Deliberately NOT the
+ * state ramp: it is a token count, not a share of a limit. */
+.row__delta {
+  color: var(--ink-300);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* ------------------------------------------- notional weekly cost (ADR-002) */
+/* The user pays nothing per token. Everything here is styled so the figure
+ * cannot be mistaken for a balance: it is never the largest thing in the row,
+ * it never sits alone, and the composition bar deliberately stays OFF the
+ * state ramp — the ramp means "distance to a limit", and a 65% cache-read
+ * share is not danger, it is just what the week was made of. */
+
+.cost {
+  margin-top: var(--s-1);
+  padding-top: var(--s-1);
+  border-top: 1px dashed var(--ink-700);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cost[hidden] { display: none !important; }
+/* "Bu bir fatura değil." — the block's first sentence whenever a figure is
+ * shown, before the amount rather than behind a disclosure. */
+.cost__frame {
+  margin: 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-200);
+}
+.cost__frame[hidden] { display: none !important; }
+/* Which week the figure covers, right under the frame. */
+.cost__period {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--ink-300);
+}
+.cost__period[hidden] { display: none !important; }
+.cost__prov-window { display: none; }
+
+.cost__toggle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-300);
+  font: inherit;
+  font-size: var(--fs-meta);
+  text-align: left;
+  cursor: pointer;
+}
+.cost__toggle:hover { color: var(--ink-100); }
+/* No figure was computed, so the line is a statement about a gap rather than a
+ * quiet aside. Same weight as the missing-price-date line, for the same
+ * reason: an absence the user needs to notice is not a footnote. */
+.cost[data-unpriced="true"] .cost__toggle { color: var(--ink-200); }
+.cost[data-unpriced="true"] { border-top-color: var(--ink-600); }
+/* Wraps rather than ellipsizes. The collapsed line is the only framing seen
+ * unexpanded (ADR-004 Amendment 2.3), and in English a floor cannot fit one
+ * line at 360px: "would have cost at least $1,234.56 at published API prices"
+ * measures ~280px against a 264px line. An ellipsis there cuts the claim
+ * itself ("at publ…"), so the line takes a second row instead. Turkish copy
+ * measured one line in every fixture state, so its geometry is unchanged. */
+.cost__summary { min-width: 0; overflow-wrap: break-word; }
+
+/* A rotating caret, drawn in CSS so there is no seventh glyph to maintain. */
+.cost__chev {
+  flex: 0 0 auto;
+  width: 0; height: 0;
+  align-self: center;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 120ms var(--ease-open);
+}
+.cost[data-expanded="true"] .cost__toggle .cost__chev { transform: rotate(90deg); }
+
+/* The composition, always visible. One hue, stepping down with rank, so the
+ * segments read as "sorted by size" rather than as five categories. */
+.cost__bar {
+  display: flex;
+  gap: 1px;
+  height: 5px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--ink-800);
+}
+.cost__bar[hidden] { display: none !important; }
+/* Capped at --ink-300. The meter above is the row's instrument; a grey bar
+ * that out-shines it would make the composition look like the reading. */
+.cost__seg { display: block; min-width: 0; background: var(--ink-500); }
+.cost__seg[data-rank="0"] { background: var(--ink-300); }
+.cost__seg[data-rank="1"] { background: var(--ink-400); }
+.cost__seg[data-rank="2"] { background: var(--ink-500); }
+.cost__seg[data-rank="3"] { background: var(--ink-600); }
+.cost__seg[data-rank="4"] { background: var(--ink-600); }
+
+.cost__caption {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cost__caption[hidden] { display: none !important; }
+
+/* ADR-002 A3.12: the tool's first scan has not answered. A statement, not a
+ * figure: same micro size as the caption, never ellipsized (honesty copy). */
+.cost__pending {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--ink-300);
+  overflow-wrap: break-word;
+}
+.cost__pending[hidden] { display: none !important; }
+.cost__toggle[hidden] { display: none !important; }
+/* "Calculating", not "no data": wraps rather than inheriting the meta line's
+ * nowrap/ellipsis, so the claim is never cut. */
+.row__meta > span.row__pending {
+  white-space: normal;
+  overflow: visible;
+  color: var(--ink-300);
+}
+
+/* -------------------------------------------------------------- expanded */
+
+.cost__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-1);
+  padding: var(--s-2) 0 var(--s-1);
+  border-top: 1px solid var(--ink-700);
+}
+.cost__detail[hidden] { display: none !important; }
+
+.cost__lead {
+  margin: 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-100);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+/* The denial is not a footnote. It is the same size as the figure's own line
+ * and it sits directly beneath it, because it is the sentence that stops the
+ * number being read as money owed. */
+.cost__denial {
+  margin: -4px 0 0;
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-300);
+}
+
+.cost__table { display: flex; flex-direction: column; gap: var(--s-1); }
+
+.cost__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: baseline;
+  column-gap: var(--s-2);
+  font-size: var(--fs-micro);
+  color: var(--ink-300);
+}
+.cost__k { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cost__v { color: var(--ink-100); font-variant-numeric: tabular-nums lining-nums; }
+.cost__p { color: var(--ink-400); min-width: 30px; text-align: right; }
+
+/* A 2px extent under each label. It costs no horizontal room and it is what
+ * makes "cache read dwarfs everything" land before the figures are read. */
+.cost__rowbar {
+  grid-column: 1 / -1;
+  height: 2px;
+  margin-top: 4px;
+  border-radius: 1px;
+  background: var(--ink-700);
+  position: relative;
+  overflow: hidden;
+}
+.cost__rowbar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--ink-400);
+  transform-origin: left center;
+  transform: scaleX(var(--w, 0));
+}
+
+/* A provenance line that reports its own absence is not decoration; it is the
+ * gap made visible, so it does not fade into the ink-500 footnote scale. */
+.cost__gap { color: var(--ink-300); }
+
+.cost__prov {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-micro);
+  color: var(--ink-500);
+}
+
+/* ------------------------------------------------- per-model quota detail */
+/* One figure per model family, behind a disclosure. It borrows the cost
+ * block's chrome deliberately — same toggle, same caret, same detail panel —
+ * because two collapsible blocks in one row that opened differently would read
+ * as two unrelated mechanisms rather than one idiom the user learns once.
+ *
+ * What it does NOT borrow is the ramp rule. The cost block keeps its
+ * composition bar off the state ramp because a share of a whole has no limit
+ * in it. A quota group DOES: it is distance to a limit, the same claim the
+ * meter above makes, so its figure takes the ramp and reads consistently with
+ * the bar it sits under. */
+
+.quota {
+  margin-top: var(--s-1);
+  padding-top: var(--s-1);
+  border-top: 1px dashed var(--ink-700);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.quota[hidden] { display: none !important; }
+
+.quota__toggle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-300);
+  font: inherit;
+  font-size: var(--fs-meta);
+  text-align: left;
+  cursor: pointer;
+}
+.quota__toggle:hover { color: var(--ink-100); }
+.quota__summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.quota__chev {
+  flex: 0 0 auto;
+  width: 0; height: 0;
+  align-self: center;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 120ms var(--ease-open);
+}
+.quota[data-expanded="true"] .quota__chev { transform: rotate(90deg); }
+
+.quota__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-1);
+  padding: var(--s-2) 0 var(--s-1);
+  border-top: 1px solid var(--ink-700);
+}
+.quota__detail[hidden] { display: none !important; }
+
+.quota__lead {
+  margin: 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-100);
+}
+/* Not a footnote, and not under the names it qualifies. Same treatment as the
+ * cost block's denial and for the same reason: a caveat placed after the thing
+ * it qualifies has already been misread by the time it is reached. */
+.quota__denial {
+  margin: -4px 0 0;
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-300);
+}
+
+.quota__groups { display: flex; flex-direction: column; gap: var(--s-2); }
+.quota__group { display: flex; flex-direction: column; gap: 2px; }
+
+/* The figure, and the only place in this block a percentage appears. Model
+ * names never carry one — see components/quotas.ts. */
+.quota__head {
+  margin: 0;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--state, var(--ink-200));
+  font-variant-numeric: tabular-nums lining-nums;
+}
+/* Same continuous ramp as the bars above — a per-model figure and the bar it
+ * sits under are two readings of one kind, and one gliding while the other
+ * stepped would read as two different scales. */
+.quota__head[data-state="calm"]  { --state: color-mix(in oklab, var(--calm),  var(--watch) calc(var(--mix, 0) * 100%)); }
+.quota__head[data-state="watch"] { --state: color-mix(in oklab, var(--watch), var(--ember) calc(var(--mix, 0) * 100%)); }
+.quota__head[data-state="ember"] { --state: color-mix(in oklab, var(--ember), var(--spent) calc(var(--mix, 0) * 100%)); }
+.quota__head[data-state="spent"] { --state: var(--spent); }
+
+/* Names only. No numeric column exists here, so none can be filled in. */
+.quota__models {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.quota__models > li {
+  position: relative;
+  padding-left: var(--s-3);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-300);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quota__models > li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: .62em;
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: var(--ink-500);
+}
+
+/* The selected model. Carried by INK and a label, never by a figure — the
+ * percentage stays on the group heading (see components/quotas.ts). The row is
+ * lifted to the primary text colour and its bullet brightened, so "which one
+ * did I pick" survives a greyscale screenshot on the label alone, not on a hue. */
+.quota__model--selected {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  color: var(--ink-100);
+  font-weight: 600;
+}
+.quota__model--selected::before { background: var(--ink-200); }
+.quota__model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The "seçili" tag. A quiet pill, not a second reading: it names a state, so
+ * it must not compete with the group figure above it. */
+.quota__sel {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid var(--ink-600);
+  border-radius: 999px;
+  font-size: var(--fs-nano, var(--fs-micro));
+  font-weight: 500;
+  color: var(--ink-300);
+  white-space: nowrap;
+}
+
+.quota__notes { display: flex; flex-direction: column; gap: var(--s-1); }
+.quota__note {
+  margin: 0;
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-400);
+}
+.quota__note--asof {
+  color: var(--ink-500);
+  font-variant-numeric: tabular-nums lining-nums;
+}

@@ -1,0 +1,1607 @@
+/* Panel chrome: shell, header, freshness marker, footer, settings, motion. */
+
+/* The OS window is created once at a fixed size and is never moved or resized
+ * while the panel animates. .anchor carries the absolute placement computed in
+ * src/anchor.ts from the tray geometry, and it is the only thing that
+ * transforms, so panel and tail move together on the compositor. */
+#app {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.anchor {
+  position: absolute;
+  width: var(--panel-w);
+  /* transform-origin is set inline from the tail position, so the panel grows
+   * out of the tray icon rather than out of its own centre. */
+  transform-origin: 50% 100%;
+  /* Less travel than the old .94: at the shorter click-open duration a large
+   * scale delta reads as a snap rather than as a growth. */
+  transform: scaleY(.965);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.anchor[data-open="true"] {
+  transform: scaleY(1);
+  opacity: 1;
+  transition:
+    transform var(--dur-open) var(--ease-open),
+    opacity calc(var(--dur-open) - 40ms) linear;
+}
+
+.anchor[data-open="false"] {
+  transform: scaleY(.96);
+  opacity: 0;
+  transition:
+    transform var(--dur-close) ease-in,
+    opacity var(--dur-close) linear;
+}
+
+/* A side taskbar means the panel grows sideways, so scale the other axis. */
+.anchor[data-axis="horizontal"] { transform: scaleX(.965); }
+.anchor[data-axis="horizontal"][data-open="true"] { transform: scaleX(1); }
+.anchor[data-axis="horizontal"][data-open="false"] { transform: scaleX(.96); }
+
+.panel {
+  position: relative;
+  width: 100%;
+  /* The cards' two window columns stack below a 380px panel (row.css). */
+  container-type: inline-size;
+  container-name: panel;
+  background: linear-gradient(180deg, var(--ink-850) 0%, var(--ink-900) 100%);
+  border: 1px solid var(--ink-700);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-inset), var(--shadow-panel);
+  overflow: hidden;
+}
+
+/* THE DIALOG ROOT NEVER DRAWS A FOCUS RING.
+ *
+ * It is focusable only so script can put focus on it — on open, on pinning,
+ * and after a notice closes (tabindex="-1": reachable by script, never by
+ * Tab). It is a container, not a control, so a ring around it tells a
+ * keyboard user nothing about where they are.
+ *
+ * And it was drawn on every open. The tray click happens OUTSIDE this
+ * document, so Chromium has no pointer interaction to go on, treats the
+ * programmatic focus as keyboard-origin, and :focus-visible matches — the
+ * global rule in tokens.css then paints a 2px --ink-100 outline 2px outside
+ * the panel's own 1px --ink-700 border. Measured on a real open: a 2px line at
+ * brightness 240 around the whole window. The user reported it as a white
+ * frame, which is exactly what it was.
+ *
+ * Scoped to the root and nothing else. It is the only tabindex="-1" element in
+ * the renderer, and every real control keeps the global :focus-visible ring —
+ * that half is an accessibility requirement, and test/render/cost.js pins it
+ * on a real button in the same focus state that used to paint the frame.
+ *
+ * Depends on nothing about WINDOW focus: whether main opens the panel
+ * activated or with showInactive(), the root either has document focus or it
+ * does not, and in neither case does it draw.
+ */
+.panel:focus-visible { outline: none; }
+
+/* The tail lives outside the panel's overflow clip, hence the wrapper.
+ *
+ * The box is sized per side and the glyph is rotated INSIDE it, centred on the
+ * box. Rotating the box itself would invalidate the offset that centres it on
+ * the tray icon, because CSS resolves left/top before transforms.
+ * It overlaps the panel border by 1px so the join has no seam. */
+.panel__tail {
+  position: absolute;
+  pointer-events: none;
+  filter: drop-shadow(var(--shadow-tail));
+}
+.panel__tail svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--tail-w);
+  height: var(--tail-h);
+  transform: translate(-50%, -50%) rotate(var(--tail-rot, 0deg));
+}
+
+/* Bottom taskbar: panel above it, tail hanging down at the icon. */
+.anchor[data-tail="bottom"] .panel__tail {
+  width: var(--tail-w);
+  height: var(--tail-h);
+  top: calc(100% - 1px);
+  left: var(--tail-offset, 50%);
+  margin-left: calc(var(--tail-w) / -2);
+  --tail-rot: 0deg;
+}
+.anchor[data-tail="top"] .panel__tail {
+  width: var(--tail-w);
+  height: var(--tail-h);
+  bottom: calc(100% - 1px);
+  left: var(--tail-offset, 50%);
+  margin-left: calc(var(--tail-w) / -2);
+  --tail-rot: 180deg;
+}
+/* Side taskbars swap the box axes; the glyph rotates a quarter turn. */
+.anchor[data-tail="left"] .panel__tail {
+  width: var(--tail-h);
+  height: var(--tail-w);
+  right: calc(100% - 1px);
+  top: var(--tail-offset, 50%);
+  margin-top: calc(var(--tail-w) / -2);
+  --tail-rot: 90deg;
+}
+.anchor[data-tail="right"] .panel__tail {
+  width: var(--tail-h);
+  height: var(--tail-w);
+  left: calc(100% - 1px);
+  top: var(--tail-offset, 50%);
+  margin-top: calc(var(--tail-w) / -2);
+  --tail-rot: -90deg;
+}
+
+/* The tail stops pointing at the icon once it clamps to the panel corner.
+ * Softening it is honest: it is no longer telling the truth about position. */
+.anchor[data-tail-clamped="true"] .panel__tail,
+.anchor[data-anchor-source="cursor"] .panel__tail { opacity: .55; }
+
+/* Content stagger: each band enters +40ms after the shell starts. */
+.panel__band {
+  opacity: 0;
+  transform: translateY(3px);
+}
+.panel[data-open="true"] .panel__band {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--dur-open) var(--ease-open) var(--band-delay, 0ms),
+    transform var(--dur-open) var(--ease-open) var(--band-delay, 0ms);
+}
+
+/* ---------------------------------------------------------------- header */
+
+.hdr { padding: var(--s-3) var(--s-3) var(--s-2) var(--s-4); }
+
+/* Centred, not baseline-aligned: the row carries a 24px tile, a 13px name, an
+ * 18px freshness marker and 24px buttons, and centring is the one alignment
+ * that keeps all four on a single axis. The tile is exactly as tall as the
+ * buttons, so it grows nothing. */
+.hdr__top {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.hdr__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: .01em;
+  color: var(--ink-100);
+}
+
+/* The app tile (assets/app-icon.svg, the small ICO art). 24 CSS px, the height
+ * of the header's icon buttons: 24, 30 and 36 device px at 100, 125 and 150%
+ * scaling. The small art rather than the master, by the owner's call after a
+ * side-by-side (2026-09-23): at this size the master's thin ring and dark track
+ * shrink to a speck, while the small art's heavier ring and lifted track stay
+ * legible. Vector either way, so it stays crisp at every scale. */
+.hdr__logo {
+  flex: none;
+  width: 24px; height: 24px;
+  background: url(../assets/app-icon.svg) center / contain no-repeat;
+}
+
+.hdr__sub {
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+}
+
+.hdr__spacer { flex: 1 1 auto; }
+
+.hdr__actions { display: flex; align-items: center; gap: var(--s-1); }
+
+/* 32px: a comfortable target for a pointer and a touch screen alike (UI plan
+ * 2026-09-29); the glyph stays 16px. */
+.iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-400);
+  font: inherit;
+  cursor: pointer;
+  transition: color 120ms linear, background-color 120ms linear;
+}
+.iconbtn:hover { color: var(--ink-100); background: var(--ink-700); }
+.iconbtn[aria-pressed="true"],
+.iconbtn[aria-expanded="true"] {
+  color: var(--ink-100);
+  background: var(--ink-700);
+  border-color: var(--ink-600);
+}
+.iconbtn svg { width: 16px; height: 16px; display: block; }
+
+/* PINNED vs. NOT PINNED, at a glance.
+ *
+ * The two states differ in what they PROMISE — pinned survives blur and app
+ * switching, unpinned closes as soon as the pointer leaves — so they must not
+ * differ by a shade of grey. Pinned inverts the button outright: brightest ink
+ * as the ground, panel base as the glyph. The pin also stands upright instead
+ * of tilting out of the board (see pinIcon() in components/header.ts), so the
+ * distinction survives a greyscale screenshot. No state-ramp colour is used:
+ * that ramp belongs to meters and percentages, which are compared across rows.
+ */
+.iconbtn--pin[aria-pressed="true"] {
+  background: var(--ink-100);
+  border-color: var(--ink-100);
+  color: var(--ink-900);
+}
+.iconbtn--pin[aria-pressed="true"]:hover {
+  background: var(--ink-max);
+  border-color: var(--ink-max);
+  color: var(--ink-900);
+}
+
+/* --------------------------------------------------- freshness marker */
+/* Quiet when there is nothing to say, unmissable when there is.
+ *
+ * The old chip was a bordered pill that always carried a dot AND the words
+ * "şimdi güncellendi" — the state it is in almost all the time. Two carriers
+ * for one signal, in the header's best real estate, saying "fine". This
+ * escalates instead:
+ *
+ *   live     6px dot, no ground, no words       (~14px wide)
+ *   pending  dot pulses, words return
+ *   aging    dot turns watch, words return
+ *   stale    filled ember block, words          (the row list dims with it)
+ *   offline  same filled treatment, other words
+ *
+ * The filled tiers use --ink-900 as their ink: in BOTH themes that is the
+ * panel base, which is what a state colour is guaranteed to contrast with.
+ * That is the whole reason the tokens are named for role and not brightness. */
+
+.fresh {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: var(--s-1);
+  min-width: 0;
+  height: 18px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+
+.fresh__dot {
+  flex: 0 0 auto;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--fresh-color, var(--ink-500));
+}
+
+/* Absent from the layout entirely at the quiet level, rather than present and
+ * empty: an empty inline box still takes the gap before it. */
+.fresh__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fresh__text:empty { display: none; }
+
+.fresh[data-fresh="live"]    { --fresh-color: var(--calm); }
+/* Aging: a small outlined chip, "1 dk önce". */
+.fresh[data-fresh="aging"]   {
+  --fresh-color: var(--watch);
+  padding: 0 var(--s-2);
+  border-color: var(--ink-600);
+  color: var(--ink-200);
+}
+.fresh[data-fresh="pending"] { --fresh-color: var(--ink-400); }
+
+/* The alarm tier. A filled block, not a tinted border: at 10px a border is a
+ * shade and a shade is what the eye has been trained to skip. */
+.fresh[data-fresh="stale"],
+.fresh[data-fresh="offline"] {
+  --fresh-color: var(--ink-900);
+  padding: 0 var(--s-2);
+  background: var(--ember);
+  border-color: var(--ember);
+  color: var(--ink-900);
+  font-weight: 600;
+}
+
+/* A refresh in flight, at ANY level. Motion only: the footer button already
+ * says "Yenileniyor" in words and a second copy is the noise this redesign
+ * removed. */
+.fresh[data-busy="true"] .fresh__dot,
+.fresh[data-fresh="pending"] .fresh__dot {
+  animation: fresh-pulse 1400ms ease-in-out infinite;
+}
+@keyframes fresh-pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+
+/* ------------------------------------------------------------- sections */
+
+.rule {
+  height: 1px;
+  background: var(--ink-700);
+  border: 0;
+  margin: 0;
+}
+
+.section__label {
+  padding: var(--s-3) var(--s-4) var(--s-1);
+  font-size: var(--fs-micro);
+  letter-spacing: .04em;
+  color: var(--ink-400);
+}
+
+.rows { list-style: none; margin: 0; padding: 0; }
+
+/* The OS window never grows, so the list scrolls rather than clipping its
+ * last row. --list-max is written from the anchored window height. */
+.panel__band--list {
+  max-height: var(--list-max, none);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-600) transparent;
+}
+.panel__band--list::-webkit-scrollbar { width: 8px; }
+.panel__band--list::-webkit-scrollbar-thumb {
+  background: var(--ink-600);
+  border-radius: 4px;
+}
+
+/* ------------------------------------------------------------ status strip */
+/* "Bağlantı yok": the ONE place the unreachable service is stated, right under
+ * the header, for as long as it is true. Not dismissible — it is a live
+ * condition, not an outcome. */
+.strip {
+  margin: 0 var(--s-3) var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-left: 2px solid var(--ember);
+  border-radius: 8px;
+  background: var(--ink-800);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-200);
+}
+
+/* ------------------------------------------------- first-run introduction */
+/* Three steps in the list area on a fresh install (onboarding.ts). Neutral
+ * surface, even frame, no stripes: a tool's colour lives in its mark only. */
+.onb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin: var(--s-1) var(--s-3) 0;
+  padding: var(--s-4) var(--s-4) var(--s-3);
+  border: 1px solid var(--ink-600);
+  border-radius: 10px;
+  background: var(--ink-800);
+}
+.onb[hidden] { display: none !important; }
+.onb__progress { display: flex; align-items: center; gap: var(--s-2); }
+.onb__dots { display: inline-flex; gap: 6px; }
+.onb__dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--ink-600);
+  transition: background-color var(--dur-hover) linear, width var(--dur-disclosure) var(--ease-open);
+}
+/* The current and past steps are filled; the current one is a short bar. */
+.onb__dot[data-on="true"] { background: var(--ink-300); }
+.onb[data-step="1"] .onb__dot:nth-child(1),
+.onb[data-step="2"] .onb__dot:nth-child(2),
+.onb[data-step="3"] .onb__dot:nth-child(3) { width: 16px; border-radius: 3px; background: var(--ink-100); }
+.onb__count { font-size: var(--fs-micro); color: var(--ink-400); }
+.onb__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink-100);
+  outline: none;
+}
+.onb__body { display: flex; flex-direction: column; gap: var(--s-3); }
+.onb__text {
+  margin: 0;
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  color: var(--ink-200);
+}
+.onb__promise {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+  padding: var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  background: var(--ink-850);
+}
+/* A padlock drawn in CSS (shackle + body), in the "calm" colour. */
+.onb__lock {
+  position: relative;
+  flex: none;
+  width: 22px; height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--calm) 18%, transparent);
+}
+.onb__lock::before {
+  content: "";
+  position: absolute;
+  left: 7px; top: 4px;
+  width: 8px; height: 7px;
+  border: 1.5px solid var(--calm);
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  box-sizing: border-box;
+}
+.onb__lock::after {
+  content: "";
+  position: absolute;
+  left: 5px; top: 10px;
+  width: 12px; height: 8px;
+  border-radius: 2px;
+  background: var(--calm);
+}
+.onb__promise-title { display: block; font-size: var(--fs-meta); color: var(--ink-100); }
+.onb__promise-text { margin: 2px 0 0; font-size: var(--fs-meta); line-height: 1.45; color: var(--ink-300); }
+.onb__tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.onb__tool {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  background: var(--ink-850);
+}
+.onb__mark { display: grid; place-items: center; width: 24px; height: 24px; }
+.onb__mark .mark { width: 24px; height: 24px; }
+.onb__tool-name { flex: 1; min-width: 0; font-size: var(--fs-name); color: var(--ink-100); }
+.onb__tool[data-enabled="false"] .onb__tool-name { color: var(--ink-300); }
+.onb__missing { margin: 0; font-size: var(--fs-micro); line-height: 1.45; color: var(--ink-400); }
+.onb__message { margin: 0; font-size: var(--fs-meta); line-height: 1.45; color: var(--ink-200); }
+.onb__consent:empty { display: none; }
+.onb__actions { display: flex; align-items: center; gap: var(--s-2); }
+.onb__actions[hidden] { display: none !important; }
+.onb__gap { flex: 1; }
+/* "Atla" is the quiet way out, not a third equal button. */
+.onb .onb__skip { border-color: transparent; color: var(--ink-300); }
+.onb .onb__skip:hover { color: var(--ink-100); background: var(--ink-700); }
+
+/* --------------------------------------------------------------- footer */
+
+/* "Son tarama" and "Yenile", nothing else (UI plan 2026-09-29). The pin's
+ * promise moved into the pin's own tooltip. */
+.foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3) var(--s-3) var(--s-4);
+  border-top: 1px solid var(--ink-700);
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+}
+.foot__spacer { flex: 1 1 auto; }
+.foot__scan { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A fixed width, so "Yenile" -> "Yenileniyor" -> "Taranıyor" never moves the
+ * button under the pointer; the icon turns while it works. */
+.foot__refresh { min-width: 118px; gap: var(--s-1); }
+.foot__refresh-icon { width: 14px; height: 14px; flex: none; }
+.foot__refresh[data-busy="true"] .foot__refresh-icon { animation: spin 900ms linear infinite; }
+
+/* Tray-icon coaching. Only shown when the anchor came from the cursor, i.e.
+ * when main could not measure a tray rect — on Win11 that is usually the
+ * hidden-icons overflow flyout. */
+/* Toasts: the outcomes of the user's own actions, stacked above the footer. */
+.toasts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0 var(--s-3) var(--s-2);
+}
+.toasts:empty { display: none; }
+
+.coach {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0;
+  padding: var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-left: 2px solid var(--ink-400);
+  border-radius: 8px;
+  background: var(--ink-800);
+}
+.coach__text {
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-300);
+}
+.coach__actions { display: flex; justify-content: flex-end; }
+
+/* The calm refresh bubble. A "this is fine" tone, so its left accent is the
+ * calm ramp step rather than the neutral ink the tray-coaching note uses — the
+ * one place the ramp reads as reassurance instead of pressure, because it is
+ * saying nothing is wrong, only that the tool is not open. */
+.coach--calm { border-left-color: var(--calm); }
+
+/* The "tool is closed" toast (2026-09-24). The tool's own mark on a small tile,
+ * a title, one sentence and a close cross. No accent stripe and no button row:
+ * it is information, not a question, and it leaves on its own. */
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  margin: 0;
+  padding: var(--s-3);
+  /* An even frame, no coloured left stripe (owner, 2026-09-30); the tone is a
+   * small badge before the words instead (.notice::before below). */
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  background: var(--ink-800);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  animation: toast-in 220ms ease-out both;
+}
+.toast[hidden] { display: none !important; }
+.toast > .mark {
+  flex: none;
+  width: 28px; height: 28px;
+  padding: 5px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background-color: var(--ink-700);
+  background-origin: content-box;
+  filter: none;
+  opacity: 1;
+}
+.toast__body { flex: 1; min-width: 0; }
+.toast__title {
+  margin: 0;
+  font-size: var(--fs-name);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink-100);
+}
+.toast__text {
+  margin: 2px 0 0;
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-300);
+}
+.toast__close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px; height: 22px;
+  margin: -2px -2px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-400);
+  cursor: pointer;
+}
+.toast__close:hover { background: var(--ink-700); color: var(--ink-100); }
+.toast__close svg { width: 12px; height: 12px; display: block; }
+/* The tone of an outcome, in a small badge AND its words: an error stays until
+ * closed, a success leaves on its own. Decorative ("" alt text): the sentence
+ * already says what happened. */
+.toast.notice { align-items: center; }
+.toast.notice::before {
+  content: "i" / "";
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-700);
+  color: var(--ink-200);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.toast.notice[data-tone="success"]::before {
+  content: "✓" / "";
+  background: color-mix(in srgb, var(--calm) 20%, transparent);
+  color: var(--calm);
+}
+.toast.notice[data-tone="error"]::before {
+  content: "!" / "";
+  background: color-mix(in srgb, var(--spent) 18%, transparent);
+  color: var(--spent);
+}
+.toast .toast__text:first-child { margin-top: 0; color: var(--ink-200); }
+.toast__close:focus-visible { outline: 2px solid var(--ink-300); outline-offset: 1px; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}
+
+/* Consent prompt. Reads as a distinct surface, not a toast: it is asking a
+ * question and nothing happens until it is answered. */
+/* Consent, drawn inside the card whose "Bağla" was pressed (or inside the
+ * first-run card). It is a question: nothing happens until it is answered. */
+.consent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0;
+  padding: var(--s-3);
+  /* An even frame all round. The amber left stripe it used to carry read as
+   * an alarm bar glued to the box (owner, 2026-09-30). */
+  border: 1px solid var(--ink-600);
+  border-radius: 8px;
+  background: var(--ink-850);
+}
+.consent[hidden] { display: none !important; }
+.consent__title {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-100);
+}
+.consent__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--fs-meta);
+  color: var(--ink-300);
+  line-height: 1.45;
+}
+.consent__para { margin: 0; overflow-wrap: anywhere; }
+.consent__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-2);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 28px at least (UI plan 2026-09-29). */
+  height: 28px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--ink-600);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-200);
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms linear, color 120ms linear,
+    border-color 120ms linear, transform 120ms var(--ease-open);
+}
+.btn:hover { color: var(--ink-100); border-color: var(--ink-500); background: var(--ink-700); }
+.btn:active { transform: scale(.97); }
+.btn[disabled] { color: var(--ink-500); border-color: var(--ink-700); cursor: default; transform: none; }
+
+/* The passive row's call to action is the brightest ink in the panel. */
+.btn--primary {
+  background: var(--ink-100);
+  border-color: var(--ink-100);
+  color: var(--ink-900);
+  font-weight: 600;
+}
+.btn--primary:hover { background: var(--ink-max); border-color: var(--ink-max); color: var(--ink-900); }
+.btn--primary[disabled] { background: var(--ink-500); border-color: var(--ink-500); color: var(--ink-800); }
+
+.btn__spin {
+  width: 10px; height: 10px;
+  margin-right: var(--s-1);
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Section wrappers hide as a unit. */
+[hidden] { display: none !important; }
+
+.notice[hidden], .rows[hidden] { display: none !important; }
+
+/* ------------------------------------------------------------- empty state */
+/* A blank list is ambiguous: "nothing found on this machine" and "you removed
+ * every row" look identical and only one of them has a fix. The box always
+ * says which, and when the fix is in settings it offers the door. */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin: var(--s-1) var(--s-3) var(--s-3);
+  padding: var(--s-5) var(--s-4);
+  border: 1px dashed var(--ink-600);
+  border-radius: 8px;
+}
+.empty__title {
+  font-size: var(--fs-name);
+  font-weight: 600;
+  color: var(--ink-200);
+}
+.empty__detail {
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-400);
+}
+
+/* ---------------------------------------------------------------- settings */
+/* In-panel view, not a second window. It reuses the panel's own bands, so the
+ * shell, the header and the footer never move when the view changes. */
+
+/* The bar and the tab list stay put; only the selected page scrolls. The view
+ * takes the list band's whole budget, so switching tabs never changes the
+ * panel's height under the pointer. */
+.panel[data-view="settings"] .panel__band--list { overflow: hidden; }
+.settings {
+  display: flex;
+  flex-direction: column;
+  height: var(--list-max, 520px);
+  min-height: 0;
+}
+.settings__top { flex: none; }
+.settings__panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-600) transparent;
+  padding-top: var(--s-3);
+}
+.settings__panel--usage { display: flex; flex-direction: column; overflow: hidden; padding-top: 0; }
+
+.settings__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-1) var(--s-4) var(--s-2) var(--s-3);
+}
+
+/* ------------------------------------------------------------------ tabs */
+.tabs {
+  display: flex;
+  gap: var(--s-1);
+  padding: 0 var(--s-3);
+  border-bottom: 1px solid var(--ink-700);
+}
+.tabs__tab {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 32px;
+  padding: 0 var(--s-2);
+  border: 0;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--ink-300);
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--dur-hover) linear, background-color var(--dur-hover) linear;
+}
+.tabs__tab:hover { color: var(--ink-100); background: var(--ink-800); }
+/* Selected: brighter ink AND a 2px underline, so it survives greyscale. */
+.tabs__tab[aria-selected="true"] { color: var(--ink-100); font-weight: 600; }
+.tabs__tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: var(--s-2); right: var(--s-2); bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ink-100);
+}
+.settings__heading {
+  margin: 0;
+  padding: var(--s-2) var(--s-4) var(--s-1);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-300);
+}
+.settings__title {
+  margin: 0;
+  font-size: var(--fs-name);
+  font-weight: 600;
+  color: var(--ink-100);
+}
+/* Section headings inside the view: "Araçlar" and "Görünüm". One step quieter
+ * than the view title, so the hierarchy is carried by size and ink rather than
+ * by text-transform, which maps i -> I and is wrong in Turkish. */
+.settings__section {
+  margin: 0;
+  padding: var(--s-3) var(--s-4) 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-300);
+}
+.settings__help {
+  margin: 0;
+  padding: 0 var(--s-4) var(--s-3);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-400);
+}
+.settings__status {
+  margin: 0;
+  padding: var(--s-4);
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+}
+
+/* Each tool is a card: logo, name, state and the main-panel switch on one
+ * line; the plan, when the tool has one, on a compact second line. */
+.settings__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--s-3) var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.settings__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 44px;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  background: var(--ink-800);
+  /* The plan field is the last child so it comes after the switch in the TAB
+   * order; wrapping is what lets it still be drawn below the line. */
+  flex-wrap: wrap;
+}
+
+/* The mark is the same geometry the row uses, at the same two weights: brand
+ * hue while the provider is connected, ink otherwise. Adding a row does not
+ * connect it, so this column must not change when the switch moves. */
+.settings__mark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: var(--tile); height: var(--tile);
+  border-radius: var(--radius-tile);
+  border: 1px solid transparent;
+  color: var(--ink-400);
+}
+.settings__item[data-connected="true"] .settings__mark {
+  background: color-mix(in srgb, var(--accent, #666666) var(--accent-tint), var(--ink-800));
+  border-color: color-mix(in srgb, var(--accent, #666666) 40%, transparent);
+  color: var(--accent, var(--ink-200));
+}
+/* Same per-theme shading as the row grip; see row.css and --accent-shade. */
+:root[data-theme="light"] .settings__item[data-connected="true"] .settings__mark {
+  color: color-mix(in srgb, var(--accent, #666666) var(--accent-shade), #000000);
+}
+.settings__item[data-connected="true"] .mark { stroke-width: 2; opacity: 1; }
+
+.settings__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* The item's name line: the provider's name plus the "deneysel" pill. Its own
+ * class, NOT .settings__title — that one is the settings VIEW heading, and
+ * sharing it made every provider name inherit the heading's weight. */
+.settings__titleline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-1);
+  min-width: 0;
+}
+
+/* The plan the user says they are on, per tool.
+ *
+ * A native `<select>` over the plans we know. Styled as a quiet field rather
+ * than a prominent one — it is an optional note, not something the panel is
+ * waiting for, and "Belirtilmedi" must not read as an unfinished task.
+ *
+ * The browser draws the select's arrow and its popup (which follows
+ * `color-scheme`, so it is dark in the dark theme); nothing here fights it. */
+.settings__plan {
+  /* Its own compact line under the name, aligned with it: "Plan  [Max 20x]". */
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding-left: calc(var(--tile) + var(--s-3));
+}
+.settings__plan[hidden] { display: none !important; }
+.settings__plan-label {
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+}
+.settings__plan-select {
+  width: auto;
+  min-width: 120px;
+  max-width: 100%;
+  height: 26px;
+  padding: 2px var(--s-1);
+  border: 1px solid var(--ink-700);
+  border-radius: 4px;
+  background: var(--ink-800, transparent);
+  color: var(--ink-100);
+  font: inherit;
+  font-size: var(--fs-micro);
+}
+.settings__plan-select[aria-busy="true"] { opacity: .7; }
+/* Main refused the write, so the field went back to what is stored. Held for a
+ * moment as an attribute so the revert is SEEN and not only described in the
+ * notice — the same treatment `data-revert` gives the switch. */
+.settings__item[data-plan-reverted="true"] .settings__plan-select {
+  border-color: var(--watch);
+}
+.settings__plan-hint {
+  margin: 0;
+  font-size: var(--fs-micro);
+  color: var(--ink-500);
+  overflow-wrap: break-word;
+}
+
+.settings__disconnect {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dashed var(--ink-600);
+  background: transparent;
+  color: var(--ink-300);
+  font: inherit;
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+.settings__disconnect:hover { color: var(--ink-100); }
+.settings__disconnect[hidden] { display: none !important; }
+/* The app's own "Bağlantıyı kaldır?" box, drawn full-width inside the tool's
+ * item, under the plan line. */
+.settings__confirm { flex: 1 0 100%; }
+/* A small "!" badge before the question instead of a coloured stripe: it marks
+ * the box as a removal without colouring the whole frame. Decorative; the
+ * words carry the meaning. */
+.settings__confirm .consent__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.settings__confirm .consent__title::before {
+  content: "!" / "";
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--spent) 18%, transparent);
+  color: var(--spent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+/* The body text lines up under the question, not under the badge. */
+.settings__confirm .consent__detail { padding-left: calc(18px + var(--s-2)); }
+/* Removing something: the one button that says so in colour. */
+.btn--danger { border-color: var(--spent); color: var(--spent); font-weight: 600; }
+.btn--danger:hover { background: var(--spent); border-color: var(--spent); color: var(--ink-900); }
+.settings__name {
+  font-size: var(--fs-name);
+  color: var(--ink-200);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings__item[data-enabled="true"] .settings__name { color: var(--ink-100); }
+.settings__meta {
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The add/remove switch. A real button[role=switch]; the track is decoration.
+ * The knob moves AND the track fills, so the state is not carried by fill
+ * alone — a 34px pill at one shade of grey is unreadable at a glance. */
+.switch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  width: 36px; height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.switch__track {
+  position: relative;
+  display: block;
+  width: 36px; height: 20px;
+  border-radius: 10px;
+  border: 1px solid var(--ink-600);
+  background: var(--ink-800);
+  transition: background-color 140ms linear, border-color 140ms linear;
+}
+.switch__track::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--ink-400);
+  transition: transform 140ms var(--ease-open), background-color 140ms linear;
+}
+.switch[aria-checked="true"] .switch__track {
+  background: var(--ink-100);
+  border-color: var(--ink-100);
+}
+.switch[aria-checked="true"] .switch__track::after {
+  transform: translateX(16px);
+  background: var(--ink-900);
+}
+.switch:hover .switch__track { border-color: var(--ink-500); }
+.switch[aria-checked="true"]:hover .switch__track {
+  background: var(--ink-max);
+  border-color: var(--ink-max);
+}
+.switch:active .switch__track { transform: scale(.97); }
+
+/* In flight: the switch stays operable, but it says it is waiting. */
+.switch[aria-busy="true"] .switch__track { opacity: .6; }
+
+/* Main refused, so the switch went back. The flash is what makes the revert
+ * something the user SAW happen rather than something they have to infer from
+ * a sentence in the footer. */
+.settings__item[data-revert="true"] {
+  animation: settings-revert 1600ms ease-out 1;
+}
+.settings__item--autostart { margin: var(--s-3) var(--s-3) var(--s-3); }
+/* "Start with Windows" reuses the provider item, minus the mark. Its hint is
+ * a whole sentence rather than a status word, so it wraps instead of being cut
+ * off at the switch. */
+.settings__item--autostart .settings__meta { white-space: normal; }
+
+@keyframes settings-revert {
+  0%, 45% { background: color-mix(in srgb, var(--watch) 22%, var(--ink-800)); }
+  100% { background: var(--ink-800); }
+}
+
+/* ---------------------------------------------------------------- theme */
+/* Three choices, one selection: a native radio group in a fieldset, so arrow
+ * keys, the single tab stop and the group name all come from the platform.
+ * The inputs are visually replaced rather than hidden — `display:none` would
+ * take them out of the focus order and out of the accessibility tree, which is
+ * the usual way a "custom radio" stops being a radio at all. */
+
+.theme {
+  margin: 0;
+  padding: 0 0 var(--s-3);
+  border: 0;
+  /* A fieldset defaults to min-inline-size:min-content, which stops its flex
+   * children shrinking inside a 360px panel. */
+  min-inline-size: 0;
+}
+
+.theme__help {
+  margin: 0;
+  padding: 0 var(--s-4) var(--s-2);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-400);
+}
+
+.theme__opts {
+  display: flex;
+  gap: var(--s-1);
+  padding: 0 var(--s-4);
+}
+
+/* Off-screen but focusable and hit-testable — the label is what is drawn. */
+.theme__radio {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.theme__opt {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--ink-600);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-300);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms linear, color 120ms linear,
+    border-color 120ms linear;
+}
+.theme__opt:hover { color: var(--ink-100); border-color: var(--ink-500); background: var(--ink-700); }
+
+/* Selected inverts, the same way the pin and the primary button do: the
+ * distinction survives greyscale, and no state-ramp colour is borrowed for a
+ * control that has nothing to do with a limit. */
+.theme__radio:checked + .theme__opt {
+  background: var(--ink-100);
+  border-color: var(--ink-100);
+  color: var(--ink-900);
+  font-weight: 600;
+}
+
+/* The focus ring belongs on the drawn control, because the input itself is
+ * one pixel wide and off-screen. */
+.theme__radio:focus-visible + .theme__opt {
+  outline: 2px solid var(--ink-100);
+  outline-offset: 2px;
+}
+.theme__radio:checked:focus-visible + .theme__opt {
+  outline-color: var(--ink-400);
+}
+
+/* In flight. The group stays operable — a control that goes dead for one round
+ * trip is worse than one that accepts a second press, and the app already lets
+ * the newest request win. */
+.theme[data-pending="true"] .theme__opts { opacity: .7; }
+
+/* Main refused, so the choice went back. The flash is what makes the revert
+ * something the user SAW happen rather than something they infer from the
+ * sentence in the footer. */
+.theme[data-revert="true"] .theme__opts {
+  animation: settings-revert 1600ms ease-out 1;
+  border-radius: 6px;
+}
+
+/* --------------------------------------------------------- total usage */
+/* Per-period notional cost. Never a merged token total (README/ADR-001); the
+ * figures arrive resolved from main and the section only frames and lays them
+ * out. The magnitude bar is neutral ink ON PURPOSE — it is a share of a whole
+ * with no limit in it, so it must not borrow the state ramp, which means
+ * "distance to a limit". */
+
+/* The period SELECTION stays on top; everything under it scrolls. */
+.usage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.usage__chooser {
+  flex: none;
+  padding: var(--s-3) 0 var(--s-1);
+  border-bottom: 1px solid var(--ink-700);
+}
+.usage__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-600) transparent;
+  padding: var(--s-2) 0 var(--s-3);
+}
+
+.usage__intro {
+  margin: 0;
+  padding: 0 var(--s-4) var(--s-2);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-400);
+}
+
+/* Segmented hafta/ay toggle. Same native-radio treatment as the theme control:
+ * the inputs are visually replaced, not hidden, so they keep focus and arrow
+ * keys, and the drawn label carries the ring. */
+.seg {
+  display: flex;
+  gap: var(--s-1);
+  padding: 0 var(--s-4) var(--s-2);
+  min-inline-size: 0;
+}
+.seg__radio {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.seg__opt {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--ink-600);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-300);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms linear, color 120ms linear, border-color 120ms linear;
+}
+.seg__opt:hover { color: var(--ink-100); border-color: var(--ink-500); background: var(--ink-700); }
+.seg__radio:checked + .seg__opt {
+  background: var(--ink-100);
+  border-color: var(--ink-100);
+  color: var(--ink-900);
+  font-weight: 600;
+}
+.seg__radio:focus-visible + .seg__opt {
+  outline: 2px solid var(--ink-100);
+  outline-offset: 2px;
+}
+.seg__radio:checked:focus-visible + .seg__opt { outline-color: var(--ink-400); }
+
+.usage__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The chosen period: ‹ dates › and the amount on one line. The magnitude is
+ * the chart's job now, so the row carries no bar of its own. */
+.usage__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "range amount";
+  align-items: center;
+  column-gap: var(--s-2);
+  row-gap: 3px;
+  padding: var(--s-1) 0;
+}
+/* The per-model disclosure is auto-placed on its own implicit rows below the
+ * named area; each spans the whole width. */
+.usage__toggle,
+.usage__models { grid-column: 1 / -1; }
+.usage__nav {
+  grid-area: range;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.usage__range {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-200);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.usage__step {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px; height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-400);
+  cursor: pointer;
+  transition: background-color 120ms linear, color 120ms linear;
+}
+.usage__step svg { width: 13px; height: 13px; display: block; }
+.usage__step--prev svg { transform: rotate(180deg); }
+.usage__step:hover { background: var(--ink-700); color: var(--ink-100); }
+.usage__step:focus-visible { outline: 2px solid var(--ink-100); outline-offset: 1px; }
+.usage__step[disabled] { visibility: hidden; }
+.usage__amount {
+  grid-area: amount;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-100);
+  white-space: nowrap;
+}
+/* An empty period is stated, quietly: dimmed. */
+.usage__row[data-empty="true"] .usage__range,
+.usage__row[data-empty="true"] .usage__amount {
+  color: var(--ink-500);
+  font-weight: 500;
+}
+
+/* The period chooser: one column per period, height by cost, oldest left.
+ * Fixed height, so the section does not grow with the months of use. */
+.usage__chart {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  height: 64px;
+  margin: var(--s-2) var(--s-4) var(--s-1);
+}
+.usage__chart[hidden] { display: none; }
+.usage__col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.usage__col-track {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--ink-700);
+}
+.usage__col-bar {
+  display: block;
+  width: 100%;
+  height: calc(var(--h, 0) * 100%);
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  background: var(--ink-600);
+  transition: background-color 120ms linear;
+}
+.usage__col[data-empty="true"] .usage__col-bar { min-height: 0; height: 0; }
+.usage__col-label {
+  font-size: var(--fs-micro);
+  line-height: 1;
+  color: var(--ink-500);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.usage__col:hover .usage__col-bar { background: var(--ink-400); }
+.usage__col:hover .usage__col-label { color: var(--ink-300); }
+.usage__col[aria-pressed="true"] .usage__col-bar { background: var(--ink-100); }
+.usage__col[aria-pressed="true"] .usage__col-label { color: var(--ink-100); font-weight: 600; }
+.usage__col:focus-visible { outline: 2px solid var(--ink-100); outline-offset: 2px; }
+
+/* Per-model disclosure. Collapsed by default so a dozen periods stay short; the
+ * toggle counts models and carries no figure (the period amount above already
+ * states the total), and the figures appear on expand. */
+.usage__toggle {
+  align-self: start;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  margin: 1px 0 0;
+  padding: 2px 4px 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-400);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 120ms linear;
+}
+.usage__toggle:hover { color: var(--ink-200); }
+.usage__toggle[aria-expanded="true"] { color: var(--ink-200); }
+.usage__chev {
+  display: inline-flex;
+  color: var(--ink-500);
+  transition: transform 160ms var(--ease-open), color 120ms linear;
+}
+.usage__chev svg { width: 12px; height: 12px; display: block; }
+.usage__toggle[aria-expanded="true"] .usage__chev {
+  transform: rotate(90deg);
+  color: var(--ink-300);
+}
+
+/* The list itself is a bounded scroller: a period with many models scrolls
+ * within its disclosure rather than pushing the panel off screen. ~6 rows show
+ * before it scrolls. */
+.usage__models {
+  list-style: none;
+  margin: 2px 0 var(--s-1);
+  padding: 0 0 0 var(--s-2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 132px;
+  overflow-y: auto;
+  border-left: 1px solid var(--ink-700);
+}
+.usage__model {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: baseline;
+  column-gap: var(--s-2);
+  padding: 1px 0;
+}
+/* Which tool the model belongs to — the list mixes Claude Code and Codex. The
+ * same mark as the provider rows, scaled to the micro text it sits beside, and
+ * the same connected/grey rule: `[data-connected]` on the row drives it through
+ * the shared `.mark` rules in row.css. No tile: at this size a ground would be
+ * louder than the model name it labels. */
+.usage__model-mark {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 14px; height: 14px;
+}
+.usage__model-mark .mark { width: 14px; height: 14px; }
+.usage__model-name {
+  font-size: var(--fs-micro);
+  color: var(--ink-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usage__model-amount {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--ink-200);
+  white-space: nowrap;
+}
+/* The absolute count, beside the money. Quieter than the amount because this
+ * section's headline claim is the notional cost; it is still legible, because
+ * "how many tokens did I use" is the question this column exists to answer.
+ * It is `billable` only (input + output + cacheWrite) — cacheRead is ~98% of
+ * raw volume at 0.1x and stands on its own in the title, never folded in. */
+.usage__model-tokens {
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+.usage__model-tokens[hidden] { display: none !important; }
+
+/* Per-tool token subtotals under a period's model list.
+ *
+ * ONE LINE PER TOOL AND NO TOTAL LINE. Dollars add across tools; token counts
+ * do not (each vendor counts its classes its own way, and cacheRead sits in a
+ * different proportion in each), so a merged "tokens used this period" is the
+ * figure ADR-001 bans. The absence of a total row here is the design, not an
+ * omission. */
+.usage__tokens {
+  grid-column: 1 / -1;
+  list-style: none;
+  margin: 0 0 var(--s-1);
+  padding: 0 0 0 var(--s-2);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-left: 1px solid var(--ink-700);
+}
+.usage__tokens[hidden] { display: none !important; }
+.usage__tokens-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  column-gap: var(--s-2);
+}
+.usage__tokens-tool {
+  font-size: var(--fs-micro);
+  color: var(--ink-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usage__tokens-count {
+  font-size: var(--fs-micro);
+  color: var(--ink-200);
+  white-space: nowrap;
+}
+/* An unpriced model ("fiyatlanamadı") is stated, quietly. */
+.usage__model[data-unpriced="true"] .usage__model-amount {
+  color: var(--ink-400);
+  font-weight: 500;
+}
+
+/* ADR-002 A3.12: a tool is still being counted, so every total below is
+ * incomplete. Above the list and in the caveat idiom (a watch-coloured rule),
+ * because it qualifies the figures rather than footnoting them. Wraps. */
+.usage__pending {
+  margin: 0 var(--s-4) var(--s-2);
+  padding-left: var(--s-2);
+  border-left: 2px solid var(--watch);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-300);
+}
+/* ADR-002 A3.20: some records could not be read. A measurement statement, not
+ * an alert: ink rule, no warning accent; wraps, never cut. */
+.usage__incomplete {
+  margin: 0 var(--s-4) var(--s-2);
+  padding-left: var(--s-2);
+  border-left: 1px solid var(--ink-600);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  color: var(--ink-300);
+  overflow-wrap: break-word;
+}
+.usage__incomplete[hidden] { display: none !important; }
+/* A period whose figure is not known yet: stated quietly, never as "—". */
+.usage__row[data-pending="true"] .usage__amount {
+  color: var(--ink-400);
+  font-weight: 500;
+}
+
+.usage__empty {
+  margin: 0;
+  padding: var(--s-2) var(--s-4) var(--s-3);
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+}
+.usage__note {
+  margin: 0;
+  padding: var(--s-2) var(--s-4) 0;
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  color: var(--ink-500);
+}
+/* Composed per tool (ADR-003 A6): one muted source line per tool. */
+.usage__note { display: flex; flex-direction: column; gap: 3px; }
+.usage__sources {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.usage__source { overflow-wrap: anywhere; }
+
+/* ---------------------------------------------------------------- tooltip */
+/* The panel's own tooltip (tooltip.ts): 400 ms after the pointer settles,
+ * immediately on keyboard focus. Plain text on the raised surface. */
+.tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 260px;
+  padding: var(--s-1) var(--s-2);
+  border: 1px solid var(--ink-600);
+  border-radius: 6px;
+  background: var(--ink-700);
+  box-shadow: var(--shadow-lift);
+  color: var(--ink-100);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.tip[hidden] { display: none !important; }

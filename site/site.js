@@ -114,6 +114,15 @@
     setupNav();
     var demoEl = document.getElementById('demo');
     if (demoEl) setupDemo(demoEl);
+    // The live demo is the real panel in a frame (site/demo, built by
+    // scripts/build-site-demo.js); it follows the page's TR/EN switch.
+    var demoFrame = document.getElementById('demo-frame');
+    if (demoFrame) {
+      langListeners.push(function () {
+        var want = 'demo/dev/panel.html?shot=1&s=vitrin&coach=done' + (lang === 'en' ? '&lang=en' : '');
+        if (demoFrame.getAttribute('src') !== want) demoFrame.setAttribute('src', want);
+      });
+    }
     setupMoves();
     setupWheel();
     if (root.classList.contains('sdt-js')) setupProgress();

@@ -395,6 +395,7 @@ function passive(
 // --------------------------------------------------------------- scenarios
 
 export type ScenarioId =
+  | 'vitrin'
   | 'tam'
   | 'maliyet'
   | 'bayat-olcum'
@@ -414,6 +415,41 @@ export interface Scenario {
 }
 
 export const SCENARIOS: readonly Scenario[] = [
+  {
+    // The website's live demo (scripts/build-site-demo.js): a healthy, typical
+    // day across three tools, each in a different state of its limits.
+    id: 'vitrin',
+    label: 'Site demosu',
+    bridgeAvailable: true,
+    snapshot: () => ({
+      generatedAt: iso(-15_000),
+      pendingUsage: [],
+      providers: [
+        claudeOk(62, 41),
+        {
+          ...claudeOk(18, 57),
+          id: 'codex',
+          displayName: 'Codex CLI',
+          accent: '#7FB3D5',
+          planLabel: 'Plus',
+          tokens: breakdown(640_000),
+          weeklyTokens: breakdown(3_900_000),
+          burnRatePerHour: 41_000,
+          byModel: [{ model: 'gpt-5.5-codex', billable: 640_000 }],
+          weeklyCost: null,
+        },
+        {
+          ...claudeOk(84, 23),
+          id: 'antigravity',
+          displayName: 'Antigravity',
+          accent: '#B892E8',
+          planLabel: null,
+          byModel: [{ model: 'gemini-3-pro', billable: 1_100_000 }],
+          weeklyCost: null,
+        },
+      ],
+    }),
+  },
   {
     id: 'tam',
     label: 'Tüm durumlar',

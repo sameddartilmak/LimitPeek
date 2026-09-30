@@ -275,6 +275,33 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
 .hint__dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--accent); animation: ping 2.4s var(--ease) infinite; }
 @keyframes ping { 0% { transform: scale(1); opacity: .6; } 80%, 100% { transform: scale(2.8); opacity: 0; } }
 
+/* The live demo: the app's real panel on sample data, in a frame
+   (site/demo, scripts/build-site-demo.js). A desk-like surface around it. */
+.demo-frame {
+  display: flex;
+  justify-content: center;
+  margin: 0 auto;
+  max-width: 760px;
+  padding: 24px 12px 0;
+  border: 1px solid rgba(255, 255, 255, .06);
+  border-radius: 22px;
+  background: radial-gradient(120% 80% at 50% 0%, rgba(34, 245, 140, .06), transparent 60%), #101413;
+  overflow: hidden;
+}
+.demo-frame__iframe {
+  display: block;
+  flex: none;
+  width: 480px;
+  height: 760px;
+  border: 0;
+  background: #101413;
+  color-scheme: dark;
+}
+/* Narrow screens: the panel keeps its real layout and is drawn smaller,
+   rather than squeezed or cut off at the frame's edge. */
+@media (max-width: 540px) { .demo-frame__iframe { zoom: .78; } }
+@media (max-width: 420px) { .demo-frame__iframe { zoom: .7; } }
+
 /* ==================================================================== demo */
 .demo { position: relative; color: var(--ink-200); font-size: 13px; line-height: 1.25; }
 .desk {
