@@ -420,6 +420,7 @@ function newestRollout(sessionsDir, now = Date.now()) {
 /** Test seam: forget the once-a-minute listing. */
 function _resetRolloutCacheForTests() {
   hotCache.clear();
+  planCache.clear();
 }
 
 /** At most this much of a rollout is read: the last `rate_limits` sits at the
@@ -540,6 +541,55 @@ function lastRateLimits(text) {
 }
 
 /**
+ * The account's plan when the newest rollout's tail states none: the tails of
+ * the few most recently written rollouts (`hotRollouts`) are searched, and the
+ * answer is kept for PLAN_TTL_MS so this costs a few reads every ten minutes,
+ * not on every rebuild. A plan is the account's, so any recent session's
+ * statement of it is as good as the current one's.
+ */
+const PLAN_TTL_MS = 10 * 60 * 1000;
+const planCache = new Map();
+
+function recentPlanType(home, now) {
+  const sessionsDir = codexSessionsDir(home);
+  const key = String(sessionsDir);
+  const cached = planCache.get(key);
+  if (cached && now >= cached.atMs && now - cached.atMs < PLAN_TTL_MS) return cached.plan;
+  let plan = null;
+  for (const file of hotRollouts(sessionsDir, now)) {
+    try {
+      plan = latestPlanType(readTail(file));
+    } catch {
+      plan = null;
+    }
+    if (plan) break;
+  }
+  planCache.set(key, { atMs: now, plan });
+  return plan;
+}
+
+/**
+ * The newest `plan_type` any `token_count` record in the tail states, or null.
+ * Codex writes it on some records and `null` on others; the plan is the
+ * account's, so the newest stated one is the answer (`plan-detect.js`).
+ */
+function latestPlanType(text) {
+  const lines = text.split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (line.indexOf('"plan_type":"') === -1 && line.indexOf('"plan_type": "') === -1) continue;
+    try {
+      const obj = JSON.parse(line.trim());
+      const rl = obj && obj.payload && obj.payload.type === 'token_count' ? obj.payload.rate_limits : null;
+      if (rl && typeof rl.plan_type === 'string' && rl.plan_type) return rl.plan_type;
+    } catch {
+      // torn line: keep looking further back
+    }
+  }
+  return null;
+}
+
+/**
  * @param {object} [options]
  * @param {number} [options.now]
  * @param {string} [options.home]     override `~/.codex` (tests, CODEX_HOME)
@@ -609,7 +659,9 @@ function readCodexRateLimits(options = {}) {
     ageMs,
     fiveHour,
     sevenDay,
-    planType: typeof rl.plan_type === 'string' ? rl.plan_type : null,
+    // Newer Codex builds often write plan_type: null on the latest record;
+    // the newest record in the tail that states one is the account's plan.
+    planType: typeof rl.plan_type === 'string' ? rl.plan_type : (latestPlanType(text) ?? recentPlanType(options.home, now)),
   };
 }
 

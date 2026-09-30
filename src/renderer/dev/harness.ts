@@ -20,6 +20,7 @@ import type {
 import { mountApp, type AppHandle } from '../src/app.js';
 import type { Bridge, SetupResult } from '../src/bridge.js';
 import { el, on, setAttr } from '../src/dom.js';
+import { defaultFormatLocale, fallbackLanguage } from '../src/sanitize.js';
 import { SCENARIOS, anchorFor, drift, type Scenario } from './mock.js';
 
 const stage = document.getElementById('stage');
@@ -60,6 +61,8 @@ let prefs: Preferences = {
   formatLocale: 'tr-TR',
   autostart: true,
   autostartByWindows: false,
+  // A fresh install, so the first-run card can be reviewed.
+  setupCoachDismissed: false,
 };
 let prefsCb: ((p: Preferences) => void) | null = null;
 
@@ -139,8 +142,8 @@ function makeBridge(scenario: Scenario): Bridge {
       return { ok: true, message: 'Köprü kuruldu. İlk ölçüm birkaç saniye içinde gelecek.' };
     },
 
-    async disconnectProvider(providerId: string): Promise<SetupResult> {
-      log(`disconnectProvider("${providerId}")`);
+    async disconnectProvider(providerId: string, confirmed: boolean): Promise<SetupResult> {
+      log(`disconnectProvider("${providerId}", confirmed=${confirmed})`);
       return { ok: true, message: 'Claude Code bağlantısı kaldırıldı.' };
     },
 
@@ -251,6 +254,13 @@ function makeBridge(scenario: Scenario): Bridge {
     },
 
     /** Mirrors setTheme: persist, then push; `failAutostart` refuses. */
+    async setSetupCoachDismissed(dismissed: boolean): Promise<boolean> {
+      log(`setSetupCoachDismissed(${dismissed})`);
+      prefs = { ...prefs, setupCoachDismissed: dismissed };
+      prefsCb?.(prefs);
+      return true;
+    },
+
     async setAutostart(enabled: boolean): Promise<boolean> {
       log(`setAutostart(${enabled})`);
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -272,13 +282,12 @@ function makeBridge(scenario: Scenario): Bridge {
     async setLanguage(next: LanguageChoice): Promise<boolean> {
       log(`setLanguage("${next}")`);
       await new Promise((resolve) => setTimeout(resolve, 300));
-      const resolvedLanguage =
-        next === 'system' ? (/^tr/i.test(navigator.language) ? 'tr' : 'en') : next;
+      const resolvedLanguage = next === 'system' ? fallbackLanguage(navigator.language) : next;
       prefs = {
         ...prefs,
         language: next,
         resolvedLanguage,
-        formatLocale: resolvedLanguage === 'tr' ? 'tr-TR' : 'en-US',
+        formatLocale: defaultFormatLocale(resolvedLanguage),
       };
       prefsCb?.(prefs);
       log('setLanguage() -> ok');
@@ -507,4 +516,29 @@ controls.appendChild(
 );
 controls.appendChild(logBox);
 
-remount(SCENARIOS[0] as Scenario);
+/**
+ * URL parameters, for screenshots of a given state without clicking through:
+ *   ?s=<scenario id>  &theme=light|dark  &lang=en  &coach=done
+ *   &view=settings  &tab=providers|usage|general  &expand=<provider id>
+ *   &shot=1 (the panel alone, no controls)
+ */
+const params = new URLSearchParams(window.location.search);
+const themeParam = params.get('theme');
+if (themeParam === 'light' || themeParam === 'dark') prefs = { ...prefs, theme: themeParam };
+const langParam = params.get('lang');
+if (langParam === 'en' || langParam === 'zh') {
+  prefs = { ...prefs, language: langParam, resolvedLanguage: langParam, formatLocale: defaultFormatLocale(langParam) };
+}
+if (params.get('coach') === 'done') prefs = { ...prefs, setupCoachDismissed: true };
+if (params.get('shot') === '1') document.body.classList.add('hx--shot');
+remount(SCENARIOS.find((s) => s.id === params.get('s')) ?? (SCENARIOS[0] as Scenario));
+window.setTimeout(() => {
+  const click = (selector: string): void => {
+    (document.querySelector(selector) as HTMLElement | null)?.click();
+  };
+  if (params.get('view') === 'settings') click('.iconbtn--settings');
+  const tab = params.get('tab');
+  if (tab) click(`.tabs__tab[data-tab="${tab}"]`);
+  const expand = params.get('expand');
+  if (expand) click(`.row[data-provider="${expand}"] .row__more`);
+}, 300);

@@ -305,7 +305,7 @@ test.describe('it never touches a number', () => {
     const events = [ev({ key: 'a', input: 100, output: 2000, cacheWrite: 50, cacheRead: 900000 })];
     const shot = (planLabels) => {
       const row = rowOf(buildSnapshot({ ...base, events, codexEvents: [], planLabels }), 'claude');
-      const { planLabel, ...rest } = row;
+      const { planLabel, planSource, planDetected, ...rest } = row;
       return JSON.stringify(rest);
     };
     const none = shot(undefined);
@@ -318,7 +318,7 @@ test.describe('it never touches a number', () => {
     const events = [ev({ key: 'a', input: 100, output: 2000, cacheWrite: 50, cacheRead: 900000 })];
     const strip = (snap) => JSON.stringify({
       ...snap,
-      providers: snap.providers.map(({ planLabel, ...rest }) => rest),
+      providers: snap.providers.map(({ planLabel, planSource, planDetected, ...rest }) => rest),
     });
     const withLabels = buildSnapshot({
       ...base, events, codexEvents: [],

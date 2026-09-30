@@ -27,7 +27,7 @@ const {
   createApplyLanguage,
   createPreferences,
 } = require('./language-ipc');
-const { createSetAutostartHandler } = require('./autostart-ipc');
+const { createSetAutostartHandler, createSetSetupCoachDismissedHandler } = require('./autostart-ipc');
 const { createRefreshHandler } = require('./refresh-ipc');
 const { buildTrayImage } = require('./tray-icon');
 const {
@@ -429,6 +429,15 @@ function registerIpc() {
     log,
   }));
 
+  // "Şimdi değil" on the first-run card. Persist, then push; nothing to apply.
+  ipcMain.handle(IPC.SET_SETUP_COACH_DISMISSED, createSetSetupCoachDismissedHandler({
+    fromPanel,
+    getSettings: () => settings,
+    save: (s) => settingsStore.save(userDataDir(), s),
+    push: pushPreferences,
+    log,
+  }));
+
   // The probe is started BEFORE the scan so the two overlap: `tasklist` costs
   // about half a second on this machine, and the refresh must not visibly wait
   // for it. The reply is read from the collector AFTER the probe wait, and the
@@ -460,27 +469,9 @@ function registerIpc() {
 
     if (provider.id === 'claude') {
       try {
-        // Pinned ONLY on the path that raises a modal, via a hook the setup
-        // calls immediately before `dialog.showMessageBox`. Four of its five
-        // branches return without showing anything — unconfirmed, already
-        // installed, a foreign statusLine, an unreadable settings file — and
-        // pinning up front put the panel into a sticky state the user never
-        // chose for a setup that turned out to be a no-op, with the pin
-        // control then reporting it.
-        //
-        // Where a modal IS raised the pin is required: an unpinned panel
-        // closes shortly after the pointer leaves it, and the pointer HAS to
-        // leave it to answer the dialog, which would tear the dialog's parent
-        // out from under it mid-consent.
-        //
-        // It stays pinned afterwards, deliberately: restoring the previous
-        // mode would let the panel vanish while the user is still reading the
-        // result, and the pin control already offers the way back.
-        const result = await runClaudeSetup({
-          confirmed,
-          parentWindow: panel.win,
-          beforePrompt: () => openPinned(),
-        });
+        // No native modal any more (the panel asked in its own box), so
+        // nothing to pin the panel for.
+        const result = await runClaudeSetup({ confirmed });
         if (result.ok) collector.rebuild();
         return result;
       } catch (err) {
@@ -491,11 +482,12 @@ function registerIpc() {
 
     if (provider.id === 'antigravity') {
       try {
-        // Same pinning contract as the Claude branch, and for the same reason:
-        // the hook fires only on the path that actually raises a modal, so a
-        // setup that turns out to be a no-op — no `agy` on this machine, a
-        // foreign statusLine, an unreadable settings file — does not leave the
-        // panel in a state the user never chose.
+        // Pinned ONLY on the path that raises a modal — now just the agy
+        // download dialog — via a hook the setup calls right before it: an
+        // unpinned panel closes once the pointer leaves it, and the pointer
+        // has to leave it to answer the dialog. A setup that turns out to be a
+        // no-op does not leave the panel in a state the user never chose. It
+        // stays pinned afterwards so the result can be read.
         const result = await runAntigravitySetup({
           confirmed,
           parentWindow: panel.win,
@@ -512,15 +504,15 @@ function registerIpc() {
     return { ok: false, message: i18n.t('ipc.actionUnsupported') };
   });
 
-  // The way back from RUN_SETUP for the two hook-writing rows. Pinned only on
-  // the path that raises the native confirmation, as RUN_SETUP is.
-  ipcMain.handle(IPC.DISCONNECT_PROVIDER, async (event, providerId) => {
+  // The way back from RUN_SETUP for the two hook-writing rows. The panel asks
+  // in its own confirmation box; `confirmed` is true only from its button.
+  ipcMain.handle(IPC.DISCONNECT_PROVIDER, async (event, providerId, confirmed) => {
     if (!fromPanel(event)) return { ok: false, message: i18n.t('ipc.invalidRequest') };
     if (providerId !== 'claude' && providerId !== 'antigravity') {
       return { ok: false, message: i18n.t('ipc.actionUnsupported') };
     }
     try {
-      const result = await runDisconnect({ providerId, parentWindow: panel.win, beforePrompt: () => openPinned() });
+      const result = await runDisconnect({ providerId, confirmed: confirmed === true });
       collector.rebuild();
       return result;
     } catch (err) {

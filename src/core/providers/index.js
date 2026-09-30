@@ -1,5 +1,6 @@
 'use strict';
 const { t } = require('../i18n');
+const { claudeSettingsPath, antigravitySettingsPath } = require('../paths');
 
 /**
  * A provider's setup action, in the language main currently speaks.
@@ -12,6 +13,20 @@ const { t } = require('../i18n');
  */
 function setup(kind, labelKey, detailKey, detailParams) {
   return { kind, label: t(labelKey), detail: t(detailKey, detailParams) };
+}
+
+/**
+ * The consent paragraphs for a setup that writes a statusLine hook: the file,
+ * then the promise. What the native dialog used to say, now said in the panel's
+ * own box (SetupAction.consent). One line per paragraph: the renderer strips
+ * control characters, so the file line's break becomes a space here.
+ */
+function consentFor(settingsFile, promiseKey, extraKeys = []) {
+  return [
+    t('dialog.writeSettings.file', { file: settingsFile }).replace(/\s*\n\s*/g, ' '),
+    t(promiseKey),
+    ...extraKeys.map((key) => t(key)),
+  ];
 }
 
 /**
@@ -55,7 +70,10 @@ const PROVIDERS = [
     enabledByDefault: true,
     experimental: false,
     get setupAction() {
-      return setup('install-bridge', 'provider.setup.connect', 'provider.claude.detail');
+      return {
+        ...setup('install-bridge', 'provider.setup.connect', 'provider.claude.detail'),
+        consent: consentFor(claudeSettingsPath(), 'dialog.claude.promise', ['dialog.claude.keepsYoursIfAny']),
+      };
     },
   },
   {
@@ -83,7 +101,10 @@ const PROVIDERS = [
     enabledByDefault: false,
     experimental: false,
     get setupAction() {
-      return setup('install-bridge', 'provider.setup.connect', 'provider.antigravity.detail');
+      return {
+        ...setup('install-bridge', 'provider.setup.connect', 'provider.antigravity.detail'),
+        consent: consentFor(antigravitySettingsPath(), 'dialog.agy.promise'),
+      };
     },
   },
   {

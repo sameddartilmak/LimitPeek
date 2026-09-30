@@ -101,17 +101,25 @@ body.hx {
 }
 .hx-canvas {
   position: relative;
-  width: 440px;
-  height: 680px;
+  width: 480px;
+  height: 720px;
   margin: 0 auto;
   outline: 1px dashed var(--ink-700);
   outline-offset: 0;
 }
 .hx-canvas::after {
-  content: "440 × 680 — OS penceresi";
+  content: "480 × 720 — OS penceresi";
   position: absolute;
   left: 0;
   bottom: -18px;
   font-size: var(--fs-micro);
   color: var(--ink-600);
 }
+
+/* ?shot=1: the panel alone, for screenshots (scripts in the owner's review). */
+body.hx.hx--shot { grid-template-columns: 1fr; background: #101413; }
+body.hx--shot .hx-controls { display: none; }
+body.hx--shot .hx-stage { padding: 0; }
+body.hx--shot .hx-canvas { outline: 0; margin: 0; }
+body.hx--shot .hx-canvas::after { content: none; }
+html[data-theme="light"] body.hx.hx--shot { background: #D9DFDC; }

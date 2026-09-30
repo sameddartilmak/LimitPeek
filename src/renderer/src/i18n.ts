@@ -3,7 +3,7 @@
  *
  * ONE SOURCE OF WORDS, TWO IMPLEMENTATIONS OF `t()`
  * -------------------------------------------------
- * The words live in `src/shared/i18n/{tr,en}/*.json` and nowhere else. Main
+ * The words live in `src/shared/i18n/{tr,en,zh}/*.json` and nowhere else. Main
  * `require()`s the same files; this module imports them, and `build.mjs`
  * inlines them into the emitted JS (see `inline-json.cjs` — a JSON-module
  * import would be a fetch, and `connect-src 'none'` stays exactly as it is).
@@ -13,8 +13,9 @@
  * two are held identical by a parity test that runs both over every key, both
  * languages and several counts — not by this comment. The rules both obey:
  *
- *   1. Lookup: current language, then the other language, then the key itself.
- *      A miss is reported (once per key) and is never an empty string.
+ *   1. Lookup: current language, then English (Turkish when the current one
+ *      is English), then the key itself. A miss is reported (once per key)
+ *      and is never an empty string.
  *   2. A value is a string or a plural record `{ one?, other, ... }`. The
  *      category comes from `Intl.PluralRules(language)` applied to the NUMBER
  *      param `count`; a category the record does not carry falls back to
@@ -35,11 +36,13 @@ import trCommon from '../../shared/i18n/tr/common.json' with { type: 'json' };
 import enCommon from '../../shared/i18n/en/common.json' with { type: 'json' };
 import trRenderer from '../../shared/i18n/tr/renderer.json' with { type: 'json' };
 import enRenderer from '../../shared/i18n/en/renderer.json' with { type: 'json' };
+import zhCommon from '../../shared/i18n/zh/common.json' with { type: 'json' };
+import zhRenderer from '../../shared/i18n/zh/renderer.json' with { type: 'json' };
 // Validation lives with the rest of the IPC input gate, as isThemeChoice does,
 // so what sanitize accepts and what this module applies cannot diverge.
 import { defaultFormatLocale, isResolvedLanguage, isUsableLocale } from './sanitize.js';
 
-export type Language = 'tr' | 'en';
+export type Language = 'tr' | 'en' | 'zh';
 
 type PluralRecord = { [category: string]: string | undefined; other: string };
 type Entry = string | PluralRecord;
@@ -57,6 +60,7 @@ export type Params = Readonly<Record<string, string | number>>;
 let CATALOGS: Readonly<Record<Language, Catalog>> = {
   tr: { ...(trCommon as Catalog), ...(trRenderer as Catalog) },
   en: { ...(enCommon as Catalog), ...(enRenderer as Catalog) },
+  zh: { ...(zhCommon as Catalog), ...(zhRenderer as Catalog) },
 };
 
 /**
@@ -69,6 +73,7 @@ let CATALOGS: Readonly<Record<Language, Catalog>> = {
 export function __setCatalogsForTest(catalogs: {
   tr: Record<string, unknown>;
   en: Record<string, unknown>;
+  zh?: Record<string, unknown>;
 }): () => void {
   // Same contract as main's twin, rule for rule: both required, both plain
   // objects, a TypeError prefixed "i18n: " otherwise, both swapped at once.
@@ -78,7 +83,11 @@ export function __setCatalogsForTest(catalogs: {
     throw new TypeError('i18n: __setCatalogsForTest needs { tr, en } catalog objects');
   }
   const previous = CATALOGS;
-  CATALOGS = Object.freeze({ tr: catalogs.tr as Catalog, en: catalogs.en as Catalog });
+  CATALOGS = Object.freeze({
+    tr: catalogs.tr as Catalog,
+    en: catalogs.en as Catalog,
+    zh: isCatalog(catalogs.zh) ? (catalogs.zh as Catalog) : previous.zh,
+  });
   return () => {
     CATALOGS = previous;
   };
@@ -154,7 +163,7 @@ export function t(key: MessageKey, params?: Params): string {
   let entry = lookup(currentLanguage, id);
   if (entry === undefined) {
     miss(`missing key "${id}" in ${currentLanguage}`);
-    entry = lookup(currentLanguage === 'tr' ? 'en' : 'tr', id);
+    entry = lookup(currentLanguage === 'en' ? 'tr' : 'en', id);
     if (entry === undefined) return id;
   }
   const template = pick(entry, id, params);

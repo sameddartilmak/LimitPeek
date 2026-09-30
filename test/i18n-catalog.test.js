@@ -30,7 +30,7 @@ const { formatModule } = require('./helpers/load-format');
 
 const ROOT = path.join(__dirname, '..');
 const CATALOG_ROOT = path.join(ROOT, 'src', 'shared', 'i18n');
-const LANGS = ['tr', 'en'];
+const LANGS = ['tr', 'en', 'zh'];
 const PLURAL_CATEGORIES = new Set(['zero', 'one', 'two', 'few', 'many', 'other']);
 
 function readCatalogs() {
@@ -140,6 +140,29 @@ test.describe('the catalogs have one shape in both languages', () => {
     }
   });
 
+  test('Chinese (zh, added 2026-09-30) has the same files, keys and placeholders as English', () => {
+    assert.deepEqual(Object.keys(catalogs.zh), Object.keys(catalogs.en));
+    for (const file of Object.keys(catalogs.en)) {
+      assert.deepEqual(Object.keys(catalogs.zh[file]).sort(), Object.keys(catalogs.en[file]).sort(), `zh/${file}: key sets differ`);
+      for (const key of Object.keys(catalogs.en[file])) {
+        assert.deepEqual(placeholders(catalogs.zh[file][key]), placeholders(catalogs.en[file][key]),
+          `zh/${file} \"${key}\": placeholders differ`);
+        // A plural record stays a record (t() needs one to pick from), even
+        // though Chinese has only the one form.
+        assert.equal(typeof catalogs.zh[file][key], typeof catalogs.en[file][key], `zh/${file} \"${key}\": shape differs`);
+      }
+    }
+  });
+
+  test('Chinese carries no Turkish letters', () => {
+    for (const [file, entries] of Object.entries(catalogs.zh)) {
+      for (const [key, entry] of Object.entries(entries)) {
+        if (key === 'language.endonym.tr') continue;
+        for (const text of variants(entry)) assert.doesNotMatch(text, /[çğıöşüÇĞİÖŞÜ]/, `zh/${file} \"${key}\": ${text}`);
+      }
+    }
+  });
+
   test('every key uses the same placeholders in both languages', () => {
     for (const file of Object.keys(catalogs.tr)) {
       for (const key of Object.keys(catalogs.tr[file])) {
@@ -185,7 +208,8 @@ test.describe('the catalogs have one shape in both languages', () => {
     // the endonyms (a language's own name is the same word for every reader),
     // words that are the same in both ("OK", the product name), and values that
     // are only placeholders and separators.
-    const SAME_KEYS = new Set(['language.endonym.tr', 'language.endonym.en']);
+    // "Plan" is the same word in both languages (settings, 2026-09-29).
+    const SAME_KEYS = new Set(['language.endonym.tr', 'language.endonym.en', 'language.endonym.zh', 'settings.plan.labelShort']);
     const SAME_VALUES = new Set(['OK', 'Usage Notch']);
     const onlyPlaceholders = (text) => !/\p{L}/u.test(text.replace(/\{[A-Za-z][A-Za-z0-9]*\}/g, ''));
     // Plural records are compared category by category: English "one" may
@@ -414,7 +438,7 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     // and no vendor tells us. The hint is what stops the select reading as
     // something we verified: it says the value is their note and that we cannot
     // read it from the tool. Short on purpose (owner, 2026-09-23).
-    { file: 'renderer.json', key: 'settings.plan.hint', en: [/\byour own\b/i, /\bcannot read it\b/i], tr: [/[Kk]endi notunuz/, /okuyamıyoruz/] },
+    { file: 'renderer.json', key: 'settings.plan.hint', en: [/\bAutomatic\b/, /\brecorded\b/i, /\byourself\b/i], tr: [/Otomatik/, /kaydettiği/, /kendiniz/] },
     // Never a default and never a guess: the empty option says 'not set',
     // which is a fact about us, not a prompt that something is missing.
     { file: 'renderer.json', key: 'settings.plan.placeholder', en: [/\bnot set\b/i], tr: [/[Bb]elirtilmedi/] },
@@ -1085,9 +1109,10 @@ test.describe('every literal t() call passes exactly the placeholders its entry 
         't(dynamicKey, { anything: 1 });',
       ].join('\n'));
       const { problems } = check([file], ['common.json'], { minimum: 1 });
-      assert.equal(problems.filter((p) => p.includes('"ago.minutes" missing [m] unexpected [minutes]')).length, 2);
-      assert.equal(problems.filter((p) => p.includes('"duration.long.hours"') && p.includes('count')).length, 2);
-      assert.equal(problems.length, 4, problems.join('\n'));
+      // Once per language.
+      assert.equal(problems.filter((p) => p.includes('"ago.minutes" missing [m] unexpected [minutes]')).length, LANGS.length);
+      assert.equal(problems.filter((p) => p.includes('"duration.long.hours"') && p.includes('count')).length, LANGS.length);
+      assert.equal(problems.length, 2 * LANGS.length, problems.join('\n'));
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

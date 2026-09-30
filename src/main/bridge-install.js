@@ -17,7 +17,8 @@ const { t } = require('../core/i18n');
 
 /**
  * Materialises the bridge script somewhere Claude Code can actually run it and
- * then wires it in, behind a native consent prompt.
+ * then wires it in, behind the panel's own consent box (and, for the agy
+ * download only, a native one).
  *
  * Why the copy: when packaged, `bridge/claude-statusline.mjs` lives inside
  * `app.asar`, which `node` cannot execute. A copy under userData is a real
@@ -67,14 +68,16 @@ function materialiseBridge(script = BRIDGE_SCRIPTS.claude) {
 /**
  * The RUN_SETUP implementation for the `claude` row.
  *
- * Two independent gates before anything is written outside userData:
- *   1. `confirmed === true` must arrive on the IPC call (the renderer showed
- *      the SetupAction.detail text first);
- *   2. a native modal, because the renderer is a transparent hover panel and
- *      an accidental click there must not be able to edit the user's Claude
- *      Code configuration.
+ * The gate before anything is written outside userData: `confirmed === true`
+ * must arrive on the IPC call, and the renderer sends it only from the confirm
+ * button of its own consent box, which shows the whole question first
+ * (SetupAction.consent: the file, the backup, what the bridge reads, that the
+ * user's own line is kept). That box replaced a second, native modal (owner,
+ * 2026-09-30: the system dialog after the panel's own question looked foreign
+ * and asked twice). The panel is click-opened now, not a hover surface, so a
+ * confirm there is a deliberate press.
  */
-async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
+async function runClaudeSetup({ confirmed }) {
   if (confirmed !== true) {
     return { ok: false, message: t('setup.notConfirmed', { tool: 'Claude Code' }) };
   }
@@ -86,7 +89,7 @@ async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
       message: t('setup.alreadyInstalled', { tool: 'Claude Code' }),
     };
   }
-  // A status line of the user's own is kept and chained, and the dialog says so.
+  // A status line of the user's own is kept and chained, and the consent says so.
   const chainExisting = state === 'foreign';
   if (state === 'unreadable' || state === 'invalid') {
     return {
@@ -96,26 +99,6 @@ async function runClaudeSetup({ confirmed, parentWindow, beforePrompt }) {
   }
 
   const settingsFile = claudeSettingsPath();
-  // Called ONLY on the path that actually raises a modal. Every branch above
-  // returns without showing one, and the caller uses this hook to pin the
-  // panel — a state the user did not choose, so it must not be entered for a
-  // setup that turns out to be a no-op.
-  if (typeof beforePrompt === 'function') beforePrompt();
-  const choice = await dialog.showMessageBox(parentWindow || undefined, {
-    type: 'question',
-    buttons: [t('dialog.cancel'), t('dialog.add')],
-    defaultId: 1,
-    cancelId: 0,
-    noLink: true,
-    title: t('dialog.writeSettings.title', { tool: 'Claude Code' }),
-    message: t('dialog.writeSettings.message', { tool: 'Claude Code' }),
-    detail: `${t('dialog.writeSettings.file', { file: settingsFile })}\n\n${t('dialog.claude.promise')}`
-      + (chainExisting ? `\n\n${t('dialog.claude.keepsYours')}` : ''),
-  });
-  if (choice.response !== 1) {
-    return { ok: false, message: t('setup.cancelled') };
-  }
-
   const bridgePath = materialiseBridge();
   if (!bridgePath) {
     return { ok: false, message: t('setup.bridgePrepareFailed') };
@@ -165,25 +148,10 @@ async function runAntigravitySetup({ confirmed, parentWindow, beforePrompt, inst
     };
   }
 
-  const settingsFile = antigravitySettingsPath();
-  // Same rule as the Claude setup: called ONLY on the path that raises a
-  // modal, because every branch above returns without showing one and the
-  // caller uses this hook to pin the panel.
-  if (typeof beforePrompt === 'function') beforePrompt();
-  const choice = await dialog.showMessageBox(parentWindow || undefined, {
-    type: 'question',
-    buttons: [t('dialog.cancel'), t('dialog.add')],
-    defaultId: 1,
-    cancelId: 0,
-    noLink: true,
-    title: t('dialog.writeSettings.title', { tool: 'Antigravity' }),
-    message: t('dialog.writeSettings.message', { tool: 'Antigravity CLI' }),
-    detail: `${t('dialog.writeSettings.file', { file: settingsFile })}\n\n${t('dialog.agy.promise')}`,
-  });
-  if (choice.response !== 1) {
-    return { ok: false, message: t('setup.cancelled') };
-  }
-
+  // Same gate as the Claude setup: the panel's own consent box, which named
+  // this file and the bridge's promise (SetupAction.consent), sent
+  // `confirmed`. The one native dialog left in setup is the agy DOWNLOAD
+  // below: running a vendor install script is a different order of consent.
   return configureAntigravityBridge();
 }
 
@@ -330,26 +298,20 @@ function hookInstalled(providerId) {
 }
 
 /**
- * The DISCONNECT_PROVIDER implementation: behind a native confirmation, takes
- * our line out of the tool's settings (and puts the user's own line back when
- * the setup kept one). A declined dialog changes nothing.
+ * The DISCONNECT_PROVIDER implementation: takes our line out of the tool's
+ * settings (and puts the user's own line back when the setup kept one).
+ *
+ * The question is asked in the panel, by the app's own confirmation box
+ * (owner, 2026-09-30: the system message box looked foreign), and only its
+ * confirm button sends `confirmed: true`. Anything else changes nothing. No
+ * native dialog here: removing our own line, after a backup, is the one write
+ * that only ever undoes what this app did.
  */
-async function runDisconnect({ providerId, parentWindow, beforePrompt }) {
+async function runDisconnect({ providerId, confirmed }) {
   const d = DISCONNECT[providerId];
   if (!d) return { ok: false, message: t('ipc.actionUnsupported') };
+  if (confirmed !== true) return { ok: false, message: t('setup.cancelled') };
   if (!hookInstalled(providerId)) return { ok: true, message: t('setup.alreadyAbsent') };
-  if (typeof beforePrompt === 'function') beforePrompt();
-  const choice = await dialog.showMessageBox(parentWindow || undefined, {
-    type: 'question',
-    buttons: [t('dialog.cancel'), t('dialog.disconnect.confirm')],
-    defaultId: 0,
-    cancelId: 0,
-    noLink: true,
-    title: t('dialog.disconnect.title', { tool: d.tool }),
-    message: t('dialog.disconnect.message', { tool: d.tool }),
-    detail: t('dialog.disconnect.detail', { tool: d.tool }),
-  });
-  if (choice.response !== 1) return { ok: false, message: t('setup.cancelled') };
   const result = d.remove();
   return { ok: result.ok, message: result.message };
 }

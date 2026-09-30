@@ -58,6 +58,14 @@ const DEFAULTS = Object.freeze({
    * 'system' for the same reason the theme does.
    */
   language: DEFAULT_LANGUAGE,
+  /**
+   * Whether the user closed the first-run "show Claude Code's usage" card with
+   * "Şimdi değil". A NEW settings file starts with it false, so a fresh install
+   * sees the card once; a file written before the card existed has no such key
+   * and reads as true in `load()`, so an update never springs onboarding on
+   * someone who has used the app for weeks (UI plan 2026-09-29).
+   */
+  setupCoachDismissed: false,
 });
 
 function file(userDataDir) {
@@ -104,6 +112,9 @@ function load(userDataDir) {
     // And again for the language: a typo or a future value becomes 'system',
     // never a language no catalog exists for.
     language: sanitizeLanguage(raw.language),
+    // Absent means "written before the first-run card existed": an existing
+    // user, who is not shown onboarding by an update.
+    setupCoachDismissed: typeof raw.setupCoachDismissed === 'boolean' ? raw.setupCoachDismissed : true,
   };
 }
 

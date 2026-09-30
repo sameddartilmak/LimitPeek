@@ -25,16 +25,18 @@
  * than by whatever the developer's own Windows happens to say.
  */
 
-/** The three literals `LanguageChoice` declares, in the contract's own order. */
-const LANGUAGES = Object.freeze(['tr', 'en', 'system']);
+/** The literals `LanguageChoice` declares, in the contract's own order. */
+const LANGUAGES = Object.freeze(['tr', 'en', 'zh', 'system']);
 
 const DEFAULT_LANGUAGE = 'system';
 
 /** Used when an English user's OS gives no usable English region. */
 const FALLBACK_EN_LOCALE = 'en-US';
 const TR_LOCALE = 'tr-TR';
+/** Simplified Chinese, as spoken in mainland China (owner, 2026-09-30). */
+const ZH_LOCALE = 'zh-CN';
 
-/** Is this exactly one of the three? No coercion, no case folding. */
+/** Is this exactly one of them? No coercion, no case folding. */
 function isLanguage(value) {
   return typeof value === 'string' && LANGUAGES.includes(value);
 }
@@ -77,10 +79,16 @@ function displayTag(os) {
   return parseTag(sys) ? sys : null;
 }
 
-/** `tr*` in ADR-004 means the primary language subtag, not a string prefix. */
+/**
+ * `tr*` in ADR-004 means the primary language subtag, not a string prefix.
+ * `zh*` likewise: every Chinese OS gets the Simplified catalog, the only one
+ * the app carries.
+ */
 function osLanguage(os) {
   const parsed = parseTag(displayTag(os));
-  return parsed && parsed.language === 'tr' ? 'tr' : 'en';
+  if (parsed && parsed.language === 'tr') return 'tr';
+  if (parsed && parsed.language === 'zh') return 'zh';
+  return 'en';
 }
 
 /**
@@ -110,6 +118,7 @@ function englishWithRegion(tag) {
  */
 function formatLocaleFor(resolvedLanguage, os) {
   if (resolvedLanguage === 'tr') return TR_LOCALE;
+  if (resolvedLanguage === 'zh') return ZH_LOCALE;
   return englishWithRegion(os && os.systemLocale)
     || englishWithRegion(displayTag(os))
     || FALLBACK_EN_LOCALE;
@@ -118,7 +127,7 @@ function formatLocaleFor(resolvedLanguage, os) {
 /**
  * @param {unknown} choice  the stored preference; sanitised here
  * @param {{preferredLanguages?: string[], systemLocale?: string|null}} [os]
- * @returns {{language:'tr'|'en'|'system', resolvedLanguage:'tr'|'en', formatLocale:string}}
+ * @returns {{language:'tr'|'en'|'zh'|'system', resolvedLanguage:'tr'|'en'|'zh', formatLocale:string}}
  */
 function resolveLanguage(choice, os) {
   const language = sanitizeLanguage(choice);

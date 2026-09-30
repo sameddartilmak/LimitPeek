@@ -96,7 +96,7 @@ const ROW_STATUSES = new Set<RowStatus>(['loading', 'ok', 'stale', 'error', 'pas
 const CERTAINTIES = new Set<Certainty>(['known', 'estimated', 'unknown']);
 const SETUP_KINDS = new Set<SetupKind>(['install-bridge', 'not-installed']);
 const THEME_CHOICES = new Set<ThemeChoice>(['dark', 'light', 'system']);
-const LANGUAGE_CHOICES = new Set<LanguageChoice>(['tr', 'en', 'system']);
+const LANGUAGE_CHOICES = new Set<LanguageChoice>(['tr', 'en', 'zh', 'system']);
 
 /**
  * The three discriminants the contract added for the Antigravity IDE reader.
@@ -812,11 +812,21 @@ function setupAction(raw: unknown): SetupAction | null {
   if (!SETUP_KINDS.has(source.kind as SetupKind)) return null;
   const label = text(source.label, 24);
   if (label === null) return null;
-  return {
+  const out: SetupAction = {
     kind: source.kind as SetupKind,
     label,
     detail: text(source.detail, 160) ?? '',
   };
+  // The consent paragraphs: a short list of bounded lines, or nothing. A path
+  // under a long user name still fits in 400 characters.
+  if (Array.isArray(source.consent)) {
+    const lines = source.consent
+      .slice(0, 4)
+      .map((line) => text(line, 400))
+      .filter((line): line is string => line !== null);
+    if (lines.length > 0) out.consent = lines;
+  }
+  return out;
 }
 
 function provider(raw: unknown): ProviderSnapshot | null {
@@ -854,6 +864,10 @@ function provider(raw: unknown): ProviderSnapshot | null {
     connected: source.connected === true,
     status: ROW_STATUSES.has(source.status as RowStatus) ? (source.status as RowStatus) : 'loading',
     planLabel: text(source.planLabel, 24),
+    // Where the label came from, and the tool's own value. Carried only when
+    // valid, so an older main's payload reads exactly as it did.
+    ...(source.planSource === 'user' || source.planSource === 'tool' ? { planSource: source.planSource } : {}),
+    ...(text(source.planDetected, 24) !== null ? { planDetected: text(source.planDetected, 24) } : {}),
     fiveHour: windowUsage(source.fiveHour),
     sevenDay: windowUsage(source.sevenDay),
     tokens: tokenBreakdown(source.tokens),
@@ -886,7 +900,8 @@ function provider(raw: unknown): ProviderSnapshot | null {
     setupAction: setupAction(source.setupAction),
     errorCode: text(source.errorCode, 48) ?? undefined,
     lastGoodAt: isoInstant(source.lastGoodAt),
-    hookInstalled: source.hookInstalled === true ? true : undefined,
+    // Both answers are kept: `false` is what offers "Bağla" again in Settings.
+    hookInstalled: typeof source.hookInstalled === 'boolean' ? source.hookInstalled : undefined,
     // Qwen Code with no usage log at all: only a literal true is that claim.
     usageLogAbsent: source.usageLogAbsent === true ? true : undefined,
   };
@@ -976,23 +991,28 @@ export function isLanguageChoice(value: unknown): value is LanguageChoice {
 }
 
 /** A language the catalogs carry. 'system' is a choice, never a resolution. */
-export function isResolvedLanguage(value: unknown): value is 'tr' | 'en' {
-  return value === 'tr' || value === 'en';
+export function isResolvedLanguage(value: unknown): value is 'tr' | 'en' | 'zh' {
+  return value === 'tr' || value === 'en' || value === 'zh';
 }
 
 /**
  * ADR-004's resolution rule, for the ONE case main did not resolve for us (an
- * absent or older preload): `tr*` -> tr, anything else -> en. Everywhere else
+ * absent or older preload): `tr*` -> tr, `zh*` -> zh, anything else -> en. Everywhere else
  * the renderer takes main's `resolvedLanguage` and never decides on its own,
  * because the tray tooltip is written by main and must match the panel.
  */
-export function fallbackLanguage(tag: unknown): 'tr' | 'en' {
-  return typeof tag === 'string' && /^tr(?:[-_]|$)/i.test(tag) ? 'tr' : 'en';
+export function fallbackLanguage(tag: unknown): 'tr' | 'en' | 'zh' {
+  if (typeof tag !== 'string') return 'en';
+  if (/^tr(?:[-_]|$)/i.test(tag)) return 'tr';
+  if (/^zh(?:[-_]|$)/i.test(tag)) return 'zh';
+  return 'en';
 }
 
 /** The format locale main would choose when it has no OS region to offer. */
-export function defaultFormatLocale(language: 'tr' | 'en'): string {
-  return language === 'tr' ? 'tr-TR' : 'en-US';
+export function defaultFormatLocale(language: 'tr' | 'en' | 'zh'): string {
+  if (language === 'tr') return 'tr-TR';
+  if (language === 'zh') return 'zh-CN';
+  return 'en-US';
 }
 
 /**
@@ -1041,7 +1061,10 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
     : defaultFormatLocale(resolvedLanguage);
   const autostart = typeof source.autostart === 'boolean' ? source.autostart : true;
   const autostartByWindows = source.autostartByWindows === true;
-  return { theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows };
+  // Only a real `false` opens the first-run card; a main that predates the
+  // field, or any odd value, keeps it closed.
+  const setupCoachDismissed = source.setupCoachDismissed !== false;
+  return { theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed };
 }
 
 /** Returns null when the payload is not a usable Snapshot at all. */

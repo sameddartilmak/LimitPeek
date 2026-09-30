@@ -21,8 +21,9 @@ import { createPanel, type PanelContext } from './components/panel.js';
 import { trimMessage } from './format.js';
 import { formatLocale, language, setLocale, t } from './i18n.js';
 import { defaultFormatLocale, fallbackLanguage, pendingUsageOf } from './sanitize.js';
-import { freshnessOf, shouldDegrade, Store } from './store.js';
+import { freshnessOf, shouldDegrade, Store, type NoticeTone, type SettingsTab } from './store.js';
 import { createTheme, DEFAULT_THEME } from './theme.js';
+import { installTooltips } from './tooltip.js';
 
 export interface AppHandle {
   /** Push a snapshot in, as if main had sent it. Used by the harness. */
@@ -86,11 +87,25 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     language: initialPrefs?.language ?? 'system',
     autostart: initialPrefs?.autostart ?? true,
     autostartByWindows: initialPrefs?.autostartByWindows ?? false,
+    // No preload means no main to have said "fresh install": the card stays shut.
+    setupCoachDismissed: initialPrefs?.setupCoachDismissed ?? true,
   });
   disposers.push(() => theme.destroy());
+  // 400 ms on hover, at once on keyboard focus (tooltip.ts).
+  disposers.push(installTooltips());
   let closing = false;
   /** Provider whose consent prompt is currently open, if any. */
   let awaitingConsent: string | null = null;
+  /** Where that prompt was opened: the first-run card, or the provider's card. */
+  let consentOrigin: 'coach' | 'row' = 'row';
+
+  /**
+   * One door for every toast (UI plan 2026-09-29). An `error` stays until the
+   * user closes it; `success` and `info` leave on their own after 3 s.
+   */
+  function say(message: string | null, tone: NoticeTone = 'info'): void {
+    store.set({ notice: message, noticeTone: tone });
+  }
 
   const ctx: PanelContext = {
     generatedAt: null,
@@ -101,6 +116,12 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onSetup: (providerId) => beginSetup(providerId),
     onPlanLabel: (providerId, label) => void applyPlanLabel(providerId, label),
     onDisconnect: (providerId) => void disconnectProvider(providerId),
+    // The setup question is drawn in the tool's card, so show the list first.
+    onConnectFromSettings: (providerId) => {
+      store.set({ view: 'main', notice: null, revertedId: null });
+      panel.focusView('main');
+      beginSetup(providerId);
+    },
     onRefresh: () => void runRefresh(null),
     onPinToggle: () => {
       // Main owns pinned mode and answers by pushing a new anchor — mode:'pin'
@@ -111,6 +132,16 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     },
     onClose: () => requestClose(),
     onSettingsToggle: () => toggleSettings(),
+    onOpenSettings: (tab) => openSettings(tab),
+    onSettingsTab: (tab) => store.set({ settingsTab: tab }),
+    // One card's details at a time: opening another closes the first, and
+    // pressing the open one closes it.
+    onToggleExpand: (id) => {
+      const open = store.get().expandedProviderId;
+      store.set({ expandedProviderId: open === id ? null : id });
+    },
+    onCoachConnect: (id) => beginSetup(id, 'coach'),
+    onCoachDismiss: () => void dismissCoach(),
     onToggleProvider: (id, enabled) => void applyEnabled(id, enabled),
     onThemeChange: (choice) => void applyTheme(choice),
     onLanguageChange: (choice) => void applyLanguage(choice),
@@ -127,13 +158,17 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onRefreshNoticeDismiss: () => store.set({ refreshNotice: null }),
     onConsentConfirm: () => {
       const id = awaitingConsent;
+      const origin = consentOrigin;
       awaitingConsent = null;
       store.set({ consent: null });
-      if (id) void runSetup(id, true);
+      if (id) void runSetup(id, true, origin);
     },
     onConsentCancel: () => {
       awaitingConsent = null;
-      store.set({ consent: null, notice: t('app.setupCancelled') });
+      store.set({ consent: null });
+      // Said where the user acted: inside the first-run card, or as a toast.
+      if (consentOrigin === 'coach') store.set({ coachMessage: t('coach.cancelled') });
+      else say(t('app.setupCancelled'), 'info');
     },
   };
 
@@ -186,7 +221,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
           store.set({ refreshNotice: 'ANTIGRAVITY_NOT_RUNNING' });
         }
       } else if (bridge.available) {
-        store.set({ notice: t('app.refreshFailed') });
+        say(t('app.refreshFailed'), 'error');
       }
     } finally {
       if (providerId) store.markBusy(providerId, false);
@@ -199,25 +234,41 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    * `runSetup(id, true)` is only ever reached from the confirm control, so the
    * `confirmed` flag can never be set without the user having read the detail.
    */
-  function beginSetup(providerId: string): void {
+  function beginSetup(providerId: string, origin: 'coach' | 'row' = 'row'): void {
     const provider = findProvider(store.get().snapshot, providerId);
     const action = provider?.setupAction ?? null;
     if (!action) return;
 
     if (needsConsent(action)) {
       awaitingConsent = providerId;
+      consentOrigin = origin;
       store.set({
         notice: null,
+        coachMessage: null,
         consent: {
           providerId,
           providerName: provider?.displayName ?? '',
           label: action.label,
           detail: action.detail,
+          paragraphs: action.consent,
+          origin,
         },
       });
       return;
     }
-    void runSetup(providerId, false);
+    void runSetup(providerId, false, origin);
+  }
+
+  /**
+   * "Şimdi değil" on the first-run card. Optimistic — the card closes on the
+   * press — and persisted, so it does not come back after a restart. A failed
+   * write is said, but the card stays closed for this session: re-showing a
+   * suggestion the user just declined would be the worse outcome.
+   */
+  async function dismissCoach(): Promise<void> {
+    store.set({ setupCoachDismissed: true, coachMessage: null });
+    const ok = await bridge.setSetupCoachDismissed(true);
+    if (!ok && bridge.available) say(t('app.coachNotSaved'), 'error');
   }
 
   // --- provider order ----------------------------------------------------
@@ -251,10 +302,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     // failure.
     if (orderRequest && sameSequence(orderRequest.ids, next)) {
       orderRequest = null;
-      store.set({
-        order: null,
-        notice: t('app.orderNotSaved'),
-      });
+      store.set({ order: null });
+      say(t('app.orderNotSaved'), 'error');
     }
   }
 
@@ -294,7 +343,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       generatedAt >= orderRequest.at
     ) {
       orderRequest = null;
-      store.set({ order: null, notice: t('app.orderNotPersisted') });
+      store.set({ order: null });
+      say(t('app.orderNotPersisted'), 'error');
     }
   }
 
@@ -306,6 +356,12 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     // failure into settings would attach it to controls that did not cause it.
     store.set({ view: next, notice: null, revertedId: null });
     panel.focusView(next);
+  }
+
+  /** Straight into settings on a given tab (the empty state's "Araçları seç"). */
+  function openSettings(tab: SettingsTab): void {
+    store.set({ view: 'settings', settingsTab: tab, notice: null, revertedId: null });
+    panel.focusView('settings');
   }
 
   // --- add / remove a provider -------------------------------------------
@@ -366,10 +422,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     store.set({ planPending: withoutId(store.get().planPending, providerId) });
     if (ok) return;
 
-    store.set({
-      planReverted: providerId,
-      notice: t('app.planNotSaved', { name: nameOf(providerId) }),
-    });
+    store.set({ planReverted: providerId });
+    say(t('app.planNotSaved', { name: nameOf(providerId) }), 'error');
     window.setTimeout(() => {
       if (store.get().planReverted === providerId) store.set({ planReverted: null });
     }, 1_600);
@@ -400,11 +454,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
 
     const override = { ...store.get().enabledOverride };
     delete override[providerId];
-    store.set({
-      enabledOverride: override,
-      revertedId: providerId,
-      notice: t('app.enabledNotSaved', { name: nameOf(providerId) }),
-    });
+    store.set({ enabledOverride: override, revertedId: providerId });
+    say(t('app.enabledNotSaved', { name: nameOf(providerId) }), 'error');
     // The flag only has to outlive the flash; the notice keeps the message.
     window.setTimeout(() => {
       if (store.get().revertedId === providerId) store.set({ revertedId: null });
@@ -441,12 +492,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       next[id] = override[id];
     }
     if (Object.keys(next).length === ids.length && !stranded) return;
-    store.set({
-      enabledOverride: next,
-      notice: stranded
-        ? t('app.enabledNotPersisted')
-        : store.get().notice ?? null,
-    });
+    store.set({ enabledOverride: next });
+    if (stranded) say(t('app.enabledNotPersisted'), 'error');
   }
 
   // --- theme --------------------------------------------------------------
@@ -496,11 +543,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
 
     const previous = confirmedTheme;
     theme.apply(previous);
-    store.set({
-      theme: previous,
-      themeReverted: true,
-      notice: t('app.themeNotSaved'),
-    });
+    store.set({ theme: previous, themeReverted: true });
+    say(t('app.themeNotSaved'), 'error');
     // The flag only has to outlive the flash; the notice keeps the message.
     window.setTimeout(() => {
       if (store.get().themeReverted) store.set({ themeReverted: false });
@@ -516,6 +560,11 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   function acceptPreferences(prefs: Preferences): void {
     acceptLanguage(prefs);
     acceptAutostart(prefs);
+    // Main's persisted answer. Only ever moves the card SHUT from here: a push
+    // that crossed a "Şimdi değil" in flight must not re-open it under the user.
+    if (prefs.setupCoachDismissed && !store.get().setupCoachDismissed) {
+      store.set({ setupCoachDismissed: true });
+    }
     const choice = prefs.theme;
     // A push is main's persisted state, so it confirms even while a pick is in
     // flight and is not yet drawn.
@@ -556,11 +605,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     store.set({ autostartPending: false });
     if (ok) return;
 
-    store.set({
-      autostart: confirmedAutostart,
-      autostartReverted: true,
-      notice: t('app.autostartNotSaved'),
-    });
+    store.set({ autostart: confirmedAutostart, autostartReverted: true });
+    say(t('app.autostartNotSaved'), 'error');
     window.setTimeout(() => {
       if (store.get().autostartReverted) store.set({ autostartReverted: false });
     }, 1_600);
@@ -616,11 +662,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     store.set({ languagePending: false });
     if (ok) return;
 
-    store.set({
-      language: confirmedLanguage,
-      languageReverted: true,
-      notice: t('app.languageNotSaved'),
-    });
+    store.set({ language: confirmedLanguage, languageReverted: true });
+    say(t('app.languageNotSaved'), 'error');
     window.setTimeout(() => {
       if (store.get().languageReverted) store.set({ languageReverted: false });
     }, 1_600);
@@ -671,7 +714,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   function dropConsentForLanguageChange(): void {
     if (awaitingConsent === null) return;
     awaitingConsent = null;
-    store.set({ consent: null, notice: t('app.setupCancelled') });
+    store.set({ consent: null });
+    say(t('app.setupCancelled'), 'info');
   }
 
   /**
@@ -698,34 +742,49 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     requestAnimationFrame(() => panel.enableAnimation());
   }
 
-  async function runSetup(providerId: string, confirmed: boolean): Promise<void> {
+  async function runSetup(providerId: string, confirmed: boolean, origin: 'coach' | 'row' = 'row'): Promise<void> {
     if (store.get().busy.includes(providerId)) return;
     store.markBusy(providerId, true);
-    store.set({ notice: null });
+    store.set({ notice: null, coachMessage: null });
     try {
       const result = await bridge.runSetup(providerId, confirmed);
       const message = trimMessage(result.message);
-      store.set({
-        notice: message || (result.ok ? t('app.setupConnected') : t('app.setupFailed')),
-      });
       if (result.ok) {
+        say(message || t('app.setupConnected'), 'success');
+        // Connected from the first-run card: it has done its job and must not
+        // come back if the user later disconnects.
+        if (origin === 'coach') void dismissCoachQuietly();
         const snapshot = await bridge.requestRefresh();
         if (snapshot) acceptSnapshot(snapshot);
+      } else if (origin === 'coach') {
+        // The failure is read where the user acted, and the card stays.
+        store.set({ coachMessage: t('coach.failed', { message: message || t('app.setupFailed') }) });
+      } else {
+        say(message || t('app.setupFailed'), 'error');
       }
     } finally {
       store.markBusy(providerId, false);
     }
   }
 
-  /** Same busy guard and notice as runSetup; main raises the confirmation. */
+  /** The first-run card after a successful connect: shut, and remembered. */
+  async function dismissCoachQuietly(): Promise<void> {
+    store.set({ setupCoachDismissed: true });
+    await bridge.setSetupCoachDismissed(true);
+  }
+
+  /**
+   * Same busy guard and notice as runSetup. Reached only from the settings
+   * item's own confirmation box, after its confirm button.
+   */
   async function disconnectProvider(providerId: string): Promise<void> {
     if (store.get().busy.includes(providerId)) return;
     store.markBusy(providerId, true);
     store.set({ notice: null });
     try {
-      const result = await bridge.disconnectProvider(providerId);
+      const result = await bridge.disconnectProvider(providerId, true);
       const message = trimMessage(result.message);
-      if (message) store.set({ notice: message });
+      if (message) say(message, result.ok ? 'success' : 'error');
       const snapshot = await bridge.requestRefresh();
       if (snapshot) acceptSnapshot(snapshot);
     } finally {

@@ -52,7 +52,7 @@ export interface Bridge {
    */
   runSetup(providerId: string, confirmed: boolean): Promise<SetupResult>;
   /** Remove our statusLine hook from a tool's settings (IPC.DISCONNECT_PROVIDER). */
-  disconnectProvider(providerId: string): Promise<SetupResult>;
+  disconnectProvider(providerId: string, confirmed: boolean): Promise<SetupResult>;
   /**
    * Persist the user's provider order (IPC.SET_ORDER, 'providers:set-order').
    * Resolves false on any failure, including a preload that does not expose
@@ -101,6 +101,8 @@ export interface Bridge {
    * the switch back where it was.
    */
   setAutostart(enabled: boolean): Promise<boolean>;
+  /** Persist "Şimdi değil" on the first-run card. `false` means nothing changed. */
+  setSetupCoachDismissed(dismissed: boolean): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
@@ -135,6 +137,7 @@ function nullBridge(): Bridge {
     setTheme: async () => false,
     setLanguage: async () => false,
     setAutostart: async () => false,
+    setSetupCoachDismissed: async () => false,
     close: () => {},
     pin: () => {},
   };
@@ -241,9 +244,9 @@ export function createBridge(): Bridge {
       return { ok: false, message: t('app.setupFailed') };
     },
 
-    async disconnectProvider(providerId: string): Promise<SetupResult> {
+    async disconnectProvider(providerId: string, confirmed: boolean): Promise<SetupResult> {
       try {
-        const result = await api.disconnectProvider(providerId);
+        const result = await api.disconnectProvider(providerId, confirmed);
         if (result && typeof result === 'object') {
           return { ok: result.ok === true, message: typeof result.message === 'string' ? result.message : '' };
         }
@@ -382,6 +385,19 @@ export function createBridge(): Bridge {
       }
       try {
         const result = await api.setAutostart(enabled);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    async setSetupCoachDismissed(dismissed: boolean): Promise<boolean> {
+      if (typeof api.setSetupCoachDismissed !== 'function') {
+        missing('setSetupCoachDismissed');
+        return false;
+      }
+      try {
+        const result = await api.setSetupCoachDismissed(dismissed);
         return !!result && result.ok === true;
       } catch {
         return false;

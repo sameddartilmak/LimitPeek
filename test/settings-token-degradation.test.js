@@ -370,13 +370,16 @@ test.describe('the plan control is a closed list that makes no claim', () => {
     assert.deepEqual(calls, [['codex', 'Pro'], ['codex', '']], '"Belirtilmedi" must clear the label');
   });
 
-  test('the hint is short and still says the plan cannot be read from the tool', () => {
+  test('the hint says what "Otomatik" means and that the user may choose', () => {
+    // 2026-09-30: the plan is read from the tool's own record when there is
+    // one; the hint says so, and that the user's choice overrides it.
     const item = byId(itemsOf(), 'claude');
     const hint = walk(item).find((n) => hasClass(n, 'settings__plan-hint'));
     assert.ok(hint, 'no hint');
-    assert.match(hint.textContent, /okuyamıyoruz/i, 'it does not say the plan cannot be read from the tool');
+    assert.match(hint.textContent, /Otomatik/, 'it does not explain the automatic value');
+    assert.match(hint.textContent, /kendiniz seçebilirsiniz/i, 'it does not say the user may choose');
     assert.doesNotMatch(hint.textContent, /kendiniz yaz/i, 'the hint still offers free text');
-    assert.ok(hint.textContent.length <= 60, hint.textContent);
+    assert.ok(hint.textContent.length <= 110, hint.textContent);
     const { select } = planIn(item);
     assert.equal(select.getAttribute('aria-describedby'), hint.getAttribute('id'));
   });

@@ -31,6 +31,7 @@ const CH = {
   INITIAL_SNAPSHOT: 'usage:initial-snapshot',
   INITIAL_PREFERENCES: 'prefs:initial',
   DISCONNECT_PROVIDER: 'provider:disconnect',
+  SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -202,6 +203,15 @@ contextBridge.exposeInMainWorld('usageNotch', {
   setAutostart: (enabled) => ipcRenderer.invoke(CH.SET_AUTOSTART, enabled === true),
 
   /**
+   * Persists "Şimdi değil" on the first-run card. Same shape as setAutostart;
+   * `{ok:false}` means nothing changed.
+   *
+   * @param {boolean} dismissed
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setSetupCoachDismissed: (dismissed) => ipcRenderer.invoke(CH.SET_SETUP_COACH_DISMISSED, dismissed === true),
+
+  /**
    * Persists the plan the user says they are on for ONE tool, or clears it.
    *
    * The control is an `<input list>` with a per-tool `datalist`, so this carries
@@ -222,7 +232,8 @@ contextBridge.exposeInMainWorld('usageNotch', {
     ipcRenderer.invoke(CH.SET_PLAN_LABEL, String(providerId), String(label == null ? '' : label)),
 
   /** Takes our statusLine hook out of a tool's settings; main confirms natively. */
-  disconnectProvider: (providerId) => ipcRenderer.invoke(CH.DISCONNECT_PROVIDER, String(providerId)),
+  disconnectProvider: (providerId, confirmed) =>
+    ipcRenderer.invoke(CH.DISCONNECT_PROVIDER, String(providerId), confirmed === true),
 
   close: () => ipcRenderer.send(CH.PANEL_CLOSE),
   pin: () => ipcRenderer.send(CH.PANEL_PIN),

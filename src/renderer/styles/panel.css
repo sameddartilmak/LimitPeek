@@ -48,6 +48,9 @@
 .panel {
   position: relative;
   width: 100%;
+  /* The cards' two window columns stack below a 380px panel (row.css). */
+  container-type: inline-size;
+  container-name: panel;
   background: linear-gradient(180deg, var(--ink-850) 0%, var(--ink-900) 100%);
   border: 1px solid var(--ink-700);
   border-radius: var(--radius-panel);
@@ -156,7 +159,7 @@
 
 /* ---------------------------------------------------------------- header */
 
-.hdr { padding: var(--s-4) var(--s-4) var(--s-3); }
+.hdr { padding: var(--s-3) var(--s-3) var(--s-2) var(--s-4); }
 
 /* Centred, not baseline-aligned: the row carries a 24px tile, a 13px name, an
  * 18px freshness marker and 24px buttons, and centring is the one alignment
@@ -200,14 +203,16 @@
 
 .hdr__actions { display: flex; align-items: center; gap: var(--s-1); }
 
+/* 32px: a comfortable target for a pointer and a touch screen alike (UI plan
+ * 2026-09-29); the glyph stays 16px. */
 .iconbtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px; height: 24px;
+  width: 32px; height: 32px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink-400);
   font: inherit;
@@ -221,7 +226,7 @@
   background: var(--ink-700);
   border-color: var(--ink-600);
 }
-.iconbtn svg { width: 14px; height: 14px; display: block; }
+.iconbtn svg { width: 16px; height: 16px; display: block; }
 
 /* PINNED vs. NOT PINNED, at a glance.
  *
@@ -294,7 +299,13 @@
 .fresh__text:empty { display: none; }
 
 .fresh[data-fresh="live"]    { --fresh-color: var(--calm); }
-.fresh[data-fresh="aging"]   { --fresh-color: var(--watch); color: var(--ink-300); }
+/* Aging: a small outlined chip, "1 dk önce". */
+.fresh[data-fresh="aging"]   {
+  --fresh-color: var(--watch);
+  padding: 0 var(--s-2);
+  border-color: var(--ink-600);
+  color: var(--ink-200);
+}
 .fresh[data-fresh="pending"] { --fresh-color: var(--ink-400); }
 
 /* The alarm tier. A filled block, not a tinted border: at 10px a border is a
@@ -351,36 +362,94 @@
   border-radius: 4px;
 }
 
+/* ------------------------------------------------------------ status strip */
+/* "Bağlantı yok": the ONE place the unreachable service is stated, right under
+ * the header, for as long as it is true. Not dismissible — it is a live
+ * condition, not an outcome. */
+.strip {
+  margin: 0 var(--s-3) var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-left: 2px solid var(--ember);
+  border-radius: 8px;
+  background: var(--ink-800);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-200);
+}
+
+/* --------------------------------------------------------- first-run card */
+/* Above the Claude card on a fresh install, until it is answered. Neutral
+ * surface: the provider's colour lives in its mark only, never in the call to
+ * action. */
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: var(--s-1) var(--s-3) 0;
+  padding: var(--s-3);
+  border: 1px solid var(--ink-600);
+  border-radius: 8px;
+  background: var(--ink-800);
+}
+.setup__head { display: flex; align-items: center; gap: var(--s-3); }
+.setup__mark { display: grid; place-items: center; width: var(--tile); height: var(--tile); }
+.setup__title {
+  margin: 0;
+  font-size: var(--fs-name);
+  font-weight: 600;
+  color: var(--ink-100);
+}
+.setup__text,
+.setup__message {
+  margin: 0;
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--ink-300);
+}
+.setup__message { color: var(--ink-200); padding-left: var(--s-2); border-left: 2px solid var(--watch); }
+.setup__actions { display: flex; justify-content: flex-end; gap: var(--s-2); }
+.setup > .consent { margin: var(--s-1) 0 0; }
+
 /* --------------------------------------------------------------- footer */
 
+/* "Son tarama" and "Yenile", nothing else (UI plan 2026-09-29). The pin's
+ * promise moved into the pin's own tooltip. */
 .foot {
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  padding: var(--s-2) var(--s-4) var(--s-3);
+  padding: var(--s-2) var(--s-3) var(--s-3) var(--s-4);
+  border-top: 1px solid var(--ink-700);
   font-size: var(--fs-micro);
-  color: var(--ink-500);
-}
-.foot__spacer { flex: 1 1 auto; }
-
-/* The pin promise in words. Truncates rather than pushing the refresh button
- * out of a 360px panel. */
-.foot__mode {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--ink-400);
 }
+.foot__spacer { flex: 1 1 auto; }
+.foot__scan { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A fixed width, so "Yenile" -> "Yenileniyor" -> "Taranıyor" never moves the
+ * button under the pointer; the icon turns while it works. */
+.foot__refresh { min-width: 118px; gap: var(--s-1); }
+.foot__refresh-icon { width: 14px; height: 14px; flex: none; }
+.foot__refresh[data-busy="true"] .foot__refresh-icon { animation: spin 900ms linear infinite; }
 
 /* Tray-icon coaching. Only shown when the anchor came from the cursor, i.e.
  * when main could not measure a tray rect — on Win11 that is usually the
  * hidden-icons overflow flyout. */
+/* Toasts: the outcomes of the user's own actions, stacked above the footer. */
+.toasts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0 var(--s-3) var(--s-2);
+}
+.toasts:empty { display: none; }
+
 .coach {
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
-  margin: 0 var(--s-4) var(--s-3);
+  margin: 0;
   padding: var(--s-3);
   border: 1px solid var(--ink-700);
   border-left: 2px solid var(--ink-400);
@@ -407,10 +476,12 @@
   display: flex;
   align-items: flex-start;
   gap: var(--s-3);
-  margin: 0 var(--s-4) var(--s-3);
+  margin: 0;
   padding: var(--s-3);
+  /* An even frame, no coloured left stripe (owner, 2026-09-30); the tone is a
+   * small badge before the words instead (.notice::before below). */
   border: 1px solid var(--ink-700);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--ink-800);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   animation: toast-in 220ms ease-out both;
@@ -455,6 +526,36 @@
   cursor: pointer;
 }
 .toast__close:hover { background: var(--ink-700); color: var(--ink-100); }
+.toast__close svg { width: 12px; height: 12px; display: block; }
+/* The tone of an outcome, in a small badge AND its words: an error stays until
+ * closed, a success leaves on its own. Decorative ("" alt text): the sentence
+ * already says what happened. */
+.toast.notice { align-items: center; }
+.toast.notice::before {
+  content: "i" / "";
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-700);
+  color: var(--ink-200);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.toast.notice[data-tone="success"]::before {
+  content: "✓" / "";
+  background: color-mix(in srgb, var(--calm) 20%, transparent);
+  color: var(--calm);
+}
+.toast.notice[data-tone="error"]::before {
+  content: "!" / "";
+  background: color-mix(in srgb, var(--spent) 18%, transparent);
+  color: var(--spent);
+}
+.toast .toast__text:first-child { margin-top: 0; color: var(--ink-200); }
 .toast__close:focus-visible { outline: 2px solid var(--ink-300); outline-offset: 1px; }
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(6px); }
@@ -466,16 +567,19 @@
 
 /* Consent prompt. Reads as a distinct surface, not a toast: it is asking a
  * question and nothing happens until it is answered. */
+/* Consent, drawn inside the card whose "Bağla" was pressed (or inside the
+ * first-run card). It is a question: nothing happens until it is answered. */
 .consent {
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
-  margin: 0 var(--s-4) var(--s-3);
+  margin: 0;
   padding: var(--s-3);
+  /* An even frame all round. The amber left stripe it used to carry read as
+   * an alarm bar glued to the box (owner, 2026-09-30). */
   border: 1px solid var(--ink-600);
-  border-left: 2px solid var(--calm);
   border-radius: 8px;
-  background: var(--ink-800);
+  background: var(--ink-850);
 }
 .consent[hidden] { display: none !important; }
 .consent__title {
@@ -484,58 +588,26 @@
   color: var(--ink-100);
 }
 .consent__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
   font-size: var(--fs-meta);
   color: var(--ink-300);
   line-height: 1.45;
 }
+.consent__para { margin: 0; overflow-wrap: anywhere; }
 .consent__actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--s-2);
 }
 
-/* The notice is a row now, not a paragraph: the message, then the close.
- * `align-items: flex-start` rather than centre, because a three-line message
- * with a vertically centred cross puts the control halfway down the box and
- * the user's eye looks for it in the corner. */
-.notice {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--s-2);
-  margin: 0 var(--s-4) var(--s-3);
-  padding: var(--s-2) var(--s-3);
-  border: 1px solid var(--ink-700);
-  border-left: 2px solid var(--watch);
-  border-radius: 6px;
-  background: var(--ink-800);
-  font-size: var(--fs-meta);
-  color: var(--ink-300);
-}
-.notice__text { margin: 0; flex: 1 1 auto; min-width: 0; }
-
-/* Reuses .iconbtn wholesale — same grey (--ink-400), same hover, same focus
- * ring, and both track the theme through the ink scale rather than a hex.
- * Only the box shrinks: 24px is right in the header's control strip and too
- * loud beside a two-line sentence. The negative margins pull it back into the
- * box padding so the glyph sits in the corner rather than indented from it. */
-.notice__close {
-  flex: 0 0 auto;
-  width: 20px; height: 20px;
-  /* Pulled back through the box's own padding so the glyph sits 4px inside the
-   * corner rather than 7px inside the text column. The user asked for a cross
-   * "in the corner", and a control indented from the corner by a full padding
-   * step reads as part of the paragraph. */
-  margin: calc(var(--s-2) * -1 + 3px) calc(var(--s-3) * -1 + 3px) -2px 0;
-  border-radius: 4px;
-}
-.notice__close[hidden] { display: none !important; }
-.notice__close svg { width: 12px; height: 12px; }
-
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 24px;
+  /* 28px at least (UI plan 2026-09-29). */
+  height: 28px;
   padding: 0 var(--s-3);
   border: 1px solid var(--ink-600);
   border-radius: 6px;
@@ -588,7 +660,10 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--s-2);
+  margin: var(--s-1) var(--s-3) var(--s-3);
   padding: var(--s-5) var(--s-4);
+  border: 1px dashed var(--ink-600);
+  border-radius: 8px;
 }
 .empty__title {
   font-size: var(--fs-name);
@@ -605,13 +680,74 @@
 /* In-panel view, not a second window. It reuses the panel's own bands, so the
  * shell, the header and the footer never move when the view changes. */
 
-.settings { display: block; }
+/* The bar and the tab list stay put; only the selected page scrolls. The view
+ * takes the list band's whole budget, so switching tabs never changes the
+ * panel's height under the pointer. */
+.panel[data-view="settings"] .panel__band--list { overflow: hidden; }
+.settings {
+  display: flex;
+  flex-direction: column;
+  height: var(--list-max, 520px);
+  min-height: 0;
+}
+.settings__top { flex: none; }
+.settings__panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-600) transparent;
+  padding-top: var(--s-3);
+}
+.settings__panel--usage { display: flex; flex-direction: column; overflow: hidden; padding-top: 0; }
 
 .settings__bar {
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  padding: var(--s-3) var(--s-4) var(--s-1);
+  padding: var(--s-1) var(--s-4) var(--s-2) var(--s-3);
+}
+
+/* ------------------------------------------------------------------ tabs */
+.tabs {
+  display: flex;
+  gap: var(--s-1);
+  padding: 0 var(--s-3);
+  border-bottom: 1px solid var(--ink-700);
+}
+.tabs__tab {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 32px;
+  padding: 0 var(--s-2);
+  border: 0;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--ink-300);
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--dur-hover) linear, background-color var(--dur-hover) linear;
+}
+.tabs__tab:hover { color: var(--ink-100); background: var(--ink-800); }
+/* Selected: brighter ink AND a 2px underline, so it survives greyscale. */
+.tabs__tab[aria-selected="true"] { color: var(--ink-100); font-weight: 600; }
+.tabs__tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: var(--s-2); right: var(--s-2); bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ink-100);
+}
+.settings__heading {
+  margin: 0;
+  padding: var(--s-2) var(--s-4) var(--s-1);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--ink-300);
 }
 .settings__title {
   margin: 0;
@@ -643,21 +779,30 @@
   color: var(--ink-400);
 }
 
-.settings__list { list-style: none; margin: 0; padding: 0; }
+/* Each tool is a card: logo, name, state and the main-panel switch on one
+ * line; the plan, when the tool has one, on a compact second line. */
+.settings__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--s-3) var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
 
 .settings__item {
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  min-height: var(--row-passive-h);
-  padding: var(--s-2) var(--s-4);
-  border-top: 1px solid var(--ink-700);
+  min-height: 44px;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  background: var(--ink-800);
   /* The plan field is the last child so it comes after the switch in the TAB
-   * order; wrapping is what lets it still be drawn below the row rather than
-   * squeezed into it. */
+   * order; wrapping is what lets it still be drawn below the line. */
   flex-wrap: wrap;
 }
-.settings__list > .settings__item:first-child { border-top: 0; }
 
 /* The mark is the same geometry the row uses, at the same two weights: brand
  * hue while the provider is connected, ink otherwise. Adding a row does not
@@ -708,12 +853,12 @@
  * The browser draws the select's arrow and its popup (which follows
  * `color-scheme`, so it is dark in the dark theme); nothing here fights it. */
 .settings__plan {
-  /* Its own full-width line under the switch — see the wrap note on the item. */
+  /* Its own compact line under the name, aligned with it: "Plan  [Max 20x]". */
   flex: 1 0 100%;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 4px;
+  align-items: center;
+  gap: var(--s-2);
+  padding-left: calc(var(--tile) + var(--s-3));
 }
 .settings__plan[hidden] { display: none !important; }
 .settings__plan-label {
@@ -721,8 +866,10 @@
   color: var(--ink-400);
 }
 .settings__plan-select {
-  width: 100%;
-  min-width: 0;
+  width: auto;
+  min-width: 120px;
+  max-width: 100%;
+  height: 26px;
   padding: 2px var(--s-1);
   border: 1px solid var(--ink-700);
   border-radius: 4px;
@@ -759,6 +906,36 @@
 }
 .settings__disconnect:hover { color: var(--ink-100); }
 .settings__disconnect[hidden] { display: none !important; }
+/* The app's own "Bağlantıyı kaldır?" box, drawn full-width inside the tool's
+ * item, under the plan line. */
+.settings__confirm { flex: 1 0 100%; }
+/* A small "!" badge before the question instead of a coloured stripe: it marks
+ * the box as a removal without colouring the whole frame. Decorative; the
+ * words carry the meaning. */
+.settings__confirm .consent__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.settings__confirm .consent__title::before {
+  content: "!" / "";
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--spent) 18%, transparent);
+  color: var(--spent);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+/* The body text lines up under the question, not under the badge. */
+.settings__confirm .consent__detail { padding-left: calc(18px + var(--s-2)); }
+/* Removing something: the one button that says so in colour. */
+.btn--danger { border-color: var(--spent); color: var(--spent); font-weight: 600; }
+.btn--danger:hover { background: var(--spent); border-color: var(--spent); color: var(--ink-900); }
 .settings__name {
   font-size: var(--fs-name);
   color: var(--ink-200);
@@ -830,14 +1007,15 @@
 .settings__item[data-revert="true"] {
   animation: settings-revert 1600ms ease-out 1;
 }
+.settings__item--autostart { margin: var(--s-3) var(--s-3) var(--s-3); }
 /* "Start with Windows" reuses the provider item, minus the mark. Its hint is
  * a whole sentence rather than a status word, so it wraps instead of being cut
  * off at the switch. */
 .settings__item--autostart .settings__meta { white-space: normal; }
 
 @keyframes settings-revert {
-  0%, 45% { background: color-mix(in srgb, var(--watch) 22%, transparent); }
-  100% { background: transparent; }
+  0%, 45% { background: color-mix(in srgb, var(--watch) 22%, var(--ink-800)); }
+  100% { background: var(--ink-800); }
 }
 
 /* ---------------------------------------------------------------- theme */
@@ -851,7 +1029,6 @@
   margin: 0;
   padding: 0 0 var(--s-3);
   border: 0;
-  border-top: 1px solid var(--ink-700);
   /* A fieldset defaults to min-inline-size:min-content, which stops its flex
    * children shrinking inside a 360px panel. */
   min-inline-size: 0;
@@ -936,58 +1113,6 @@
   border-radius: 6px;
 }
 
-/* ------------------------------------------------------- settings accordion */
-/* Three sections, one open at a time. The header is a real <button> inside an
- * <h3>, so the disclosure is keyboard-operable by the platform and the ring is
- * the shared :focus-visible one. State is carried twice — the region shows or
- * hides, and the chevron turns — so it survives a greyscale screenshot. */
-
-.acc { display: block; }
-
-.acc__section { border-top: 1px solid var(--ink-700); }
-.acc__section:first-child { border-top: 0; }
-
-.acc__heading { margin: 0; }
-
-.acc__trigger {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  width: 100%;
-  padding: var(--s-3) var(--s-4);
-  border: 0;
-  background: transparent;
-  color: var(--ink-200);
-  font: inherit;
-  font-size: var(--fs-name);
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-  transition: color 120ms linear, background-color 120ms linear;
-}
-.acc__trigger:hover { color: var(--ink-100); background: var(--ink-800); }
-.acc__trigger[aria-expanded="true"] { color: var(--ink-100); }
-
-.acc__title { flex: 1 1 auto; min-width: 0; }
-
-.acc__chev {
-  flex: 0 0 auto;
-  display: inline-flex;
-  color: var(--ink-400);
-  transition: transform 160ms var(--ease-open), color 120ms linear;
-}
-.acc__chev svg { width: 14px; height: 14px; display: block; }
-.acc__trigger[aria-expanded="true"] .acc__chev {
-  transform: rotate(90deg);
-  color: var(--ink-200);
-}
-
-.acc__region { padding-bottom: var(--s-2); }
-
-/* The theme fieldset already draws its own separator; inside a section that is
- * one line too many. */
-.acc__region .theme { border-top: 0; }
-
 /* --------------------------------------------------------- total usage */
 /* Per-period notional cost. Never a merged token total (README/ADR-001); the
  * figures arrive resolved from main and the section only frames and lays them
@@ -995,7 +1120,22 @@
  * with no limit in it, so it must not borrow the state ramp, which means
  * "distance to a limit". */
 
-.usage { display: block; }
+/* The period SELECTION stays on top; everything under it scrolls. */
+.usage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.usage__chooser {
+  flex: none;
+  padding: var(--s-3) 0 var(--s-1);
+  border-bottom: 1px solid var(--ink-700);
+}
+.usage__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-600) transparent;
+  padding: var(--s-2) 0 var(--s-3);
+}
 
 .usage__intro {
   margin: 0;
@@ -1365,3 +1505,24 @@
   font-variant-numeric: tabular-nums lining-nums;
 }
 .usage__source { overflow-wrap: anywhere; }
+
+/* ---------------------------------------------------------------- tooltip */
+/* The panel's own tooltip (tooltip.ts): 400 ms after the pointer settles,
+ * immediately on keyboard focus. Plain text on the raised surface. */
+.tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 260px;
+  padding: var(--s-1) var(--s-2);
+  border: 1px solid var(--ink-600);
+  border-radius: 6px;
+  background: var(--ink-700);
+  box-shadow: var(--shadow-lift);
+  color: var(--ink-100);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.tip[hidden] { display: none !important; }

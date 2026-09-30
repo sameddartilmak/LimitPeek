@@ -122,23 +122,31 @@ test.describe('the ramp is mixed the way the design requires', () => {
 });
 
 test.describe('an uncertain reading never gets a more confident colour', () => {
-  test('estimated and stale desaturate toward the meta ink', () => {
-    // The rule that stops the new movement below 60% from overstating: those
-    // states say "about" and "as of 13:09" in words, and a saturated colour
-    // beside those words is the colour contradicting the sentence.
+  test('estimated desaturates toward the meta ink', () => {
+    // An estimate says "about" in words; a saturated colour beside it would be
+    // the colour contradicting the sentence.
     const body = css('row.css');
-    // The rule, not its punctuation: the uncertain selectors resolve to a mix
-    // of the ramp colour with the meta ink.
-    const block = body.slice(body.indexOf('.rail__fill--estimated,'));
+    const block = body.slice(body.lastIndexOf('.rail__fill--estimated {'));
     const rule = block.slice(0, block.indexOf('}') + 1);
-    assert.match(rule, /data-status="stale"/, 'stale must share the desaturation');
     assert.match(rule, /color-mix\(in oklab/, rule);
     assert.match(rule, /var\(--state/, rule);
     assert.match(rule, /var\(--ink-400\)/, rule);
   });
 
+  test('a stale figure drops to neutral ink, and its bar keeps the position at 45% under a hatch', () => {
+    // UI plan 2026-09-29: a stale figure is still TRUE but not current. The
+    // figure loses the ramp colour entirely; the bar keeps it faded and
+    // hatched, so the position survives but no longer reads as a live gauge.
+    const body = css('row.css');
+    assert.match(body, /\.row\[data-status="stale"\] \.win__pct \{ color: var\(--ink-300\); \}/);
+    const block = body.slice(body.indexOf('.row[data-status="stale"] .rail__fill,'));
+    const rule = block.slice(0, block.indexOf('}') + 1);
+    assert.match(rule, /opacity: \.45/, rule);
+    assert.match(rule, /repeating-linear-gradient/, rule);
+  });
+
   test('error is drained entirely, which is the stronger form of the same idea', () => {
-    assert.match(css('row.css'), /\.row\[data-status="error"\] \.rail__fill \{ background: var\(--ink-400\)/);
+    assert.match(css('row.css'), /\.row\[data-status="error"\] \.rail__fill \{ background-color: var\(--ink-400\)/);
   });
 
   test('a window with no step takes no ramp colour at all', () => {

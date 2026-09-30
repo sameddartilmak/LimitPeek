@@ -15,8 +15,14 @@ const log = require('../core/log');
  * animates its own content inside a fixed frame, which stays smooth because it
  * is a compositor job rather than a stream of SetWindowPos calls.
  */
-const PANEL_WIDTH = 440;
-const PANEL_HEIGHT = 680;
+/**
+ * The window's size where the work area allows it (UI plan 2026-09-29: a 400px
+ * panel inside a 480x720 frame). A smaller work area gets a smaller window —
+ * `fitTo` — and the renderer sizes the panel as `min(400px, 100vw - 32px)` and
+ * its list from the window height it is handed, so nothing is cut off.
+ */
+const PANEL_WIDTH = 480;
+const PANEL_HEIGHT = 720;
 const EDGE_MARGIN = 8;
 /** Size of the stand-in rect used when the real tray rect is unavailable. */
 const SYNTHETIC_TRAY_SIZE = 16;
@@ -355,22 +361,23 @@ class PanelWindow {
     // it past the edge — and the renderer's tail-clamp has nothing to clamp
     // against.
     const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+    const { width, height } = fitTo(this.width, this.height, work);
     const minX = work.x + EDGE_MARGIN;
-    const maxX = work.x + work.width - this.width - EDGE_MARGIN;
+    const maxX = work.x + work.width - width - EDGE_MARGIN;
     const minY = work.y + EDGE_MARGIN;
-    const maxY = work.y + work.height - this.height - EDGE_MARGIN;
+    const maxY = work.y + work.height - height - EDGE_MARGIN;
 
     let x;
     let y;
     if (edge === 'left' || edge === 'right') {
       x = clamp(edge === 'left' ? minX : maxX, minX, maxX);
-      y = clamp(Math.round(anchorPoint.y - this.height / 2), minY, maxY);
+      y = clamp(Math.round(anchorPoint.y - height / 2), minY, maxY);
     } else {
-      x = clamp(Math.round(anchorPoint.x - this.width / 2), minX, maxX);
+      x = clamp(Math.round(anchorPoint.x - width / 2), minX, maxX);
       y = clamp(edge === 'top' ? minY : maxY, minY, maxY);
     }
 
-    this._placeAcrossDpi({ x: Math.round(x), y: Math.round(y), width: this.width, height: this.height });
+    this._placeAcrossDpi({ x: Math.round(x), y: Math.round(y), width, height });
 
     // Report what the OS actually gave us, not what we asked for. On a
     // fractional scale factor Chromium rounds the size through physical
@@ -971,6 +978,18 @@ function pointInRect(point, rect) {
  * rect on this machine reads x=1579 against a 1536-wide DIP desktop, so
  * "inside the union of all displays" catches it.
  */
+/**
+ * The window size for a work area: the preferred size, never more than the
+ * work area minus the edge margin on both sides. A laptop at 150% scaling can
+ * have a work area only ~680 DIP tall, where a fixed 720 would hang off it.
+ */
+function fitTo(width, height, work) {
+  return {
+    width: Math.max(1, Math.min(width, Math.round(work.width - 2 * EDGE_MARGIN))),
+    height: Math.max(1, Math.min(height, Math.round(work.height - 2 * EDGE_MARGIN))),
+  };
+}
+
 function isPlausibleDipRect(rect) {
   if (!rect || !Number.isFinite(rect.x) || !Number.isFinite(rect.y)) return false;
   if (!(rect.width > 0) || !(rect.height > 0)) return false;
@@ -1014,6 +1033,7 @@ module.exports = {
   PanelWindow,
   PANEL_WIDTH,
   PANEL_HEIGHT,
+  fitTo,
   LEAVE_GRACE_MS,
   POINTER_POLL_MS,
   TRANSIT_MARGIN_PX,

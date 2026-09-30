@@ -98,13 +98,32 @@ test.describe('the settings screen learns whether the hook is in', () => {
     assert.equal(none.providers.find((p) => p.id === 'claude').hookInstalled, undefined);
   });
 
-  test('the renderer keeps only a literal true', () => {
+  test('the renderer keeps only a literal boolean', () => {
     _resetHistoryMemoForTests();
     const snap = buildSnapshot({ now: Date.now(), events: [], scanOk: true, hooks: { claude: true } });
     const claude = (s) => s.providers.find((p) => p.id === 'claude');
     assert.equal(claude(sanitizeSnapshot(snap)).hookInstalled, true);
+    claude(snap).hookInstalled = false;
+    assert.equal(claude(sanitizeSnapshot(snap)).hookInstalled, false);
     claude(snap).hookInstalled = 'yes';
     assert.equal(claude(sanitizeSnapshot(snap)).hookInstalled, undefined);
+  });
+
+  test('with the hook removed, "Bağla" comes back even while a figure is still shown', () => {
+    _resetHistoryMemoForTests();
+    const now = Date.now();
+    const rl = {
+      state: 'fresh', capturedAt: new Date(now - 60e3).toISOString(),
+      fiveHour: { usedPercentage: 4, resetsAt: new Date(now + 3600e3).toISOString() },
+      sevenDay: { usedPercentage: 67, resetsAt: new Date(now + 86400e3).toISOString() },
+    };
+    const claude = (s) => s.providers.find((p) => p.id === 'claude');
+    const on = buildSnapshot({ now, events: [], scanOk: true, rateLimits: rl, hooks: { claude: true } });
+    assert.equal(claude(on).setupAction, null, 'a connected hook offers no setup');
+    _resetHistoryMemoForTests();
+    const off = buildSnapshot({ now, events: [], scanOk: true, rateLimits: rl, hooks: { claude: false } });
+    assert.equal(claude(off).setupAction?.kind, 'install-bridge');
+    assert.equal(claude(off).hookInstalled, false);
   });
 });
 
@@ -123,5 +142,35 @@ test.describe('the uninstaller takes the hooks out', () => {
     const flag = index.indexOf("process.argv.includes('--cleanup-integrations')");
     assert.ok(flag > 0 && flag < index.indexOf('app.requestSingleInstanceLock()'));
     assert.match(index.slice(flag, flag + 200), /cleanupIntegrations\(\);\s*app\.exit\(0\);/);
+  });
+});
+
+test.describe('"Bağla" asks once, in the panel, with the whole question', () => {
+  test('the Claude setup action carries the file, the backup promise and the kept line', () => {
+    const { PROVIDERS } = require('../src/core/providers');
+    const { claudeSettingsPath } = require('../src/core/paths');
+    const action = PROVIDERS.find((p) => p.id === 'claude').setupAction;
+    assert.ok(Array.isArray(action.consent) && action.consent.length === 3, JSON.stringify(action.consent));
+    assert.ok(action.consent[0].includes(claudeSettingsPath()), 'the file is not named');
+    assert.ok(!/\n/.test(action.consent.join('')), 'a line break would be stripped into a run-on');
+  });
+
+  test('the renderer keeps the paragraphs, bounded', () => {
+    _resetHistoryMemoForTests();
+    const snap = buildSnapshot({ now: Date.now(), events: [], scanOk: true, hooks: { claude: false } });
+    const claude = (s) => s.providers.find((p) => p.id === 'claude');
+    const kept = claude(sanitizeSnapshot(snap)).setupAction;
+    assert.equal(kept.consent.length, 3);
+    claude(snap).setupAction = { ...claude(snap).setupAction, consent: ['x'.repeat(900), 42, '', 'a', 'b', 'c', 'd'] };
+    const bounded = claude(sanitizeSnapshot(snap)).setupAction.consent;
+    assert.ok(bounded.length <= 4 && bounded.every((l) => typeof l === 'string' && l.length <= 400), JSON.stringify(bounded));
+  });
+
+  test('main no longer raises a native dialog before writing Claude Code settings', () => {
+    const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src', 'main', 'bridge-install.js'), 'utf8');
+    const claude = src.slice(src.indexOf('async function runClaudeSetup'), src.indexOf('async function runAntigravitySetup'));
+    assert.ok(claude.length > 0);
+    assert.doesNotMatch(claude, /showMessageBox/);
+    assert.match(claude, /confirmed !== true/, 'the confirmed gate must stay');
   });
 });

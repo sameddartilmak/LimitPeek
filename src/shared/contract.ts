@@ -129,6 +129,13 @@ export interface SetupAction {
   label: string;
   /** One-line Turkish explanation shown before anything is written. */
   detail: string;
+  /**
+   * The full question, one paragraph per entry, for an action that writes to
+   * another tool's settings (install-bridge): which file, the backup, what the
+   * bridge reads and never does. The panel's own consent box shows it; there
+   * is no second, native dialog (owner, 2026-09-30). Absent: `detail` alone.
+   */
+  consent?: string[];
 }
 
 export interface WindowUsage {
@@ -868,16 +875,15 @@ export interface ProviderSnapshot {
    * as NOTHING: no "bilinmiyor", no placeholder, no dash. An absent fact is
    * absent, not a labelled gap.
    *
-   * IT IS NOT A READING, AND IT IS NEVER GUESSED. The plan appears nowhere in
-   * anything this app reads: Claude Code's transcripts carry no plan,
-   * subscription, tier or account field, and the one file that does carry a tier
-   * is `~/.claude/.credentials.json`, which ADR-001 security F1 forbids opening
-   * at all. Codex's rollout and Antigravity's payload each state a plan we
-   * deliberately do NOT read, for the same reason. So there are two honest
-   * options — the user tells us, or the row says nothing — and this field is the
-   * first one. Its only source is app settings (`src/main/settings.js`
-   * `planLabels`, validated by `src/core/plan-labels.js`). Inferring it from
-   * usage volume would be a guess printed as a fact.
+   * IT IS NEVER GUESSED. Two sources, in this order (owner, 2026-09-30):
+   * the label the user chose in Settings (`src/main/settings.js` `planLabels`,
+   * validated by `src/core/plan-labels.js`), else the plan the tool itself
+   * RECORDS for the account — Claude Code's tier in `~/.claude.json`
+   * `oauthAccount`, Codex's `plan_type` in its rollout (`src/core/plan-detect.js`).
+   * An unrecognised tier maps to nothing rather than being printed raw. The
+   * token file `~/.claude/.credentials.json` is still never opened (ADR-001
+   * security F1), and inferring a plan from usage volume would be a guess
+   * printed as a fact. `planSource` says which source this is.
    *
    * IT MUST NEVER TOUCH A NUMBER. No quota, no denominator, no price, no cost,
    * no floor and no limit may read it — there is no `if (plan === 'Max 20x')`
@@ -900,6 +906,18 @@ export interface ProviderSnapshot {
    * label sits inline in a fixed-width row header.
    */
   planLabel: string | null;
+  /**
+   * Where `planLabel` came from: 'user' (Settings), 'tool' (the tool's own
+   * record of the account), or null when there is none. Optional: a main that
+   * predates plan detection sends neither field.
+   */
+  planSource?: 'user' | 'tool' | null;
+  /**
+   * The plan the tool recorded, even when the user's own label wins — so
+   * Settings can offer "Otomatik (Max 5x)". Null when the tool records none we
+   * recognise. Same 24-character label discipline as `planLabel`.
+   */
+  planDetected?: string | null;
   fiveHour: WindowUsage | null;
   sevenDay: WindowUsage | null;
   /** Absolute tokens inside the 5h window, from local transcripts. */
@@ -1244,13 +1262,20 @@ export const IPC = {
   SET_AUTOSTART: 'prefs:set-autostart',
   SET_PLAN_LABEL: 'prefs:set-plan-label',
   /**
-   * renderer -> main invoke(providerId): take our statusLine hook out of the
-   * tool's settings (Claude Code, agy), putting the user's own line back when
-   * the setup kept one. Main asks natively first; a declined dialog changes
-   * nothing. Returns { ok, message }; the row's `hookInstalled` follows on the
+   * renderer -> main invoke(providerId, confirmed): take our statusLine hook
+   * out of the tool's settings (Claude Code, agy), putting the user's own line
+   * back when the setup kept one. The panel asks in its own confirmation box;
+   * anything but `confirmed === true` changes nothing. Returns { ok, message }; the row's `hookInstalled` follows on the
    * next snapshot.
    */
   DISCONNECT_PROVIDER: 'provider:disconnect',
+  /**
+   * renderer -> main invoke(dismissed). Persists "Şimdi değil" on the first-run
+   * card (`Preferences.setupCoachDismissed`), then pushes PREFERENCES.
+   * `dismissed` must be a real boolean. Returns { ok: boolean }; on false
+   * nothing changed.
+   */
+  SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
 } as const;
 
 /**
@@ -1260,7 +1285,7 @@ export const IPC = {
 export type ThemeChoice = 'dark' | 'light' | 'system';
 
 /** ADR-004. 'system' resolves in MAIN from the OS display language. */
-export type LanguageChoice = 'tr' | 'en' | 'system';
+export type LanguageChoice = 'tr' | 'en' | 'zh' | 'system';
 
 export interface Preferences {
   theme: ThemeChoice;
@@ -1272,9 +1297,10 @@ export interface Preferences {
    * labels carried in the snapshot) — two resolvers could disagree, and the
    * tooltip would then speak a different language from the panel.
    */
-  resolvedLanguage: 'tr' | 'en';
+  resolvedLanguage: 'tr' | 'en' | 'zh';
   /**
-   * BCP 47 locale for numbers, currency, percent, dates and clocks. tr -> tr-TR.
+   * BCP 47 locale for numbers, currency, percent, dates and clocks. tr -> tr-TR,
+   * zh -> zh-CN (Simplified Chinese, the only Chinese catalog).
    * en -> the OS region when the OS locale is en-* (en-GB, en-AU, ...),
    * otherwise en-US. Resolved in main for the same reason as resolvedLanguage.
    */
@@ -1295,6 +1321,14 @@ export interface Preferences {
    * that is not `true` reaches the renderer as `false`.
    */
   autostartByWindows: boolean;
+  /**
+   * The user closed the first-run card that offers to connect Claude Code
+   * ("Şimdi değil"). False only on a fresh install that has not answered yet;
+   * a settings file from before the card existed reads as true, so an update
+   * never shows onboarding. Anything that is not a boolean reaches the renderer
+   * as `true`.
+   */
+  setupCoachDismissed: boolean;
 }
 
 /**
@@ -1396,6 +1430,8 @@ export interface UsageNotchApi {
   setLanguage(language: LanguageChoice): Promise<{ ok: boolean }>;
   /** Persist "start with Windows". See IPC.SET_AUTOSTART. */
   setAutostart(enabled: boolean): Promise<{ ok: boolean }>;
+  /** Persist "Şimdi değil" on the first-run card. See IPC.SET_SETUP_COACH_DISMISSED. */
+  setSetupCoachDismissed(dismissed: boolean): Promise<{ ok: boolean }>;
   /**
    * Persist the plan the user says they are on for ONE tool, or clear it. See
    * IPC.SET_PLAN_LABEL and `ProviderSnapshot.planLabel`.
@@ -1415,7 +1451,7 @@ export interface UsageNotchApi {
    */
   setPlanLabel(providerId: string, label: string): Promise<{ ok: boolean }>;
   /** Remove our statusLine hook from a tool's settings. See IPC.DISCONNECT_PROVIDER. */
-  disconnectProvider(providerId: string): Promise<{ ok: boolean; message: string }>;
+  disconnectProvider(providerId: string, confirmed: boolean): Promise<{ ok: boolean; message: string }>;
   /** Tell main the panel opened, so it can raise its refresh cadence. */
   panelOpened(): void;
   close(): void;

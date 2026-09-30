@@ -104,7 +104,16 @@ test.describe("resolving 'system' and the format locale", () => {
     assert.equal(resolveLanguage('system', { preferredLanguages: ['trv'] }).resolvedLanguage, 'en');
   });
 
-  test('anything that is not Turkish resolves to en', () => {
+  test('every Chinese display language resolves to zh and zh-CN (the one Chinese catalog)', () => {
+    for (const tag of ['zh-CN', 'zh-Hans-CN', 'zh-TW', 'zh-HK', 'zh']) {
+      assert.deepEqual(resolveLanguage('system', { preferredLanguages: [tag] }),
+        { language: 'system', resolvedLanguage: 'zh', formatLocale: 'zh-CN' }, tag);
+    }
+    assert.deepEqual(resolveLanguage('zh', TURKISH_MACHINE),
+      { language: 'zh', resolvedLanguage: 'zh', formatLocale: 'zh-CN' });
+  });
+
+  test('anything that is not Turkish or Chinese resolves to en', () => {
     for (const tag of ['en-US', 'de-DE', 'ar-AE', 'ja']) {
       assert.equal(resolveLanguage('system', { preferredLanguages: [tag] }).resolvedLanguage, 'en', tag);
     }
@@ -411,7 +420,7 @@ test.describe('applyLanguage and preferences(), driven for real', () => {
       'resetTooltip',
       'snapshot:en',
       'tooltip:tip-en',
-      'preferences:{"theme":"system","language":"en","resolvedLanguage":"en","formatLocale":"en-US","autostart":true,"autostartByWindows":false}',
+      'preferences:{"theme":"system","language":"en","resolvedLanguage":"en","formatLocale":"en-US","autostart":true,"autostartByWindows":false,"setupCoachDismissed":true}',
     ]);
   });
 
@@ -445,9 +454,9 @@ test.describe('applyLanguage and preferences(), driven for real', () => {
     const r = rig({ os: UK_MACHINE, stored: 'tr' });
     assert.deepEqual(r.handler({}, 'system'), { ok: true });
     assert.deepEqual(r.preferences(),
-      { theme: 'system', language: 'system', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false });
+      { theme: 'system', language: 'system', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false, setupCoachDismissed: true });
     assert.ok(r.calls.includes('setLocale:en/en-GB'), r.calls.join(' | '));
-    assert.ok(r.calls.includes('preferences:{"theme":"system","language":"system","resolvedLanguage":"en","formatLocale":"en-GB","autostart":true,"autostartByWindows":false}'),
+    assert.ok(r.calls.includes('preferences:{"theme":"system","language":"system","resolvedLanguage":"en","formatLocale":"en-GB","autostart":true,"autostartByWindows":false,"setupCoachDismissed":true}'),
       r.calls.join(' | '));
   });
 
@@ -457,17 +466,17 @@ test.describe('applyLanguage and preferences(), driven for real', () => {
       currentLocale: () => null,
       readOs: () => UK_MACHINE,
     });
-    assert.deepEqual(early(), { theme: 'system', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false });
+    assert.deepEqual(early(), { theme: 'system', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false, setupCoachDismissed: true });
     const noSettings = createPreferences({
       getSettings: () => null, currentLocale: () => null, readOs: () => TURKISH_MACHINE,
     });
-    assert.deepEqual(noSettings(), { theme: 'system', language: 'system', resolvedLanguage: 'tr', formatLocale: 'tr-TR', autostart: true, autostartByWindows: false });
+    assert.deepEqual(noSettings(), { theme: 'system', language: 'system', resolvedLanguage: 'tr', formatLocale: 'tr-TR', autostart: true, autostartByWindows: false, setupCoachDismissed: true });
     const kept = createPreferences({
       getSettings: () => ({ theme: 'dark', language: 'tr' }),
       currentLocale: () => ({ language: 'en', resolvedLanguage: 'en', formatLocale: 'en-AU' }),
       readOs: () => { throw new Error('the OS must not be re-read when a locale is current'); },
     });
-    assert.deepEqual(kept(), { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-AU', autostart: true, autostartByWindows: false });
+    assert.deepEqual(kept(), { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-AU', autostart: true, autostartByWindows: false, setupCoachDismissed: true });
   });
 
   test('applyLanguage tolerates a tray and a collector that do not exist yet', () => {

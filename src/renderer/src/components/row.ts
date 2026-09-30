@@ -1,66 +1,55 @@
 /**
- * A provider row. Five states, one geometry.
+ * A provider card. Five states, one geometry.
  *
  *   loading  skeleton drawn in the FINAL geometry, so nothing reflows
- *   ok       name, plan, one block per usage window, tokens, burn rate
- *   stale    last good value kept and dimmed; see below
- *   error    last good value kept, desaturated, retry offered
- *   passive  44px, no meter at all, and the action button is the brightest ink
+ *   ok       name, plan, the two window columns (or the tool's main measure)
+ *   stale    last good value kept, neutral ink, hatched bar, a "Güncel değil" chip
+ *   error    last good value kept, desaturated, the error and retry in the card
+ *   passive  compact, no meter at all, and the action button is the brightest ink
+ *
+ * THE CLOSED CARD ANSWERS ONE QUESTION (UI plan 2026-09-29)
+ * ---------------------------------------------------------
+ * "How close am I to my limit?" — so a closed card is: the mark, the name with
+ * its plan / experimental / status chips, and the two quota windows side by
+ * side, each with its figure, its 8px bar and its reset countdown. Tokens, the
+ * burn rate, the per-model split and the notional cost used to share the card
+ * with the limits and competed with them for the eye; they now live behind
+ * "Ayrıntılar", in that order, followed by where the figures came from. Only
+ * one card's details are open at a time (the panel enforces it).
+ *
+ * A tool that publishes NO quota (Kimi, Qwen Code, Grok Build) gets no empty
+ * rail pretending to be one. Its closed card shows the most trustworthy thing
+ * we have instead: the week's token count, else the cost the tool itself
+ * reported, else the reason there is nothing — stated, never a blank.
  *
  * IDENTITY vs. STATE
  * ------------------
- * The row's left column is the provider's own mark (components/logo.ts), and it
- * doubles as the drag grip. A CONNECTED provider draws its mark in its brand
- * hex on a tinted tile; every other one draws the same geometry in the ink
- * scale, at a lighter stroke, with no tile. That is deliberately three signals
- * at once — hue, weight, ground — plus the absence of a meter, so "connected"
- * survives a monochrome screenshot and a colour-blind reader.
+ * The card's mark (components/logo.ts) doubles as the drag grip. A CONNECTED
+ * provider draws its brand art in colour; every other one the same art in grey.
+ * Brand colour stays in the mark: meters, percentages and actions never take it,
+ * because those are the marks compared ACROSS cards.
  *
- * This does NOT reopen the meter rule. Meters and percentages stay on the state
- * ramp, because those are the only marks a user compares ACROSS rows. An
- * identity mark is never compared; it is recognised. The 2px brand spine is
- * gone: it was carrying identity for a monogram tile that no longer exists, and
- * a second brand-coloured element in the same 16px gutter competed with the
- * meter column for the eye.
- *
- * ONE BLOCK PER WINDOW
- * --------------------
- * The five-hour and the weekly windows are drawn identically: label,
- * percentage, bar, reset countdown (components/meter.ts). Neither is a
- * subtitle of the other. The weekly window used to be a 2px hairline with no
- * figure and no countdown, and the user's verdict on that was that the app did
- * not show weekly usage at all — which, as a claim about what the app tells
- * you, was correct.
- *
- * Two shapes cut across those five.
- *
- * certainty === 'unknown' — no bar and no percentage for that window. When
- * NEITHER window is drawable the row shows absolute tokens and burn rate and
- * nothing else; when only one is, the other still names itself and says
- * "bilinmiyor". That is the Claude row before the bridge is connected, and it
- * is the honest rendering, not a degraded one.
- *
- * A STALE CAPTURE (ADR-001 amendment 2) — the statusline only emits while a
- * Claude Code session is open, and the tray is looked at precisely when it is
- * not. So a capture can be old and still TRUE, because the window it describes
- * has not rolled over. Such a row keeps its bars and its percentages, at the
- * stale weight, and never shows a figure without the instant it was measured
- * ("14:10 itibarıyla", printed under the bar it belongs to) plus the locally
- * measured tokens spent since. That delta is a floor on the gap, never divided
- * back into a percentage.
+ * A STALE CAPTURE (ADR-001 amendment 2) — a figure can be old and still TRUE,
+ * because the window it describes has not rolled over. Such a card keeps its
+ * figures and bars, says "Güncel değil · 22 dk" in its title line, prints its
+ * figures in neutral ink over a hatched, faded bar, and never shows a figure
+ * without the instant it was measured (under each window). Colour is never the
+ * only carrier: the chip's words and the hatch say it too.
  */
 
 import type { ProviderSnapshot, WindowUsage } from '../../../shared/contract.js';
-import { el, on, replaceChildrenWith, setAttr, setText } from '../dom.js';
+import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import {
   ago,
   agoSpoken,
   burnRate,
+  clockTime,
   compact,
   mixWithin,
   parseInstant,
   sinceCapture,
   tokens,
+  usd,
 } from '../format.js';
 import { t } from '../i18n.js';
 import { allZero, hasTokenCount } from '../tokens.js';
@@ -95,6 +84,10 @@ export interface RowContext {
    * MISSING, not absent: the row says "calculating", never "no token data".
    */
   isPending(providerId: string): boolean;
+  /** Is this card's "Ayrıntılar" the open one? Optional: absent means closed. */
+  isExpanded?(providerId: string): boolean;
+  /** The user pressed this card's "Ayrıntılar". The panel keeps one open. */
+  onToggleExpand?(providerId: string): void;
   /** Snapshot.generatedAt, used for the "as of" line on stale rows. */
   generatedAt: string | null;
   /**
@@ -147,6 +140,8 @@ export interface RowHandle {
   readonly id: string;
   update(provider: ProviderSnapshot, ctx: RowContext, now: number): void;
   tick(now: number): void;
+  /** The "Ayrıntılar" control, so the panel can move focus onto it. */
+  readonly moreButton: HTMLButtonElement;
 }
 
 interface Refs {
@@ -159,9 +154,11 @@ interface Refs {
   metaTokens: HTMLElement | null;
   metaBurn: HTMLElement | null;
   staleAge: HTMLElement | null;
+  staleChip: HTMLElement | null;
   delta: HTMLElement | null;
   action: HTMLButtonElement | null;
   retry: HTMLButtonElement | null;
+  primary: HTMLElement | null;
 }
 
 const EMPTY_REFS: Refs = {
@@ -174,9 +171,11 @@ const EMPTY_REFS: Refs = {
   metaTokens: null,
   metaBurn: null,
   staleAge: null,
+  staleChip: null,
   delta: null,
   action: null,
   retry: null,
+  primary: null,
 };
 
 /**
@@ -187,6 +186,16 @@ const EMPTY_REFS: Refs = {
  */
 function primaryWindow(p: ProviderSnapshot): WindowUsage | null {
   return isDrawable(p.fiveHour) ? p.fiveHour : p.sevenDay;
+}
+
+/**
+ * Does this tool publish a quota at all? Claude Code, Codex and Antigravity
+ * send window objects (even when a figure is unknown for now); Kimi, Qwen Code
+ * and Grok Build send none. The first kind gets the two window columns, the
+ * second its main measure — never an empty rail pretending to be a limit.
+ */
+function publishesQuota(p: ProviderSnapshot): boolean {
+  return p.fiveHour != null || p.sevenDay != null;
 }
 
 /** Structural identity. When this changes the row is rebuilt; when it does not
@@ -205,7 +214,8 @@ function shapeKeyOf(p: ProviderSnapshot): string {
     p.fiveHour?.resetsAt ? 'r5' : 'no-r5',
     p.sevenDay?.resetsAt ? 'r7' : 'no-r7',
     p.setupAction ? p.setupAction.kind : 'no-setup',
-    p.planLabel ? 'plan' : 'no-plan',
+    // Where the plan came from decides the spoken prefix, so it is structure.
+    p.planLabel ? `plan-${p.planSource ?? 'user'}` : 'no-plan',
     // WHICH window the token item describes is structure, not content: the
     // weekly and the five-hour figure are different claims, and a row that
     // silently swapped one for the other in place would relabel a number
@@ -219,49 +229,25 @@ function shapeKeyOf(p: ProviderSnapshot): string {
     (primary?.billableSinceCapture ?? 0) > 0 ? 'delta' : 'no-delta',
     // The five-hour label carries "· seçili model" only when a selection
     // exists. The suffix is set at meter construction (createBlock), so its
-    // presence is STRUCTURE and must rebuild the meter when it flips — a user
-    // switching model in Antigravity, or clearing the selection, changes this.
-    // Which model is a CONTENT change handled by the disclosure below, not by
-    // the key.
+    // presence is STRUCTURE and must rebuild the meter when it flips.
     p.modelQuotas?.selectedModel ? 'sel' : 'no-sel',
+    // The main measure of a tool without a quota: which kind it is.
+    publishesQuota(p) ? 'quota' : `measure-${measureKind(p)}`,
+    (p.byModel ?? []).length > 0 ? 'models' : 'no-models',
   ].join('|');
 }
 
 /**
  * THE TOKEN FIGURE ON THIS LINE IS THE WEEK'S, AND IT SAYS SO.
  *
- * It used to be the five-hour count, printed bare. Bare was survivable while
- * there was one token figure in the row; it is not now. The line sits under
- * TWO meters — a five-hour block and a weekly one — so an unlabelled count is
- * read as whichever block the eye came from, and the burn rate beside it is
- * genuinely a FIVE-HOUR figure (`agg.burnRatePerHour(tokens.billable,
- * win.elapsedMs)` over the 5h window, src/core/snapshot.js:612). Two numbers
- * side by side describing two different windows, one of them labelled and one
- * not, is the misreading this change exists to remove. So every figure on this
- * line names its own window, and the pair is symmetric.
+ * The line names its window because the burn rate beside it is genuinely a
+ * FIVE-HOUR figure (src/core/snapshot.js), and two figures describing two
+ * windows, one labelled and one not, is the misreading this avoids.
  *
  * Which weekly window it is comes from `weeklyTokensWindowAnchored` — the row's
  * OWN field, about this figure's window — and never from `sevenDay.resetsAt` or
- * from `weeklyCost.windowAnchored`. Two reasons, both load-bearing:
- *
- *  - Deriving a window from a reset instant is usage arithmetic, and the
- *    contract's division of labour is that main resolves windows and the
- *    renderer renders them. It would also be coupling two rules that only
- *    AGREE BY COINCIDENCE: `resetsAt` is nulled by `windowFrom` under a rule
- *    about whether a PERCENTAGE may be shown (a rolled-over window loses its
- *    figure), while main's refusal to anchor to a passed reset is a separate
- *    rule with its own reason (a closed window would exclude everything spent
- *    since). Backend measured the five reachable Claude states: today a
- *    non-null `resetsAt` and an anchored window always coincide, so a renderer
- *    deriving the label would be RIGHT today — and silently wrong the first
- *    time either rule moves, with no test able to see it. That is the worse
- *    failure, not the smaller one.
- *  - `weeklyCost.windowAnchored` states the same fact about the same window and
- *    is the right field to read WHEN a cost block exists, but it vanishes
- *    exactly where the label matters most: a quiet week prices nothing, so
- *    `weeklyCost` is null while a present all-zero count still has to name its
- *    window. When both are present they always agree — main derives them from
- *    one window object.
+ * from `weeklyCost.windowAnchored`: deriving a window from a reset instant is
+ * usage arithmetic, and the two rules only agree by coincidence today.
  *
  * `null` means unscanned, so there is no window to name and the label states the
  * SPAN only ("Haftalık" / "Weekly"). Kimi Code, Qwen Code and Grok Build are
@@ -274,41 +260,33 @@ function weeklyTokenLabel(p: ProviderSnapshot, value: string): string {
   return anchored ? t('row.tokens.quotaWeek', { value }) : t('row.tokens.last7', { value });
 }
 
+/** The same window, named on its own, for the main measure's caption. */
+function weeklyWindowName(p: ProviderSnapshot): string {
+  const anchored = p.weeklyTokensWindowAnchored;
+  if (anchored === null || anchored === undefined) return t('row.measure.weekly');
+  return anchored ? t('row.measure.quotaWeek') : t('row.measure.last7');
+}
+
 /**
  * What the line prints for the week: the count and its window, nothing else.
- *
  * No "en az" and no cause in brackets, even when main marks the count as a
- * lower bound (`weeklyTokenFloorCauses`): the owner ruled the floor marker out
- * of the panel (2026-09-23), and a bracketed cause on every Codex row was the
- * grey noise that ruling was about. The field is still accepted and sanitised;
- * it is only not drawn.
+ * lower bound (the owner ruled the floor marker out, 2026-09-23).
  */
 function weeklyTokenText(p: ProviderSnapshot): string {
   const tk = p.weeklyTokens;
   if (!tk) return '';
   // ADR-002 A3.19, and the ONLY state that reads "could not be counted": the
-  // reader KNOWS it could not read this window, so the zero it reports is not a
-  // measurement. Recognised by `sourceIncomplete` WITH a zero count — never by
-  // the zero alone, which is a real answer (see below).
+  // reader KNOWS it could not read this window. Recognised by
+  // `sourceIncomplete` WITH a zero count — never by the zero alone.
   if (allZero(tk) && p.weeklyCost?.sourceIncomplete) return t('row.tokens.uncounted');
-
-  // A MEASURED ZERO PRINTS AS ZERO. A user who did not touch this tool all week
-  // is told they used nothing — our reading succeeded and its answer was zero.
-  // Hiding the item instead would make the row indistinguishable from a
-  // provider we never scanned, and would bring `row.noTokens` ("Token bilgisi
-  // yok") back into reach on a row where we DO have the data.
+  // A MEASURED ZERO PRINTS AS ZERO: our reading succeeded and its answer was zero.
   return weeklyTokenLabel(p, tokens(tk.billable));
 }
 
 /**
- * Which window this line's token figure describes.
- *
- * 'weekly' is the answer whenever main sent a weekly count at all — including
- * the all-zero "could not be counted" one, which is a statement ABOUT the week
- * and belongs under the week's label. 'fiveHour' is the compatibility path: a
- * main that predates `weeklyTokens` still has a true five-hour count, and the
- * honest thing is to show it AS a five-hour count, never to relabel a figure
- * into a window it does not describe.
+ * Which window this line's token figure describes: 'weekly' whenever main sent
+ * a weekly count at all; 'fiveHour' is the compatibility path for a main that
+ * predates `weeklyTokens` — shown AS a five-hour count, never relabelled.
  */
 function tokenItemKind(p: ProviderSnapshot): 'weekly' | 'fiveHour' | 'none' {
   if (p.weeklyTokens) return 'weekly';
@@ -333,28 +311,28 @@ function classes(tk: NonNullable<ProviderSnapshot['weeklyTokens']>): string {
 }
 
 /**
- * Both windows' breakdowns, each named. The five-hour figure is not deleted by
- * this change — it moves here, and it is labelled, because `weeklyTokens` and
+ * Both windows' breakdowns, each named, one per line. `weeklyTokens` and
  * `tokens` are both a `TokenBreakdown` and become indistinguishable the moment
- * they are formatted.
+ * they are formatted, so each line says which window it is.
  */
 function tokensTitle(p: ProviderSnapshot): string {
+  return tokenClassLines(p).join('\n');
+}
+
+function tokenClassLines(p: ProviderSnapshot): string[] {
   const lines: string[] = [];
-  // `hasTokenCount` here and nowhere else: this is the one decision it is for —
-  // whether a four-class breakdown has anything to say. It never decides
-  // whether a figure prints; that is `null` vs non-null, and a zero prints.
+  // `hasTokenCount` decides only whether a breakdown has anything to say; it
+  // never decides whether a figure prints (that is null vs non-null).
   const week = p.weeklyTokens;
   const five = p.tokens;
   if (week && hasTokenCount(week)) lines.push(`${t('meter.window7d.label')} — ${classes(week)}`);
   if (five && hasTokenCount(five)) lines.push(`${t('meter.window5h.label')} — ${classes(five)}`);
-  return lines.join('\n');
+  return lines;
 }
 
 /**
- * The per-model split behind the burn rate. It is the FIVE-HOUR split
- * (src/core/snapshot.js:613 reads it from the same 5h window the rate is
- * measured over), so it is named as one rather than left to sit under a line
- * whose other figure is weekly.
+ * The per-model split behind the burn rate. It is the FIVE-HOUR split, so it is
+ * named as one rather than left to sit under a line whose other figure is weekly.
  */
 function modelsTitle(p: ProviderSnapshot): string {
   const list = p.byModel ?? [];
@@ -378,9 +356,96 @@ function errorText(code: string | undefined): string {
   }
 }
 
+/** "22 dk" / "3 sa" / "2 gün": an age with no "önce", for the stale chip. */
+function shortAge(ms: number): string {
+  const minutes = Math.floor(Math.max(0, ms) / 60_000);
+  if (minutes < 1) return t('dur.lessMinute');
+  if (minutes < 60) return t('dur.minutes', { m: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('dur.hours', { h: hours });
+  return t('dur.days', { d: Math.floor(hours / 24) });
+}
+
+/**
+ * The instant a stale card's figures were true: the primary window's capture,
+ * else the row's last good read, else the snapshot. Null when none is known.
+ */
+function staleSince(p: ProviderSnapshot, ctx: RowContext): number | null {
+  return (
+    parseInstant(primaryWindow(p)?.capturedAt ?? null) ??
+    parseInstant(p.lastGoodAt ?? null) ??
+    parseInstant(ctx.generatedAt)
+  );
+}
+
+// ------------------------------------------------------------- main measure
+
+type MeasureKind = 'pending' | 'tokens' | 'cost' | 'absent' | 'uncounted' | 'none';
+
+/**
+ * The closed card's main figure for a tool with no quota, in the plan's order:
+ * the week's tokens; else the cost the tool reported; else the stated reason.
+ * Pending comes first: until the first scan answers, any figure would present a
+ * partial read as complete.
+ */
+function measureKind(p: ProviderSnapshot, pending = false): MeasureKind {
+  if (pending) return 'pending';
+  const week = p.weeklyTokens;
+  if (week) {
+    if (allZero(week) && p.weeklyCost?.sourceIncomplete) return 'uncounted';
+    return 'tokens';
+  }
+  if (p.tokens) return 'tokens';
+  if (p.weeklyCost && p.weeklyCost.totalUsd > 0) return 'cost';
+  if (p.usageLogAbsent === true) return 'absent';
+  if (p.weeklyCost?.sourceIncomplete) return 'uncounted';
+  return 'none';
+}
+
+function buildMeasure(p: ProviderSnapshot, pending: boolean): HTMLElement {
+  const kind = measureKind(p, pending);
+  const value = el('span', { class: 'row__primary-value u-num' });
+  const caption = el('span', { class: 'row__primary-caption' });
+  const root = el('div', { class: 'row__primary', 'data-kind': kind }, value, caption);
+  switch (kind) {
+    case 'pending':
+      setText(value, t('row.tokens.pending'));
+      break;
+    case 'tokens': {
+      const week = p.weeklyTokens;
+      if (week) {
+        setText(value, tokens(week.billable));
+        setText(caption, weeklyWindowName(p));
+      } else if (p.tokens) {
+        setText(value, tokens(p.tokens.billable));
+        setText(caption, t('row.measure.fiveHour'));
+      }
+      const title = tokensTitle(p);
+      if (title) setAttr(root, 'title', title);
+      break;
+    }
+    case 'cost':
+      // Never a bare amount: the tool's own figure, framed as not a bill.
+      setText(value, usd((p.weeklyCost as NonNullable<ProviderSnapshot['weeklyCost']>).totalUsd));
+      setText(caption, t('row.measure.reportedCost'));
+      break;
+    case 'absent':
+      setText(value, t('row.usageLogAbsent'));
+      setAttr(root, 'title', t('row.usageLogAbsentDetail', { provider: p.displayName }));
+      break;
+    case 'uncounted':
+      setText(value, t('row.tokens.uncounted'));
+      break;
+    default:
+      setText(value, t('row.noTokens'));
+  }
+  caption.hidden = caption.textContent === '';
+  return root;
+}
+
 // ---------------------------------------------------------------- builders
 
-/** One placeholder window block, in the exact geometry a real one occupies. */
+/** One placeholder window column, in the exact geometry a real one occupies. */
 function skeletonBlock(): HTMLElement {
   return el(
     'div',
@@ -399,12 +464,10 @@ function skeletonBlock(): HTMLElement {
 
 function buildSkeleton(refs: Refs, body: HTMLElement): void {
   const line1 = el('div', { class: 'row__line' }, el('div', { class: 'sk sk--name' }));
-  // Two blocks, because a real connected row has two. A skeleton one block
-  // short would make the list jump by 40px the moment data landed, which is
-  // precisely what a skeleton exists to prevent.
+  // Two columns, because a real card has two. A skeleton one short would make
+  // the list jump the moment data landed, which a skeleton exists to prevent.
   const meter = el('div', { class: 'meter' }, skeletonBlock(), skeletonBlock());
-  const line3 = el('div', { class: 'row__meta' }, el('div', { class: 'sk sk--meta' }));
-  replaceChildrenWith(body, [line1, meter, line3]);
+  replaceChildrenWith(body, [line1, meter]);
   refs.name = null;
   refs.meter = null;
   refs.metaTokens = null;
@@ -414,7 +477,6 @@ function buildSkeleton(refs: Refs, body: HTMLElement): void {
 function buildPassive(
   refs: Refs,
   body: HTMLElement,
-  root: HTMLLIElement,
   p: ProviderSnapshot,
   ctx: RowContext,
 ): void {
@@ -428,9 +490,29 @@ function buildPassive(
     detailText,
   );
 
+  let action: HTMLButtonElement | null = null;
+  if (p.setupAction) {
+    const label = p.setupAction.label;
+    // The brightest ink goes to the action that will actually do something.
+    // `not-installed` means the tool is not on this machine, so its button
+    // cannot connect anything.
+    const actionable = p.setupAction.kind !== 'not-installed';
+    action = el(
+      'button',
+      {
+        type: 'button',
+        class: actionable ? 'btn btn--primary row__action' : 'btn row__action',
+        'aria-label': `${p.displayName}: ${label}`,
+        'aria-describedby': detailId,
+      },
+      label,
+    ) as HTMLButtonElement;
+    on(action, 'click', () => ctx.onSetup(p.id));
+  }
+
   replaceChildrenWith(body, [
-    el('div', { class: 'row__line' }, name, experimental),
-    el('div', { class: 'row__meta' }, detail),
+    el('div', { class: 'row__line' }, name, experimental, el('span', { class: 'row__gap' }), action),
+    el('div', { class: 'row__meta row__meta--passive' }, detail),
   ]);
 
   refs.name = name;
@@ -440,95 +522,60 @@ function buildPassive(
   refs.metaBurn = null;
   refs.staleAge = null;
   refs.retry = null;
-
-  if (p.setupAction) {
-    const label = p.setupAction.label;
-    // The brightest ink goes to the action that will actually do something.
-    // `not-installed` means the tool is not on this machine, so its button
-    // cannot connect anything; making five of those the loudest elements in the
-    // panel would bury the one row the user can act on today.
-    const actionable = p.setupAction.kind !== 'not-installed';
-    const button = el(
-      'button',
-      {
-        type: 'button',
-        class: actionable ? 'btn btn--primary' : 'btn',
-        'aria-label': `${p.displayName}: ${label}`,
-        'aria-describedby': detailId,
-      },
-      label,
-    ) as HTMLButtonElement;
-    on(button, 'click', () => ctx.onSetup(p.id));
-    root.appendChild(button);
-    refs.action = button;
-  } else {
-    refs.action = null;
-  }
+  refs.action = action;
 }
 
 function buildLive(
   refs: Refs,
   body: HTMLElement,
+  detailMeta: HTMLElement,
   p: ProviderSnapshot,
   ctx: RowContext,
   now: number,
 ): void {
   const name = el('span', { class: 'row__name' }, p.displayName);
   // The plan is the USER'S OWN STATEMENT, repeated back — it is in no local
-  // file and no vendor tells us (`ProviderSnapshot.planLabel`: "from app
-  // settings only. Never inferred, never guessed"). So it is a label beside a
-  // name and nothing else: it never enters a usage claim, never colours a
-  // figure, and `null` renders NOTHING — no placeholder, no "bilinmiyor", which
-  // would be the app asking a question in the one place it should be quiet.
-  //
-  // Provenance for anything reading the row aloud: the visible pill is two or
-  // three words with no context, and beside a tool name it could be heard as
-  // something the tool reported. The screen-reader prefix says whose statement
-  // it is. It is `u-sr` rather than a `title` deliberately — a tooltip may not
-  // paint at all on this window (open question), and this is the reader who
-  // most needs the provenance.
-  // NOT on a passive or unconnected row, even when the label exists. A plan
-  // QUALIFIES A READING — it is the allowance the percentages are a share of —
-  // and a row with no reading has nothing for it to qualify. On a not-installed
-  // row it would sit beside "Bu araç bu makinede bulunamadı", annotating a tool
-  // the user is not using; that is noise, and noise that looks like data.
+  // file and no vendor tells us. So it is a label beside a name and nothing
+  // else: it never enters a usage claim, and `null` renders NOTHING. The
+  // screen-reader prefix says whose statement it is. Not on a row with no
+  // reading: a plan qualifies a reading, and there is none to qualify.
   const plan = p.connected && p.planLabel
     ? el(
         'span',
         { class: 'row__plan' },
-        el('span', { class: 'u-sr' }, `${t('row.planSpoken')} `),
+        // Whose statement it is: the user's, or the tool's own record.
+        el('span', { class: 'u-sr' }, `${t(p.planSource === 'tool' ? 'row.planSpokenTool' : 'row.planSpoken')} `),
         p.planLabel,
       )
     : null;
+
+  // "Güncel değil · 22 dk": the stale state in words, in the title line, so it
+  // is read before the figures it qualifies. Repainted on the tick.
+  const staleChip = p.status === 'stale'
+    ? el('span', { class: 'row__chip row__chip--stale' }, '')
+    : null;
+  const since = p.status === 'stale' ? staleSince(p, ctx) : null;
+  if (staleChip && since !== null) setAttr(staleChip, 'data-since', new Date(since).toISOString());
+
   const line1Children: Array<HTMLElement | null> = [
     name,
     experimentalTag(p),
     plan,
+    staleChip,
     el('span', { class: 'row__gap' }),
   ];
 
-  const drawable = isDrawable(p.fiveHour) || isDrawable(p.sevenDay);
-
-  // The percentages used to live here, on the name line, one per row. They
-  // moved into the window blocks below: with two windows to report there is no
-  // honest way to put "the" percentage next to the provider's name, and the
-  // one that was there described the five-hour window without saying so.
-
   // --- an inline connect action -----------------------------------------
-  // Present whenever the snapshot offers a setupAction. For a passive,
-  // unmeasurable row this is the row's only affordance. It ALSO appears on a
-  // row that already draws a meter: Antigravity connects on the IDE store's
-  // five-hour figure, yet its weekly window and a live five-hour reset only
-  // arrive through the agy bridge, so the snapshot keeps offering "Bağla"
-  // beside the live meter until that bridge is connected. The snapshot decides
-  // when the action exists; this only renders whatever it was given.
+  // Present whenever the snapshot offers a setupAction — also on a card that
+  // already draws a meter (Antigravity connects on the IDE store's figure, and
+  // its weekly window arrives only through the agy bridge).
   let action: HTMLButtonElement | null = null;
   if (p.setupAction) {
     action = el(
       'button',
       {
         type: 'button',
-        class: 'btn',
+        class: 'btn row__action',
         'aria-label': `${p.displayName}: ${p.setupAction.label}`,
         title: p.setupAction.detail,
       },
@@ -540,34 +587,27 @@ function buildLive(
 
   const line1 = el('div', { class: 'row__line' }, ...line1Children);
 
-  // --- the meter, or the honest absence of one ---------------------------
+  // --- the two windows, or the tool's main measure ------------------------
   let meter: MeterHandle | null = null;
-  let meterNode: HTMLElement;
-  if (drawable) {
+  let mainNode: HTMLElement;
+  let primary: HTMLElement | null = null;
+  if (publishesQuota(p)) {
     // When a model is selected in Antigravity, main ties the five-hour figure
-    // to that model's group, so the number changes as the user switches model.
-    // Qualify the label — "seçili model", a role and not a name — so the change
-    // has a visible cause. The name itself is only in the disclosure below.
+    // to that model's group; the label says "seçili model" (a role, never a
+    // name) so the change has a visible cause.
     const fiveHourNote = p.modelQuotas?.selectedModel ? t('row.selectedModel') : undefined;
     meter = createMeter(p.fiveHour, p.sevenDay, p.status === 'stale', fiveHourNote);
     meter.update(p.fiveHour, p.sevenDay, p.status === 'stale', now);
-    meterNode = meter.el;
+    mainNode = meter.el;
   } else {
-    meterNode = el(
-      'div',
-      { class: 'row__unknown' },
-      el('span', {}, t('row.unknownUsage')),
-    );
+    primary = buildMeasure(p, ctx.isPending(p.id));
+    mainNode = primary;
   }
 
-  // --- line 3: what we DO know ------------------------------------------
-  const metaChildren: HTMLElement[] = [];
-  let metaTokens: HTMLElement | null = null;
-  let metaBurn: HTMLElement | null = null;
-  let staleAge: HTMLElement | null = null;
-  let delta: HTMLElement | null = null;
-  let retry: HTMLButtonElement | null = null;
+  const bodyChildren: HTMLElement[] = [line1, mainNode];
 
+  // --- the error, in the card it belongs to --------------------------------
+  let retry: HTMLButtonElement | null = null;
   if (p.status === 'error') {
     const message = el('span', {}, errorText(p.errorCode));
     retry = el(
@@ -576,99 +616,102 @@ function buildLive(
       t('row.retry'),
     ) as HTMLButtonElement;
     on(retry, 'click', () => ctx.onRetry(p.id));
-    const err = el('div', { class: 'row__err', role: 'status' }, message, retry);
-    replaceChildrenWith(body, [line1, meterNode, err]);
-  } else {
-    if (p.status === 'stale') {
-      const primary = primaryWindow(p);
-      const deltaValue = primary?.billableSinceCapture ?? null;
-
-      if (deltaValue !== null && deltaValue > 0) {
-        // The one honest objection to showing a stale percentage is that
-        // consumption only rises inside a window, so the figure errs
-        // optimistic. This is the measured floor on that gap — a real token
-        // count, never divided back into a percentage.
-        delta = el('span', { class: 'row__delta' }, sinceCapture(deltaValue));
-        metaChildren.push(delta);
-      } else if (!primary?.capturedAt) {
-        // No capture instant to name, so fall back to the row's own age.
-        staleAge = el('span', { class: 'row__stale' }, '');
-        const since = p.lastGoodAt ?? ctx.generatedAt;
-        if (since) setAttr(staleAge, 'data-since', since);
-        metaChildren.push(staleAge);
-      } else if (tokenItemKind(p) !== 'none') {
-        // The capture instant is already inside the window block; keep the
-        // absolutes here. A stale CAPTURE is about the percentage, not about
-        // the local corpus these counts come from, so the figure and its window
-        // label are exactly the same as on a fresh row.
-        metaTokens = el('span', { title: tokensTitle(p) }, tokenItemText(p));
-        metaChildren.push(metaTokens);
-      }
-    } else {
-      // Pending FIRST, as in cost.ts. Until the tool's first scan answers, a
-      // token figure or burn rate on this line would present a partial read as
-      // complete; and no figure is a gap in what we have READ, which "Token
-      // bilgisi yok" would state as a fact about the tool.
-      const pending = ctx.isPending(p.id);
-      if (pending) {
-        metaChildren.push(el('span', { class: 'row__pending' }, t('row.tokens.pending')));
-      } else if (tokenItemKind(p) !== 'none') {
-        metaTokens = el('span', { title: tokensTitle(p) }, tokenItemText(p));
-        metaChildren.push(metaTokens);
-      }
-      if (!pending && p.burnRatePerHour !== null) {
-        // The rate is measured over the FIVE-HOUR window and now sits beside a
-        // weekly count, so it names its own window on the visible line. A title
-        // alone would not do it: the misreading happens at a glance.
-        metaBurn = el(
-          'span',
-          { title: modelsTitle(p) || t('row.burnTitle') },
-          t('row.burn.fiveHour', { rate: burnRate(p.burnRatePerHour) }),
-        );
-        metaChildren.push(metaBurn);
-      }
-      // ADR-002 A3.19: when the cost reader KNOWS records could not be read,
-      // "Token bilgisi yok" would state the gap as a fact about the tool. The
-      // cost block used to say what happened with a cause line; with cause
-      // lines gone (2026-09-23) this line says it, in the words the zero-count
-      // case already uses, so the gap is never silent.
-      if (metaChildren.length === 0) {
-        // Qwen Code with no usage log at all: "no token data" would read as a
-        // fact about the user's week. The one-line reason is the true one.
-        metaChildren.push(
-          p.usageLogAbsent === true
-            ? el('span', { class: 'row__hint', title: t('row.usageLogAbsentDetail', { provider: p.displayName }) }, t('row.usageLogAbsent'))
-            : el('span', {}, p.weeklyCost?.sourceIncomplete ? t('row.tokens.uncounted') : t('row.noTokens')),
-        );
-      }
-    }
-
-    // The five-hour reset used to be printed here too. It is now the weekly
-    // block's neighbour, one countdown per window, so a single reset time on
-    // this line would be the third figure describing the five-hour window and
-    // none describing the weekly one.
-
-    // A REAL SPACE BETWEEN ITEMS, not only a CSS one.
-    //
-    // The visible separator is a `::after` on every item but the last (row.css),
-    // and pseudo-element content is NOT part of `textContent` — so with nothing
-    // else between the spans, anything reading this line AS A STRING saw
-    // "…6,2 Mn token5 saat: 240 B token/sa", two figures glued into one word.
-    // That predates the labels (the old "·" was a pseudo-element too) but the
-    // labels made it matter: each item is now a sentence, and assistive tech
-    // that concatenates adjacent inline nodes runs them together.
-    //
-    // A whitespace-only text node between flex items is not rendered, so this
-    // changes nothing visually and cannot reintroduce the stray leading dot; it
-    // exists purely so the text stream has a boundary where the layout has one.
-    const spaced: (HTMLElement | string)[] = [];
-    metaChildren.forEach((child, i) => {
-      if (i > 0) spaced.push(' ');
-      spaced.push(child);
-    });
-    const meta = el('div', { class: 'row__meta' }, ...spaced);
-    replaceChildrenWith(body, [line1, meterNode, meta]);
+    bodyChildren.push(el('div', { class: 'row__err', role: 'status' }, message, retry));
   }
+  replaceChildrenWith(body, bodyChildren);
+
+  // --- the token line, inside "Ayrıntılar" ---------------------------------
+  const metaChildren: HTMLElement[] = [];
+  let metaTokens: HTMLElement | null = null;
+  let metaBurn: HTMLElement | null = null;
+  let staleAge: HTMLElement | null = null;
+  let delta: HTMLElement | null = null;
+
+  if (p.status === 'stale') {
+    const primaryWin = primaryWindow(p);
+    const deltaValue = primaryWin?.billableSinceCapture ?? null;
+    if (deltaValue !== null && deltaValue > 0) {
+      // The one honest objection to a stale percentage is that consumption
+      // only rises inside a window. This is the measured floor on that gap — a
+      // real token count, never divided back into a percentage.
+      delta = el('span', { class: 'row__delta' }, sinceCapture(deltaValue));
+      metaChildren.push(delta);
+    } else if (!primaryWin?.capturedAt) {
+      staleAge = el('span', { class: 'row__stale' }, '');
+      const lastGood = p.lastGoodAt ?? ctx.generatedAt;
+      if (lastGood) setAttr(staleAge, 'data-since', lastGood);
+      metaChildren.push(staleAge);
+    }
+    if (tokenItemKind(p) !== 'none') {
+      metaTokens = el('span', { title: tokensTitle(p) }, tokenItemText(p));
+      metaChildren.push(metaTokens);
+    }
+  } else if (p.status !== 'error' || tokenItemKind(p) !== 'none') {
+    const pending = ctx.isPending(p.id);
+    if (pending) {
+      metaChildren.push(el('span', { class: 'row__pending' }, t('row.tokens.pending')));
+    } else if (tokenItemKind(p) !== 'none') {
+      metaTokens = el('span', { title: tokensTitle(p) }, tokenItemText(p));
+      metaChildren.push(metaTokens);
+    }
+    if (!pending && p.burnRatePerHour !== null) {
+      // Measured over the FIVE-HOUR window and sitting beside a weekly count,
+      // so it names its own window on the visible line.
+      metaBurn = el(
+        'span',
+        { title: modelsTitle(p) || t('row.burnTitle') },
+        t('row.burn.fiveHour', { rate: burnRate(p.burnRatePerHour) }),
+      );
+      metaChildren.push(metaBurn);
+    }
+    if (metaChildren.length === 0) {
+      metaChildren.push(
+        p.usageLogAbsent === true
+          ? el('span', { class: 'row__hint', title: t('row.usageLogAbsentDetail', { provider: p.displayName }) }, t('row.usageLogAbsent'))
+          : el('span', {}, p.weeklyCost?.sourceIncomplete ? t('row.tokens.uncounted') : t('row.noTokens')),
+      );
+    }
+  }
+
+  // A REAL SPACE BETWEEN ITEMS, not only a CSS one: the visible separator is a
+  // pseudo-element, which is not part of `textContent`, so without this the
+  // text stream read "…6,2 Mn token5 saat: 240 B token/sa".
+  const spaced: (HTMLElement | string)[] = [];
+  metaChildren.forEach((child, i) => {
+    if (i > 0) spaced.push(' ');
+    spaced.push(child);
+  });
+  const meta = el('div', { class: 'row__meta' }, ...spaced);
+
+  // The four classes of each window, visible now that there is room for them.
+  const classLines = tokenClassLines(p).map((line) => el('li', { class: 'row__class' }, line));
+  const classList = classLines.length > 0
+    ? el('ul', { class: 'row__classes', role: 'list' }, ...classLines)
+    : null;
+
+  // The five-hour split by model: names and token counts, never a percentage.
+  const models = p.byModel ?? [];
+  const modelList = models.length > 0
+    ? el(
+        'div',
+        { class: 'row__models' },
+        el('p', { class: 'row__subhead' }, t('row.detail.models')),
+        el(
+          'ul',
+          { class: 'row__model-list', role: 'list' },
+          ...models.map((entry) =>
+            el(
+              'li',
+              { class: 'row__model' },
+              el('span', { class: 'row__model-name', title: entry.model }, entry.model),
+              el('span', { class: 'row__model-count u-num' }, compact(entry.billable)),
+            ),
+          ),
+        ),
+      )
+    : null;
+
+  replaceChildrenWith(detailMeta, [meta, classList, modelList]);
 
   refs.name = name;
   refs.plan = plan;
@@ -676,9 +719,26 @@ function buildLive(
   refs.metaTokens = metaTokens;
   refs.metaBurn = metaBurn;
   refs.staleAge = staleAge;
+  refs.staleChip = staleChip;
   refs.delta = delta;
   refs.action = action;
   refs.retry = retry;
+  refs.primary = primary;
+}
+
+/** The disclosure chevron, pointing right; CSS turns it when open. */
+function chevron(): SVGElement {
+  return svg(
+    'svg',
+    { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false' },
+    svg('path', {
+      d: 'M6 4l4 4-4 4',
+      stroke: 'currentColor',
+      'stroke-width': '1.4',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+    }),
+  );
 }
 
 // ------------------------------------------------------------------- row
@@ -687,44 +747,63 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
   const root = el('li', { class: 'row', role: 'listitem' }) as HTMLLIElement;
   const refs: Refs = { ...EMPTY_REFS };
 
-  // The identity tile IS the drag grip. Making it a real <button> is what buys
-  // the keyboard path: it is tab-reachable, it takes focus, and Alt+Arrow on it
-  // moves the row. A separate handle column would cost 12px of meter width and
-  // add a second thing to aim at in a 360px panel.
+  // The identity tile IS the drag grip: a real <button>, so it takes focus and
+  // Alt+Arrow on it moves the card.
   refs.grip = el('button', {
     type: 'button',
     class: 'grip',
     'aria-describedby': REORDER_HELP_ID,
   }) as HTMLButtonElement;
-  // `connected` is the "account is wired up" flag (contract.ts): true for
-  // Claude once the bridge reports and for Antigravity when its store is
-  // readable, false for a provider the user has not added yet. It paints the
-  // mark in brand colour vs grey. The value is stamped once here; the mark's
-  // live colour is kept correct across (dis)connects by the [data-connected]
-  // ancestor applyChrome() re-asserts every render.
   refs.grip.appendChild(providerMark(provider.id, provider.connected));
   refs.grip.appendChild(gripDots());
 
+  // `display: contents` in CSS: its children are laid out on the card's grid,
+  // the title line beside the mark and the windows across the full width.
   const body = el('div', { class: 'row__body' });
 
-  // Created once and re-appended after every rebuild, so the disclosure stays
-  // open across the 15s snapshot cadence. A block that collapsed itself every
-  // time main pushed would be unusable.
+  // "Ayrıntılar": created once, so its open state and its focus survive the
+  // snapshot cadence.
+  const detailId = `row-detail-${provider.id}`;
+  const moreLabel = el('span', { class: 'row__more-label' }, t('row.detail.toggle'));
+  const moreButton = el(
+    'button',
+    {
+      type: 'button',
+      class: 'row__more',
+      'aria-expanded': 'false',
+      'aria-controls': detailId,
+    },
+    moreLabel,
+    el('span', { class: 'row__more-chev', 'aria-hidden': 'true' }, chevron()),
+  ) as HTMLButtonElement;
+  on(moreButton, 'click', () => ctx.onToggleExpand?.(current.id));
+
+  const detailMeta = el('div', { class: 'row__detail-tokens' });
+  // Created once and re-appended, so their own disclosures stay open across
+  // the 15s snapshot cadence.
   refs.cost = createCost(provider.id);
-  // Same lifetime and the same reason: a disclosure that collapsed itself on
-  // every 15s push would be unusable.
   refs.quotas = createQuotas(provider.id);
+  const notes = el('ul', { class: 'row__notes', role: 'list' });
+  const detail = el(
+    'div',
+    { class: 'row__detail', id: detailId, role: 'region', 'aria-label': t('row.detail.region', { name: provider.displayName }) },
+    detailMeta,
+    refs.quotas.el,
+    refs.cost.el,
+    notes,
+  );
+  detail.hidden = true;
 
   root.appendChild(refs.grip);
   root.appendChild(body);
+  root.appendChild(moreButton);
+  root.appendChild(detail);
 
   let shapeKey = '';
   let current: ProviderSnapshot = provider;
+  let lastCtx: RowContext = ctx;
 
   function rebuild(p: ProviderSnapshot, context: RowContext, atNow: number): void {
-    // Drop any previous row-level trailing button before rebuilding.
-    if (refs.action && refs.action.parentElement === root) root.removeChild(refs.action);
-
     // Every optional ref is cleared here rather than in each builder, so a node
     // from the previous shape can never be written to after it is detached.
     refs.name = null;
@@ -733,17 +812,38 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     refs.metaTokens = null;
     refs.metaBurn = null;
     refs.staleAge = null;
+    refs.staleChip = null;
     refs.delta = null;
     refs.action = null;
     refs.retry = null;
+    refs.primary = null;
 
     if (p.status === 'loading') {
       buildSkeleton(refs, body);
+      replaceChildrenWith(detailMeta, []);
     } else if (p.status === 'passive') {
-      buildPassive(refs, body, root, p, context);
+      buildPassive(refs, body, p, context);
+      replaceChildrenWith(detailMeta, []);
     } else {
-      buildLive(refs, body, p, context, atNow);
+      buildLive(refs, body, detailMeta, p, context, atNow);
     }
+  }
+
+  /** Where the figures came from and when: the details' last section. */
+  function renderNotes(p: ProviderSnapshot): void {
+    const lines: string[] = [];
+    for (const [usage, key] of [[p.fiveHour, 'meter.window5h.label'], [p.sevenDay, 'meter.window7d.label']] as const) {
+      if (!usage || !isDrawable(usage)) continue;
+      if (usage.capturedAt) {
+        lines.push(t('row.note.measuredAt', { window: t(key), time: clockTime(usage.capturedAt) }));
+      }
+    }
+    if (p.lastGoodAt && lines.length === 0 && p.status !== 'ok') {
+      lines.push(t('row.note.lastGood', { time: clockTime(p.lastGoodAt) }));
+    }
+    if (lastCtx.generatedAt) lines.push(t('row.note.scanned', { time: clockTime(lastCtx.generatedAt) }));
+    replaceChildrenWith(notes, lines.map((line) => el('li', { class: 'row__note' }, line)));
+    notes.hidden = lines.length === 0;
   }
 
   function applyChrome(p: ProviderSnapshot, context: RowContext): void {
@@ -752,17 +852,12 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     setAttr(root, 'data-provider', p.id);
     root.style.setProperty('--accent', p.accent);
 
-    // The single switch behind the whole identity treatment: a connected
-    // provider's mark is drawn in its brand colour on a tinted tile; every
-    // other one is monochrome ink on no tile, at a lighter stroke. Colour is
-    // never the only carrier — the tile, the stroke weight and the absence of
-    // a meter all move together.
+    // The single switch behind the identity treatment: brand art in colour
+    // while connected, the same art in grey otherwise.
     setAttr(root, 'data-connected', p.connected ? 'true' : 'false');
 
     const step = meterStateStep(p.fiveHour, p.sevenDay);
     setAttr(root, 'data-state', step);
-    // The row-level ramp mixes too, from the same window the step came from,
-    // or the row's own colour would step while the block inside it glides.
     const primary = primaryWindow(p);
     const pct = primary && isDrawable(primary) ? primary.usedPercentage : null;
     if (step && pct !== null) root.style.setProperty('--mix', mixWithin(pct).toFixed(4));
@@ -779,9 +874,8 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     const tray = context.isTrayRow(p.id);
     setAttr(refs.grip, 'data-tray', tray ? 'true' : null);
     setAttr(refs.grip, 'aria-label', t('row.gripLabel', { name: p.displayName }));
-    // The tray consequence is stated on the control that causes it, and it is
-    // stated honestly: a provider with no five-hour window drives an empty
-    // ring, not a donut.
+    // The tray consequence is stated on the control that causes it, honestly:
+    // a provider with no five-hour window drives an empty ring, not a donut.
     const title = t('row.gripTitle', { name: p.displayName });
     const trayNote = tray
       ? p.connected && p.fiveHour != null
@@ -791,11 +885,26 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     setAttr(refs.grip, 'title', trayNote ? `${title} ${trayNote}` : title);
     refs.grip.disabled = p.status === 'loading';
     context.attachGrip(refs.grip, p.id, p.displayName);
+
+    // --- "Ayrıntılar" ----------------------------------------------------
+    // Nothing to detail on a loading or passive card: no control at all, and a
+    // stale "open" state cannot leave a region showing.
+    const hasDetail = p.status !== 'loading' && p.status !== 'passive';
+    const expanded = hasDetail && (context.isExpanded?.(p.id) ?? false);
+    moreButton.hidden = !hasDetail;
+    setAttr(moreButton, 'aria-expanded', expanded ? 'true' : 'false');
+    setAttr(moreButton, 'aria-label', t(expanded ? 'row.detail.hideLabel' : 'row.detail.showLabel', { name: p.displayName }));
+    setText(moreLabel, t(expanded ? 'row.detail.hide' : 'row.detail.toggle'));
+    if (!expanded && detail.contains(document.activeElement)) {
+      // Focus must not be lost inside a region that is closing.
+      moreButton.focus({ preventScroll: true });
+    }
+    detail.hidden = !expanded;
+    setAttr(root, 'data-expanded', expanded ? 'true' : null);
   }
 
   function tick(atNow: number): void {
-    // Both window countdowns live in the meter and are repainted by it, so the
-    // row does not have to know how many windows the provider reported.
+    // Both window countdowns live in the meter and are repainted by it.
     if (refs.meter) refs.meter.tick(atNow);
     if (refs.staleAge) {
       const since = parseInstant(refs.staleAge.getAttribute('data-since'));
@@ -805,39 +914,49 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
         setAttr(refs.staleAge, 'title', t('row.staleAgeTitle', { ago: agoSpoken(elapsed) }));
       }
     }
+    if (refs.staleChip) {
+      const since = parseInstant(refs.staleChip.getAttribute('data-since'));
+      setText(
+        refs.staleChip,
+        since === null ? t('row.staleChipBare') : t('row.staleChip', { age: shortAge(atNow - since) }),
+      );
+      if (since !== null) setAttr(refs.staleChip, 'title', t('row.staleAgeTitle', { ago: agoSpoken(atNow - since) }));
+    }
   }
 
   function update(raw: ProviderSnapshot, context: RowContext, atNow: number): void {
     current = raw;
-    // One normalisation point: everything below draws the effective status, so
-    // the local staleness check cannot be forgotten at an individual call site.
+    lastCtx = context;
+    // One normalisation point: everything below draws the effective status.
     const p: ProviderSnapshot = {
       ...raw,
       status: effectiveStatus(raw, context),
       fiveHour: expireWindow(raw.fiveHour, atNow),
       sevenDay: expireWindow(raw.sevenDay, atNow),
     };
-    // Pending decides whether the token line is "calculating" or a figure, so
-    // it is structure: the flip to [] must rebuild the line.
-    // sourceIncomplete decides whether the empty meta line says "no token
-    // data", so it is structure too: a flip must rebuild the line.
-    const nextShape = `${shapeKeyOf(p)}|${context.isPending(p.id) ? 'pending' : 'read'}|${p.weeklyCost?.sourceIncomplete ? 'incomplete' : 'complete'}`;
+    // Pending and sourceIncomplete decide which words the token line and the
+    // main measure use, so both are structure.
+    const pending = context.isPending(p.id);
+    const nextShape = `${shapeKeyOf(p)}|${pending ? 'pending' : 'read'}|${p.weeklyCost?.sourceIncomplete ? 'incomplete' : 'complete'}|${publishesQuota(p) ? '' : measureKind(p, pending)}`;
     if (nextShape !== shapeKey) {
       shapeKey = nextShape;
       rebuild(p, context, atNow);
     } else {
       if (refs.name) setText(refs.name, p.displayName);
       if (refs.plan && p.planLabel) {
-        // NOT setText: that would drop the screen-reader prefix beside it. Only
-        // the last child — the visible label — is the value that changes.
+        // NOT setText: that would drop the screen-reader prefix beside it.
         const last = refs.plan.lastChild;
         if (last) last.textContent = p.planLabel;
       }
       if (refs.meter) refs.meter.update(p.fiveHour, p.sevenDay, p.status === 'stale', atNow);
+      if (refs.primary) {
+        const next = buildMeasure(p, pending);
+        refs.primary.replaceWith(next);
+        refs.primary = next;
+      }
       if (refs.metaTokens && tokenItemKind(p) !== 'none') {
         // The window label is part of the text, so it is rewritten with the
-        // figure: a count that moved from an anchored quota week to a trailing
-        // seven days must not keep the old window's name.
+        // figure: a count that moved windows must not keep the old name.
         setText(refs.metaTokens, tokenItemText(p));
         setAttr(refs.metaTokens, 'title', tokensTitle(p));
       }
@@ -846,53 +965,28 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
       }
       if (refs.delta) {
         // Consumption only rises inside a window, so this number moves between
-        // captures. Leaving it frozen would present a stale floor as current —
-        // exactly the optimistic reading it exists to prevent.
+        // captures; a frozen one would present a stale floor as current.
         const value = primaryWindow(p)?.billableSinceCapture ?? null;
         if (value !== null && value > 0) setText(refs.delta, sinceCapture(value));
       }
       const since = p.lastGoodAt ?? context.generatedAt;
       if (refs.staleAge && since) setAttr(refs.staleAge, 'data-since', since);
+      if (refs.staleChip) {
+        const at = staleSince(p, context);
+        setAttr(refs.staleChip, 'data-since', at === null ? null : new Date(at).toISOString());
+      }
     }
 
     applyChrome(p, context);
 
-    // ADR-002. Lives inside the row because the figure is that provider's, and
-    // under the text column rather than the mark so it aligns with the name.
-    // Re-appended rather than rebuilt: the builders call replaceChildrenWith()
-    // on `body`, which would otherwise detach it on every shape change.
-    // `p.status` here is the EFFECTIVE status, already run through
-    // effectiveStatus() at the top of update(). It describes the LIMIT capture,
-    // so it qualifies the per-model quota figures below (same capture) and
-    // NOT the cost block: whether the token logs were read is the cost
-    // source's own `sourceIncomplete` (ADR-002 A3.15).
+    // `p.status` here is the EFFECTIVE status. It describes the LIMIT capture,
+    // so it qualifies the per-model quota figures (same capture) and NOT the
+    // cost block: whether the token logs were read is the cost source's own
+    // `sourceIncomplete` (ADR-002 A3.15).
     const degraded = p.status === 'stale' || p.status === 'error';
-
-    // Per-model quota detail, ABOVE the cost block. Order is deliberate: this
-    // one is about the same limit the meter above reports, so it belongs next
-    // to it, while the cost block is a different kind of claim entirely and
-    // reads as the row's footnote.
     refs.quotas.update(p.modelQuotas ?? null, p.displayName, degraded);
-    if (!refs.quotas.el.hidden && refs.quotas.el.parentElement !== body) {
-      body.appendChild(refs.quotas.el);
-    }
-
-    refs.cost.update(p.weeklyCost, p.displayName, context.isPending(p.id));
-    if (!refs.cost.el.hidden && refs.cost.el.parentElement !== body) {
-      body.appendChild(refs.cost.el);
-    }
-
-    // A row carrying the cost block is several times taller than a plain one,
-    // and a vertically centred mark then floats away from the name it
-    // identifies. The flag lets CSS pin it to the first line for those rows
-    // only, leaving the 44px and 64px rows centred as they were.
-    // Either block makes the row tall enough that a vertically centred mark
-    // drifts away from the name it identifies, so both drive the same flag.
-    setAttr(
-      root,
-      'data-cost',
-      refs.cost.el.hidden && refs.quotas.el.hidden ? null : 'true',
-    );
+    refs.cost.update(p.weeklyCost, p.displayName, pending);
+    renderNotes(p);
 
     // Pending state on whichever action this shape owns.
     const busy = context.isBusy(p.id);
@@ -913,15 +1007,16 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     get id(): string {
       return current.id;
     },
+    moreButton,
     update,
     tick,
   };
 }
 
 /**
- * An identity-free skeleton row, used before the first snapshot arrives.
- * It fabricates no provider name and no number; it only holds the final
- * geometry so the list does not jump when real rows land.
+ * An identity-free skeleton card, used before the first snapshot arrives. It
+ * fabricates no provider name and no number; it only holds the final geometry
+ * so the list does not jump when real cards land.
  */
 export function createSkeletonRow(): HTMLLIElement {
   const root = el('li', {
@@ -936,7 +1031,6 @@ export function createSkeletonRow(): HTMLLIElement {
   const refs: Refs = { ...EMPTY_REFS };
   buildSkeleton(refs, body);
 
-  // No mark and no grip: there is no provider here yet to identify or move.
   root.appendChild(el('span', { class: 'grip grip--empty', 'aria-hidden': 'true' }));
   root.appendChild(body);
   return root;
