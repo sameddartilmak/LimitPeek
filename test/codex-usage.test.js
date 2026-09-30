@@ -1252,6 +1252,47 @@ test.describe('the Codex readers never leave the local sessions tree', () => {
     assert.equal(path.basename(rollout.newestRollout(path.join(home, 'sessions')).file), 'rollout-a.jsonl');
   });
 
+  test('a session still running in an OLD day-folder beats newer folders (owner, 2026-09-30)', () => {
+    // Codex keeps writing to the rollout of the day the session STARTED. A
+    // session opened on 09-23 and still active on 09-30 must win over the
+    // finished sessions in the 09-26 and 09-24 folders.
+    rollout._resetPathGuardForTests();
+    rollout._resetRolloutCacheForTests();
+    const home = tmpHome();
+    const month = path.join(home, 'sessions', '2026', '09');
+    const at = (day, name, ms) => {
+      fs.mkdirSync(path.join(month, day), { recursive: true });
+      const file = path.join(month, day, name);
+      fs.writeFileSync(file, '{}\n');
+      fs.utimesSync(file, ms / 1000, ms / 1000);
+      return file;
+    };
+    at('26', 'rollout-26.jsonl', NOW - 4 * DAY);
+    at('24', 'rollout-24.jsonl', NOW - 6 * DAY);
+    at('23', 'rollout-23.jsonl', NOW - 60 * 1000);
+    const found = rollout.newestRollout(path.join(home, 'sessions'), NOW);
+    assert.equal(path.basename(found.file), 'rollout-23.jsonl');
+  });
+
+  test('a brand-new session in today\'s folder is seen at once, without waiting for the minute-long listing', () => {
+    rollout._resetPathGuardForTests();
+    rollout._resetRolloutCacheForTests();
+    const home = tmpHome();
+    const month = path.join(home, 'sessions', '2026', '09');
+    fs.mkdirSync(path.join(month, '23'), { recursive: true });
+    const old = path.join(month, '23', 'rollout-old.jsonl');
+    fs.writeFileSync(old, '{}\n');
+    fs.utimesSync(old, (NOW - HOUR) / 1000, (NOW - HOUR) / 1000);
+    const sessions = path.join(home, 'sessions');
+    assert.equal(path.basename(rollout.newestRollout(sessions, NOW).file), 'rollout-old.jsonl');
+    fs.mkdirSync(path.join(month, '30'), { recursive: true });
+    const fresh = path.join(month, '30', 'rollout-new.jsonl');
+    fs.writeFileSync(fresh, '{}\n');
+    fs.utimesSync(fresh, NOW / 1000, NOW / 1000);
+    // Five seconds later: the full listing is still cached, the new folder is not needed from it.
+    assert.equal(path.basename(rollout.newestRollout(sessions, NOW + 5000).file), 'rollout-new.jsonl');
+  });
+
   test('the network classifier refuses UNC, long UNC and // forms, and allows local long and volume paths', () => {
     for (const p of [String.raw`\\server\share`, String.raw`\\?\UNC\server\share`, String.raw`\\?\unc\server`, '//host/share']) {
       assert.equal(rollout.isNetworkResolved(p), true, p);
