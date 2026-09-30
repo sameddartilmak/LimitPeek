@@ -144,3 +144,33 @@ test.describe('the uninstaller takes the hooks out', () => {
     assert.match(index.slice(flag, flag + 200), /cleanupIntegrations\(\);\s*app\.exit\(0\);/);
   });
 });
+
+test.describe('"Bağla" asks once, in the panel, with the whole question', () => {
+  test('the Claude setup action carries the file, the backup promise and the kept line', () => {
+    const { PROVIDERS } = require('../src/core/providers');
+    const { claudeSettingsPath } = require('../src/core/paths');
+    const action = PROVIDERS.find((p) => p.id === 'claude').setupAction;
+    assert.ok(Array.isArray(action.consent) && action.consent.length === 3, JSON.stringify(action.consent));
+    assert.ok(action.consent[0].includes(claudeSettingsPath()), 'the file is not named');
+    assert.ok(!/\n/.test(action.consent.join('')), 'a line break would be stripped into a run-on');
+  });
+
+  test('the renderer keeps the paragraphs, bounded', () => {
+    _resetHistoryMemoForTests();
+    const snap = buildSnapshot({ now: Date.now(), events: [], scanOk: true, hooks: { claude: false } });
+    const claude = (s) => s.providers.find((p) => p.id === 'claude');
+    const kept = claude(sanitizeSnapshot(snap)).setupAction;
+    assert.equal(kept.consent.length, 3);
+    claude(snap).setupAction = { ...claude(snap).setupAction, consent: ['x'.repeat(900), 42, '', 'a', 'b', 'c', 'd'] };
+    const bounded = claude(sanitizeSnapshot(snap)).setupAction.consent;
+    assert.ok(bounded.length <= 4 && bounded.every((l) => typeof l === 'string' && l.length <= 400), JSON.stringify(bounded));
+  });
+
+  test('main no longer raises a native dialog before writing Claude Code settings', () => {
+    const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src', 'main', 'bridge-install.js'), 'utf8');
+    const claude = src.slice(src.indexOf('async function runClaudeSetup'), src.indexOf('async function runAntigravitySetup'));
+    assert.ok(claude.length > 0);
+    assert.doesNotMatch(claude, /showMessageBox/);
+    assert.match(claude, /confirmed !== true/, 'the confirmed gate must stay');
+  });
+});

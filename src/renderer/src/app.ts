@@ -250,6 +250,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
           providerName: provider?.displayName ?? '',
           label: action.label,
           detail: action.detail,
+          paragraphs: action.consent,
           origin,
         },
       });

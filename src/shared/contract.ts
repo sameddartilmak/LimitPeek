@@ -129,6 +129,13 @@ export interface SetupAction {
   label: string;
   /** One-line Turkish explanation shown before anything is written. */
   detail: string;
+  /**
+   * The full question, one paragraph per entry, for an action that writes to
+   * another tool's settings (install-bridge): which file, the backup, what the
+   * bridge reads and never does. The panel's own consent box shows it; there
+   * is no second, native dialog (owner, 2026-09-30). Absent: `detail` alone.
+   */
+  consent?: string[];
 }
 
 export interface WindowUsage {

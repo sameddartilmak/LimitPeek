@@ -64,6 +64,7 @@
   "panel.rowsLoading": "Scanning for tools",
   "panel.reorderHelp": "Drag to change the order, or hold Alt and use the up and down arrow keys. Alt and Home moves to the top. The five-hour window of the top tool is drawn on the tray icon.",
   "panel.noticeClose": "Close this notice",
+  "panel.consentTitle": "Connect {provider}?",
   "panel.consentCancel": "Cancel",
   "panel.consentConfirm": "Confirm",
   "panel.consentConfirmLabel": "{provider}: {label} — confirm",

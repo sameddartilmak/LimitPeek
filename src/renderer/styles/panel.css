@@ -478,8 +478,9 @@
   gap: var(--s-3);
   margin: 0;
   padding: var(--s-3);
+  /* An even frame, no coloured left stripe (owner, 2026-09-30); the tone is a
+   * small badge before the words instead (.notice::before below). */
   border: 1px solid var(--ink-700);
-  border-left: 2px solid var(--ink-400);
   border-radius: 8px;
   background: var(--ink-800);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
@@ -526,11 +527,34 @@
 }
 .toast__close:hover { background: var(--ink-700); color: var(--ink-100); }
 .toast__close svg { width: 12px; height: 12px; display: block; }
-/* The tone of an outcome, in its left edge AND its words: an error stays until
- * closed, a success leaves on its own. */
-.toast[data-tone="success"] { border-left-color: var(--calm); }
-.toast[data-tone="error"] { border-left-color: var(--ember); }
-.toast--tool { border-left-color: var(--ink-700); }
+/* The tone of an outcome, in a small badge AND its words: an error stays until
+ * closed, a success leaves on its own. Decorative ("" alt text): the sentence
+ * already says what happened. */
+.toast.notice { align-items: center; }
+.toast.notice::before {
+  content: "i" / "";
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-700);
+  color: var(--ink-200);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.toast.notice[data-tone="success"]::before {
+  content: "✓" / "";
+  background: color-mix(in srgb, var(--calm) 20%, transparent);
+  color: var(--calm);
+}
+.toast.notice[data-tone="error"]::before {
+  content: "!" / "";
+  background: color-mix(in srgb, var(--spent) 18%, transparent);
+  color: var(--spent);
+}
 .toast .toast__text:first-child { margin-top: 0; color: var(--ink-200); }
 .toast__close:focus-visible { outline: 2px solid var(--ink-300); outline-offset: 1px; }
 @keyframes toast-in {
@@ -564,10 +588,14 @@
   color: var(--ink-100);
 }
 .consent__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
   font-size: var(--fs-meta);
   color: var(--ink-300);
   line-height: 1.45;
 }
+.consent__para { margin: 0; overflow-wrap: anywhere; }
 .consent__actions {
   display: flex;
   justify-content: flex-end;

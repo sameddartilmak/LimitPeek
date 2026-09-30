@@ -23,6 +23,8 @@ export interface ConsentRequest {
   providerName: string;
   label: string;
   detail: string;
+  /** The full question from SetupAction.consent, one paragraph each; else `detail`. */
+  paragraphs?: readonly string[];
   /**
    * Where the prompt is drawn: inside the first-run card when the user pressed
    * its "Bağla", otherwise inside the provider's own card. Either way the

@@ -30,7 +30,7 @@
 
 import type { LanguageChoice, ProviderSnapshot, ThemeChoice } from '../../../shared/contract.js';
 import { defaultPlacement, placePanel, type PanelPlacement } from '../anchor.js';
-import { el, on, setAttr, setText, svg } from '../dom.js';
+import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { clockTime } from '../format.js';
 import { language, t } from '../i18n.js';
 import { createReorder, type ReorderHandle } from '../reorder.js';
@@ -265,7 +265,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   // card whose "Bağla" was pressed (or into the first-run card), so the user
   // reads the question where they acted.
   const consentTitle = el('strong', { class: 'consent__title', id: 'consent-title' }, '');
-  const consentDetail = el('span', { class: 'consent__detail', id: 'consent-detail' }, '');
+  // One paragraph per SetupAction.consent entry (the file, the promise, ...).
+  const consentDetail = el('div', { class: 'consent__detail', id: 'consent-detail' });
   const consentCancel = el('button', { type: 'button', class: 'btn' }, t('panel.consentCancel')) as HTMLButtonElement;
   const consentConfirm = el('button', { type: 'button', class: 'btn btn--primary' }, t('panel.consentConfirm')) as HTMLButtonElement;
   on(consentCancel, 'click', () => ctx.onConsentCancel());
@@ -683,8 +684,14 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       : rows.get(consent.providerId)?.el ?? setupCard;
     if (consentBox.parentElement !== host) host.appendChild(consentBox);
     consentBox.hidden = false;
-    setText(consentTitle, `${consent.providerName}: ${consent.label}`);
-    setText(consentDetail, consent.detail);
+    // A question, asked once, in the app's own words: the native dialog that
+    // used to follow this box is gone (owner, 2026-09-30).
+    setText(consentTitle, t('panel.consentTitle', { provider: consent.providerName }));
+    const paragraphs = consent.paragraphs && consent.paragraphs.length > 0 ? consent.paragraphs : [consent.detail];
+    replaceChildrenWith(
+      consentDetail,
+      paragraphs.map((line) => el('p', { class: 'consent__para' }, line)),
+    );
     setText(consentConfirm, consent.label);
     setAttr(
       consentConfirm,

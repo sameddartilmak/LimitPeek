@@ -64,6 +64,7 @@
   "panel.rowsLoading": "Araçlar taranıyor",
   "panel.reorderHelp": "Sırayı değiştirmek için sürükleyin ya da Alt tuşuyla yukarı ve aşağı ok tuşlarını kullanın. Alt ve Home en üste taşır. En üstteki aracın beş saatlik penceresi tepsi simgesine çizilir.",
   "panel.noticeClose": "Bu bildirimi kapat",
+  "panel.consentTitle": "{provider} bağlansın mı?",
   "panel.consentCancel": "Vazgeç",
   "panel.consentConfirm": "Onayla",
   "panel.consentConfirmLabel": "{provider}: {label} — onayla",

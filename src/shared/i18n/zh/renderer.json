@@ -64,6 +64,7 @@
   "panel.rowsLoading": "正在扫描工具",
   "panel.reorderHelp": "拖动以更改顺序，或按住 Alt 并使用上下方向键。Alt 加 Home 可移到最上方。最上方工具的 5 小时窗口会绘制在托盘图标上。",
   "panel.noticeClose": "关闭此通知",
+  "panel.consentTitle": "要连接 {provider} 吗？",
   "panel.consentCancel": "取消",
   "panel.consentConfirm": "确认",
   "panel.consentConfirmLabel": "{provider}：{label} — 确认",

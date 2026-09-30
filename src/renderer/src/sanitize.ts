@@ -812,11 +812,21 @@ function setupAction(raw: unknown): SetupAction | null {
   if (!SETUP_KINDS.has(source.kind as SetupKind)) return null;
   const label = text(source.label, 24);
   if (label === null) return null;
-  return {
+  const out: SetupAction = {
     kind: source.kind as SetupKind,
     label,
     detail: text(source.detail, 160) ?? '',
   };
+  // The consent paragraphs: a short list of bounded lines, or nothing. A path
+  // under a long user name still fits in 400 characters.
+  if (Array.isArray(source.consent)) {
+    const lines = source.consent
+      .slice(0, 4)
+      .map((line) => text(line, 400))
+      .filter((line): line is string => line !== null);
+    if (lines.length > 0) out.consent = lines;
+  }
+  return out;
 }
 
 function provider(raw: unknown): ProviderSnapshot | null {

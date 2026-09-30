@@ -196,6 +196,11 @@ function claudeUnknown(): ProviderSnapshot {
       kind: 'install-bridge',
       label: 'Bağla',
       detail: 'Claude Code durum satırına küçük bir köprü eklenir; onayınız istenir.',
+      consent: [
+        'Şu dosya güncellenecek: C:\\Users\\ornek\\.claude\\settings.json',
+        'Önce zaman damgalı bir yedek alınır. Köprü yalnızca kullanım yüzdesini ve sıfırlanma zamanını okur; hiçbir metin, dosya yolu veya kimlik bilgisi kaydetmez ve hiçbir ağ bağlantısı açmaz.',
+        "Kendi durum satırınız varsa korunur: Claude Code'da aynen görünmeye devam eder. Köprü yalnızca arka planda limitleri kaydeder.",
+      ],
     },
   };
 }
