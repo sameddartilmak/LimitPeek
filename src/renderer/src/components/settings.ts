@@ -204,6 +204,27 @@ function metaFor(provider: ProviderSnapshot, enabled: boolean): string {
   return where + ' · ' + how;
 }
 
+/**
+ * What the item's status line means, for its tooltip. The two bridge tools
+ * (Claude Code, Antigravity) get their limits through a line added to the
+ * tool's settings; every other tool is read from the files it writes itself,
+ * so there is nothing to connect.
+ */
+function metaTipFor(provider: ProviderSnapshot): string {
+  if (provider.setupAction?.kind === 'not-installed') return t('settings.metaTip.notFound');
+  const name = { provider: provider.displayName };
+  if (provider.hookInstalled === true) return t('settings.metaTip.bridgeOn', name);
+  // Claude Code's limits come ONLY through the bridge. Antigravity also has
+  // the IDE's own store, so a missing bridge does not stop its figure.
+  if (provider.id === 'claude') {
+    const bridged = provider.hookInstalled === undefined
+      ? provider.connected && provider.setupAction === null
+      : false;
+    return bridged ? t('settings.metaTip.bridgeOn', name) : t('settings.metaTip.bridgeOff', name);
+  }
+  return t('settings.metaTip.files');
+}
+
 interface ItemHandle {
   el: HTMLLIElement;
   update(provider: ProviderSnapshot, state: PanelState, enabled: boolean): void;
@@ -450,8 +471,11 @@ function createItem(provider: ProviderSnapshot, ctx: SettingsContext): ItemHandl
     displayName = next.displayName;
     const metaText = metaFor(next, isEnabled);
     setText(meta, metaText);
-    setAttr(meta, 'title', metaText);
+    // The tooltip says what "bağlı" MEANS for this tool, not the line again
+    // (owner, 2026-09-30: "bu bağlantı ne bağlantısıydı?").
+    setAttr(meta, 'title', metaTipFor(next));
     setAttr(control, 'aria-checked', isEnabled ? 'true' : 'false');
+    setAttr(control, 'title', t(isEnabled ? 'settings.switchTip.on' : 'settings.switchTip.off', { provider: next.displayName }));
     setAttr(root, 'data-enabled', isEnabled ? 'true' : 'false');
     setAttr(root, 'data-connected', next.connected ? 'true' : 'false');
     root.style.setProperty('--accent', next.accent);

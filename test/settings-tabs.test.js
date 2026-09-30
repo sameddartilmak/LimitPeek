@@ -445,3 +445,35 @@ test.describe('after "Bağlantıyı kaldır" the way back is right there', () =>
     assert.deepEqual(asked, ['claude']);
   });
 });
+
+test.describe('Settings → Tools tooltips say what "bağlı" means (2026-09-30)', () => {
+  function metaTitle(provider) {
+    const handle = settingsMod.createSettings({
+      onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
+      onDisconnect() {}, onConnect() {}, onReplayIntro() {},
+    });
+    handle.render(state({ snapshot: { providers: [provider], usageHistory: null }, hasData: true }), [provider]);
+    const item = walk(handle.el).find((el) => el.getAttribute('data-provider') === provider.id && el.tagName === 'LI');
+    const cls = (el) => el.getAttribute('class') || '';
+    return {
+      meta: walk(item).find((el) => cls(el) === 'settings__meta').getAttribute('title'),
+      toggle: walk(item).find((el) => cls(el) === 'switch').getAttribute('title'),
+    };
+  }
+  const base = { accent: '#000', enabled: true, planLabel: null, planSource: null, planDetected: null };
+
+  test('Claude Code: the bridge, on or off', () => {
+    const on = metaTitle({ ...base, id: 'claude', displayName: 'Claude Code', connected: true, hookInstalled: true, setupAction: null });
+    assert.match(on.meta, /köprü|bridge/);
+    const off = metaTitle({ ...base, id: 'claude', displayName: 'Claude Code', connected: true, hookInstalled: false,
+      setupAction: { kind: 'install-bridge', label: 'Bağla', detail: 'x' } });
+    assert.match(off.meta, /ekli değil|not in place/);
+  });
+
+  test('Codex: read from its own files, nothing to connect', () => {
+    const tip = metaTitle({ ...base, id: 'codex', displayName: 'Codex', connected: true, setupAction: null });
+    assert.match(tip.meta, /bağlantı gerekmez|no connection is needed/);
+    assert.match(tip.toggle, /Codex/);
+    assert.notEqual(tip.meta, 'Ana panelde · bağlı', 'the tooltip only repeated the line');
+  });
+});
