@@ -1,0 +1,97 @@
+{
+    "case":  "A",
+    "verdict":  "PASS",
+    "reasons":  [
+
+                ],
+    "minutes":  16,
+    "exe":  "%USERPROFILE%\\Documents\\Projects\\windows-ai-usage-monitor\\dist\\win-unpacked\\Usage Notch.exe",
+    "userDataDir":  "%USERPROFILE%\\AppData\\Local\\Temp\\usage-notch-audit-0.6.8\\user-data",
+    "extraArgs":  [
+
+                  ],
+    "startedAt":  "2026-09-30T15:54:58.2268525+03:00",
+    "endedAt":  "2026-09-30T16:11:00.8550905+03:00",
+    "adapterToggled":  null,
+    "adapterDownAt":  null,
+    "adapterUpAt":  null,
+    "appSurvivedWindow":  true,
+    "appExitedAt":  null,
+    "livenessTicks":  178,
+    "etwBuffersWritten":  1039,
+    "etwBuffersLost":  0,
+    "positiveControlPassed":  true,
+    "childRoles":  [
+                       "browser",
+                       "gpu-process",
+                       "renderer",
+                       "utility:network.mojom.NetworkService"
+                   ],
+    "userDataEntries":  [
+                            "blob_storage\\",
+                            "bridge\\",
+                            "Cache\\",
+                            "Code Cache\\",
+                            "DawnGraphiteCache\\",
+                            "DawnWebGPUCache\\",
+                            "declarative_performance_observer.db (32768 B)",
+                            "declarative_performance_observer.db-journal (0 B)",
+                            "DIPS (4096 B)",
+                            "DIPS-wal (45352 B)",
+                            "GPUCache\\",
+                            "Local State (490 B)",
+                            "Local Storage\\",
+                            "Network\\",
+                            "Preferences (54 B)",
+                            "Shared Dictionary\\",
+                            "usage-store.json (2303509 B)"
+                        ],
+    "pidsSeen":  [
+                     {
+                         "pid":  20424,
+                         "why":  "same-exe",
+                         "name":  "Usage Notch.exe",
+                         "exe":  "%USERPROFILE%\\Documents\\Projects\\windows-ai-usage-monitor\\dist\\win-unpacked\\Usage Notch.exe",
+                         "parent":  25312,
+                         "ours":  true,
+                         "commandLine":  "\"%USERPROFILE%\\Documents\\Projects\\windows-ai-usage-monitor\\dist\\win-unpacked\\Usage Notch.exe\" --type=utility --utility-sub-type=network.mojom.NetworkService --lang=tr --service-sandbox-type=none --user-data-dir=\"%USERPROFILE%\\AppData\\Local\\Temp\\usage-notch-audit-0.6.8\\user-data\" --field-trial-handle=1836,i,5252801056775649871,9251842677948429379,262144 --enable-features=PdfUseShowSaveFilePicker --disable-features=DropInputEventsWhilePaintHolding,LocalNetworkAccessChecks,MediaRouter,NetworkServiceSandbox,OptimizationHints,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation,Translate --variations-seed-version --pseudonymization-salt-handle=1852,i,4301003564324828552,13506917961118326742,4 --trace-process-track-uuid=3190708989122997041 --mojo-platform-channel-handle=2024 /prefetch:11"
+                     },
+                     {
+                         "pid":  25312,
+                         "why":  "root",
+                         "name":  "Usage Notch.exe",
+                         "exe":  "%USERPROFILE%\\Documents\\Projects\\windows-ai-usage-monitor\\dist\\win-unpacked\\Usage Notch.exe",
+                         "parent":  2428,
+                         "ours":  true,
+                         "commandLine":  "\"%USERPROFILE%\\Documents\\Projects\\windows-ai-usage-monitor\\dist\\win-unpacked\\Usage Notch.exe\" --user-data-dir=%USERPROFILE%\\AppData\\Local\\Temp\\usage-notch-audit-0.6.8\\user-data "
+                     },
+                     {
+                         "pid":  36408,
+                         "why":  "same-exe",
+                         "name":  "Usage Notch.exe",
+                         "exe":  "%USERPROFILE%\\Documents\\Projects\\windows-ai-usage-monitor\\dist\\win-unpacked\\Usage Notch.exe",
+                         "parent":  25312,
+                         "ours":  true,
+                         "commandLine":  "\"%USERPROFILE%\\Documents\\Projects\\windows-ai-usage-monitor\\dist\\win-unpacked\\Usage Notch.exe\" --type=renderer --user-data-dir=\"%USERPROFILE%\\AppData\\Local\\Temp\\usage-notch-audit-0.6.8\\user-data\" --app-path=\"%USERPROFILE%\\Documents\\Projects\\windows-ai-usage-monitor\\dist\\win-unpacked\\resources\\app.asar\" --enable-sandbox --video-capture-use-gpu-memory-buffer --lang=tr --device-scale-factor=1.25 --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=4 --launch-time-ticks=24220022215 --field-trial-handle=1836,i,5252801056775649871,9251842677948429379,262144 --enable-features=PdfUseShowSaveFilePicker --disable-features=DropInputEventsWhilePaintHolding,LocalNetworkAccessChecks,MediaRouter,NetworkServiceSandbox,OptimizationHints,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation,Translate --variations-seed-version --pseudonymization-salt-handle=1852,i,4301003564324828552,13506917961118326742,4 --trace-process-track-uuid=3190708990060038890 --mojo-platform-channel-handle=2420 /prefetch:1"
+                     },
+                     {
+                         "pid":  36660,
+                         "why":  "same-exe",
+                         "name":  "Usage Notch.exe",
+                         "exe":  "%USERPROFILE%\\Documents\\Projects\\windows-ai-usage-monitor\\dist\\win-unpacked\\Usage Notch.exe",
+                         "parent":  25312,
+                         "ours":  true,
+                         "commandLine":  "\"%USERPROFILE%\\Documents\\Projects\\windows-ai-usage-monitor\\dist\\win-unpacked\\Usage Notch.exe\" --type=gpu-process --user-data-dir=\"%USERPROFILE%\\AppData\\Local\\Temp\\usage-notch-audit-0.6.8\\user-data\" --gpu-preferences=WAAAAAAAAADgAAAEAAAAAAAAAAAAAGAAQAAAAAAAAAADAAAAAAAAADgAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAKAAAAAAAAAAoAAAAAAAAAAgAAAAAAAAAEAAAAAIAAAABAAAAAAAAAAgAAAAAAAAACAAAAAAAAAA= --field-trial-handle=1836,i,5252801056775649871,9251842677948429379,262144 --enable-features=PdfUseShowSaveFilePicker --disable-features=DropInputEventsWhilePaintHolding,LocalNetworkAccessChecks,MediaRouter,NetworkServiceSandbox,OptimizationHints,ScreenAIOCREnabled,SpareRendererForSitePerProcess,TraceSiteInstanceGetProcessCreation,Translate --variations-seed-version --pseudonymization-salt-handle=1852,i,4301003564324828552,13506917961118326742,4 --trace-process-track-uuid=3190708988185955192 --mojo-platform-channel-handle=1832 /prefetch:2"
+                     }
+                 ],
+    "offenders":  [
+
+                  ],
+    "etwEvents":  0,
+    "nonLoopbackEvents":  0,
+    "samplerRows":  0,
+    "samplerNonLoopbackTcp":  0,
+    "etwUsed":  true,
+    "elevated":  true,
+    "outDir":  "%USERPROFILE%\\AppData\\Local\\Temp\\usage-notch-audit-0.6.8"
+}
