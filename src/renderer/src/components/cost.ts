@@ -209,7 +209,13 @@ export function createCost(providerId: string): CostHandle {
   const frame = el('p', { class: 'cost__frame' }, t('cost.notABill'));
   frame.hidden = true;
 
-  const root = el('div', { class: 'cost' }, frame, pendingLine, toggle, bar, caption, detail);
+  // Which week the figure covers, visible without opening anything (owner,
+  // 2026-09-30: "haftalık mı aylık mı" could not be answered from the closed
+  // block, because the dates sat only in the provenance at the bottom).
+  const period = el('p', { class: 'cost__period' });
+  period.hidden = true;
+
+  const root = el('div', { class: 'cost' }, frame, period, pendingLine, toggle, bar, caption, detail);
   root.hidden = true;
 
   let expanded = false;
@@ -273,6 +279,7 @@ export function createCost(providerId: string): CostHandle {
     toggle.hidden = pending;
     if (pending) {
       frame.hidden = true;
+      period.hidden = true;
       setText(pendingLine, t('cost.pending'));
       bar.hidden = true;
       caption.hidden = true;
@@ -331,6 +338,9 @@ export function createCost(providerId: string): CostHandle {
     setAttr(root, 'data-unpriced', hasFigure ? null : 'true');
     // With no amount on screen there is nothing to deny (see the denial below).
     frame.hidden = !hasFigure;
+    const periodText = windowLabel(cost, Date.now());
+    setText(period, periodText);
+    period.hidden = false;
 
     if (hasFigure) {
       const amount = usd(cost.totalUsd);
@@ -420,7 +430,9 @@ export function createCost(providerId: string): CostHandle {
     // source and states no date — which is not a gap in what we were told.
     const undated = Boolean(source?.undated);
     replaceChildrenWith(provenance, [
-      el('span', {}, windowLabel(cost, Date.now())),
+      // Already shown above the figure (`period`); kept here for the record
+      // and hidden by row.css so the open block does not say it twice.
+      el('span', { class: 'cost__prov-window' }, periodText),
       el(
         'span',
         cost.pricesAsOf || undated ? {} : { class: 'cost__gap' },

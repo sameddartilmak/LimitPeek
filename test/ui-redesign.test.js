@@ -238,6 +238,23 @@ test.describe('"Ayrıntılar"', () => {
     assert.ok(cls(firstShown).includes('cost__frame'), 'the frame is not the first thing shown');
     assert.equal(firstShown.textContent, i18n.t('cost.notABill'));
   });
+
+  test('the closed block names the week the figure covers', () => {
+    const start = Date.parse('2026-09-24T10:00:00Z');
+    const cost = {
+      totalUsd: 12.4, byClass: { input: 0, output: 12.4, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
+      byModel: [], unpricedModels: [], sourceIncomplete: false, pricesAsOf: '2026-06-24',
+      windowStart: new Date(start).toISOString(), windowEnd: new Date(start + 7 * 24 * HOUR).toISOString(), windowAnchored: true,
+    };
+    const row = rowMod.createRow(provider({ fiveHour: win(10), sevenDay: win(20), weeklyCost: cost }), ctx(), NOW);
+    const block = byClass(row.el, 'cost')[0];
+    const period = byClass(block, 'cost__period')[0];
+    assert.equal(period.hidden, false, 'the period is behind the disclosure');
+    assert.equal(byClass(block, 'cost__detail')[0].hidden, true, 'the block is not closed');
+    assert.match(period.textContent, /kota haftası/i);
+    const shown = block.childNodes.filter((n) => n.nodeType === 1 && !n.hidden);
+    assert.ok(cls(shown[1]).includes('cost__period'), 'the period is not right under the frame');
+  });
 });
 
 test.describe('a stale card says so in words, not only in colour', () => {

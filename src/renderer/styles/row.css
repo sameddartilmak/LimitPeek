@@ -855,6 +855,14 @@
   color: var(--ink-200);
 }
 .cost__frame[hidden] { display: none !important; }
+/* Which week the figure covers, right under the frame. */
+.cost__period {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--ink-300);
+}
+.cost__period[hidden] { display: none !important; }
+.cost__prov-window { display: none; }
 
 .cost__toggle {
   display: flex;
