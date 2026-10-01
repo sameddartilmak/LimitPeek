@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, ipcMain, dialog, nativeTheme } = require('electron');
+const { app, ipcMain, dialog, nativeTheme, BrowserWindow } = require('electron');
 
 const { IPC, IPC_EXT } = require('../shared/contract');
 const { Collector } = require('../core/collector');
@@ -41,6 +41,7 @@ const {
   BRIDGE_SCRIPTS,
 } = require('./bridge-install');
 const { isStoreBuild } = require('./packaging');
+const { runUninstallPrompt, promptLook } = require('./uninstall-prompt');
 
 // Must run before `ready`: some of it is command-line switches.
 security.applyAll();
@@ -51,6 +52,21 @@ security.applyAll();
 if (process.argv.includes('--cleanup-integrations')) {
   cleanupIntegrations();
   app.exit(0);
+  return;
+}
+
+// Windows "Kaldır" (build/installer.nsh points UninstallString here): ask in
+// the app's own look, then start the real uninstaller silently. Before the
+// single-instance lock, so it opens even while the tray app is running.
+if (process.argv.includes('--uninstall')) {
+  app.whenReady().then(async () => {
+    const { lang, theme } = promptLook(settingsStore.load(userDataDir()), osLocale(app), nativeTheme.shouldUseDarkColors);
+    await runUninstallPrompt({ BrowserWindow, t: i18n.t, lang, theme, exePath: process.execPath, log });
+    app.exit(0);
+  }).catch((err) => {
+    log.warn(`uninstall prompt failed: code=${(err && err.code) || 'UNKNOWN'}`);
+    app.exit(1);
+  });
   return;
 }
 

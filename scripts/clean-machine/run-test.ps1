@@ -91,14 +91,28 @@ Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2; StartTime =
   Where-Object { $_.Message -like '*Usage Notch*' } | Select-Object -First 5 | ForEach-Object { Say "app error event: $($_.Message.Substring(0, [Math]::Min(300, $_.Message.Length)))" }
 
 # ---- uninstall ---------------------------------------------------------------
+# Windows "Kaldır" runs UninstallString, which now opens the app's own question
+# (2026-10-01). Show it and photograph it, then do what its "Kaldır" does: the
+# uninstaller, silent, per-user, deleting the app's data.
+$entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like 'Usage Notch*' } | Select-Object -First 1
+Say ("UninstallString: " + $entry.UninstallString)
+Say ("QuietUninstallString: " + $entry.QuietUninstallString)
+if ($entry.UninstallString -like '*--uninstall*') {
+  Start-Process $exe -ArgumentList '--uninstall'
+  Start-Sleep -Seconds 6
+  $prompt = Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*kald*' -or $_.MainWindowTitle -like '*Uninstall*' }
+  Say ("uninstall prompt window: " + @($prompt).Count + " " + (($prompt | ForEach-Object { '"' + $_.MainWindowTitle + '"' }) -join ', '))
+  Shot '5a-uninstall-prompt'
+}
 $un = Join-Path $instDir 'Uninstall Usage Notch.exe'
 Say "uninstaller present: $(Test-Path $un)"
 if (Test-Path $un) {
   $t2 = Get-Date
-  $u = Start-Process $un -ArgumentList '/S' -Wait -PassThru
+  $u = Start-Process $un -ArgumentList '/S', '/currentuser', '--delete-app-data' -Wait -PassThru
   Say ("uninstall exit {0} in {1:N1}s" -f $u.ExitCode, ((Get-Date) - $t2).TotalSeconds)
   Start-Sleep -Seconds 8
 }
+Say ("userData left: " + (Test-Path (Join-Path $env:APPDATA 'usage-notch')))
 Say "processes after uninstall: $(@(Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue).Count)"
 Say "install dir left: $(Test-Path $instDir)"
 Tree 'userData after uninstall' (Join-Path $env:APPDATA 'usage-notch')

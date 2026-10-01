@@ -61,5 +61,15 @@
   "dialog.agy.promise": "A timestamped backup is taken first. The bridge reads only the remaining quota fraction and the reset time; it records no text, file paths, email addresses or credentials, and opens no network connection.",
   "dialog.agyInstall.title": "Install Antigravity CLI?",
   "dialog.agyInstall.message": "Download and install Antigravity CLI (agy)?",
-  "dialog.agyInstall.detail": "This step downloads Antigravity's official install script (install.ps1) from antigravity.google and runs it with PowerShell: a one-off download, only now and with your consent. Apart from this, the app makes no network requests of its own. After the install, the status line bridge is added; the bridge reads only the remaining quota fraction and the reset time."
+  "dialog.agyInstall.detail": "This step downloads Antigravity's official install script (install.ps1) from antigravity.google and runs it with PowerShell: a one-off download, only now and with your consent. Apart from this, the app makes no network requests of its own. After the install, the status line bridge is added; the bridge reads only the remaining quota fraction and the reset time.",
+  "uninstall.windowTitle": "Uninstall Usage Notch",
+  "uninstall.title": "Uninstall Usage Notch?",
+  "uninstall.lead": "Uninstalling removes these from this computer:",
+  "uninstall.item.app": "The app itself, its shortcuts and its Windows startup entry",
+  "uninstall.item.data": "Your settings, your usage history and the last measured limits",
+  "uninstall.item.bridge": "The bridge line added to the Claude Code and Antigravity settings (your own status line comes back if you had one)",
+  "uninstall.untouched": "The files of Claude Code, Codex and your other tools, and your chats, are never touched.",
+  "uninstall.keepData": "Keep my settings and usage history",
+  "uninstall.cancel": "Cancel",
+  "uninstall.remove": "Uninstall"
 }

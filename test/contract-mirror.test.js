@@ -567,7 +567,7 @@ test('spellcheck is off on every window, because the dictionary is a download (s
    * so this flag is a network control and cannot be dropped as cosmetic.
    */
   const withWindows = mainAndCore().filter(({ code }) => code.includes('webPreferences'));
-  assert.deepEqual(withWindows.map((o) => o.rel).sort(), ['src/main/panel-window.js']);
+  assert.deepEqual(withWindows.map((o) => o.rel).sort(), ['src/main/panel-window.js', 'src/main/uninstall-prompt.js']);
   for (const { rel, code } of withWindows) {
     assert.ok(code.includes('spellcheck: false'), `${rel} must keep spellcheck: false`);
   }
@@ -631,12 +631,19 @@ const NETWORK_PATTERNS = [
  * one Claude Code was already running before the setup kept it (claude-chain
  * .json), so the user's line keeps showing. It runs inside Claude Code's
  * process tree, not the app's, and adds no network of its own.
+ *
+ * `src/main/uninstall-prompt.js` starts electron-builder's own uninstaller,
+ * the file next to the app's exe, by ABSOLUTE PATH with fixed arguments (/S,
+ * /currentuser, optionally --delete-app-data), no shell, only after the user
+ * pressed "Kaldır" in the app's uninstall question (2026-10-01). The
+ * uninstaller deletes local files and opens no socket.
  */
 const NEEDLE_EXCEPTIONS = {
   child_process: [
     'src/core/antigravity/cli-install.js',
     'src/core/antigravity/process.js',
     'bridge/claude-statusline.mjs',
+    'src/main/uninstall-prompt.js',
   ],
 };
 

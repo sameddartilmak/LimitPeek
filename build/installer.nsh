@@ -115,8 +115,37 @@
 ; never be blocked by a dialog. Registers $R6/$R7/$R8 are used rather than
 ; $R0/$R1, which the surrounding section reuses, and never $R9, which the
 ; generated `isUpdated` macro clobbers via ${StdUtils.TestParameter}.
+; WINDOWS "KALDIR" OPENS THE APP'S OWN QUESTION (owner, 2026-10-01)
+; ------------------------------------------------------------------
+; electron-builder's one-click uninstaller asks with a fixed system message box
+; in un.onInit, before any hook of ours runs, so it cannot be restyled from
+; here. Instead the "Uninstall" entry Windows shows is pointed at the app:
+; `"Usage Notch.exe" --uninstall` opens a window in the app's own look that says
+; what goes and what is never touched (src/main/uninstall-prompt.js), and its
+; "Kaldır" starts this uninstaller with /S (no system box) and, unless the user
+; ticked "keep", --delete-app-data. customInstall runs AFTER
+; registryAddInstallInfo (installSection.nsh), so this value wins, and it is
+; written again by every update. QuietUninstallString is left untouched: scripts
+; and package managers keep a windowless path.
+!macro customInstall
+  WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --uninstall'
+!macroend
+
 !macro customUnInstall
   ${ifNot} ${isUpdated}
+    ; Asked to delete the app's data (the prompt's default, or a script passing
+    ; --delete-app-data): electron-builder removes %APPDATA%\usage-notch itself;
+    ; the last statusline captures live in a folder it does not know about.
+    ; A fixed path, no variables beyond $LOCALAPPDATA.
+    ${GetParameters} $R6
+    ClearErrors
+    ${GetOptions} $R6 "--delete-app-data" $R7
+    ${ifNot} ${Errors}
+      RMDir /r "$LOCALAPPDATA\UsageNotch"
+      DetailPrint "Usage Notch: app data removed ($LOCALAPPDATA\UsageNotch)."
+    ${endIf}
+    ClearErrors
+
     ; Take our statusLine hooks out of Claude Code's and agy's settings (the
     ; user's own line comes back if the setup kept one), while the app's files
     ; are still here to do it. Bounded: a hung run must not hold the uninstall.

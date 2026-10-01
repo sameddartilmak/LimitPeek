@@ -61,5 +61,15 @@
   "dialog.agy.promise": "Önce zaman damgalı bir yedek alınır. Köprü yalnızca kalan kota oranını ve sıfırlanma zamanını okur; hiçbir metin, dosya yolu, e-posta veya kimlik bilgisi kaydetmez ve hiçbir ağ bağlantısı açmaz.",
   "dialog.agyInstall.title": "Antigravity CLI kurulsun mu?",
   "dialog.agyInstall.message": "Antigravity CLI (agy) indirilip kurulsun mu?",
-  "dialog.agyInstall.detail": "Bu adım, Antigravity'nin resmi kurulum betiğini (install.ps1) antigravity.google adresinden indirip PowerShell ile çalıştırır: tek seferlik bir indirme, yalnızca şimdi ve sizin onayınızla. Bunun dışında uygulama kendiliğinden hiçbir ağ isteği yapmaz. Kurulumdan sonra durum satırı köprüsü eklenir; köprü yalnızca kalan kota oranını ve sıfırlanma zamanını okur."
+  "dialog.agyInstall.detail": "Bu adım, Antigravity'nin resmi kurulum betiğini (install.ps1) antigravity.google adresinden indirip PowerShell ile çalıştırır: tek seferlik bir indirme, yalnızca şimdi ve sizin onayınızla. Bunun dışında uygulama kendiliğinden hiçbir ağ isteği yapmaz. Kurulumdan sonra durum satırı köprüsü eklenir; köprü yalnızca kalan kota oranını ve sıfırlanma zamanını okur.",
+  "uninstall.windowTitle": "Usage Notch'u kaldır",
+  "uninstall.title": "Usage Notch kaldırılsın mı?",
+  "uninstall.lead": "Kaldırınca bu bilgisayardan şunlar silinir:",
+  "uninstall.item.app": "Uygulamanın kendisi, kısayolları ve Windows açılışındaki kaydı",
+  "uninstall.item.data": "Ayarlarınız, kullanım geçmişiniz ve son ölçülen limitler",
+  "uninstall.item.bridge": "Claude Code ve Antigravity ayarlarına eklenen köprü satırı (kendi durum satırınız varsa geri gelir)",
+  "uninstall.untouched": "Claude Code, Codex ve diğer araçların kendi dosyalarına ve sohbetlerinize dokunulmaz.",
+  "uninstall.keepData": "Ayarlarımı ve kullanım geçmişimi sakla",
+  "uninstall.cancel": "Vazgeç",
+  "uninstall.remove": "Kaldır"
 }
