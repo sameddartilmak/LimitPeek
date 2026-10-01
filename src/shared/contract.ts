@@ -1276,6 +1276,15 @@ export const IPC = {
    * nothing changed.
    */
   SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
+  /**
+   * renderer -> main send(over: boolean). The pointer entered (true) or left
+   * (false) the painted panel. The window is larger than the panel and
+   * transparent around it; main makes those transparent parts click-through
+   * (`setIgnoreMouseEvents(true, { forward: true })`) and takes the mouse back
+   * only while the pointer is over the panel (owner, 2026-10-01: the empty
+   * space beside and above the panel swallowed clicks meant for other apps).
+   */
+  PANEL_HIT: 'panel:hit',
 } as const;
 
 /**
@@ -1456,6 +1465,8 @@ export interface UsageNotchApi {
   panelOpened(): void;
   close(): void;
   pin(): void;
+  /** The pointer is over the painted panel (true) or not. See IPC.PANEL_HIT. */
+  setPointerOverPanel(over: boolean): void;
 }
 
 declare global {

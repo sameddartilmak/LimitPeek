@@ -38,6 +38,7 @@ const IPC = {
   SET_PLAN_LABEL: 'prefs:set-plan-label',
   DISCONNECT_PROVIDER: 'provider:disconnect',
   SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
+  PANEL_HIT: 'panel:hit',
 };
 
 /**

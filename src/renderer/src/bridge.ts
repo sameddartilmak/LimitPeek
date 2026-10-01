@@ -107,6 +107,8 @@ export interface Bridge {
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
   pin(): void;
+  /** The pointer is over the painted panel (IPC.PANEL_HIT). Fire-and-forget. */
+  setPointerOverPanel(over: boolean): void;
 }
 
 function getApi(): UsageNotchApi | null {
@@ -140,6 +142,7 @@ function nullBridge(): Bridge {
     setSetupCoachDismissed: async () => false,
     close: () => {},
     pin: () => {},
+    setPointerOverPanel: () => {},
   };
 }
 
@@ -415,6 +418,16 @@ export function createBridge(): Bridge {
     pin(): void {
       try {
         api.pin();
+      } catch {
+        /* ignore */
+      }
+    },
+
+    setPointerOverPanel(over: boolean): void {
+      // An older preload without it: the window simply stays as it was.
+      if (typeof api.setPointerOverPanel !== 'function') return;
+      try {
+        api.setPointerOverPanel(over === true);
       } catch {
         /* ignore */
       }

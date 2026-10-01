@@ -307,6 +307,11 @@ function makeBridge(scenario: Scenario): Bridge {
       setAttr(modeToggle, 'aria-pressed', mode === 'pin' ? 'true' : 'false');
       pushAnchor?.(currentAnchor());
     },
+
+    setPointerOverPanel(over: boolean) {
+      // A browser page has no click-through window; only note it.
+      document.body.setAttribute('data-pointer-over-panel', over ? 'true' : 'false');
+    },
   };
 }
 

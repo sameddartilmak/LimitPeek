@@ -107,6 +107,11 @@ class FakeWindow {
   setAlwaysOnTop() {}
   setVisibleOnAllWorkspaces() {}
   setMenu() {}
+  /** Every click-through change, in order: `{ ignore, forward }`. */
+  setIgnoreMouseEvents(ignore, opts) {
+    this.ignoreCalls = this.ignoreCalls || [];
+    this.ignoreCalls.push({ ignore, forward: Boolean(opts && opts.forward) });
+  }
   loadFile() { this.loads++; }
   isDestroyed() { return this.destroyed; }
   isVisible() { return this.visible; }

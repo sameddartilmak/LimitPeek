@@ -150,12 +150,15 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // no network.
   assert.ok(declared.has('setSetupCoachDismissed'), 'contract.ts should declare setSetupCoachDismissed()');
   // 18 since the optional API key was removed (2026-09-28), 19 with the
-  // first-run card's setter (2026-09-29). The count is asserted so a new
-  // channel — above all one that reaches the network — cannot arrive unnoticed.
+  // first-run card's setter (2026-09-29), 20 with setPointerOverPanel, the
+  // click-through report (2026-10-01; local window state, no network). The
+  // count is asserted so a new channel — above all one that reaches the
+  // network — cannot arrive unnoticed.
+  assert.ok(declared.has('setPointerOverPanel'), 'contract.ts should declare setPointerOverPanel()');
   for (const gone of ['requestKeyEntry', 'removeKey', 'openTokenPage', 'refreshKey']) {
     assert.equal(declared.has(gone), false, `${gone}() belonged to the removed key feature`);
   }
-  assert.equal(declared.size, 19, `expected the 19 declared methods, saw ${[...declared].join(',')}`);
+  assert.equal(declared.size, 20, `expected the 20 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const STATE_THRESHOLDS = { ... } as const;`. */

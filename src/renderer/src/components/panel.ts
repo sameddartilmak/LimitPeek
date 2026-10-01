@@ -109,6 +109,8 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   /** Cancels main's pending auto-hide. Called whenever the pointer is inside
    *  the panel, and again at the start of every drag. */
   onKeepAlive(): void;
+  /** The pointer entered (true) or left (false) the painted panel. */
+  onPointerOverPanel(over: boolean): void;
   /** The user closed the toast. Clears `state.notice`. */
   onNoticeDismiss(): void;
   /** The user closed the refresh bubble ("Antigravity açık değil"). */
@@ -485,6 +487,30 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   on(anchorEl, 'pointermove', () => keepAlive(false));
   on(anchorEl, 'pointerdown', () => keepAlive(true));
 
+  /**
+   * The window around the panel is transparent and click-through; main takes
+   * the mouse back only while the pointer is over the painted panel (owner,
+   * 2026-10-01: the empty space beside and above it swallowed clicks meant for
+   * the apps behind). Main forwards mouse MOVES even while click-through, so
+   * enter and leave still arrive here. A drag that crosses the edge keeps the
+   * mouse until the button is released.
+   */
+  let pointerOver = false;
+  function reportOver(over: boolean): void {
+    if (over === pointerOver) return;
+    pointerOver = over;
+    ctx.onPointerOverPanel(over);
+  }
+  on(anchorEl, 'pointerenter', () => reportOver(true));
+  on(anchorEl, 'pointermove', () => reportOver(true));
+  on(anchorEl, 'pointerleave', (event: PointerEvent) => {
+    if (event.buttons === 0) reportOver(false);
+  });
+  const onUp = (event: PointerEvent): void => {
+    if (!anchorEl.contains(event.target as Node)) reportOver(false);
+  };
+  document.addEventListener('pointerup', onUp);
+
   function applyPlacement(placement: PanelPlacement): void {
     anchorEl.style.left = `${placement.left}px`;
     anchorEl.style.top = placement.top === null ? '' : `${placement.top}px`;
@@ -820,6 +846,9 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       // drives the band stagger and the fill-transition gate.
       setAttr(root, 'data-open', open ? 'true' : 'false');
       setAttr(anchorEl, 'data-open', open ? 'true' : 'false');
+      // Main resets its side to click-through when it hides the panel; forget
+      // ours too, so the next enter is reported rather than deduplicated away.
+      if (!open) pointerOver = false;
       setAttr(root, 'aria-hidden', open ? null : 'true');
     },
     enableAnimation(): void {
@@ -841,6 +870,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       settings.focusLanguage();
     },
     destroy(): void {
+      document.removeEventListener('pointerup', onUp);
       if (noticeTimer !== null) clearTimeout(noticeTimer);
       if (toolToastTimer !== null) clearTimeout(toolToastTimer);
       reorder.destroy();

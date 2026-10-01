@@ -480,3 +480,38 @@ test.describe('closing is idempotent', () => {
     assert.deepEqual(pins, [false], 'one report, and it is the state it ended in');
   });
 });
+
+/* ------------------------------------- the transparent frame lets clicks through */
+
+test.describe('the space around the panel does not swallow clicks (2026-10-01)', () => {
+  test('the window starts click-through, with moves forwarded so the panel can see the pointer', () => {
+    const { panel } = build();
+    assert.deepEqual(panel.win.ignoreCalls[0], { ignore: true, forward: true });
+  });
+
+  test('over the painted panel it takes the mouse; leaving gives it back; repeats are not re-sent', () => {
+    const { panel } = build();
+    panel.setPointerOverPanel(true);
+    panel.setPointerOverPanel(true);
+    panel.setPointerOverPanel(false);
+    assert.deepEqual(panel.win.ignoreCalls.map((c) => c.ignore), [true, false, true]);
+    assert.ok(panel.win.ignoreCalls.every((c) => c.forward), 'moves must stay forwarded or the pointer cannot come back');
+  });
+
+  test('hiding the panel resets it to click-through, whatever the renderer said last', (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+    const { panel, send, trayRect } = build();
+    panel.open(trayRect, send);
+    panel.setPointerOverPanel(true);
+    panel.hide('test');
+    assert.equal(panel.win.ignoreCalls.at(-1).ignore, true);
+  });
+
+  test('main accepts the report only from the panel, and only a literal true takes the mouse', () => {
+    const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src', 'main', 'index.js'), 'utf8');
+    const handler = src.slice(src.indexOf('ipcMain.on(IPC.PANEL_HIT'), src.indexOf('});', src.indexOf('ipcMain.on(IPC.PANEL_HIT')));
+    assert.match(handler, /fromPanel\(event\)/);
+    assert.match(handler, /over === true/);
+    assert.equal(IPC.PANEL_HIT, 'panel:hit');
+  });
+});

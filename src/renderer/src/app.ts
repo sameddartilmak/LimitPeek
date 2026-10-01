@@ -151,6 +151,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     coachDismissed: false,
     onReorder: (ids) => void applyOrder(ids),
     onKeepAlive: () => bridge.panelOpened(),
+    onPointerOverPanel: (over) => bridge.setPointerOverPanel(over),
     // The user read it and is done with it. Only ever reaches a notice the
     // STORE owns: the offline banner is a live condition, not an outcome, and
     // the panel does not offer a control that would clear it (panel.ts).

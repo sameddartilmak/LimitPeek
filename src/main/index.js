@@ -256,6 +256,14 @@ function registerIpc() {
     collector.setPanelOpen(false);
   });
 
+  // The transparent space around the panel lets clicks through to other
+  // apps; the window takes the mouse only while the pointer is over the
+  // painted panel (panel-window.js setPointerOverPanel).
+  ipcMain.on(IPC.PANEL_HIT, (event, over) => {
+    if (!fromPanel(event)) return;
+    panel.setPointerOverPanel(over === true);
+  });
+
   /**
    * A TOGGLE, because the control in the panel is one.
    *

@@ -32,6 +32,7 @@ const CH = {
   INITIAL_PREFERENCES: 'prefs:initial',
   DISCONNECT_PROVIDER: 'provider:disconnect',
   SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
+  PANEL_HIT: 'panel:hit',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -237,4 +238,7 @@ contextBridge.exposeInMainWorld('usageNotch', {
 
   close: () => ipcRenderer.send(CH.PANEL_CLOSE),
   pin: () => ipcRenderer.send(CH.PANEL_PIN),
+  // Only a literal true takes the mouse back; anything else leaves the
+  // transparent window click-through, the safe state for other apps.
+  setPointerOverPanel: (over) => ipcRenderer.send(CH.PANEL_HIT, over === true),
 });

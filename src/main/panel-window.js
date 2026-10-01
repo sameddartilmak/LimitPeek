@@ -257,6 +257,16 @@ class PanelWindow {
     this.win.setVisibleOnAllWorkspaces(true);
     this.win.setMenu(null);
 
+    // The frame is larger than the panel and transparent around it, and a
+    // transparent window still takes every click on its rectangle. So it
+    // starts click-through, with mouse MOVES forwarded so the renderer can
+    // still see the pointer arrive; the renderer reports when the pointer is
+    // over the painted panel and only then is the mouse taken back
+    // (setPointerOverPanel, IPC.PANEL_HIT). Owner, 2026-10-01: the space
+    // beside and above the panel blocked clicks on the apps behind it.
+    this._clickThrough = null;
+    this.setPointerOverPanel(false);
+
     // Blur is now DIAGNOSTIC ONLY and dismisses nothing at all. A tray open no
     // longer takes focus, so losing focus is not evidence the user dismissed
     // anything — most of the time it is the shell handing focus back to
@@ -400,6 +410,20 @@ class PanelWindow {
   }
 
   /**
+   * Over the painted panel: the window takes the mouse. Anywhere else in its
+   * transparent frame: clicks go through to whatever is behind it, and moves
+   * are still forwarded so the renderer sees the pointer come back.
+   */
+  setPointerOverPanel(over) {
+    if (!this.win || this.win.isDestroyed()) return;
+    const through = over !== true;
+    if (this._clickThrough === through) return;
+    this._clickThrough = through;
+    this.win.setIgnoreMouseEvents(through, { forward: true });
+    log.trace('panel.clickThrough', { through });
+  }
+
+  /**
    * `setBounds` onto the anchor, guarding the cross-DPI reveal bug.
    *
    * The window PARKS off-screen at OFFSCREEN {-32000,-32000}, which Windows
@@ -535,6 +559,9 @@ class PanelWindow {
     if (!this.win || this.win.isDestroyed()) return;
     this.win.setBounds({ x: OFFSCREEN.x, y: OFFSCREEN.y, width: this.width, height: this.height });
     log.trace('panel.conceal', { via: 'offscreen' });
+    // The pointer is not over a panel that is off-screen; the next reveal
+    // starts click-through until the pointer reaches the panel again.
+    this.setPointerOverPanel(false);
     // Set the renderer's closed visual state AFTER the window is off-screen, so
     // it happens invisibly. This is what leaves `data-open` false for the next
     // reveal to animate against — the ordering the flash-free open depends on.
