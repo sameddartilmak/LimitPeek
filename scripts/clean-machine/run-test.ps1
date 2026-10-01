@@ -10,6 +10,11 @@ function Say($s) { $line = "[{0:HH:mm:ss}] {1}" -f (Get-Date), $s; Add-Content -
 Set-Content -Path $report -Value "Usage Notch clean-machine test" -Encoding UTF8
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+# DPI-aware, or Screen.Bounds is the SCALED size and every capture is only the
+# top-left of the desktop: the taskbar and the panel above the tray fall
+# outside it (2026-10-01 run, 1214x651 of a scaled screen).
+Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class UnDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
+[void][UnDpi]::SetProcessDPIAware()
 function Shot($name) {
   try {
     $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
@@ -65,6 +70,9 @@ Shot '2-after-first-launch'
 # A second launch opens the panel (second-instance -> openPanel).
 Start-Process $exe
 Start-Sleep -Seconds 6
+# Which app windows are actually on screen, independent of the screenshot.
+$wins = Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
+Say ("visible app windows after the second launch: " + @($wins).Count + " " + (($wins | ForEach-Object { '"' + $_.MainWindowTitle + '"' }) -join ', '))
 Shot '3-panel-open'
 Start-Sleep -Seconds 10
 Shot '4-panel-after-10s'
