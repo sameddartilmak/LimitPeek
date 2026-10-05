@@ -90,28 +90,55 @@ Say ("crash dumps: " + @($crash).Count)
 Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2; StartTime = $t } -ErrorAction SilentlyContinue |
   Where-Object { $_.Message -like '*Usage Notch*' } | Select-Object -First 5 | ForEach-Object { Say "app error event: $($_.Message.Substring(0, [Math]::Min(300, $_.Message.Length)))" }
 
-# ---- uninstall ---------------------------------------------------------------
-# Windows "Kaldır" runs UninstallString, which now opens the app's own question
-# (2026-10-01). Show it and photograph it, then do what its "Kaldır" does: the
-# uninstaller, silent, per-user, deleting the app's data.
+# ---- update over the same install (the 2026-10-01 regression) -----------------
+# An update finds the old uninstaller through UninstallString. 0.6.11 pointed it
+# at the app and every update failed with "Failed to uninstall old application
+# files". Installing the same build again walks exactly that path.
+$t = Get-Date
+$p2 = Start-Process (Join-Path $in 'setup.exe') -ArgumentList '/S' -Wait -PassThru
+Say ("UPDATE over itself: exit {0} in {1:N1}s, exe present: {2}" -f $p2.ExitCode, ((Get-Date) - $t).TotalSeconds, (Test-Path $exe))
+Start-Process $exe
+Start-Sleep -Seconds 8
+
+# ---- Windows "Kaldır": the app's own question --------------------------------
+# UninstallString runs the uninstaller silently with --ask; it starts the app's
+# question and waits for its exit code. The script cannot click, so it
+# photographs the question and then closes it, which the uninstaller reads as
+# "remove, keep the data".
 $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like 'Usage Notch*' } | Select-Object -First 1
 Say ("UninstallString: " + $entry.UninstallString)
-Say ("QuietUninstallString: " + $entry.QuietUninstallString)
-if ($entry.UninstallString -like '*--uninstall*') {
-  Start-Process $exe -ArgumentList '--uninstall'
-  Start-Sleep -Seconds 6
-  $prompt = Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*kald*' -or $_.MainWindowTitle -like '*Uninstall*' }
-  Say ("uninstall prompt window: " + @($prompt).Count + " " + (($prompt | ForEach-Object { '"' + $_.MainWindowTitle + '"' }) -join ', '))
-  Shot '5a-uninstall-prompt'
-}
 $un = Join-Path $instDir 'Uninstall Usage Notch.exe'
-Say "uninstaller present: $(Test-Path $un)"
-if (Test-Path $un) {
-  $t2 = Get-Date
-  $u = Start-Process $un -ArgumentList '/S', '/currentuser', '--delete-app-data' -Wait -PassThru
-  Say ("uninstall exit {0} in {1:N1}s" -f $u.ExitCode, ((Get-Date) - $t2).TotalSeconds)
-  Start-Sleep -Seconds 8
+$t2 = Get-Date
+Start-Process $un -ArgumentList '/currentuser', '/S', '--ask' | Out-Null
+# The uninstaller re-launches itself from %TEMP%, closes the tray app, then
+# starts the question: poll for it rather than guess how long that takes.
+$prompt = $null
+for ($i = 0; $i -lt 45 -and -not $prompt; $i++) {
+  Start-Sleep -Seconds 1
+  $prompt = Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*kald*' -or $_.MainWindowTitle -like '*Uninstall*' }
 }
+Say ("uninstall prompt window after {0}s: {1} {2}" -f ((Get-Date) - $t2).TotalSeconds.ToString('N0'), @($prompt).Count, (($prompt | ForEach-Object { '"' + $_.MainWindowTitle + '"' }) -join ', '))
+Start-Sleep -Seconds 1
+Shot '5a-uninstall-prompt'
+$prompt | Stop-Process -Force -ErrorAction SilentlyContinue
+# The uninstaller runs from %TEMP% under another name: wait for the app's
+# folder to go instead of for a process.
+for ($i = 0; $i -lt 60 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
+Start-Sleep -Seconds 4
+Say ("uninstall (prompt closed = keep data) done in {0:N1}s" -f ((Get-Date) - $t2).TotalSeconds)
+Say ("  app removed: " + (-not (Test-Path $exe)) + "; data kept: userData " + (Test-Path (Join-Path $env:APPDATA 'usage-notch')) + ", captures " + (Test-Path (Join-Path $env:LOCALAPPDATA 'UsageNotch')))
+
+# ---- reinstall, then uninstall deleting the data (a script's --delete-app-data,
+# the same flag the question's default sets) ----------------------------------
+Start-Process (Join-Path $in 'setup.exe') -ArgumentList '/S' -Wait | Out-Null
+Start-Process $exe
+Start-Sleep -Seconds 8
+New-Item -ItemType Directory -Force (Join-Path $env:LOCALAPPDATA 'UsageNotch') | Out-Null
+Set-Content (Join-Path $env:LOCALAPPDATA 'UsageNotch\probe.json') '{}'
+$t3 = Get-Date
+$u = Start-Process $un -ArgumentList '/currentuser', '/S', '--delete-app-data' -Wait -PassThru
+Start-Sleep -Seconds 6
+Say ("uninstall (delete data) exit {0} in {1:N1}s" -f $u.ExitCode, ((Get-Date) - $t3).TotalSeconds)
 Say ("userData left: " + (Test-Path (Join-Path $env:APPDATA 'usage-notch')))
 Say "processes after uninstall: $(@(Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue).Count)"
 Say "install dir left: $(Test-Path $instDir)"

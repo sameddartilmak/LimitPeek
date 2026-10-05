@@ -1,36 +1,32 @@
 'use strict';
-const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
 
 /**
  * The uninstall question, asked in the app's own look (owner, 2026-10-01).
  *
- * WHY THE APP AND NOT THE UNINSTALLER
- * -----------------------------------
+ * WHO ASKS, AND HOW THE ANSWER TRAVELS
+ * ------------------------------------
  * electron-builder's one-click uninstaller asks with a fixed system message
- * box ("… kaldırılsın mı?") in un.onInit, before any hook of ours can run. So
- * the Windows "Kaldır" entry is pointed at the app instead
- * (build/installer.nsh, customInstall rewrites UninstallString to
- * `"Usage Notch.exe" --uninstall`). This window says what will go and what is
- * never touched; "Kaldır" then starts the real uninstaller SILENTLY, so the
- * system box never appears, with `--delete-app-data` unless the user ticked
- * "keep". QuietUninstallString is left as electron-builder wrote it, so scripts
- * and `winget` still uninstall without any window.
+ * box in un.onInit unless it runs with /S. So Windows' "Kaldır" entry runs the
+ * REAL uninstaller silently with one extra flag (`/S --ask`, written by
+ * build/installer.nsh customInstall), and the uninstaller's customUnInit, on
+ * seeing --ask, starts this app as `Usage Notch.exe --uninstall-ask`, WAITS,
+ * and reads the answer from the exit code:
+ *
+ *   0  remove, and delete the app's data (the default)
+ *   1  remove, keep the data ("Ayarlarımı ve kullanım geçmişimi sakla")
+ *   2  cancel: the uninstaller quits, nothing is removed
+ *
+ * The entry must keep naming the uninstaller: an update finds the old version's
+ * uninstaller by reading that very value (installUtil.nsh uninstallOldVersion).
+ * Pointing it at the app instead — the first version of this, 0.6.11 — made
+ * every update fail ("Failed to uninstall old application files").
  *
  * The page has no preload and no IPC: the translated words go in through the
  * URL hash, and the answer comes back as the document title.
  */
 
-/** electron-builder's uninstaller, next to the app's exe. */
-function uninstallerPath(exePath) {
-  return path.join(path.dirname(exePath), 'Uninstall Usage Notch.exe');
-}
-
-/** Silent, per-user; app data goes unless the user asked to keep it. */
-function uninstallerArgs(keepData) {
-  return ['/S', '/currentuser', ...(keepData ? [] : ['--delete-app-data'])];
-}
+const EXIT = Object.freeze({ REMOVE_DELETE: 0, REMOVE_KEEP: 1, CANCEL: 2 });
 
 const TITLE_PREFIX = 'usage-notch-uninstall:';
 
@@ -40,6 +36,12 @@ function parseAnswer(title) {
   const [action, data] = title.slice(TITLE_PREFIX.length).split(':');
   if (action !== 'remove' && action !== 'cancel') return null;
   return { action, keepData: data === 'keep' };
+}
+
+/** The exit code the uninstaller reads for an answer (null = closed = cancel). */
+function exitCodeFor(answer) {
+  if (!answer || answer.action === 'cancel') return EXIT.CANCEL;
+  return answer.keepData ? EXIT.REMOVE_KEEP : EXIT.REMOVE_DELETE;
 }
 
 /**
@@ -72,14 +74,13 @@ function promptText(t) {
 }
 
 /**
- * Show the question and act on the answer. Resolves when the app may exit.
+ * Show the question; resolves with the exit code for the uninstaller.
  * @param {{ BrowserWindow: any, t: Function, lang: string, theme: 'dark'|'light',
- *           exePath: string, log: { info: Function, warn: Function },
- *           spawnFn?: Function }} deps
+ *           log: { info: Function } }} deps
+ * @returns {Promise<number>}
  */
 function runUninstallPrompt(deps) {
-  const { BrowserWindow, t, lang, theme, exePath, log } = deps;
-  const spawnFn = deps.spawnFn || spawn;
+  const { BrowserWindow, t, lang, theme, log } = deps;
   return new Promise((resolve) => {
     const win = new BrowserWindow({
       width: 460,
@@ -92,6 +93,7 @@ function runUninstallPrompt(deps) {
       frame: false,
       show: false,
       center: true,
+      alwaysOnTop: true,
       title: t('uninstall.windowTitle'),
       // --ink-900 of each theme (tokens.css), so the first frame is not white.
       backgroundColor: theme === 'light' ? '#F4F7F6' : '#0E1211',
@@ -99,33 +101,21 @@ function runUninstallPrompt(deps) {
       // downloads hunspell dictionaries the first time a field takes focus.
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: false, spellcheck: false },
     });
+    let answered = null;
     let done = false;
     const finish = () => {
       if (done) return;
       done = true;
+      const code = exitCodeFor(answered);
+      log.info(`uninstall prompt: exit ${code}`);
       if (!win.isDestroyed()) win.destroy();
-      resolve();
+      resolve(code);
     };
     win.on('page-title-updated', (event, title) => {
       event.preventDefault();
       const answer = parseAnswer(title);
       if (!answer) return;
-      if (answer.action === 'cancel') {
-        log.info('uninstall: cancelled in the prompt');
-        finish();
-        return;
-      }
-      const exe = uninstallerPath(exePath);
-      if (!fs.existsSync(exe)) {
-        log.warn('uninstall: uninstaller not found next to the app');
-        finish();
-        return;
-      }
-      // Detached and not waited for: the uninstaller closes every running
-      // copy of the app, this one included.
-      const child = spawnFn(exe, uninstallerArgs(answer.keepData), { detached: true, stdio: 'ignore', windowsHide: true });
-      if (child && typeof child.unref === 'function') child.unref();
-      log.info(`uninstall: started (keepData=${answer.keepData})`);
+      answered = answer;
       finish();
     });
     win.on('closed', finish);
@@ -148,4 +138,4 @@ function runUninstallPrompt(deps) {
   });
 }
 
-module.exports = { runUninstallPrompt, uninstallerPath, uninstallerArgs, parseAnswer, promptText, promptLook };
+module.exports = { runUninstallPrompt, parseAnswer, exitCodeFor, promptText, promptLook, EXIT };

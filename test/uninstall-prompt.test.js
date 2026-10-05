@@ -2,18 +2,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
 const {
-  runUninstallPrompt, uninstallerPath, uninstallerArgs, parseAnswer, promptText,
+  runUninstallPrompt, parseAnswer, exitCodeFor, promptText, EXIT,
 } = require('../src/main/uninstall-prompt');
 
 /**
- * Windows "Kaldır" opens the app's own question (owner, 2026-10-01) instead of
- * electron-builder's system message box; its "Kaldır" starts the uninstaller
- * silently, deleting the app's data unless the user asked to keep it.
+ * Windows "Kaldır" runs the real uninstaller silently with --ask; its
+ * customUnInit starts the app's own question and reads the answer from the
+ * exit code (owner, 2026-10-01). The entry keeps naming the uninstaller: an
+ * update reads it to find the old one, and 0.6.11 broke every update by
+ * pointing it at the app.
  */
 
 test.describe('the answer the page sends back', () => {
@@ -28,13 +29,13 @@ test.describe('the answer the page sends back', () => {
       assert.equal(parseAnswer(t), null, String(t));
     }
   });
-});
 
-test.describe('the uninstaller it starts', () => {
-  test('next to the app, silent and per-user; data goes unless kept', () => {
-    assert.equal(uninstallerPath('C:\\x\\Usage Notch.exe'), path.join('C:\\x', 'Uninstall Usage Notch.exe'));
-    assert.deepEqual(uninstallerArgs(false), ['/S', '/currentuser', '--delete-app-data']);
-    assert.deepEqual(uninstallerArgs(true), ['/S', '/currentuser']);
+  test('the exit codes the uninstaller reads: 0 delete, 1 keep, 2 cancel', () => {
+    assert.deepEqual(EXIT, { REMOVE_DELETE: 0, REMOVE_KEEP: 1, CANCEL: 2 });
+    assert.equal(exitCodeFor({ action: 'remove', keepData: false }), 0);
+    assert.equal(exitCodeFor({ action: 'remove', keepData: true }), 1);
+    assert.equal(exitCodeFor({ action: 'cancel', keepData: false }), 2);
+    assert.equal(exitCodeFor(null), 2, 'a closed window is a cancel');
   });
 });
 
@@ -48,80 +49,66 @@ test.describe('the window', () => {
   }
   const t = (key) => `[${key}]`;
   const log = { info() {}, warn() {} };
-
-  function rig() {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-notch-uninst-'));
-    const exePath = path.join(dir, 'Usage Notch.exe');
-    fs.writeFileSync(path.join(dir, 'Uninstall Usage Notch.exe'), '');
-    const spawned = [];
-    const spawnFn = (exe, args, opts) => { spawned.push({ exe, args, opts }); return { unref() {} }; };
-    const done = runUninstallPrompt({ BrowserWindow: FakeWindow, t, lang: 'tr', theme: 'dark', exePath, log, spawnFn });
-    return { win: FakeWindow.last, spawned, done, dir };
-  }
+  const rig = () => {
+    const done = runUninstallPrompt({ BrowserWindow: FakeWindow, t, lang: 'tr', theme: 'dark', log });
+    return { win: FakeWindow.last, done };
+  };
   const answer = (win, title) => win.emit('page-title-updated', { preventDefault() {} }, title);
 
-  test('a frameless, sandboxed page with the translated words in its hash', async () => {
+  test('a frameless, sandboxed page with the translated words in its hash, and no way to run anything', async () => {
     const r = rig();
     assert.equal(r.win.opts.frame, false);
     assert.equal(r.win.opts.webPreferences.sandbox, true);
     assert.equal(r.win.opts.webPreferences.nodeIntegration, false);
+    assert.equal(r.win.opts.webPreferences.spellcheck, false);
     assert.equal(r.win.opts.webPreferences.preload, undefined, 'no preload, no IPC');
     assert.match(r.win.file, /uninstall[\\/]prompt\.html$/);
     const sent = JSON.parse(decodeURIComponent(r.win.hash));
     assert.equal(sent.text.title, '[uninstall.title]');
     assert.equal(sent.text.items.length, 3);
     answer(r.win, 'usage-notch-uninstall:cancel:delete');
-    await r.done;
+    assert.equal(await r.done, 2);
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'uninstall-prompt.js'), 'utf8');
+    assert.doesNotMatch(src, /child_process|spawn\(/, 'the uninstaller is the one that acts; the app only answers');
   });
 
-  test('"Vazgeç" starts nothing', async () => {
-    const r = rig();
-    answer(r.win, 'usage-notch-uninstall:cancel:delete');
-    await r.done;
-    assert.deepEqual(r.spawned, []);
+  test('"Kaldır" answers 0, with "keep" 1, closing the window 2', async () => {
+    let r = rig(); answer(r.win, 'usage-notch-uninstall:remove:delete'); assert.equal(await r.done, 0);
+    r = rig(); answer(r.win, 'usage-notch-uninstall:remove:keep'); assert.equal(await r.done, 1);
+    r = rig(); r.win.emit('closed'); assert.equal(await r.done, 2);
     assert.equal(r.win.destroyed, true);
-  });
-
-  test('"Kaldır" starts the uninstaller silently, deleting data by default', async () => {
-    const r = rig();
-    answer(r.win, 'usage-notch-uninstall:remove:delete');
-    await r.done;
-    assert.equal(r.spawned.length, 1);
-    assert.equal(r.spawned[0].exe, path.join(r.dir, 'Uninstall Usage Notch.exe'));
-    assert.deepEqual(r.spawned[0].args, ['/S', '/currentuser', '--delete-app-data']);
-    assert.equal(r.spawned[0].opts.detached, true);
-  });
-
-  test('"keep" leaves the data flag off', async () => {
-    const r = rig();
-    answer(r.win, 'usage-notch-uninstall:remove:keep');
-    await r.done;
-    assert.deepEqual(r.spawned[0].args, ['/S', '/currentuser']);
-  });
-
-  test('closing the window is a cancel', async () => {
-    const r = rig();
-    r.win.emit('closed');
-    await r.done;
-    assert.deepEqual(r.spawned, []);
   });
 });
 
 test.describe('the installer wiring (build/installer.nsh)', () => {
   const nsh = fs.readFileSync(path.join(__dirname, '..', 'build', 'installer.nsh'), 'utf8');
+  const macro = (name) => nsh.slice(nsh.indexOf(`!macro ${name}`), nsh.indexOf('!macroend', nsh.indexOf(`!macro ${name}`)));
 
-  test('Windows "Kaldır" is pointed at the app\'s question; the quiet path is left alone', () => {
-    const install = nsh.slice(nsh.indexOf('!macro customInstall'), nsh.indexOf('!macroend', nsh.indexOf('!macro customInstall')));
-    assert.match(install, /WriteRegStr SHELL_CONTEXT "\$\{UNINSTALL_REGISTRY_KEY\}" UninstallString '"\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}" --uninstall'/);
+  test('Windows "Kaldır" still names the UNINSTALLER (updates read it), silently, with --ask', () => {
+    const install = macro('customInstall');
+    assert.match(install, /UninstallString '"\$INSTDIR\\\$\{UNINSTALL_FILENAME\}" \/currentuser \/S --ask'/);
+    assert.doesNotMatch(install, /APP_EXECUTABLE_FILENAME/, 'pointing the entry at the app broke every update (0.6.11)');
     assert.doesNotMatch(install, /QuietUninstallString/);
   });
 
-  test('the captures folder goes only when data deletion was asked for, and never on an update', () => {
-    const un = nsh.slice(nsh.indexOf('!macro customUnInstall'));
+  test('the question is asked only for --ask, never on an update; cancel quits and brings the app back', () => {
+    const init = macro('customUnInit');
+    assert.match(init, /\$\{GetOptions\} \$R6 "--ask"/);
+    assert.match(init, /\$\{andIfNot\} \$\{isUpdated\}/);
+    assert.match(init, /ExecWait '"\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}" --uninstall-ask' \$R8/);
+    const cancel = init.slice(init.indexOf('$R8 == "2"'));
+    assert.ok(cancel.indexOf('Exec ') < cancel.indexOf('Quit'), 'cancel restarts the app, then quits');
+    assert.match(init, /\$R8 == "0"[\s\S]*StrCpy \$usageNotchDeleteData "1"/);
+  });
+
+  test('the data goes LAST, after the bridge cleanup has read claude-chain.json, and never on an update', () => {
+    const un = macro('customUnInstall');
     const guard = un.indexOf('${ifNot} ${isUpdated}');
-    const flag = un.indexOf('"--delete-app-data"');
-    const rm = un.indexOf('RMDir /r "$LOCALAPPDATA\\UsageNotch"');
-    assert.ok(guard >= 0 && flag > guard && rm > flag, 'order: isUpdated guard, then the flag, then the removal');
+    const cleanup = un.indexOf('--cleanup-integrations');
+    const appData = un.indexOf('"$APPDATA\\usage-notch"');
+    const local = un.lastIndexOf('"$LOCALAPPDATA\\UsageNotch"');
+    assert.ok(guard >= 0 && cleanup > guard, 'cleanup inside the real-uninstall branch');
+    assert.ok(appData > cleanup && local > cleanup, 'deleting userData before the cleanup would lose the user\'s own status line');
   });
 
   test('the file keeps its UTF-8 BOM (NSIS needs it for the Turkish text)', () => {

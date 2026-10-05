@@ -115,34 +115,72 @@
 ; never be blocked by a dialog. Registers $R6/$R7/$R8 are used rather than
 ; $R0/$R1, which the surrounding section reuses, and never $R9, which the
 ; generated `isUpdated` macro clobbers via ${StdUtils.TestParameter}.
-; WINDOWS "KALDIR" OPENS THE APP'S OWN QUESTION (owner, 2026-10-01)
-; ------------------------------------------------------------------
+; WINDOWS "KALDIR" ASKS IN THE APP'S OWN LOOK (owner, 2026-10-01)
+; ---------------------------------------------------------------
 ; electron-builder's one-click uninstaller asks with a fixed system message box
-; in un.onInit, before any hook of ours runs, so it cannot be restyled from
-; here. Instead the "Uninstall" entry Windows shows is pointed at the app:
-; `"Usage Notch.exe" --uninstall` opens a window in the app's own look that says
-; what goes and what is never touched (src/main/uninstall-prompt.js), and its
-; "Kaldır" starts this uninstaller with /S (no system box) and, unless the user
-; ticked "keep", --delete-app-data. customInstall runs AFTER
-; registryAddInstallInfo (installSection.nsh), so this value wins, and it is
-; written again by every update. QuietUninstallString is left untouched: scripts
-; and package managers keep a windowless path.
+; in un.onInit unless it runs with /S, and nothing of ours runs before that box.
+; So the "Uninstall" entry Windows shows runs THIS uninstaller silently with one
+; extra flag, `/S --ask`. customUnInit (the end of un.onInit) sees --ask, starts
+; the app as `--uninstall-ask`, waits, and reads the answer from its exit code
+; (src/main/uninstall-prompt.js): 0 remove + delete the data, 1 remove + keep
+; it, 2 cancel. Anything else (the app could not even show the question) is
+; treated as 1, the answer that loses nothing.
+;
+; The value MUST keep naming this uninstaller. An update finds the old
+; version's uninstaller by reading UninstallString (installUtil.nsh,
+; uninstallOldVersion: GetInQuotes on it, then runs that file with
+; `/S /KEEP_APP_DATA --updated`). 0.6.11 pointed it at the app and every update
+; failed with "Failed to uninstall old application files". Here the quoted file
+; is still the uninstaller; an update passes its own arguments, never --ask, so
+; it never sees the question. customInstall runs AFTER registryAddInstallInfo
+; (installSection.nsh), so this value wins and is rewritten by every update.
+; QuietUninstallString is left as electron-builder wrote it.
 !macro customInstall
-  WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --uninstall'
+  WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString '"$INSTDIR\${UNINSTALL_FILENAME}" /currentuser /S --ask'
+!macroend
+
+!macro customUnInit
+  Var /GLOBAL usageNotchDeleteData
+  StrCpy $usageNotchDeleteData "0"
+  ${GetParameters} $R6
+  ClearErrors
+  ${GetOptions} $R6 "--ask" $R7
+  ${ifNot} ${Errors}
+  ${andIfNot} ${isUpdated}
+    ClearErrors
+    ExecWait '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --uninstall-ask' $R8
+    ${if} ${Errors}
+      StrCpy $R8 "1"
+    ${endIf}
+    ${if} $R8 == "2"
+      ; Cancelled: nothing is removed. The uninstaller closed the tray app on
+      ; its way in (silent un.onInit), so put it back the way it was.
+      Exec '"$INSTDIR\${APP_EXECUTABLE_FILENAME}"'
+      SetErrorLevel 2
+      Quit
+    ${endIf}
+    ${if} $R8 == "0"
+      StrCpy $usageNotchDeleteData "1"
+    ${endIf}
+  ${endIf}
+  ClearErrors
 !macroend
 
 !macro customUnInstall
   ${ifNot} ${isUpdated}
-    ; Asked to delete the app's data (the prompt's default, or a script passing
-    ; --delete-app-data): electron-builder removes %APPDATA%\usage-notch itself;
-    ; the last statusline captures live in a folder it does not know about.
-    ; A fixed path, no variables beyond $LOCALAPPDATA.
+    ; The app's data goes when the question's default was kept, or when a
+    ; script passed --delete-app-data. electron-builder deletes %APPDATA% for
+    ; its own flag only, so both folders are removed here: the settings and
+    ; usage history (%APPDATA%\usage-notch, app.getPath('userData')) and the
+    ; last statusline captures (%LOCALAPPDATA%\UsageNotch). Fixed paths.
+    ; Decided here, DONE at the end of this macro: the bridge cleanup below
+    ; reads %APPDATA%\usage-notch\bridge\claude-chain.json to put the user's
+    ; own status line back, so the data may only go after it has run.
     ${GetParameters} $R6
     ClearErrors
     ${GetOptions} $R6 "--delete-app-data" $R7
     ${ifNot} ${Errors}
-      RMDir /r "$LOCALAPPDATA\UsageNotch"
-      DetailPrint "Usage Notch: app data removed ($LOCALAPPDATA\UsageNotch)."
+      StrCpy $usageNotchDeleteData "1"
     ${endIf}
     ClearErrors
 
@@ -237,6 +275,15 @@
       ClearErrors
     ${else}
       DetailPrint "Usage Notch: stored key removed ($LOCALAPPDATA\UsageNotch\secrets)."
+    ${endIf}
+
+    ; Last: the app's data, now that the bridge cleanup above has read what
+    ; it needed from it. Fixed paths: the settings and usage history
+    ; (app.getPath('userData')) and the last statusline captures.
+    ${if} $usageNotchDeleteData == "1"
+      RMDir /r "$APPDATA\usage-notch"
+      RMDir /r "$LOCALAPPDATA\UsageNotch"
+      DetailPrint "Usage Notch: app data removed."
     ${endIf}
   ${endIf}
 !macroend

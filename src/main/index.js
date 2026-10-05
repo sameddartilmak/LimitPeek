@@ -55,15 +55,18 @@ if (process.argv.includes('--cleanup-integrations')) {
   return;
 }
 
-// Windows "Kaldır" (build/installer.nsh points UninstallString here): ask in
-// the app's own look, then start the real uninstaller silently. Before the
-// single-instance lock, so it opens even while the tray app is running.
-if (process.argv.includes('--uninstall')) {
+// Windows "Kaldır" runs the uninstaller silently with --ask; its customUnInit
+// starts this and waits (build/installer.nsh). Ask in the app's own look and
+// answer through the exit code (uninstall-prompt.js). Before the single-
+// instance lock; the uninstaller has already closed the tray app.
+if (process.argv.includes('--uninstall-ask')) {
   app.whenReady().then(async () => {
     const { lang, theme } = promptLook(settingsStore.load(userDataDir()), osLocale(app), nativeTheme.shouldUseDarkColors);
-    await runUninstallPrompt({ BrowserWindow, t: i18n.t, lang, theme, exePath: process.execPath, log });
-    app.exit(0);
+    const code = await runUninstallPrompt({ BrowserWindow, t: i18n.t, lang, theme, log });
+    app.exit(code);
   }).catch((err) => {
+    // No question could be shown: remove the app but keep the data, the
+    // answer that loses nothing.
     log.warn(`uninstall prompt failed: code=${(err && err.code) || 'UNKNOWN'}`);
     app.exit(1);
   });
