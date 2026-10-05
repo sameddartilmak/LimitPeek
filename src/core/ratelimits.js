@@ -287,6 +287,61 @@ function mergeDesktopReading(rl, desktop, now, maxAgeMs = MAX_AGE_MS) {
   };
 }
 
+/**
+ * Marks a window full when Claude Code has recorded that the usage limit was
+ * reached (`claude-limit-note.js`).
+ *
+ * The bridge stops at the last successful request's figure, so a full window
+ * kept reading 99% (owner, 2026-10-05). The note is Claude Code's own
+ * statement that the limit was hit, not an estimate from tokens, so ADR-001
+ * holds: the 100 is the server's refusal, written down.
+ *
+ * The note does not say WHICH limit, so that is decided ONCE, the first time
+ * the note meets a reading in which both windows have a known reset instant
+ * and both contain the note's instant: the more consumed of the two is the one
+ * that ran out. The decision names that window by its reset instant and is
+ * kept by the caller. From then on the note marks that window only while it is
+ * the current one, so a 5h refusal ends with its 5h window, and a weekly one
+ * outlives any number of 5h renewals.
+ *
+ * Deciding later would be wrong: once the 5h window has renewed, only the
+ * weekly one still contains the note, and a 5h refusal would read as "weekly
+ * limit full" for days. A note that cannot be placed at first sight (a window
+ * already renewed, a reset instant unknown) is decided as "no window" and
+ * changes nothing; the reading is never guessed at.
+ *
+ * @param {object} rl       the reading, after `retainClaudeFigures`
+ * @param {{atMs:number, note:string}|null} note  newest note across sessions
+ * @param {number} now
+ * @param {{key:string, slot:string|null, resetsAtMs:number|null}|null} decided
+ *        the caller's decision from an earlier call, or null
+ * @returns {{ rateLimits: object, decided: object|null }}
+ */
+function applyLimitNote(rl, note, now, decided) {
+  if (!note || note.note !== 'wrap_up' || !Number.isFinite(note.atMs)) return { rateLimits: rl, decided: null };
+  const key = `${note.atMs}:${note.note}`;
+  let d = decided && decided.key === key ? decided : null;
+  if (!d) {
+    let slot = null;
+    let best = -Infinity;
+    let placeable = true;
+    for (const k of ['fiveHour', 'sevenDay']) {
+      const w = rl[k];
+      const holds = w && Number.isFinite(w.resetsAtMs)
+        && note.atMs >= w.resetsAtMs - WINDOW_MS[k] && note.atMs < w.resetsAtMs;
+      if (!holds) { placeable = false; break; }
+      const pct = typeof w.usedPercentage === 'number' ? w.usedPercentage : -1;
+      if (pct > best) { best = pct; slot = k; }
+    }
+    d = placeable ? { key, slot, resetsAtMs: rl[slot].resetsAtMs } : { key, slot: null, resetsAtMs: null };
+  }
+  const w = d.slot ? rl[d.slot] : null;
+  if (!w || w.resetsAtMs !== d.resetsAtMs || now >= d.resetsAtMs || w.usedPercentage === 100) {
+    return { rateLimits: rl, decided: d };
+  }
+  return { rateLimits: { ...rl, [d.slot]: { ...w, usedPercentage: 100 } }, decided: d };
+}
+
 /* ------------------------------------------------------------ Antigravity */
 
 /**
@@ -518,6 +573,7 @@ module.exports = {
   readClaudeRateLimits,
   retainClaudeFigures,
   mergeDesktopReading,
+  applyLimitNote,
   readAntigravityQuota,
   usedFromRemaining,
   MAX_AGE_MS,

@@ -8,7 +8,8 @@ const { Worker } = require('node:worker_threads');
 const store = require('./store');
 const log = require('./log');
 const paths = require('./paths');
-const { readClaudeRateLimits, retainClaudeFigures, mergeDesktopReading, readAntigravityQuota } = require('./ratelimits');
+const { readClaudeRateLimits, retainClaudeFigures, mergeDesktopReading, applyLimitNote, readAntigravityQuota } = require('./ratelimits');
+const { LimitNoteTracker } = require('./claude-limit-note');
 const claudeDesktop = require('./claude-desktop');
 const { readAntigravityIdeQuota } = require('./antigravity/ide-quota');
 const { resolveAntigravityIdeStore } = require('./antigravity/install');
@@ -256,6 +257,17 @@ class Collector extends EventEmitter {
      * shown as current. Reset by `retainClaudeFigures` when the window changes.
      */
     this._claudeRetained = { fiveHour: null, sevenDay: null };
+    /**
+     * Claude Code's "usage limit reached" notes across every session's
+     * transcript. The bridge cannot report a full window (it carries the last
+     * SUCCESSFUL request's figure), so this is what turns 99% into 100%.
+     */
+    this._limitNotes = new LimitNoteTracker({ root: this.projectsRoot });
+    /** The note the last snapshot was built with, `atMs:note`, or null. */
+    this._limitNoteKey = null;
+    /** Which window that note marks, decided once (`applyLimitNote`). */
+    this._limitDecision = null;
+    this._noteDebounce = null;
 
     this._scanning = false;
     this._pending = false;
@@ -305,6 +317,7 @@ class Collector extends EventEmitter {
     this._stopped = true;
     if (this._debounce) clearTimeout(this._debounce);
     if (this._rlDebounce) clearTimeout(this._rlDebounce);
+    if (this._noteDebounce) clearTimeout(this._noteDebounce);
     if (this._codexFollowUp) clearTimeout(this._codexFollowUp);
     this._codexFollowUp = null;
     this._stopCodexWorker();
@@ -416,7 +429,13 @@ class Collector extends EventEmitter {
     const read = mergeDesktopReading(bridgeRead, this._readDesktopUsage(now), now);
     const retained = retainClaudeFigures(read, this._claudeRetained, now);
     this._claudeRetained = retained.retained;
-    const rateLimits = retained.rateLimits;
+    // After retention, so the held figures stay the bridge's own: a 100 from
+    // a note must never be held and resurface once the note no longer applies.
+    const note = this._limitNotes.latest(now);
+    this._limitNoteKey = note ? `${note.atMs}:${note.note}` : null;
+    const noted = applyLimitNote(retained.rateLimits, note, now, this._limitDecision);
+    this._limitDecision = noted.decided;
+    const rateLimits = noted.rateLimits;
     const antigravityQuota = readAntigravityQuota({ file: this.antigravityQuotaFile, now: Date.now() });
     this._reportUnusableQuota(antigravityQuota);
     const antigravityIde = this._readIdeQuota();
@@ -784,7 +803,9 @@ class Collector extends EventEmitter {
     // Transcripts. Recursive watch is supported on Windows; if it is not
     // available we simply fall back to the periodic sweep.
     try {
-      const w = fs.watch(this.projectsRoot, { recursive: true, persistent: false }, () => {
+      const w = fs.watch(this.projectsRoot, { recursive: true, persistent: false }, (_evt, name) => {
+        if (name) this._limitNotes.touch(path.join(this.projectsRoot, String(name)));
+        this._onLimitNoteChange();
         this._onTranscriptChange();
       });
       w.on('error', () => { /* watcher died; the sweep still runs */ });
@@ -1037,6 +1058,24 @@ class Collector extends EventEmitter {
     if (!worker) return;
     this._onCodexWorkerGone(worker);
     try { worker.terminate(); } catch { /* already exiting */ }
+  }
+
+  /**
+   * A transcript changed: if it carried a new usage-limit note, rebuild now,
+   * panel open or not. The tray shows the figure too, and "the limit is full"
+   * is the one change that cannot wait for the 60s sweep. Reading the note
+   * costs the appended bytes of the changed files only, and the rebuild
+   * happens only when the newest note is a different one.
+   */
+  _onLimitNoteChange() {
+    if (this._noteDebounce) clearTimeout(this._noteDebounce);
+    this._noteDebounce = setTimeout(() => {
+      this._noteDebounce = null;
+      if (this._stopped || !this._claudeSettled) return;
+      const note = this._limitNotes.latest(Date.now());
+      const key = note ? `${note.atMs}:${note.note}` : null;
+      if (key !== this._limitNoteKey) this.rebuild();
+    }, DEBOUNCE_MS);
   }
 
   _onRateLimitChange() {
