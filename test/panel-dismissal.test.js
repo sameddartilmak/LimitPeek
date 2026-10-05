@@ -26,8 +26,8 @@ const { IPC } = require('../src/shared/contract');
  * pinned survives everything. Three more transitions exist and each of them
  * changes who owns the panel's life:
  *
- *   1. a SECOND open on a panel that is already on screen (`second-instance`,
- *      and a tray click that races the auto-hide)
+ *   1. a SECOND open on a panel that is already on screen (a tray click,
+ *      including one that races the auto-hide)
  *   2. an unpin performed while the pointer is NOT on the panel — the keyboard
  *      path, and the reason `unpin()` cannot simply assume the transit latch
  *   3. a renderer that is revived under a panel whose mode main still holds
@@ -71,10 +71,9 @@ function cursorJustOutside(panel) {
 
 test.describe('re-opening a panel that is already on screen', () => {
   test('a second open does not un-pin a pinned panel', (t) => {
-    // `app.on('second-instance')` calls openPanel() unconditionally, and the
-    // tray click can reach it too. A pinned panel that quietly became
-    // unpinned would then be dismissed by the next blur while its own control
-    // still reads "pinned".
+    // A tray click calls openPanel() whatever the mode is. A pinned panel
+    // that quietly became unpinned would then be dismissed by the next blur
+    // while its own control still reads "pinned".
     t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
     const { panel, anchors, send, trayRect } = build();
     panel.pin(trayRect, send);

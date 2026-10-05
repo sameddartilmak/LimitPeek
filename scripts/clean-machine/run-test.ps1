@@ -13,14 +13,34 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # DPI-aware, or Screen.Bounds is the SCALED size and every capture is only the
 # top-left of the desktop: the taskbar and the panel above the tray fall
 # outside it (2026-10-01 run, 1214x651 of a scaled screen).
-Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class UnDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
+Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class UnDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr h); [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr h, IntPtr dc); [DllImport("gdi32.dll")] public static extern bool BitBlt(IntPtr dst, int x, int y, int w, int h, IntPtr src, int sx, int sy, uint rop); [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r); public struct RECT { public int L, T, R, B; } }'
 [void][UnDpi]::SetProcessDPIAware()
 function Shot($name) {
   try {
     $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+    # SRCCOPY | CAPTUREBLT, or layered (transparent) windows such as the panel
+    # are left out and the capture shows only the desktop behind them.
+    # CopyFromScreen rejects that combination, so call BitBlt directly.
+    $src = [UnDpi]::GetDC([IntPtr]::Zero); $dst = $g.GetHdc()
+    [void][UnDpi]::BitBlt($dst, 0, 0, $b.Width, $b.Height, $src, $b.X, $b.Y, 0x40CC0020)
+    $g.ReleaseHdc($dst); [void][UnDpi]::ReleaseDC([IntPtr]::Zero, $src)
+    # The panel is transparent, so Chromium draws it through DirectComposition
+    # and no screen BitBlt sees it. Ask each app window for its own picture
+    # (PW_RENDERFULLCONTENT) and lay it over the desktop where it sits.
+    Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object {
+      $r = New-Object UnDpi+RECT
+      if ([UnDpi]::GetWindowRect($_.MainWindowHandle, [ref]$r) -and $r.R -gt $r.L -and $r.B -gt $r.T) {
+        $wb = New-Object System.Drawing.Bitmap ($r.R - $r.L), ($r.B - $r.T)
+        $wg = [System.Drawing.Graphics]::FromImage($wb); $wdc = $wg.GetHdc()
+        $ok = [UnDpi]::PrintWindow($_.MainWindowHandle, $wdc, 2)
+        $wg.ReleaseHdc($wdc); $wg.Dispose()
+        if ($ok) { $g.DrawImage($wb, $r.L - $b.X, $r.T - $b.Y) }
+        $wb.Dispose()
+        Say ("  window ""{0}"" at {1},{2} {3}x{4} printed: {5}" -f $_.MainWindowTitle, $r.L, $r.T, ($r.R - $r.L), ($r.B - $r.T), $ok)
+      }
+    }
     $bmp.Save((Join-Path $out "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
     $g.Dispose(); $bmp.Dispose()
     Say "screenshot $name ($($b.Width)x$($b.Height))"
@@ -67,7 +87,8 @@ $procs = Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue
 Say "processes after 20s: $(@($procs).Count)"
 Shot '2-after-first-launch'
 
-# A second launch opens the panel (second-instance -> openPanel).
+# A second launch opens the panel pinned (second-instance -> openPinned), so
+# it must still be on screen in both shots below.
 Start-Process $exe
 Start-Sleep -Seconds 6
 # Which app windows are actually on screen, independent of the screenshot.

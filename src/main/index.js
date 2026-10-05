@@ -848,10 +848,13 @@ function updateTray(snapshot) {
   trayIconDrawnKey = key;
 }
 
-// Launching the app again is the same request as clicking the tray icon, and
-// it gets the same answer: opened, activated, not pinned.
+// Launching the app again (desktop or Start shortcut) opens the panel PINNED.
+// It used to get the tray click's answer, unpinned, but the pointer is then
+// on the shortcut, nowhere near the tray->panel corridor, so the corridor rule
+// closed the panel about 550 ms after it appeared (seen in the clean-machine
+// sandbox, 2026-10-05). Pinned stays until the user closes or unpins it.
 app.on('second-instance', () => {
-  if (panel) openPanel();
+  if (panel) openPinned();
 });
 
 // Tray app: an empty listener is what keeps Electron from quitting when the
