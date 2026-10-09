@@ -289,6 +289,7 @@
   "dur.days": "{d} gün",
   "row.staleChip": "Güncel değil · {age}",
   "row.staleChipBare": "Güncel değil",
+  "row.claudeStaleHint": "Claude Code bir süredir yeni değer göndermedi. Açık bir Claude Code oturumunda bir mesaj gönderdiğinizde güncellenir.",
   "row.detail.toggle": "Ayrıntılar",
   "row.detail.hide": "Ayrıntıları gizle",
   "row.detail.showLabel": "{name}: ayrıntıları göster",

@@ -289,6 +289,7 @@
   "dur.days": "{d} 天",
   "row.staleChip": "非最新 · {age}",
   "row.staleChipBare": "非最新",
+  "row.claudeStaleHint": "Claude Code 已有一段时间未发送新数值。在已打开的 Claude Code 会话中发送一条消息后即会更新。",
   "row.detail.toggle": "详情",
   "row.detail.hide": "隐藏详情",
   "row.detail.showLabel": "{name}：显示详情",

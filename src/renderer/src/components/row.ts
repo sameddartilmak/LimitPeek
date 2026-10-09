@@ -606,6 +606,14 @@ function buildLive(
 
   const bodyChildren: HTMLElement[] = [line1, mainNode];
 
+  // A stale Claude card means no Claude Code session has run its status line
+  // for a while; the chip says how long. Under the meter, say what brings the
+  // figures back (owner, 2026-10-09: "Güncel değil · 13 sa" read as a lost
+  // connection). Status is part of the shape key, so this follows it.
+  if (p.id === 'claude' && p.status === 'stale') {
+    bodyChildren.push(el('p', { class: 'row__stalehint' }, t('row.claudeStaleHint')));
+  }
+
   // --- the error, in the card it belongs to --------------------------------
   let retry: HTMLButtonElement | null = null;
   if (p.status === 'error') {

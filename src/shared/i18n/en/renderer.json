@@ -310,6 +310,7 @@
   "dur.days": "{d}d",
   "row.staleChip": "Not current · {age}",
   "row.staleChipBare": "Not current",
+  "row.claudeStaleHint": "Claude Code has not sent a new figure for a while. It updates when you send a message in an open Claude Code session.",
   "row.detail.toggle": "Details",
   "row.detail.hide": "Hide details",
   "row.detail.showLabel": "{name}: show details",

@@ -30,6 +30,7 @@
 .row .meter,
 .row .row__primary,
 .row .row__err,
+.row .row__stalehint,
 .row .row__more,
 .row .row__detail,
 .row > .consent { grid-column: 1 / -1; }
@@ -769,6 +770,15 @@
 /* The passive row explanation and the stale row "as of" line. */
 .row__meta-detail { color: var(--ink-400); }
 .row__stale { color: var(--ink-500); font-style: normal; }
+
+/* What brings a stale Claude card back. Neutral ink, like the chip: the
+   figures are old, nothing is broken. */
+.row__stalehint {
+  margin: 0;
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+  color: var(--ink-500);
+}
 
 /* A pending action keeps its label and its width; only the ink dims. */
 .btn.is-busy { opacity: .7; }
