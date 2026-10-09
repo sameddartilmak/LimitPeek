@@ -9,7 +9,9 @@
  * reads. Everything else in the payload is ignored and never persisted.
  *
  * Security contract (security lane, F3/F11):
- *   - writes ONLY numeric rate-limit fields + a capture timestamp
+ *   - writes ONLY numeric rate-limit fields + a capture timestamp, and to its
+ *     run log (see `recordRun`) those plus the outcome, Claude Code's version
+ *     string and an 8-character session-id prefix, each shape-checked
  *   - never writes prompt/response text, cwd, file paths or credentials
  *   - never opens a network connection
  *   - never throws: a crash here would break the user's status line
@@ -22,7 +24,7 @@
  * command is one the user configured themselves and Claude Code was already
  * running; we only pass it the payload it would have received anyway.
  */
-import { mkdirSync, writeFileSync, readFileSync, renameSync, unlinkSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, renameSync, unlinkSync, existsSync, appendFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -147,10 +149,17 @@ function runChained(command, input) {
  */
 const SAME_WINDOW_S = 300;
 
-function olderThanStored(next) {
-  let stored;
-  try { stored = JSON.parse(readFileSync(OUT_FILE, 'utf8')); } catch { return false; }
-  if (!stored || typeof stored !== 'object') return false;
+function readStored() {
+  try {
+    const stored = JSON.parse(readFileSync(OUT_FILE, 'utf8'));
+    return stored && typeof stored === 'object' ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function olderThanStored(next, stored) {
+  if (!stored) return false;
   for (const key of ['fiveHour', 'sevenDay']) {
     const s = stored[key];
     const n = next[key];
@@ -161,6 +170,49 @@ function olderThanStored(next) {
       && n.usedPercentage < s.usedPercentage) return true;
   }
   return false;
+}
+
+/**
+ * One line per run in a small log next to the capture, so a capture that
+ * stopped moving can be explained afterwards: was the bridge run at all, and
+ * did it write or refuse? (Owner, 2026-10-09: the panel read "13 sa" old
+ * while sessions were open, and nothing on disk could say why.)
+ *
+ * Numbers and short tokens only, the same contract as the capture: the time,
+ * the outcome, the incoming and (on a refusal) the stored figures, Claude
+ * Code's version, and the first 8 characters of the session id so two
+ * sessions can be told apart. Two files of at most LOG_MAX_BYTES each: when
+ * the log outgrows it, it becomes `.old` and a new one starts.
+ */
+const LOG_FILE = join(OUT_DIR, 'claude-bridge-log.jsonl');
+const LOG_MAX_BYTES = 64 * 1024;
+
+const token = (v, re) => (typeof v === 'string' && re.test(v) ? v : null);
+const pair = (w) => (w ? [w.usedPercentage, w.resetsAt] : null);
+
+function recordRun(outcome, next, stored, payload) {
+  try {
+    const line = {
+      at: next.capturedAt,
+      outcome,
+      v: token(payload?.version, /^[0-9][0-9A-Za-z.+-]{0,31}$/),
+      sid: token(typeof payload?.session_id === 'string' ? payload.session_id.slice(0, 8) : null, /^[0-9A-Za-z-]{1,8}$/),
+      present: next.present,
+      five: pair(next.fiveHour),
+      seven: pair(next.sevenDay),
+    };
+    if (outcome === 'older-than-stored' && stored) {
+      line.storedFive = pair(stored.fiveHour);
+      line.storedSeven = pair(stored.sevenDay);
+    }
+    mkdirSync(OUT_DIR, { recursive: true });
+    let size = 0;
+    try { size = statSync(LOG_FILE).size; } catch { /* not there yet */ }
+    if (size > LOG_MAX_BYTES) {
+      try { renameSync(LOG_FILE, LOG_FILE + '.old'); } catch { /* another session rotated it */ }
+    }
+    appendFileSync(LOG_FILE, JSON.stringify(line) + '\n', 'utf8');
+  } catch { /* the log is a diagnostic: it never costs the capture or the line */ }
 }
 
 function pickWindow(w) {
@@ -185,12 +237,20 @@ try {
     rateLimitKeys: rl && typeof rl === 'object' ? Object.keys(rl).sort() : [],
   };
 
+  const stored = readStored();
+  let outcome = 'written';
   try {
-    if (!olderThanStored(snapshot)) {
+    if (olderThanStored(snapshot, stored)) {
+      outcome = 'older-than-stored';
+    } else {
       mkdirSync(OUT_DIR, { recursive: true });
       writeWhole(OUT_FILE, JSON.stringify(snapshot, null, 2));
     }
-  } catch { /* a failed capture must not take the user's own line with it */ }
+  } catch {
+    // A failed capture must not take the user's own line with it.
+    outcome = 'write-failed';
+  }
+  recordRun(outcome, snapshot, stored, payload);
 
   // The user's own line, or nothing (see the header).
   const command = chainedCommand();
