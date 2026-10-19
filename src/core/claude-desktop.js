@@ -41,6 +41,10 @@ const MAX_COWORK_ROOTS = 500;
  * The desktop app's data directory: `%APPDATA%\Claude` for the classic
  * installer, `%LOCALAPPDATA%\Packages\Claude_<publisher>\LocalCache\Roaming\Claude`
  * for the Store (MSIX) package, whose Roaming writes are redirected there.
+ * Since mid-October 2026 the Store package keeps its data in
+ * `%LOCALAPPDATA%\Claude-Data\claude_<publisher>` instead. Its old folder
+ * holds only a `.user-data-left.*` marker (owner's PC, 2026-10-16), and
+ * without the new path the desktop limits and Cowork usage went missing.
  * Only existing, real (non-link) directories are returned.
  */
 function claudeDesktopDirs(env = process.env) {
@@ -56,6 +60,14 @@ function claudeDesktopDirs(env = process.env) {
       }
     }
   } catch { /* no Packages directory */ }
+  const moved = path.join(localAppData, 'Claude-Data');
+  try {
+    for (const e of fs.readdirSync(moved, { withFileTypes: true })) {
+      if (e.isDirectory() && !e.isSymbolicLink() && /^claude_[a-z0-9]+$/i.test(e.name)) {
+        out.push(path.join(moved, e.name));
+      }
+    }
+  } catch { /* no Claude-Data directory */ }
   return out.filter(isRealDir);
 }
 

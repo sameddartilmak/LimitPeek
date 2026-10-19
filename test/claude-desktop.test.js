@@ -93,6 +93,21 @@ test('the desktop directories are the classic and the Store install locations', 
   assert.deepEqual(desktop.claudeDesktopDirs(env).sort(), [classic, store].sort());
 });
 
+test('the Store package\'s moved data folder (%LOCALAPPDATA%\\Claude-Data\\claude_<publisher>) is found too', () => {
+  const root = tmp('dirs-moved');
+  const env = { APPDATA: path.join(root, 'Roaming'), LOCALAPPDATA: path.join(root, 'Local') };
+  // The old Store folder is left with only a marker file after the move.
+  const oldStore = path.join(env.LOCALAPPDATA, 'Packages', 'Claude_pzs8sxrjxfjjc', 'LocalCache', 'Roaming', 'Claude');
+  fs.mkdirSync(oldStore, { recursive: true });
+  fs.writeFileSync(path.join(oldStore, '.user-data-left.claude_pzs8sxrjxfjjc'), '');
+  const moved = path.join(env.LOCALAPPDATA, 'Claude-Data', 'claude_pzs8sxrjxfjjc');
+  fs.mkdirSync(moved, { recursive: true });
+  fs.mkdirSync(path.join(env.LOCALAPPDATA, 'Claude-Data', 'other-thing'), { recursive: true });
+  const dirs = desktop.claudeDesktopDirs(env);
+  assert.ok(dirs.includes(moved), 'the new location');
+  assert.ok(!dirs.some((d) => d.endsWith('other-thing')), 'only claude_<publisher> folders');
+});
+
 /* ----------------------------------------------------------------- merging */
 
 const H5 = NOW + 2 * HOUR;
