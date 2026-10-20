@@ -279,7 +279,7 @@ function installAntigravityStatusLine(opts) {
 }
 
 /**
- * Removes the Usage Notch statusLine hook — the "way back" for the one-click
+ * Removes the LimitPeek statusLine hook — the "way back" for the one-click
  * setup.
  *
  * Reversible by construction, and conservative: it only ever removes a

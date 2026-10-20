@@ -7,7 +7,7 @@ const log = require('../core/log');
  * Process-wide hardening. ADR-001 constraints security F8 and F11.
  *
  * The strongest control here is the request filter: it CANCELS every request
- * that is not a local file. Usage Notch has no HTTP client in its dependency
+ * that is not a local file. LimitPeek has no HTTP client in its dependency
  * tree, but a filter at the session layer means even an accidental
  * `<img src="https://...">` in the renderer, an embedded font URL, or a future
  * dependency's telemetry call produces zero outbound bytes.

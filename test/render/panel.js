@@ -62,7 +62,7 @@ app.whenReady().then(async () => {
 
   const js = (code) => win.webContents.executeJavaScript(code, true);
 
-  // ---- the header carries the product: the app tile and "Usage Notch" -------
+  // ---- the header carries the product: the app tile and "LimitPeek" -------
   //
   // The owner's call (2026-09-23): the header named a section ("Kullanım"); it
   // now names the product, beside the Windows app tile. The tile is a local
@@ -107,7 +107,7 @@ app.whenReady().then(async () => {
   })()`);
   say('header brand: ' + JSON.stringify(brand));
   check('the header names the product, untranslated, and the window title matches',
-    brand.tag === 'H1' && brand.text === 'Usage Notch' && brand.docTitle === 'Usage Notch', brand);
+    brand.tag === 'H1' && brand.text === 'LimitPeek' && brand.docTitle === 'LimitPeek', brand);
   check('the app tile is decorative, so the heading is read as the name alone',
     brand.logoHidden === 'true', brand.logoHidden);
   check('the tile is the local app-icon asset and it actually loads under the CSP',

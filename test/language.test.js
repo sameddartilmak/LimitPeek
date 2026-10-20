@@ -742,7 +742,7 @@ test.describe('the Claude statusline bridge shows nothing of its own', () => {
       assert.equal(claude.includes(token), false, `claude bridge still prints ${token}`);
     }
     const agy = fs.readFileSync(path.join(ROOT, 'bridge', 'antigravity-statusline.mjs'), 'utf8');
-    assert.equal(agy.includes("'Usage Notch bagli'"), false);
+    assert.equal(agy.includes("'LimitPeek bagli'"), false);
     assert.equal(/\bkalan\b/.test(agy), false, 'agy bridge still says kalan');
   });
 

@@ -20,10 +20,10 @@ const SHA_RE = /^[0-9a-f]{7,40}$/;
 /**
  * @param {string} version  app.getVersion()
  * @param {unknown} info    parsed build-info.json, or null
- * @returns {string}        e.g. "Usage Notch 0.2.1 · 1a2b3c4"
+ * @returns {string}        e.g. "LimitPeek 0.2.1 · 1a2b3c4"
  */
 function versionLabel(version, info) {
-  const base = `Usage Notch ${version}`;
+  const base = `LimitPeek ${version}`;
   if (!info || typeof info !== 'object') return base;
   const sha = /** @type {{sha?: unknown}} */ (info).sha;
   if (typeof sha !== 'string' || !SHA_RE.test(sha)) return base;

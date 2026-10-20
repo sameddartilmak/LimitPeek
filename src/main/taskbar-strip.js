@@ -668,7 +668,7 @@ class TaskbarStrip {
       hasShadow: false,
       // No WS_THICKFRAME: no resize border, no shadow, no window animation.
       thickFrame: false,
-      title: 'Usage Notch',
+      title: 'LimitPeek',
       webPreferences: {
         preload: PRELOAD,
         contextIsolation: true,

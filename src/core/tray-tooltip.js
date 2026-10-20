@@ -23,7 +23,7 @@ const { t } = i18n;
  * window's figure and — parenthesised, subordinate to it — how long is left on
  * it.
  *
- *   Usage Notch — Claude Code
+ *   LimitPeek — Claude Code
  *   5 saatlik limit: %62 (2 sa 14 dk kaldı)
  *   Haftalık limit: %41 (3 gün 4 sa kaldı)
  *
@@ -278,13 +278,13 @@ function tooltipParts(snapshot, now = Date.now()) {
     // agree with it: naming a provider here would describe a row that is not
     // on screen.
     return {
-      head: 'Usage Notch',
+      head: 'LimitPeek',
       five: t('tooltip.noProviders'),
       week: null,
     };
   }
 
-  const head = `Usage Notch — ${name}`;
+  const head = `LimitPeek — ${name}`;
   // Identical treatment, on purpose. The weekly window resets far more rarely,
   // which makes it easier to forget and no less wrong when it happens — and
   // its countdown is the one the user asked for.

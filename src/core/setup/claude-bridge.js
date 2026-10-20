@@ -250,7 +250,7 @@ function bridgePathFromCommand(cmd) {
  * Only a statusLine that is OURS is touched. If the setup kept the user's own
  * line (CHAIN_FILE beside the bridge), that entry is put back exactly as it
  * was; otherwise the key is removed and Claude Code shows no status line, as
- * before Usage Notch. A timestamped backup first, tmp+rename, and the same
+ * before LimitPeek. A timestamped backup first, tmp+rename, and the same
  * moved-under-us check as the install. The kept file is deleted only after
  * the settings write succeeded, so a failure leaves nothing lost.
  *

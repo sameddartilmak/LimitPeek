@@ -66,8 +66,8 @@
   "dialog.agyInstall.title": "Install Antigravity CLI?",
   "dialog.agyInstall.message": "Download and install Antigravity CLI (agy)?",
   "dialog.agyInstall.detail": "This step downloads Antigravity's official install script (install.ps1) from antigravity.google and runs it with PowerShell: a one-off download, only now and with your consent. Apart from this, the app makes no network requests of its own. After the install, the status line bridge is added; the bridge reads only the remaining quota fraction and the reset time.",
-  "uninstall.windowTitle": "Uninstall Usage Notch",
-  "uninstall.title": "Uninstall Usage Notch?",
+  "uninstall.windowTitle": "Uninstall LimitPeek",
+  "uninstall.title": "Uninstall LimitPeek?",
   "uninstall.lead": "Uninstalling removes these from this computer:",
   "uninstall.item.app": "The app itself, its shortcuts and its Windows startup entry",
   "uninstall.item.data": "Your settings, your usage history and the last measured limits",

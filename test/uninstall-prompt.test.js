@@ -25,7 +25,7 @@ test.describe('the answer the page sends back', () => {
   });
 
   test('anything else is not an answer (the page\'s own title, a stray value)', () => {
-    for (const t of ['Usage Notch', '', null, 'usage-notch-uninstall:format-c', 'other:remove:delete']) {
+    for (const t of ['LimitPeek', '', null, 'usage-notch-uninstall:format-c', 'other:remove:delete']) {
       assert.equal(parseAnswer(t), null, String(t));
     }
   });

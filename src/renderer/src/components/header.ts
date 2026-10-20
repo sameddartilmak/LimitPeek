@@ -268,7 +268,7 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
       'h1',
       { class: 'hdr__title' },
       el('span', { class: 'hdr__logo', 'aria-hidden': 'true' }),
-      'Usage Notch',
+      'LimitPeek',
     ),
     el('span', { class: 'hdr__spacer' }),
     fresh,

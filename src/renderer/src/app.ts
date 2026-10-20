@@ -66,7 +66,7 @@ function applyLocale(prefs: Preferences | null): void {
   document.documentElement.setAttribute('lang', language());
   // The product name in every language: it is what the taskbar and a screen
   // reader's window list call this panel, and the header prints the same.
-  document.title = 'Usage Notch';
+  document.title = 'LimitPeek';
 }
 
 export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {

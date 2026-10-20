@@ -43,7 +43,7 @@ test.describe('what the tooltip says', () => {
   test('provider, 5h figure, its countdown, and the weekly figure', () => {
     const text = buildTooltip(snap([row()]), NOW);
     assert.deepEqual(text.split('\n'), [
-      'Usage Notch — Claude Code',
+      'LimitPeek — Claude Code',
       '5 saatlik limit: %62 (2 sa 14 dk kaldı)',
       'Haftalık limit: %41',
     ]);
@@ -171,7 +171,7 @@ test.describe('it refuses to print a percentage it cannot defend', () => {
     // The icon is drawing the no-data ring; naming a provider here would
     // describe a row that is not on screen anywhere.
     const text = buildTooltip(snap([row({ enabled: false })]), NOW);
-    assert.deepEqual(text.split('\n'), ['Usage Notch', 'Panelde sağlayıcı yok']);
+    assert.deepEqual(text.split('\n'), ['LimitPeek', 'Panelde sağlayıcı yok']);
     assert.equal(text.includes('Claude'), false);
   });
 
@@ -276,10 +276,10 @@ test.describe('it fits in a buffer the shell truncates silently', () => {
       const text = buildTooltip(snap([row({
         sevenDay: { usedPercentage: null, certainty: 'unknown', resetsAt: null, absence: 'not-supplied' },
       })]), NOW);
-      assert.equal(text, 'Usage Notch — Claude Code\n5-hour limit: 62% (2h 14m left)\nWeekly limit: not reported');
+      assert.equal(text, 'LimitPeek — Claude Code\n5-hour limit: 62% (2h 14m left)\nWeekly limit: not reported');
       assert.doesNotMatch(text, /[çğıöşüÇĞİÖŞÜ]|kaldı|sa |dk/);
       const empty = buildTooltip(snap([]), NOW);
-      assert.equal(empty, 'Usage Notch\nNo providers in the panel');
+      assert.equal(empty, 'LimitPeek\nNo providers in the panel');
     } finally {
       i18n.setLocale('tr', 'tr-TR');
     }

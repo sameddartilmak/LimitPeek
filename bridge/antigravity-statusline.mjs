@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Usage Notch — Antigravity (`agy` CLI) statusline bridge.
+ * LimitPeek — Antigravity (`agy` CLI) statusline bridge.
  *
  * Structural twin of `claude-statusline.mjs`. Per
  * https://antigravity.google/docs/cli/statusline/ the CLI runs the command
@@ -209,7 +209,7 @@ try {
     parts.push(`${id} ${(f * 100).toFixed(0)}% left`);
   }
   // The fallback is the product name: language-neutral, see the Claude bridge.
-  process.stdout.write(parts.length ? parts.join(' · ') : 'Usage Notch');
+  process.stdout.write(parts.length ? parts.join(' · ') : 'LimitPeek');
 } catch {
   process.stdout.write('');
 }

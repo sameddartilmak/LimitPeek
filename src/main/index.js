@@ -1020,7 +1020,7 @@ app.whenReady().then(bootstrap).catch((err) => {
   try {
     refreshLocale();
   } catch { /* the dialog still shows, in the default language */ }
-  dialog.showErrorBox('Usage Notch', i18n.t('app.startupFailed'));
+  dialog.showErrorBox('LimitPeek', i18n.t('app.startupFailed'));
   app.quit();
 });
 

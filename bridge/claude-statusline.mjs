@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Usage Notch — Claude Code statusline bridge.
+ * LimitPeek — Claude Code statusline bridge.
  *
  * Claude Code invokes this on every status-line render and pipes a JSON payload
  * on stdin. That payload is the ONLY documented source of Anthropic's
@@ -18,7 +18,7 @@
  *
  * WHAT THE USER SEES: NOTHING OF OURS. Capturing is this script's only job; the
  * status line belongs to the user. With no status line of their own it prints
- * nothing, so Claude Code looks exactly as it did before Usage Notch. With one
+ * nothing, so Claude Code looks exactly as it did before LimitPeek. With one
  * of their own, the setup kept it in CHAIN_FILE next to this script, and this
  * script runs it with the same stdin and prints its output unchanged. That
  * command is one the user configured themselves and Claude Code was already

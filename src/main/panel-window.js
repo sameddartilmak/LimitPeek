@@ -237,7 +237,7 @@ class PanelWindow {
       alwaysOnTop: true,
       acceptFirstMouse: true,
       backgroundColor: '#00000000',
-      title: 'Usage Notch',
+      title: 'LimitPeek',
       icon: path.join(__dirname, '..', '..', 'assets', 'app-icon.png'),
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),

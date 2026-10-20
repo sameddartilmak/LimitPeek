@@ -9,8 +9,8 @@
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0E1211">
-<title>Usage Notch — Yapay zekâ limitlerin, bir bakışta tepside</title>
-<meta name="description" content="Usage Notch, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.">
+<title>LimitPeek — Yapay zekâ limitlerin, bir bakışta tepside</title>
+<meta name="description" content="LimitPeek, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
 <!-- Synchronous on purpose: picks the language before first paint. -->
@@ -39,7 +39,7 @@
 <header class="top" id="topbar">
   <div class="top__inner">
     <nav class="pill" aria-label="Bölümler" data-i18n-aria="sections">
-      <a class="pill__brand" href="#top"><img src="assets/icon.svg" alt="" width="22" height="22"><span>Usage Notch</span></a>
+      <a class="pill__brand" href="#top"><img src="assets/icon.svg" alt="" width="22" height="22"><span>LimitPeek</span></a>
       <ul class="pill__links">
         <li><a class="pill__link" href="#how" data-sec="how"><span class="l-tr" lang="tr">Nasıl çalışır</span><span class="l-en" lang="en">How it works</span></a></li>
         <li><a class="pill__link" href="#details" data-sec="details"><span class="l-tr" lang="tr">Ayrıntılar</span><span class="l-en" lang="en">Details</span></a></li>
@@ -105,13 +105,13 @@
           </div>
         </div>
         <div class="live__anchor" id="live-anchor">
-          <iframe class="live__frame" id="demo-frame" src="demo/dev/panel.html?shot=1&amp;bare=1&amp;s=vitrin&amp;coach=done" title="Usage Notch paneli, canlı demo" width="480" height="760" loading="lazy"></iframe>
+          <iframe class="live__frame" id="demo-frame" src="demo/dev/panel.html?shot=1&amp;bare=1&amp;s=vitrin&amp;coach=done" title="LimitPeek paneli, canlı demo" width="480" height="760" loading="lazy"></iframe>
         </div>
         <div class="taskbar">
           <span class="taskbar__apps" aria-hidden="true"><i class="app app--start"></i><i class="app"></i><i class="app app--on"></i><i class="app"></i><i class="app"></i></span>
           <span class="taskbar__tray">
             <span class="tb" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <button type="button" class="tb tray" id="live-tray" aria-expanded="true" aria-controls="live-anchor" aria-label="Usage Notch">
+            <button type="button" class="tb tray" id="live-tray" aria-expanded="true" aria-controls="live-anchor" aria-label="LimitPeek">
               <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle class="donut__track" cx="12" cy="12" r="8.5" fill="none" stroke-width="4.6"/><circle class="donut__sweep" data-state="calm" cx="12" cy="12" r="8.5" fill="none" stroke-width="4.6" stroke-dasharray="20.3 53.41" transform="rotate(-90 12 12)"/><circle class="donut__dot donut__dot--claude" cx="12" cy="12" r="2.4"/></svg>
             </button>
             <span class="tb" aria-hidden="true"><i class="tb__glyph"></i></span>
@@ -151,7 +151,7 @@
             <p class="card__text"><span class="l-tr" lang="tr">Halka, listedeki ilk aracın 5 saatlik penceresini (yoksa haftalığı) çizer. Üzerine gelince yalnızca ipucu çıkar.</span><span class="l-en" lang="en">The ring draws the first tool’s 5-hour window (or its weekly one). Hovering only shows a tooltip.</span></p>
             <div class="card__art ui" aria-hidden="true">
               <div class="mini-tip">
-                <span>Usage Notch — Claude Code</span>
+                <span>LimitPeek — Claude Code</span>
                 <span><span class="l-tr" lang="tr">5 saatlik limit: %38 (2 sa 14 dk kaldı)</span><span class="l-en" lang="en">5-hour limit: 38% (2h 14m left)</span></span>
                 <span><span class="l-tr" lang="tr">Haftalık limit: %62 (3 gün 4 sa kaldı)</span><span class="l-en" lang="en">Weekly limit: 62% (3d 4h left)</span></span>
               </div>
@@ -254,7 +254,7 @@
                 <span class="fchip"><img src="assets/logos/antigravity-color.svg" alt="" width="16" height="16"><span class="l-tr" lang="tr">Antigravity yerel deposu</span><span class="l-en" lang="en">Antigravity local store</span></span>
               </div>
               <span class="flow__line"></span>
-              <span class="flow__app"><img src="assets/icon.svg" alt="" width="28" height="28"><span>Usage Notch</span></span>
+              <span class="flow__app"><img src="assets/icon.svg" alt="" width="28" height="28"><span>LimitPeek</span></span>
               <div class="flow__no">
                 <span class="fchip fchip--no">auth.json</span>
                 <span class="fchip fchip--no"><span class="l-tr" lang="tr">sohbet metni</span><span class="l-en" lang="en">chat text</span></span>
@@ -292,13 +292,13 @@
           <div class="art" data-i="5">
             <div class="themes">
               <div class="ui themes__p themes__p--light" data-theme="light" lang="tr">
-                <div class="themes__hdr"><img class="hdr__logo" src="assets/icon.svg" alt="" width="16" height="16">Usage Notch<i class="fresh__dot"></i></div>
+                <div class="themes__hdr"><img class="hdr__logo" src="assets/icon.svg" alt="" width="16" height="16">LimitPeek<i class="fresh__dot"></i></div>
                 <div class="win" data-state="watch"><div class="win__head"><span class="win__label">Haftalık pencere</span><span class="win__gap"></span><span class="win__pct">%62</span></div><div class="rail"><i class="rail__fill f62"></i></div></div>
                 <div class="seg seg--static"><span class="seg__opt is-on">Açık</span><span class="seg__opt">Koyu</span><span class="seg__opt">Sistem</span></div>
                 <div class="seg seg--static"><span class="seg__opt is-on">Türkçe</span><span class="seg__opt">English</span><span class="seg__opt">Sistem</span></div>
               </div>
               <div class="ui themes__p themes__p--dark" data-theme="dark" lang="en">
-                <div class="themes__hdr"><img class="hdr__logo" src="assets/icon.svg" alt="" width="16" height="16">Usage Notch<i class="fresh__dot"></i></div>
+                <div class="themes__hdr"><img class="hdr__logo" src="assets/icon.svg" alt="" width="16" height="16">LimitPeek<i class="fresh__dot"></i></div>
                 <div class="win" data-state="watch"><div class="win__head"><span class="win__label">Weekly window</span><span class="win__gap"></span><span class="win__pct">62%</span></div><div class="rail"><i class="rail__fill f62"></i></div></div>
                 <div class="seg seg--static"><span class="seg__opt">Light</span><span class="seg__opt is-on">Dark</span><span class="seg__opt">System</span></div>
                 <div class="seg seg--static"><span class="seg__opt">Türkçe</span><span class="seg__opt is-on">English</span><span class="seg__opt">System</span></div>
@@ -353,7 +353,7 @@
         <p class="tool__need"><span class="l-tr" lang="tr">Token ve xAI’nin bildirdiği maliyet, Grok Build’in oturum kullanım dosyalarından. Limit yayımlanmadığı için yüzde yok.</span><span class="l-en" lang="en">Tokens and the cost xAI reports, from Grok Build’s session usage files. No limit is published, so no percentage.</span></p>
       </li>
     </ul>
-    <p class="fine rise"><span class="l-tr" lang="tr">Ürün ve şirket adları yalnızca uyumluluğu belirtmek için kullanılır; Usage Notch’un bu ürünlerin sahipleriyle resmî bir bağı yoktur ve onlar tarafından onaylanmamıştır.</span><span class="l-en" lang="en">Product and company names are used only to state compatibility; Usage Notch has no official affiliation with, or endorsement from, the owners of these products.</span></p>
+    <p class="fine rise"><span class="l-tr" lang="tr">Ürün ve şirket adları yalnızca uyumluluğu belirtmek için kullanılır; LimitPeek’un bu ürünlerin sahipleriyle resmî bir bağı yoktur ve onlar tarafından onaylanmamıştır.</span><span class="l-en" lang="en">Product and company names are used only to state compatibility; LimitPeek has no official affiliation with, or endorsement from, the owners of these products.</span></p>
   </div>
 </section>
 
@@ -387,7 +387,7 @@
       <div class="get">
         <div class="get__app">
           <span class="get__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" class="appicon__track" stroke-width="4.2"/><circle cx="12" cy="12" r="8.5" fill="none" class="appicon__sweep" stroke-width="4.2" stroke-dasharray="20.3 53.41" transform="rotate(-90 12 12)"/><circle cx="12" cy="12" r="2.3" class="appicon__dot"/></svg></span>
-          <span class="get__name">Usage Notch</span>
+          <span class="get__name">LimitPeek</span>
           <ul class="get__facts">
             <li class="chip"><span class="l-tr" lang="tr">Kullanıcı başına</span><span class="l-en" lang="en">Per user</span></li>
             <li class="chip"><span class="l-tr" lang="tr">Yönetici izni yok</span><span class="l-en" lang="en">No admin rights</span></li>
@@ -472,7 +472,7 @@
 
 <footer class="foot-site">
   <div class="wrap foot-site__in">
-    <span class="foot-site__brand"><img src="assets/icon.svg" alt="" width="20" height="20"><span>Usage Notch</span></span>
+    <span class="foot-site__brand"><img src="assets/icon.svg" alt="" width="20" height="20"><span>LimitPeek</span></span>
     <p><span class="l-tr" lang="tr">Bu sayfa çerez kullanmaz ve dışarıya hiçbir istek göndermez.</span><span class="l-en" lang="en">This page sets no cookies and sends no outside requests.</span></p>
     <ul class="foot-site__links">
       <li><a href="privacy.html"><span class="l-tr" lang="tr">Gizlilik</span><span class="l-en" lang="en">Privacy</span></a></li>

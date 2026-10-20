@@ -66,8 +66,8 @@
   "dialog.agyInstall.title": "安装 Antigravity CLI？",
   "dialog.agyInstall.message": "下载并安装 Antigravity CLI（agy）？",
   "dialog.agyInstall.detail": "此步骤会从 antigravity.google 下载 Antigravity 官方安装脚本（install.ps1）并用 PowerShell 运行：仅此一次下载，只在此刻且经你同意后进行。除此之外，本应用自身不发起任何网络请求。安装完成后会添加状态栏桥接；桥接只读取剩余配额比例和重置时间。",
-  "uninstall.windowTitle": "卸载 Usage Notch",
-  "uninstall.title": "要卸载 Usage Notch 吗？",
+  "uninstall.windowTitle": "卸载 LimitPeek",
+  "uninstall.title": "要卸载 LimitPeek 吗？",
   "uninstall.lead": "卸载会从这台电脑上删除以下内容：",
   "uninstall.item.app": "应用本身、其快捷方式及 Windows 开机启动项",
   "uninstall.item.data": "你的设置、用量历史和最近测得的限额",

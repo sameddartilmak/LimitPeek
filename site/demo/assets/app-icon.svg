@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <!--
-    Usage Notch app icon, SMALL variant. A copy of build/icon-small.svg, which
+    LimitPeek app icon, SMALL variant. A copy of build/icon-small.svg, which
     is the source of truth (it feeds the 16, 20 and 24 px ICO entries). The panel
     header paints it at 24 CSS px (24 to 36 device px at 100 to 150% scaling):
     at that size this art's heavier ring still reads, while the master's thin

@@ -1,4 +1,4 @@
-/* Usage Notch landing page — the only script. No dependencies, no network, no
+/* LimitPeek landing page — the only script. No dependencies, no network, no
  * storage, no innerHTML (all text goes through textContent).
  *
  *   1. language   TR/EN before first paint, <html lang> kept in step
@@ -25,8 +25,8 @@
   /* =========================================================== strings */
   var S = {
     tr: {
-      title: 'Usage Notch — Yapay zekâ limitlerin, bir bakışta tepside',
-      description: 'Usage Notch, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.',
+      title: 'LimitPeek — Yapay zekâ limitlerin, bir bakışta tepside',
+      description: 'LimitPeek, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.',
       settings: 'Ayarlar', settingsClose: 'Ayarları kapat',
       pinOff: 'Paneli ekranda tut', pinOn: 'Paneli ekranda tutmayı bırak',
       close: 'Paneli kapat', refresh: 'Şimdi yenile', back: 'Ayarlardan çık, kullanım listesine dön',
@@ -42,8 +42,8 @@
       sections: 'Bölümler', steps: 'Adımlar'
     },
     en: {
-      title: 'Usage Notch — Your AI usage limits, at a glance in the tray',
-      description: 'Usage Notch shows the 5-hour and weekly limits of Claude Code, Codex and Antigravity in one small panel in the Windows tray. It never shows a percentage it cannot verify.',
+      title: 'LimitPeek — Your AI usage limits, at a glance in the tray',
+      description: 'LimitPeek shows the 5-hour and weekly limits of Claude Code, Codex and Antigravity in one small panel in the Windows tray. It never shows a percentage it cannot verify.',
       settings: 'Settings', settingsClose: 'Close settings',
       pinOff: 'Keep the panel on screen', pinOn: 'Stop keeping the panel on screen',
       close: 'Close the panel', refresh: 'Refresh now', back: 'Leave settings and return to the usage list',
@@ -479,7 +479,7 @@
       each(rowsEl.querySelectorAll('.grip'), function (g) { g.removeAttribute('data-tray'); });
       var lines = [];
       if (!lead) {
-        lines = ['Usage Notch', t('noProviders')];
+        lines = ['LimitPeek', t('noProviders')];
         demo.removeAttribute('data-dot');
         setRing(null, 'none');
       } else {
@@ -492,7 +492,7 @@
         if (isLive && p5) setRing(+p5, lead.getAttribute('data-s5'));
         else if (isLive && p7) setRing(+p7, lead.getAttribute('data-s7'));
         else setRing(null, 'none');
-        lines.push('Usage Notch — ' + lead.getAttribute('data-name'));
+        lines.push('LimitPeek — ' + lead.getAttribute('data-name'));
         lines.push(t('five') + ': ' + (isLive && p5 ? pct(p5) + ' (' + lead.getAttribute('data-r5-' + lang) + ')' : t('unknown')));
         var weekText = isLive && p7 ? pct(p7) + ' (' + lead.getAttribute('data-r7-' + lang) + ')'
           : (isLive ? t('notReported') : t('unknown'));

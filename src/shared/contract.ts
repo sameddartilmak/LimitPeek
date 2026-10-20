@@ -1,5 +1,5 @@
 /**
- * Usage Notch — the contract between the collector (main process) and the
+ * LimitPeek — the contract between the collector (main process) and the
  * renderer. Owned by the orchestrator; neither lane may change it unilaterally.
  *
  * Rule that drives the whole shape: the renderer performs NO arithmetic on

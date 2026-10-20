@@ -747,7 +747,7 @@ test.describe('the bridge stdout is a surface, not a debug print', () => {
   test('a payload whose every fraction is unusable falls back to the plain label', () => {
     const r = runBridge({ quota: { 'x-weekly': { remaining_fraction: 9 } } });
     // The product name only: the bridge cannot know the user's language.
-    assert.equal(r.stdout, 'Usage Notch');
+    assert.equal(r.stdout, 'LimitPeek');
   });
 });
 

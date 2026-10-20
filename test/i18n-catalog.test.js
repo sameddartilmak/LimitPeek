@@ -210,7 +210,7 @@ test.describe('the catalogs have one shape in both languages', () => {
     // are only placeholders and separators.
     // "Plan" is the same word in both languages (settings, 2026-09-29).
     const SAME_KEYS = new Set(['language.endonym.tr', 'language.endonym.en', 'language.endonym.zh', 'settings.plan.labelShort']);
-    const SAME_VALUES = new Set(['OK', 'Usage Notch']);
+    const SAME_VALUES = new Set(['OK', 'LimitPeek']);
     const onlyPlaceholders = (text) => !/\p{L}/u.test(text.replace(/\{[A-Za-z][A-Za-z0-9]*\}/g, ''));
     // Plural records are compared category by category: English "one" may
     // legitimately equal Turkish "other" ("{value} token" is both).

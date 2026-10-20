@@ -89,7 +89,7 @@ class TrayController {
     // Kept for setPresent(true), which builds the icon again from the same menu.
     this._createOptions = { autostart, autostartByWindows, onToggleAutostart, onQuit };
     this.tray = new Tray(createTrayIcon());
-    this.tray.setToolTip('Usage Notch');
+    this.tray.setToolTip('LimitPeek');
 
     // BOTH events funnel into the SAME coalesced toggle. Windows delivers
     // `click` and then `double-click` for one physical press on the reporting

@@ -285,7 +285,7 @@ class DisplayLayer {
         skipTaskbar: true,
         focusable: false,
         thickFrame: false,
-        title: 'Usage Notch',
+        title: 'LimitPeek',
         webPreferences: {
           offscreen: true,
           preload: PRELOAD,

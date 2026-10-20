@@ -226,7 +226,7 @@ function attach(nextBar) {
   bar = nextBar;
   gone = false;
   mode = 'layered';
-  hwnd = Number(f.CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE, CLASS_NAME, 'Usage Notch',
+  hwnd = Number(f.CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE, CLASS_NAME, 'LimitPeek',
     WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 1, 1, bar, 0, instance, 0)) || 0;
   if (!hwnd) {
     post({ type: 'failed', code: 'CREATE_CHILD' });
