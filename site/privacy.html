@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="tr" data-title-tr="Gizlilik politikası — Usage Notch" data-title-en="Privacy policy — Usage Notch">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0E1211">
+<title>Gizlilik politikası — Usage Notch</title>
+<meta name="description" content="Usage Notch hangi dosyaları okur, neyi bilgisayarınızda saklar, ne gönderir.">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<script src="legal.js"></script>
+</head>
+<body>
+<a class="skip" href="#main"><span class="l-tr" lang="tr">İçeriğe geç</span><span class="l-en" lang="en">Skip to content</span></a>
+
+<header class="legal-top">
+  <nav class="pill" aria-label="Usage Notch">
+    <a class="pill__brand" href="index.html"><img src="assets/icon.svg" alt="" width="22" height="22"><span>Usage Notch</span></a>
+    <fieldset class="lang">
+      <legend class="u-sr"><span class="l-tr" lang="tr">Sayfa dili</span><span class="l-en" lang="en">Page language</span></legend>
+      <input class="lang__input u-sr" type="radio" name="lang" id="lang-tr" value="tr" checked>
+      <label class="lang__opt" for="lang-tr"><span aria-hidden="true">TR</span><span class="u-sr" lang="tr">Türkçe</span></label>
+      <input class="lang__input u-sr" type="radio" name="lang" id="lang-en" value="en">
+      <label class="lang__opt" for="lang-en"><span aria-hidden="true">EN</span><span class="u-sr" lang="en">English</span></label>
+    </fieldset>
+  </nav>
+</header>
+
+<main id="main" tabindex="-1" class="legal">
+
+<!-- ================================================================ TR -->
+<article class="l-tr" lang="tr">
+  <p class="legal__kicker">Yasal</p>
+  <h1 class="legal__title">Gizlilik politikası</h1>
+  <p class="legal__meta">Son güncelleme: 20 Ekim 2026</p>
+
+  <p class="legal__lead"><strong>Kısaca:</strong> Usage Notch bilgisayarınızda çalışır ve yapay zekâ araçlarınızın kendi kayıt dosyalarından yalnızca kullanım rakamlarını okur. Uygulamanın şu anki sürümü <strong>hiçbir internet bağlantısı açmaz</strong>. Konuşmalarınız, kodunuz ve dosyalarınız bilgisayarınızdan çıkmaz.</p>
+
+  <h2>1. Biz kimiz</h2>
+  <p>Usage Notch'u <span class="todo">[işletme adı]</span> geliştirir ve satar (bu sayfada "biz"). Adres: <span class="todo">[adres]</span>. İletişim: <span class="todo">[destek e-postası]</span>. 6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) ve Avrupa Birliği Genel Veri Koruma Tüzüğü (GDPR) bakımından, aşağıda anlatılan sınırlı veriler için veri sorumlusu biziz.</p>
+
+  <h2>2. Uygulama bilgisayarınızda ne okur</h2>
+  <p>Uygulama, kullandığınız araçların bilgisayarınıza zaten yazdığı dosyaları okur. Yalnızca açık olan araçların klasörlerine bakar; her aracı Ayarlar'dan kapatabilirsiniz.</p>
+  <ul>
+    <li><strong>Claude Code:</strong> <code>%USERPROFILE%\.claude</code> klasöründeki oturum kayıtları. <code>~\.claude.json</code> dosyasından yalnızca hesabın kurum kimliği ve plan türü okunur.</li>
+    <li><strong>Claude masaüstü uygulaması:</strong> kullanım geçmişi dosyası (<code>plan-usage-history.json</code>) ve Cowork oturum kayıtları. Bu uygulamanın çerezleri, oturum bilgileri ve ayarları açılmaz.</li>
+    <li><strong>Codex:</strong> <code>%USERPROFILE%\.codex</code> klasöründeki oturum kayıtları.</li>
+    <li><strong>Antigravity:</strong> <code>%USERPROFILE%\.gemini</code> altındaki Antigravity klasörleri.</li>
+    <li><strong>Kimi Code, Qwen Code, Grok Build</strong> (deneysel, varsayılan olarak kapalı): kendi ev klasörlerindeki kullanım kayıtları.</li>
+  </ul>
+  <p>Bu kayıtlar konuşma metinleri de içerebilir. Uygulama her satırdan yalnızca <strong>kullanım alanlarını</strong> alır: token sayıları, model adı, zaman ve istek kimliği. Konuşma metnini, kodunuzu veya dosya içeriklerinizi saklamaz, göstermez ve hiçbir yere göndermez.</p>
+
+  <h2>3. Uygulama bilgisayarınıza ne yazar</h2>
+  <ul>
+    <li><code>%APPDATA%\usage-notch</code>: ayarlarınız ve kullanım geçmişi. Geçmişte istek başına yalnızca zaman, model adı, token sayıları ve istek kimliği bulunur. Okunan dosyaların adları değil, bunlardan türetilmiş anlamsız bir kısa kimlik tutulur.</li>
+    <li><code>%LOCALAPPDATA%\UsageNotch</code>: Claude ve Antigravity'nin en son limit yüzdeleri ve Claude bağlantısının kısa bir çalışma kaydı (zaman, yüzdeler, araç sürümü, oturum kimliğinin ilk 8 karakteri).</li>
+    <li><strong>Yalnızca izninizle:</strong> Claude Code'un (ve isterseniz Antigravity'nin) ayar dosyasına bir "durum satırı" kaydı eklenir. Limit yüzdeleri bu yolla okunur. Uygulama ekleme yapmadan önce ne yapacağını gösterip onayınızı ister; Ayarlar'daki "Bağlantıyı kaldır" ile ya da uygulamayı kaldırınca eski hâline döner.</li>
+    <li>"Windows açılışında başlat" açıksa Windows'un başlangıç listesine bir kayıt.</li>
+  </ul>
+
+  <h2>4. Bilgisayarınızdan ne çıkar</h2>
+  <p><strong>Uygulamanın şu anki sürümünden hiçbir şey.</strong> Analiz, reklam, hata raporu ya da kullanım istatistiği gönderilmez. Bunu Windows çekirdeğinin ağ kaydıyla ölçüyoruz: uygulama 16 dakikalık ölçümde tek bir ağ bağlantısı açmadı.</p>
+
+  <h3>Ücretli sürümle gelecek tek bağlantı</h3>
+  <p>Abonelik başladığında uygulama, aboneliğinizin sürdüğünü doğrulamak için <strong>günde bir kez, tek bir adresimize</strong> bağlanacak. Bu istekte yalnızca şunlar gider: lisans anahtarınız, uygulamanın ilk açılışta rastgele ürettiği cihaz kimliği ve uygulama sürümü. Cevap olarak yalnızca lisans durumu ve en yeni sürüm numarası döner. Kullanım rakamlarınız, dosyalarınız ya da konuşmalarınız bu istekte <strong>yer almaz</strong>. Bu bağlantı eklenmeden önce bu sayfa güncellenecek ve bağlantı uygulamanın Ayarlar ekranında açıkça yazacak.</p>
+
+  <h2>5. Ödeme</h2>
+  <p>Ödemeleri <strong>Polar</strong> (polar.sh) satıcı sıfatıyla alır; faturayı ve vergileri Polar düzenler. Kart bilgileriniz bize hiç gelmez. Polar'ın topladığı bilgiler onun kendi gizlilik politikasına tabidir. Biz Polar'dan yalnızca lisansı teslim etmek ve destek vermek için gereken bilgileri alırız: e-posta adresiniz, ülkeniz ve aboneliğinizin durumu.</p>
+
+  <h2>6. Web sitesi</h2>
+  <p>Bu site çerez kullanmaz ve sayfaları dışarıya istek göndermez. İleride ziyaretçi sayımı eklersek çerezsiz bir yöntem kullanır ve bu sayfayı önceden güncelleriz.</p>
+
+  <h2>7. Destek yazışmaları</h2>
+  <p>Bize yazdığınızda, cevap verebilmek için e-postanızı ve yazdıklarınızı saklarız. İsterseniz sileriz.</p>
+
+  <h2>8. Saklama süresi ve silme</h2>
+  <ul>
+    <li>Bilgisayarınızdaki veriler siz silene kadar sizde kalır. Uygulamayı kaldırdığınızda bu veriler de silinir; kaldırma ekranında "Ayarlarımı ve kullanım geçmişimi sakla" kutusunu işaretlerseniz bırakılır. Klasörleri elle de silebilirsiniz.</li>
+    <li>Abonelik ve fatura kayıtları yasal saklama süreleri boyunca tutulur.</li>
+    <li>Destek yazışmaları, konu kapandıktan sonra en fazla 2 yıl saklanır.</li>
+  </ul>
+
+  <h2>9. Haklarınız</h2>
+  <p>KVKK'nın 11. maddesi ve GDPR kapsamında, hakkınızda hangi verileri tuttuğumuzu öğrenme, düzeltilmesini veya silinmesini isteme, işlenmesine itiraz etme ve verilerinizi taşınabilir biçimde alma haklarınız vardır. Bunun için <span class="todo">[destek e-postası]</span> adresine yazın; en geç 30 gün içinde cevap veririz. Bulunduğunuz ülkenin veri koruma kurumuna şikâyette de bulunabilirsiniz (Türkiye'de Kişisel Verileri Koruma Kurumu).</p>
+
+  <h2>10. Değişiklikler</h2>
+  <p>Bu politikayı değiştirirsek tarihi güncelleriz. Önemli bir değişiklik olursa (örneğin uygulamaya yeni bir bağlantı eklenmesi) bunu uygulama güncellemesinden önce sitede duyururuz.</p>
+
+  <ul class="legal__nav" aria-label="Yasal sayfalar">
+    <li><a href="privacy.html" aria-current="page">Gizlilik politikası</a></li>
+    <li><a href="terms.html">Kullanım koşulları</a></li>
+    <li><a href="refund.html">İade politikası</a></li>
+  </ul>
+</article>
+
+<!-- ================================================================ EN -->
+<article class="l-en" lang="en">
+  <p class="legal__kicker">Legal</p>
+  <h1 class="legal__title">Privacy policy</h1>
+  <p class="legal__meta">Last updated: 20 October 2026</p>
+
+  <p class="legal__lead"><strong>In short:</strong> Usage Notch runs on your PC and reads only usage figures from your AI tools' own log files. The current version of the app <strong>opens no internet connection at all</strong>. Your conversations, code and files never leave your computer.</p>
+
+  <h2>1. Who we are</h2>
+  <p>Usage Notch is developed and sold by <span class="todo">[business name]</span> ("we"). Address: <span class="todo">[address]</span>. Contact: <span class="todo">[support email]</span>. We are the data controller, under the Turkish Personal Data Protection Law No. 6698 (KVKK) and the EU General Data Protection Regulation (GDPR), for the limited data described below.</p>
+
+  <h2>2. What the app reads on your PC</h2>
+  <p>The app reads files your tools already write to your computer. It looks only in the folders of tools that are switched on; you can switch each tool off in Settings.</p>
+  <ul>
+    <li><strong>Claude Code:</strong> session logs in <code>%USERPROFILE%\.claude</code>. From <code>~\.claude.json</code> only the account's organization id and plan tier are read.</li>
+    <li><strong>Claude desktop app:</strong> its usage history file (<code>plan-usage-history.json</code>) and Cowork session logs. Its cookies, sign-in data and settings are never opened.</li>
+    <li><strong>Codex:</strong> session logs in <code>%USERPROFILE%\.codex</code>.</li>
+    <li><strong>Antigravity:</strong> the Antigravity folders under <code>%USERPROFILE%\.gemini</code>.</li>
+    <li><strong>Kimi Code, Qwen Code, Grok Build</strong> (experimental, off by default): usage logs in their own home folders.</li>
+  </ul>
+  <p>These logs can also contain conversation text. From each line the app takes only the <strong>usage fields</strong>: token counts, model name, time and request id. It does not store, show or send conversation text, your code or your file contents.</p>
+
+  <h2>3. What the app writes on your PC</h2>
+  <ul>
+    <li><code>%APPDATA%\usage-notch</code>: your settings and usage history. The history holds only time, model name, token counts and request id per request. Instead of the names of the files read, it keeps a short, meaningless derived id.</li>
+    <li><code>%LOCALAPPDATA%\UsageNotch</code>: the latest Claude and Antigravity limit percentages, and a short run log of the Claude connection (time, percentages, tool version, the first 8 characters of the session id).</li>
+    <li><strong>Only with your permission:</strong> a "status line" entry is added to Claude Code's (and, if you choose, Antigravity's) settings file; that is how limit percentages are read. The app shows what it will change and asks first; "Disconnect" in Settings, or uninstalling the app, restores the file.</li>
+    <li>An entry in Windows' startup list, if "Start with Windows" is on.</li>
+  </ul>
+
+  <h2>4. What leaves your PC</h2>
+  <p><strong>Nothing, from the current version of the app.</strong> No analytics, ads, crash reports or usage statistics are sent. We measure this with the Windows kernel's network trace: the app opened not a single network connection in a 16-minute measurement.</p>
+
+  <h3>The one connection the paid version will add</h3>
+  <p>Once subscriptions start, the app will connect <strong>once a day, to one address of ours</strong>, to confirm your subscription is active. The request carries only your license key, a device id the app generates at random on first start, and the app version. The reply carries only the license status and the newest version number. Your usage figures, files and conversations are <strong>not</strong> part of it. This page will be updated before that connection is added, and the app's Settings will state it plainly.</p>
+
+  <h2>5. Payments</h2>
+  <p>Payments are taken by <strong>Polar</strong> (polar.sh) as the seller of record; Polar issues the invoice and handles taxes. Your card details never reach us. What Polar collects is governed by Polar's own privacy policy. From Polar we receive only what we need to deliver your license and support you: your email address, your country and your subscription status.</p>
+
+  <h2>6. Website</h2>
+  <p>This site sets no cookies and its pages send no outside requests. If we ever add visitor counting, it will be cookieless and this page will be updated first.</p>
+
+  <h2>7. Support emails</h2>
+  <p>When you write to us, we keep your email address and message so we can reply. We delete them on request.</p>
+
+  <h2>8. Retention and deletion</h2>
+  <ul>
+    <li>Data on your PC stays with you until you delete it. Uninstalling the app deletes it too, unless you tick "Keep my settings and usage history" on the uninstall screen. You can also delete the folders by hand.</li>
+    <li>Subscription and invoice records are kept for the legally required periods.</li>
+    <li>Support emails are kept for at most 2 years after the matter is closed.</li>
+  </ul>
+
+  <h2>9. Your rights</h2>
+  <p>Under Article 11 of KVKK and under the GDPR you may ask what data we hold about you, have it corrected or deleted, object to its processing, and receive it in a portable format. Write to <span class="todo">[support email]</span>; we reply within 30 days. You may also complain to the data protection authority of your country.</p>
+
+  <h2>10. Changes</h2>
+  <p>If we change this policy we update the date above. For a significant change (for example a new connection in the app) we announce it on this site before the app update ships.</p>
+
+  <ul class="legal__nav" aria-label="Legal pages">
+    <li><a href="privacy.html" aria-current="page">Privacy policy</a></li>
+    <li><a href="terms.html">Terms of use</a></li>
+    <li><a href="refund.html">Refund policy</a></li>
+  </ul>
+</article>
+
+</main>
+
+<footer class="foot-site">
+  <div class="wrap foot-site__in">
+    <span class="foot-site__brand"><img src="assets/icon.svg" alt="" width="20" height="20"><span>Usage Notch</span></span>
+    <p><span class="l-tr" lang="tr">Bu sayfa çerez kullanmaz ve dışarıya hiçbir istek göndermez.</span><span class="l-en" lang="en">This page sets no cookies and sends no outside requests.</span></p>
+    <ul class="foot-site__links">
+      <li><a href="privacy.html"><span class="l-tr" lang="tr">Gizlilik</span><span class="l-en" lang="en">Privacy</span></a></li>
+      <li><a href="terms.html"><span class="l-tr" lang="tr">Kullanım koşulları</span><span class="l-en" lang="en">Terms</span></a></li>
+      <li><a href="refund.html"><span class="l-tr" lang="tr">İade</span><span class="l-en" lang="en">Refunds</span></a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>
