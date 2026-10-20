@@ -78,8 +78,12 @@ const { IconProbe } = require('./taskbar-icons');
  * Automation structure events) instead of the worker's one-second poll.
  */
 
-/** One tile's width in DIP. The page lays tiles out at exactly this. */
-const TILE_WIDTH = 92;
+/**
+ * One tile's width in DIP. The page lays tiles out at exactly this. Room for
+ * the logo and, per row, the label, a bar, the figure and the time left
+ * ("5sa ▬▬ %22 1sa 37dk"; the owner asked for the last two, 2026-10-20).
+ */
+const TILE_WIDTH = 180;
 /** The strip's height in DIP; the Windows 11 taskbar is 48. */
 const STRIP_HEIGHT = 40;
 /** Between the strip's right edge and the notification area, in DIP. */

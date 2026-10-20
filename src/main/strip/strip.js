@@ -33,6 +33,15 @@
     bar.appendChild(fill);
     line.appendChild(label);
     line.appendChild(bar);
+    // The figure and the time left, already worded by main ("%22", "1sa 37dk").
+    var figure = document.createElement('span');
+    figure.className = 'tile__pct';
+    figure.textContent = text(r.percentText, 8);
+    var left = document.createElement('span');
+    left.className = 'tile__left';
+    left.textContent = text(r.left, 16);
+    line.appendChild(figure);
+    line.appendChild(left);
     return line;
   }
 
@@ -57,7 +66,7 @@
   function draw(data) {
     if (!data || typeof data !== 'object') return;
     document.body.setAttribute('data-ground', data.ground === 'light' ? 'light' : 'dark');
-    var width = typeof data.tileWidth === 'number' && data.tileWidth > 20 && data.tileWidth < 400 ? data.tileWidth : 92;
+    var width = typeof data.tileWidth === 'number' && data.tileWidth > 20 && data.tileWidth < 400 ? data.tileWidth : 180;
     var tiles = Array.isArray(data.tiles) ? data.tiles.slice(0, 8) : [];
     while (root.firstChild) root.removeChild(root.firstChild);
     tiles.forEach(function (t) {

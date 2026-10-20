@@ -3,7 +3,7 @@ const {
   percentageOfWindow, trayFiveHourWindow, stateForPercentage,
 } = require('./tray-spec');
 const { rampFor } = require('./donut');
-const { formatPercent } = require('./tray-tooltip');
+const { formatPercent, remainingDuration } = require('./tray-tooltip');
 const { t } = require('./i18n');
 
 /**
@@ -47,13 +47,27 @@ function groundFor(hex) {
   return lum > 0.18 ? 'light' : 'dark';
 }
 
-function rowFor(kind, pct, ground) {
+/**
+ * "1 sa 37 dk" drawn tight, "1sa 37dk": the strip has a few pixels per row, and
+ * a number glued to its unit still reads as one figure. Only the space between
+ * a digit and a letter goes, so "2 gün 4 sa" becomes "2gün 4sa", "1h 37m" is
+ * untouched, and Chinese has no such space.
+ */
+function tight(duration) {
+  return typeof duration === 'string' ? duration.replace(/(\d) (?=\p{L})/gu, '$1') : null;
+}
+
+function rowFor(kind, pct, ground, win, now) {
   const shown = Math.round(pct);
   const state = stateForPercentage(pct);
   return {
     kind,
     label: t(kind === 'fiveHour' ? 'strip.label.fiveHour' : 'strip.label.weekly'),
     percent: shown,
+    // The same figure and countdown the tooltip prints, in their short form:
+    // the owner wanted the strip readable without hovering (2026-10-20).
+    percentText: formatPercent(pct),
+    left: tight(remainingDuration(win, now)),
     colour: rampFor(ground)[state],
     text: t(kind === 'fiveHour' ? 'strip.tip.fiveHour' : 'strip.tip.weekly', { percent: formatPercent(pct) }),
   };
@@ -63,7 +77,7 @@ function rowFor(kind, pct, ground) {
  * @param {object} snapshot
  * @param {number} now
  * @param {'dark'|'light'} ground
- * @returns {Array<{id:string, title:string, rows:Array<{kind:string,label:string,percent:number,colour:string}>}>}
+ * @returns {Array<{id:string, title:string, rows:Array<{kind:string,label:string,percent:number,percentText:string,left:string|null,colour:string}>}>}
  */
 function stripTiles(snapshot, now = Date.now(), ground = 'dark') {
   const providers = snapshot && Array.isArray(snapshot.providers) ? snapshot.providers : [];
@@ -72,17 +86,18 @@ function stripTiles(snapshot, now = Date.now(), ground = 'dark') {
     if (!provider || typeof provider !== 'object') continue;
     if (provider.enabled === false) continue;
     if (provider.setupAction && provider.setupAction.kind === 'not-installed') continue;
-    const five = percentageOfWindow(provider, trayFiveHourWindow(provider), now);
-    const week = percentageOfWindow(provider, provider.sevenDay, now);
     const rows = [];
-    if (five !== null) rows.push(rowFor('fiveHour', five, ground));
-    if (week !== null) rows.push(rowFor('sevenDay', week, ground));
+    const fiveWin = trayFiveHourWindow(provider);
+    const five = percentageOfWindow(provider, fiveWin, now);
+    const week = percentageOfWindow(provider, provider.sevenDay, now);
+    if (five !== null) rows.push(rowFor('fiveHour', five, ground, fiveWin, now));
+    if (week !== null) rows.push(rowFor('sevenDay', week, ground, provider.sevenDay, now));
     if (rows.length === 0) continue;
     const name = typeof provider.displayName === 'string' ? provider.displayName : provider.id;
     out.push({
       id: provider.id,
       title: `${name} — ${rows.map((r) => r.text).join(' · ')}`,
-      rows: rows.map(({ kind, label, percent, colour }) => ({ kind, label, percent, colour })),
+      rows: rows.map(({ kind, label, percent, percentText, left, colour }) => ({ kind, label, percent, percentText, left, colour })),
     });
     if (out.length >= MAX_TILES) break;
   }

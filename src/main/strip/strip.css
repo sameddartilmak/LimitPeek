@@ -21,12 +21,14 @@ body {
   --tile-hover: rgba(255, 255, 255, 0.11);
   --label: #A9B4B1;
   --track: rgba(255, 255, 255, 0.14);
+  --figure: #EDF2F0;
 }
 body[data-ground="light"] {
   --tile: rgba(0, 0, 0, 0.045);
   --tile-hover: rgba(0, 0, 0, 0.09);
   --label: #4F5B58;
   --track: rgba(0, 0, 0, 0.14);
+  --figure: #171D1C;
 }
 .strip {
   display: flex;
@@ -83,11 +85,23 @@ body[data-ground="light"] {
 }
 .tile__bar {
   flex: 1 1 auto;
+  min-width: 24px;
   height: 4px;
   border-radius: 2px;
   background: var(--track);
   overflow: hidden;
 }
+/* Fixed columns, so the two rows' figures and countdowns line up. */
+.tile__pct, .tile__left {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tile__pct { width: 26px; text-align: right; color: var(--figure); }
+.tile__left { width: 50px; color: var(--label); }
 .tile__fill {
   height: 100%;
   border-radius: 2px;

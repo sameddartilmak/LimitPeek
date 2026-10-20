@@ -154,6 +154,19 @@ function remaining(win, now) {
 }
 
 /**
+ * The time left alone, "2 sa 14 dk", for a surface that has no room for the
+ * word "kaldı" (the taskbar strip). Null on exactly the counts `remaining()`
+ * is null, so the strip never shows a countdown the tooltip would refuse.
+ */
+function remainingDuration(win, now) {
+  if (!win || typeof win.resetsAt !== 'string') return null;
+  const at = Date.parse(win.resetsAt);
+  if (!Number.isFinite(at)) return null;
+  if (windowResetting(win, now)) return null;
+  return countdown(at - now);
+}
+
+/**
  * The labels.
  *
  * `5sa` and `Hafta` were abbreviations that only made sense to someone who had
@@ -316,6 +329,7 @@ module.exports = {
   buildTooltip,
   tooltipParts,
   countdown,
+  remainingDuration,
   formatPercent,
   TOOLTIP_MAX,
   COUNTDOWN_FLOOR_MS,

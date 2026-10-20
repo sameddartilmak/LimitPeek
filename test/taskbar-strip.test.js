@@ -63,6 +63,19 @@ test.describe('tiles from a snapshot', () => {
     assert.deepEqual(tiles[1].rows.map((r) => [r.kind, r.label, r.percent]), [['fiveHour', '5sa', 38], ['sevenDay', '7g', 62]]);
   });
 
+  test('each row carries its figure and the time left, worded tight (owner, 2026-10-20)', () => {
+    const p = provider('claude', {
+      fiveHour: win(22, { resetsAt: later(97 * 60_000) }),
+      sevenDay: win(35, { resetsAt: later(60 * HOUR) }),
+    });
+    const rows = stripTiles({ providers: [p] }, NOW)[0].rows;
+    assert.deepEqual(rows.map((r) => [r.percentText, r.left]), [['%22', '1sa 37dk'], ['%35', '2gün 12sa']]);
+    // No reset instant: the figure stays, the countdown is left out.
+    const bare = stripTiles({ providers: [provider('codex', { sevenDay: win(41, { resetsAt: undefined }) })] }, NOW)[0].rows[0];
+    assert.equal(bare.percentText, '%41');
+    assert.equal(bare.left, null);
+  });
+
   test('a tool with only one window shows only that row (Codex: weekly only)', () => {
     const tiles = stripTiles({ providers: [provider('codex', { sevenDay: win(41) })] }, NOW);
     assert.deepEqual(tiles[0].rows.map((r) => r.kind), ['sevenDay']);
@@ -170,8 +183,9 @@ test.describe('placement, in physical pixels relative to the taskbar', () => {
     // put four tiles at x=1011, over the icons.
     const centred = { left: 905, top: 1020, right: 1015, bottom: 1080 };
     const p = placement({ bar: BAR, tray: TRAY, icons: centred, dpi: 120, tileCount: 4 });
-    assert.ok(p, 'three still fit');
-    assert.equal(p.count, 3, 'the fourth tile is dropped');
+    assert.ok(p, 'one still fits');
+    assert.equal(p.count, Math.floor((1481 - 10 - (1015 + 15)) / tileW125), 'the rest are dropped');
+    assert.ok(p.count < 4);
     assert.equal(overlaps(screenRect(p), centred), false);
     assert.ok(screenRect(p).left >= centred.right + Math.round(ICON_GAP * 1.25), 'and keeps the gap');
   });
@@ -196,10 +210,10 @@ test.describe('placement, in physical pixels relative to the taskbar', () => {
   });
 
   test('tiles are dropped from the END of the order until the rest fit', () => {
-    const icons = { left: 0, top: 1020, right: 1200, bottom: 1080 };
+    const icons = { left: 0, top: 1020, right: 700, bottom: 1080 };
     const p = placement({ bar: BAR, tray: TRAY, icons, dpi: 120, tileCount: 6 });
-    assert.equal(p.count, Math.floor((1481 - 10 - (1200 + 15)) / tileW125));
-    assert.equal(p.count, 2);
+    assert.equal(p.count, Math.floor((1481 - 10 - (700 + 15)) / tileW125));
+    assert.equal(p.count, 3);
   });
 
   test('not even one tile fits, or the buttons were not measured: nothing is placed', () => {
@@ -566,7 +580,7 @@ test.describe('room on the taskbar', () => {
   test('icons growing toward the strip drop tiles from the end, then hide it as "no-room"', () => {
     const r = shownRig();
     const w = FakeWindow.all[0];
-    r.probe.rect = { left: 0, top: 1020, right: 1250, bottom: 1080 };
+    r.probe.rect = { left: 0, top: 1020, right: 1150, bottom: 1080 };
     r.probe.onChange(r.probe.rect);
     assert.deepEqual(lastData(w).tiles.map((t) => t.id), ['claude'], 'codex, last in the order, goes first');
     r.probe.rect = { left: 0, top: 1020, right: 1400, bottom: 1080 };
