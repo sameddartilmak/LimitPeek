@@ -5,6 +5,9 @@ html[data-reduce-motion="true"] {
   --dur-close: 1ms;
   --dur-fill: 1ms;
   --stagger: 0ms;
+  --dur-spring: 1ms;
+  --dur-disclosure: 1ms;
+  --dur-hover: 1ms;
 }
 
 body.hx {

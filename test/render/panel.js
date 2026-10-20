@@ -198,7 +198,9 @@ app.whenReady().then(async () => {
       const l2 = window.__lum(window.__rgb(b));
       return Math.round(((Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)) * 100) / 100;
     };
-    window.__tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    // From <body>, not <html>: the panel's ramp and greys are re-assigned on
+    // body (tokens.css), while :root keeps the tray icon's mirrored values.
+    window.__tok = (n) => getComputedStyle(document.body).getPropertyValue(n).trim();
     // Hue, in degrees. The ramp's meaning is carried by hue as well as by
     // luminance, and "redder than the step below it" is the property that keeps
     // the last two steps apart once both of them are bright.
