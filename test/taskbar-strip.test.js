@@ -70,6 +70,9 @@ test.describe('tiles from a snapshot', () => {
     });
     const rows = stripTiles({ providers: [p] }, NOW)[0].rows;
     assert.deepEqual(rows.map((r) => [r.percentText, r.left]), [['%22', '1sa 37dk'], ['%35', '2gün 12sa']]);
+    // From 24 hours on the strip counts days, unlike the panel's 48.
+    const day = stripTiles({ providers: [provider('claude', { sevenDay: win(37, { resetsAt: later(41 * HOUR + 18 * 60_000) }) })] }, NOW)[0].rows[0];
+    assert.equal(day.left, '1gün 17sa');
     // No reset instant: the figure stays, the countdown is left out.
     const bare = stripTiles({ providers: [provider('codex', { sevenDay: win(41, { resetsAt: undefined }) })] }, NOW)[0].rows[0];
     assert.equal(bare.percentText, '%41');

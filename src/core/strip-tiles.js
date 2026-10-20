@@ -67,7 +67,9 @@ function rowFor(kind, pct, ground, win, now) {
     // The same figure and countdown the tooltip prints, in their short form:
     // the owner wanted the strip readable without hovering (2026-10-20).
     percentText: formatPercent(pct),
-    left: tight(remainingDuration(win, now)),
+    // Days from 24 hours on, not the panel's 48: "1gün 17sa" reads faster on
+    // a strip than "41sa 18dk" (owner, 2026-10-20).
+    left: tight(remainingDuration(win, now, 24)),
     colour: rampFor(ground)[state],
     text: t(kind === 'fiveHour' ? 'strip.tip.fiveHour' : 'strip.tip.weekly', { percent: formatPercent(pct) }),
   };

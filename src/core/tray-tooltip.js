@@ -92,13 +92,13 @@ function formatPercent(value) {
  * and the SAME catalog keys, so the tooltip and the row read alike in either
  * language. `tooltip-parity.test.js` runs both.
  */
-function countdown(msRemaining) {
+function countdown(msRemaining, daysFromHours = 48) {
   if (!Number.isFinite(msRemaining) || msRemaining < 1000) return t('countdown.resetting');
   const totalSec = Math.floor(msRemaining / 1000);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
-  if (h >= 48) {
+  if (h >= daysFromHours) {
     const d = Math.floor(h / 24);
     const rh = h % 24;
     return rh === 0
@@ -158,12 +158,12 @@ function remaining(win, now) {
  * word "kaldı" (the taskbar strip). Null on exactly the counts `remaining()`
  * is null, so the strip never shows a countdown the tooltip would refuse.
  */
-function remainingDuration(win, now) {
+function remainingDuration(win, now, daysFromHours = 48) {
   if (!win || typeof win.resetsAt !== 'string') return null;
   const at = Date.parse(win.resetsAt);
   if (!Number.isFinite(at)) return null;
   if (windowResetting(win, now)) return null;
-  return countdown(at - now);
+  return countdown(at - now, daysFromHours);
 }
 
 /**
