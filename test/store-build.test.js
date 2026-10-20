@@ -66,8 +66,24 @@ test.describe('start with Windows in a Store build', () => {
     assert.equal(pkg.build.appx.customExtensionsPath, 'build/appx-extensions.xml');
     const xml = read('build/appx-extensions.xml');
     assert.match(xml, /Category="windows\.startupTask"/);
-    assert.match(xml, /Executable="app\\Usage Notch\.exe"/);
+    // The exe is named after build.productName (AppxTarget: app\<productFilename>.exe),
+    // so the two must move together or the StartupTask points at nothing.
+    assert.equal(pkg.build.productName, 'LimitPeek');
+    assert.match(xml, /Executable="app\\LimitPeek\.exe"/);
+    assert.match(xml, /DisplayName="LimitPeek"/);
+    // The TaskId is the task's identity, not a label: Windows keys the user's
+    // Startup on/off choice on it, so it keeps the old name.
     assert.match(xml, /TaskId="UsageNotchStartup" Enabled="true"/);
+  });
+
+  test('the Store listing shows the new name; the package identity is left to Partner Center', () => {
+    const appx = JSON.parse(read('package.json')).build.appx;
+    assert.equal(appx.displayName, 'LimitPeek');
+    assert.equal(appx.publisherDisplayName, 'LimitPeek');
+    // identityName and publisher come from the reserved name in Partner Center;
+    // none is invented here (electron-builder falls back to package.json "name").
+    assert.equal(appx.identityName, undefined);
+    assert.equal(appx.publisher, undefined);
   });
 
   test('the settings row names where the setting lives, in both languages', () => {

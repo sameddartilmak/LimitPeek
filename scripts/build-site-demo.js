@@ -36,7 +36,7 @@ for (const f of fs.readdirSync(path.join(SRC, 'assets', 'logos')).filter((n) => 
 // The harness page, reduced to the panel: no control column, screenshot mode.
 const page = fs.readFileSync(path.join(SRC, 'dev', 'harness.html'), 'utf8')
   .replace('<body class="hx">', '<body class="hx hx--shot">')
-  .replace(/<title>[^<]*<\/title>/, '<title>Usage Notch — canlı demo</title>')
+  .replace(/<title>[^<]*<\/title>/, '<title>LimitPeek — canlı demo</title>')
   .replace(/<aside id="controls"[\s\S]*?<\/aside>/, '<aside id="controls" class="hx-controls" hidden></aside>');
 fs.writeFileSync(path.join(OUT, 'dev', 'panel.html'), page, 'utf8');
 

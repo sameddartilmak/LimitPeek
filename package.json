@@ -1,6 +1,6 @@
 {
   "name": "usage-notch",
-  "version": "0.6.26",
+  "version": "0.6.27",
   "private": true,
   "description": "Windows tray monitor for AI coding tool usage limits.",
   "main": "src/main/index.js",
@@ -27,7 +27,7 @@
   },
   "build": {
     "appId": "com.usagenotch.app",
-    "productName": "Usage Notch",
+    "productName": "LimitPeek",
     "asar": true,
     "asarUnpack": [
       "bridge/**",
@@ -83,8 +83,8 @@
     },
     "appx": {
       "customExtensionsPath": "build/appx-extensions.xml",
-      "displayName": "Usage Notch",
-      "publisherDisplayName": "Usage Notch",
+      "displayName": "LimitPeek",
+      "publisherDisplayName": "LimitPeek",
       "languages": [
         "en-US",
         "tr-TR"

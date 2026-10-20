@@ -152,7 +152,11 @@ Set-StrictMode -Version Latest
 
 $SESSION = 'UsageNotchZeroSocket'
 $RUN_KEY = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$RUN_VALUE = 'electron.app.Usage Notch'
+# The value this build writes (src/main/login-item.js). The pre-0.6.27 name,
+# 'electron.app.Usage Notch', is left alone by a build run from -AppDir: the app
+# moves it only when it points into the app's own folder, and the installed
+# copy's does not.
+$RUN_VALUE = 'electron.app.LimitPeek'
 
 function Say([string]$m) { Write-Host ("[audit] " + $m) }
 function Fail([string]$m) { Write-Host ("[audit] FAIL " + $m) -ForegroundColor Red; exit 1 }
@@ -167,7 +171,7 @@ if (-not $SkipEtw -and -not $isAdmin) {
 }
 
 if (-not $AppDir) { $AppDir = Join-Path (Split-Path -Parent $PSScriptRoot) 'dist\win-unpacked' }
-$exe = Join-Path $AppDir 'Usage Notch.exe'
+$exe = Join-Path $AppDir 'LimitPeek.exe'
 if (-not (Test-Path -LiteralPath $exe)) { Fail "no packaged exe at $exe - run 'npm run dist:dir' first." }
 $exe = (Resolve-Path -LiteralPath $exe).Path
 
@@ -210,7 +214,7 @@ try {
   $runExisted = $true
   Say ("HKCU\Run backup: " + $runBefore)
 } catch {
-  Say "HKCU\Run has no Usage Notch value; it will be removed again after the run if the app adds one."
+  Say "HKCU\Run has no LimitPeek value; it will be removed again after the run if the app adds one."
 }
 if ($runExisted -and $runBefore -like '*\dist\win-unpacked\*') {
   Say "WARNING: the HKCU\Run value already points at a dist\win-unpacked build. That is an audit leftover, not the owner's installed app; it will be restored as found, so fix it by relaunching the installed app afterwards."
@@ -297,7 +301,7 @@ try {
     # Every process of the tree runs the SAME exe, so identity by ExecutablePath
     # catches the GPU, utility and renderer children without walking parents -
     # and cannot pick up the INSTALLED build, whose path differs.
-    $live = @(Get-CimInstance Win32_Process -Filter "Name = 'Usage Notch.exe'" -ErrorAction SilentlyContinue |
+    $live = @(Get-CimInstance Win32_Process -Filter "Name = 'LimitPeek.exe'" -ErrorAction SilentlyContinue |
       Where-Object { $_.ExecutablePath -eq $exe })
     foreach ($p in $live) { Register-Pid ([int]$p.ProcessId) 'same-exe' }
     # Anything the app spawns that is NOT our exe (e.g. the Antigravity CLI
@@ -373,7 +377,7 @@ finally {
     Say ("HKCU\Run restored: " + (Get-ItemProperty -LiteralPath $RUN_KEY -Name $RUN_VALUE).$RUN_VALUE)
   } else {
     Remove-ItemProperty -LiteralPath $RUN_KEY -Name $RUN_VALUE -ErrorAction SilentlyContinue
-    Say "HKCU\Run left with no Usage Notch value, as before the run."
+    Say "HKCU\Run left with no LimitPeek value, as before the run."
   }
   # Restored: the marker has done its job. Removed LAST, so a failure above
   # leaves it in place for the next run to recover from.

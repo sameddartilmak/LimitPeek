@@ -90,12 +90,12 @@ function renderScript(jobs) {
         const k = h / 150;
         const g = 62 * k, gap = 16 * k;
         ctx.font = '600 ' + (30 * k) + 'px Inter';
-        const tw = ctx.measureText('Usage Notch').width;
+        const tw = ctx.measureText('LimitPeek').width;
         const x0 = (w - (g + gap + tw)) / 2;
         glyph(ctx, x0 + g / 2, h / 2, g);
         ctx.fillStyle = '#EDF2F0';
         ctx.textBaseline = 'middle';
-        ctx.fillText('Usage Notch', x0 + g + gap, h / 2 + 1 * k);
+        ctx.fillText('LimitPeek', x0 + g + gap, h / 2 + 1 * k);
       } else if (kind === 'large') {
         background(ctx, w, h);
         const k = w / 310;
@@ -104,7 +104,7 @@ function renderScript(jobs) {
         ctx.fillStyle = '#EDF2F0';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('Usage Notch', w / 2, h * 0.78);
+        ctx.fillText('LimitPeek', w / 2, h * 0.78);
       }
       out[file] = c.toDataURL('image/png').split(',')[1];
     }

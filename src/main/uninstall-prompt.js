@@ -10,7 +10,7 @@ const path = require('node:path');
  * box in un.onInit unless it runs with /S. So Windows' "Kaldır" entry runs the
  * REAL uninstaller silently with one extra flag (`/S --ask`, written by
  * build/installer.nsh customInstall), and the uninstaller's customUnInit, on
- * seeing --ask, starts this app as `Usage Notch.exe --uninstall-ask`, WAITS,
+ * seeing --ask, starts this app as `LimitPeek.exe --uninstall-ask`, WAITS,
  * and reads the answer from the exit code:
  *
  *   0  remove, and delete the app's data (the default)

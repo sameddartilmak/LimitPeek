@@ -38,4 +38,31 @@ function bridgeDirFor({ store, userData, home = os.homedir() }) {
   return store ? path.join(home, '.usage-notch', 'bridge') : path.join(userData, 'bridge');
 }
 
-module.exports = { isStoreBuild, bridgeDirFor };
+/**
+ * The userData folder, by name. NEVER derived from the product name.
+ *
+ * Electron names userData after `app.name`, which comes from the packaged
+ * package.json: its top-level `productName` if it has one, else `name`.
+ * electron-builder's `build.productName` (the exe, the shortcuts, the
+ * Programs-list entry: "Usage Notch" up to 0.6.26, "LimitPeek" since) is not
+ * copied into that file, so the folder has always been `name`, `usage-notch`.
+ * Every installed copy keeps its settings, its usage history and the bridge
+ * script Claude Code's settings.json points at (userData\bridge) in it, so it
+ * is pinned here instead of being left to a packaging detail that a future
+ * electron-builder, or a top-level productName, would quietly change.
+ */
+const USER_DATA_FOLDER = 'usage-notch';
+
+/**
+ * Pins userData to %APPDATA%\usage-notch. Must run before anything reads it,
+ * the single-instance lock included (Electron keys the lock on userData, so an
+ * old and a new build also keep excluding each other). `--user-data-dir` still
+ * wins: the zero-socket audit runs a build against a scratch folder that way,
+ * and pinning over it would point the audit at the owner's real settings.
+ */
+function pinUserData(app) {
+  if (app.commandLine.hasSwitch('user-data-dir')) return;
+  app.setPath('userData', path.join(app.getPath('appData'), USER_DATA_FOLDER));
+}
+
+module.exports = { isStoreBuild, bridgeDirFor, USER_DATA_FOLDER, pinUserData };

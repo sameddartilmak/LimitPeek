@@ -1,4 +1,4 @@
-# Clean-machine first-run test for Usage Notch, run INSIDE Windows Sandbox.
+# Clean-machine first-run test for LimitPeek, run INSIDE Windows Sandbox.
 # Started by start.ps1, which maps these two folders in from the host.
 # Input (read-only): C:\UsageNotchTest\in  -> setup.exe, this script
 # Output (writable): C:\UsageNotchTest\out -> report.txt, screenshots
@@ -7,7 +7,7 @@ $in = 'C:\UsageNotchTest\in'
 $out = 'C:\UsageNotchTest\out'
 $report = Join-Path $out 'report.txt'
 function Say($s) { $line = "[{0:HH:mm:ss}] {1}" -f (Get-Date), $s; Add-Content -Path $report -Value $line -Encoding UTF8 }
-Set-Content -Path $report -Value "Usage Notch clean-machine test" -Encoding UTF8
+Set-Content -Path $report -Value "LimitPeek clean-machine test" -Encoding UTF8
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # DPI-aware, or Screen.Bounds is the SCALED size and every capture is only the
@@ -29,7 +29,7 @@ function Shot($name) {
     # The panel is transparent, so Chromium draws it through DirectComposition
     # and no screen BitBlt sees it. Ask each app window for its own picture
     # (PW_RENDERFULLCONTENT) and lay it over the desktop where it sits.
-    Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object {
+    Get-Process -Name 'LimitPeek' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object {
       $r = New-Object UnDpi+RECT
       if ([UnDpi]::GetWindowRect($_.MainWindowHandle, [ref]$r) -and $r.R -gt $r.L -and $r.B -gt $r.T) {
         $wb = New-Object System.Drawing.Bitmap ($r.R - $r.L), ($r.B - $r.T)
@@ -69,21 +69,21 @@ $p = Start-Process (Join-Path $in 'setup.exe') -ArgumentList '/S' -Wait -PassThr
 Say ("install exit {0} in {1:N1}s" -f $p.ExitCode, ((Get-Date) - $t).TotalSeconds)
 Start-Sleep -Seconds 3
 $instDir = Join-Path $env:LOCALAPPDATA 'Programs\usage-notch'
-$exe = Join-Path $instDir 'Usage Notch.exe'
+$exe = Join-Path $instDir 'LimitPeek.exe'
 Say "installed exe present: $(Test-Path $exe)"
 if (Test-Path $exe) { Say "version: $((Get-Item $exe).VersionInfo.ProductVersion)" }
-Say ("start menu shortcut: " + (Test-Path (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Usage Notch.lnk')))
-Say ("desktop shortcut: " + (Test-Path (Join-Path $env:USERPROFILE 'Desktop\Usage Notch.lnk')))
-$uninst = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like 'Usage Notch*' }
+Say ("start menu shortcut: " + (Test-Path (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\LimitPeek.lnk')))
+Say ("desktop shortcut: " + (Test-Path (Join-Path $env:USERPROFILE 'Desktop\LimitPeek.lnk')))
+$uninst = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like 'LimitPeek*' }
 Say ("uninstall entry: " + ($uninst | Select-Object -First 1 | ForEach-Object { "$($_.DisplayName) $($_.DisplayVersion)" }))
 Shot '1-after-install'
 
 # ---- first launch ----------------------------------------------------------
-$running = Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue
+$running = Get-Process -Name 'LimitPeek' -ErrorAction SilentlyContinue
 Say "running right after install (installer auto-run?): $([bool]$running)"
 if (-not $running) { Start-Process $exe; Say 'launched the app' }
 Start-Sleep -Seconds 20
-$procs = Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue
+$procs = Get-Process -Name 'LimitPeek' -ErrorAction SilentlyContinue
 Say "processes after 20s: $(@($procs).Count)"
 Shot '2-after-first-launch'
 
@@ -92,13 +92,13 @@ Shot '2-after-first-launch'
 Start-Process $exe
 Start-Sleep -Seconds 6
 # Which app windows are actually on screen, independent of the screenshot.
-$wins = Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
+$wins = Get-Process -Name 'LimitPeek' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
 Say ("visible app windows after the second launch: " + @($wins).Count + " " + (($wins | ForEach-Object { '"' + $_.MainWindowTitle + '"' }) -join ', '))
 Shot '3-panel-open'
 Start-Sleep -Seconds 10
 Shot '4-panel-after-10s'
 
-Say ("Run key: " + ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Name -like '*sage*' } | ForEach-Object { "$($_.Name) = $($_.Value)" }))
+Say ("Run key: " + ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Name -like 'electron.app.*' } | ForEach-Object { "$($_.Name) = $($_.Value)" }))
 Tree 'userData' (Join-Path $env:APPDATA 'usage-notch')
 Tree 'LocalAppData UsageNotch' (Join-Path $env:LOCALAPPDATA 'UsageNotch')
 Say ("home .usage-notch: " + (Test-Path (Join-Path $env:USERPROFILE '.usage-notch')))
@@ -109,7 +109,7 @@ Say ("TCP connections owned by the app: " + @($tcp).Count)
 $crash = Get-ChildItem (Join-Path $env:APPDATA 'usage-notch') -Recurse -Filter '*.dmp' -ErrorAction SilentlyContinue
 Say ("crash dumps: " + @($crash).Count)
 Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2; StartTime = $t } -ErrorAction SilentlyContinue |
-  Where-Object { $_.Message -like '*Usage Notch*' } | Select-Object -First 5 | ForEach-Object { Say "app error event: $($_.Message.Substring(0, [Math]::Min(300, $_.Message.Length)))" }
+  Where-Object { $_.Message -like '*LimitPeek*' } | Select-Object -First 5 | ForEach-Object { Say "app error event: $($_.Message.Substring(0, [Math]::Min(300, $_.Message.Length)))" }
 
 # ---- update over the same install (the 2026-10-01 regression) -----------------
 # An update finds the old uninstaller through UninstallString. 0.6.11 pointed it
@@ -126,9 +126,9 @@ Start-Sleep -Seconds 8
 # question and waits for its exit code. The script cannot click, so it
 # photographs the question and then closes it, which the uninstaller reads as
 # "remove, keep the data".
-$entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like 'Usage Notch*' } | Select-Object -First 1
+$entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.DisplayName -like 'LimitPeek*' } | Select-Object -First 1
 Say ("UninstallString: " + $entry.UninstallString)
-$un = Join-Path $instDir 'Uninstall Usage Notch.exe'
+$un = Join-Path $instDir 'Uninstall LimitPeek.exe'
 $t2 = Get-Date
 Start-Process $un -ArgumentList '/currentuser', '/S', '--ask' | Out-Null
 # The uninstaller re-launches itself from %TEMP%, closes the tray app, then
@@ -136,7 +136,7 @@ Start-Process $un -ArgumentList '/currentuser', '/S', '--ask' | Out-Null
 $prompt = $null
 for ($i = 0; $i -lt 45 -and -not $prompt; $i++) {
   Start-Sleep -Seconds 1
-  $prompt = Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*kald*' -or $_.MainWindowTitle -like '*Uninstall*' }
+  $prompt = Get-Process -Name 'LimitPeek' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*kald*' -or $_.MainWindowTitle -like '*Uninstall*' }
 }
 Say ("uninstall prompt window after {0}s: {1} {2}" -f ((Get-Date) - $t2).TotalSeconds.ToString('N0'), @($prompt).Count, (($prompt | ForEach-Object { '"' + $_.MainWindowTitle + '"' }) -join ', '))
 Start-Sleep -Seconds 1
@@ -161,11 +161,11 @@ $u = Start-Process $un -ArgumentList '/currentuser', '/S', '--delete-app-data' -
 Start-Sleep -Seconds 6
 Say ("uninstall (delete data) exit {0} in {1:N1}s" -f $u.ExitCode, ((Get-Date) - $t3).TotalSeconds)
 Say ("userData left: " + (Test-Path (Join-Path $env:APPDATA 'usage-notch')))
-Say "processes after uninstall: $(@(Get-Process -Name 'Usage Notch' -ErrorAction SilentlyContinue).Count)"
+Say "processes after uninstall: $(@(Get-Process -Name 'LimitPeek' -ErrorAction SilentlyContinue).Count)"
 Say "install dir left: $(Test-Path $instDir)"
 Tree 'userData after uninstall' (Join-Path $env:APPDATA 'usage-notch')
 Say ("LocalAppData UsageNotch left: " + (Test-Path (Join-Path $env:LOCALAPPDATA 'UsageNotch')))
-Say ("Run key left: " + [bool]((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Name -like '*sage*' }))
-Say ("start menu shortcut left: " + (Test-Path (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Usage Notch.lnk')))
+Say ("Run key left: " + [bool]((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Name -like 'electron.app.*' }))
+Say ("start menu shortcut left: " + (Test-Path (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\LimitPeek.lnk')))
 Shot '5-after-uninstall'
 Say 'DONE'

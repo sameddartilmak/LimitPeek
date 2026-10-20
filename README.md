@@ -1,4 +1,4 @@
-# Usage Notch
+# LimitPeek
 
 Windows görev çubuğunda duran, yapay zekâ kodlama araçlarının kullanım
 limitlerini gösteren küçük bir tepsi uygulaması. Simgeye tıklayınca panel

@@ -12,8 +12,12 @@
 ; upgrade, and the new build re-registers on its first launch anyway, but there
 ; is no reason to drop the entry in between.
 ;
-; Value name is Electron's default AppUserModelID, "electron.app.<productName>",
-; verified against the installed build (not the package.json "name").
+; Two value names, both removed. Up to 0.6.26 the app was "Usage Notch" on disk
+; and Electron named the value after its default AppUserModelID,
+; "electron.app.Usage Notch" (verified against the installed build). From
+; 0.6.27 the app names it "electron.app.LimitPeek" itself
+; (src/main/login-item.js) and moves the old one on its first launch; an
+; uninstall before that launch must still find the old one.
 ; HKCU only: this installer never elevates and never writes HKLM.
 
 ; A REAL uninstall also deletes the stored API key (ADR-003 Amendment 5, K12).
@@ -134,9 +138,66 @@
 ; is still the uninstaller; an update passes its own arguments, never --ask, so
 ; it never sees the question. customInstall runs AFTER registryAddInstallInfo
 ; (installSection.nsh), so this value wins and is rewritten by every update.
-; QuietUninstallString is left as electron-builder wrote it.
+; QuietUninstallString is left as electron-builder wrote it. The rename cleanup
+; is a macro of its own, below, so this one only ever names the uninstaller.
 !macro customInstall
   WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString '"$INSTDIR\${UNINSTALL_FILENAME}" /currentuser /S --ask'
+  !insertmacro renamedFromUsageNotch
+!macroend
+
+; THE RENAME, "Usage Notch" -> "LimitPeek" (0.6.27)
+; -------------------------------------------------
+; productName names the exe, the uninstaller, the shortcuts and the Programs
+; entry. appId (the uninstall key), the install folder (package.json "name")
+; and the data folders did not change, so an update over 0.6.26 or older is
+; still the same app to Windows and to electron-builder: it reads the old
+; UninstallString, which names "Uninstall Usage Notch.exe", and runs that file
+; with --updated as for any update. Two leftovers of the old name are handled
+; here, on the install side, because that old uninstaller cannot know the new
+; name:
+;
+; 1. Shortcuts. electron-builder covers the normal case: the new exe does not
+;    exist yet when the update starts, so keepShortcuts is false, the old
+;    uninstaller runs without --keep-shortcuts and deletes its own
+;    "Usage Notch.lnk", and addStartMenuLink/addDesktopLink create
+;    "LimitPeek.lnk" (app-builder-lib templates/nsis: installSection.nsh,
+;    include/installer.nsh, uninstaller.nsh). An old-named shortcut that
+;    survives anyway would open a removed exe, so it is deleted again here.
+;    Fixed names, compiled out if the product is ever called that again.
+; 2. The login item. The old uninstaller keeps "electron.app.Usage Notch"
+;    during an update (isUpdated, below), and its data still names
+;    "Usage Notch.exe", which is gone. The app moves it to its new name on its
+;    first launch, keeping the user's Task Manager choice: StartupApproved\Run
+;    holds that under the old name and is not touched here. Until that launch
+;    the value is only repointed at the new exe, so a login before it (a
+;    silent update does not start the app) still starts the app. Only a value
+;    pointing into THIS $INSTDIR is rewritten, and none is ever created: no
+;    value means autostart was off. $R6-$R8, as in customUnInit.
+!macro renamedFromUsageNotch
+  !if "${SHORTCUT_NAME}" != "Usage Notch"
+    ${if} ${FileExists} "$SMPROGRAMS\Usage Notch.lnk"
+      WinShell::UninstShortcut "$SMPROGRAMS\Usage Notch.lnk"
+      Delete "$SMPROGRAMS\Usage Notch.lnk"
+    ${endIf}
+    ${if} ${FileExists} "$DESKTOP\Usage Notch.lnk"
+      WinShell::UninstShortcut "$DESKTOP\Usage Notch.lnk"
+      Delete "$DESKTOP\Usage Notch.lnk"
+    ${endIf}
+    System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
+  !endif
+
+  ClearErrors
+  ReadRegStr $R6 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "electron.app.Usage Notch"
+  ${if} $R6 != ""
+    ; The stored command is `"<dir>\Usage Notch.exe" --hidden`: compare what
+    ; follows the opening quote with "$INSTDIR\" (case-insensitive, as paths are).
+    StrLen $R7 "$INSTDIR\"
+    StrCpy $R8 $R6 $R7 1
+    ${if} $R8 == "$INSTDIR\"
+      WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "electron.app.Usage Notch" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --hidden'
+    ${endIf}
+  ${endIf}
+  ClearErrors
 !macroend
 
 !macro customUnInit
@@ -193,6 +254,8 @@
       Pop $0
     ${endIf}
 
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "electron.app.LimitPeek"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "electron.app.LimitPeek"
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "electron.app.Usage Notch"
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "electron.app.Usage Notch"
 
@@ -244,9 +307,9 @@
       ${endIf}
 
       ${if} $R8 == "scheduled"
-        DetailPrint "Usage Notch: $LOCALAPPDATA\UsageNotch\secrets is in use; its removal is scheduled for the next restart."
+        DetailPrint "LimitPeek: $LOCALAPPDATA\UsageNotch\secrets is in use; its removal is scheduled for the next restart."
       ${else}
-        DetailPrint "Usage Notch: $LOCALAPPDATA\UsageNotch\secrets is in use and could NOT be deleted, and no deferred removal could be confirmed; the user has been told to delete it and to revoke the token."
+        DetailPrint "LimitPeek: $LOCALAPPDATA\UsageNotch\secrets is in use and could NOT be deleted, and no deferred removal could be confirmed; the user has been told to delete it and to revoke the token."
       ${endIf}
 
       ${GetParameters} $R6
@@ -259,22 +322,22 @@
         ; step that protects the user unconditionally is never the one left out.
         ${if} $R8 == "scheduled"
           ${if} $LANGUAGE == 1055
-            MessageBox MB_ICONEXCLAMATION|MB_OK "Usage Notch kaldırıldı, ancak kayıtlı API anahtarınızın bulunduğu klasör kullanımda olduğu için henüz silinemedi:$\r$\n$\r$\n$LOCALAPPDATA\UsageNotch\secrets$\r$\n$\r$\nWindows'u yeniden başlattığınızda kaldırılacak. Beklemek istemezseniz klasörü kendiniz silebilirsiniz. Her durumda anahtarı GitHub'dan iptal edin."
+            MessageBox MB_ICONEXCLAMATION|MB_OK "LimitPeek kaldırıldı, ancak kayıtlı API anahtarınızın bulunduğu klasör kullanımda olduğu için henüz silinemedi:$\r$\n$\r$\n$LOCALAPPDATA\UsageNotch\secrets$\r$\n$\r$\nWindows'u yeniden başlattığınızda kaldırılacak. Beklemek istemezseniz klasörü kendiniz silebilirsiniz. Her durumda anahtarı GitHub'dan iptal edin."
           ${else}
-            MessageBox MB_ICONEXCLAMATION|MB_OK "Usage Notch has been removed, but the folder holding your stored API key was in use and could not be deleted yet:$\r$\n$\r$\n$LOCALAPPDATA\UsageNotch\secrets$\r$\n$\r$\nIt will be removed the next time you restart Windows. Delete it yourself if you would rather not wait. Either way, revoke the token at GitHub."
+            MessageBox MB_ICONEXCLAMATION|MB_OK "LimitPeek has been removed, but the folder holding your stored API key was in use and could not be deleted yet:$\r$\n$\r$\n$LOCALAPPDATA\UsageNotch\secrets$\r$\n$\r$\nIt will be removed the next time you restart Windows. Delete it yourself if you would rather not wait. Either way, revoke the token at GitHub."
           ${endIf}
         ${else}
           ; Nothing was scheduled, so nothing may be promised for the restart.
           ${if} $LANGUAGE == 1055
-            MessageBox MB_ICONEXCLAMATION|MB_OK "Usage Notch kaldırıldı, ancak kayıtlı API anahtarınızın bulunduğu klasör kullanımda olduğu için silinemedi:$\r$\n$\r$\n$LOCALAPPDATA\UsageNotch\secrets$\r$\n$\r$\nKlasörü kendiniz silin ve anahtarı GitHub'dan iptal edin — her durumda sizi koruyan adım bu."
+            MessageBox MB_ICONEXCLAMATION|MB_OK "LimitPeek kaldırıldı, ancak kayıtlı API anahtarınızın bulunduğu klasör kullanımda olduğu için silinemedi:$\r$\n$\r$\n$LOCALAPPDATA\UsageNotch\secrets$\r$\n$\r$\nKlasörü kendiniz silin ve anahtarı GitHub'dan iptal edin — her durumda sizi koruyan adım bu."
           ${else}
-            MessageBox MB_ICONEXCLAMATION|MB_OK "Usage Notch has been removed, but the folder holding your stored API key was in use and could not be deleted:$\r$\n$\r$\n$LOCALAPPDATA\UsageNotch\secrets$\r$\n$\r$\nDelete it yourself, and revoke the token at GitHub — that is the step that protects you either way."
+            MessageBox MB_ICONEXCLAMATION|MB_OK "LimitPeek has been removed, but the folder holding your stored API key was in use and could not be deleted:$\r$\n$\r$\n$LOCALAPPDATA\UsageNotch\secrets$\r$\n$\r$\nDelete it yourself, and revoke the token at GitHub — that is the step that protects you either way."
           ${endIf}
         ${endIf}
       ${endIf}
       ClearErrors
     ${else}
-      DetailPrint "Usage Notch: stored key removed ($LOCALAPPDATA\UsageNotch\secrets)."
+      DetailPrint "LimitPeek: stored key removed ($LOCALAPPDATA\UsageNotch\secrets)."
     ${endIf}
 
     ; Last: the app's data, now that the bridge cleanup above has read what
@@ -283,7 +346,7 @@
     ${if} $usageNotchDeleteData == "1"
       RMDir /r "$APPDATA\usage-notch"
       RMDir /r "$LOCALAPPDATA\UsageNotch"
-      DetailPrint "Usage Notch: app data removed."
+      DetailPrint "LimitPeek: app data removed."
     ${endIf}
   ${endIf}
 !macroend

@@ -40,12 +40,18 @@ const {
   cleanupIntegrations,
   BRIDGE_SCRIPTS,
 } = require('./bridge-install');
-const { isStoreBuild } = require('./packaging');
+const { isStoreBuild, pinUserData } = require('./packaging');
+const { migrateLegacyLoginItem, disabledByWindows, loginItemSettings } = require('./login-item');
 const { runUninstallPrompt, promptLook } = require('./uninstall-prompt');
 const { TaskbarStrip } = require('./taskbar-strip');
 const { DisplayLayer } = require('./taskbar-display');
 const { createSetTrayViewHandler } = require('./tray-view-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
+
+// userData is %APPDATA%\usage-notch by name, whatever the product is called
+// (packaging.js). First, before the early exits below and the single-instance
+// lock, which all read it. No module required above reads it at load time.
+pinUserData(app);
 
 // Must run before `ready`: some of it is command-line switches.
 security.applyAll();
@@ -677,7 +683,7 @@ function registerIpc() {
 
 /* ------------------------------------------------------------------ boot */
 
-function applyAutostart(enabled) {
+function applyAutostart(enabled, { atBoot = false } = {}) {
   // In a dev run the executable is node_modules/electron/dist/electron.exe, so
   // registering it under HKCU\...\Run would leave the user with a login item
   // that starts a bare Electron shell. Only a packaged build may touch it.
@@ -688,12 +694,21 @@ function applyAutostart(enabled) {
   // A Store package's Run entry would be redirected into the package and never
   // read; its StartupTask is Windows' to switch (packaging.js).
   if (isStoreBuild()) return;
+  // At launch only: move a pre-0.6.27 "Usage Notch" value to the new name, and
+  // keep a value the user switched off in Task Manager off (login-item.js).
+  // The app's own switch passes neither: flipping it is an explicit choice.
+  let keepOff = false;
+  if (atBoot) {
+    try {
+      const legacy = migrateLegacyLoginItem({ app, log });
+      keepOff = legacy.disabled || disabledByWindows({ app });
+    } catch (err) {
+      log.warn(`login item migration failed: code=${(err && err.code) || 'UNKNOWN'}`);
+    }
+  }
   try {
-    app.setLoginItemSettings({
-      openAtLogin: Boolean(enabled),
-      // Started by Windows: come up in the tray only, never flash a window.
-      args: ['--hidden'],
-    });
+    // Started by Windows with --hidden: the tray only, never a window.
+    app.setLoginItemSettings(loginItemSettings(enabled, { keepOff }));
   } catch (err) {
     log.warn(`autostart update failed: code=${(err && err.code) || 'UNKNOWN'}`);
   }
@@ -744,7 +759,7 @@ function bootstrap() {
   // Before the collector, the tray and the window: all three build text from
   // it, and the renderer's synchronous initialPreferences() reads it.
   refreshLocale();
-  applyAutostart(settings.autostart);
+  applyAutostart(settings.autostart, { atBoot: true });
 
   // Refresh the copy of the bridge that Claude Code executes, on every launch.
   // It was previously written only during install, which meant the one file
