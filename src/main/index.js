@@ -128,9 +128,9 @@ function anchorRect() {
   return (tray && tray.bounds()) || (strip && strip.anchorRect()) || null;
 }
 
-function openPanel() {
+function openPanel(anchor = anchorRect()) {
   if (!panel) return;
-  panel.open(anchorRect(), anchorSender);
+  panel.open(anchor, anchorSender);
   collector.setPanelOpen(true);
   if (collector.snapshot) panel.send(IPC.SNAPSHOT, collector.snapshot);
 }
@@ -266,10 +266,8 @@ function syncTrayPresence() {
 }
 
 /**
- * A left click on the strip. The tray click's toggle, except that it opens
- * PINNED: the pointer is on the strip, not on the tray icon, so the unpinned
- * panel's tray-to-panel corridor would read it as gone and close the panel
- * (the same reason a second launch opens pinned, below).
+ * A left click on the strip: the tray click's toggle, anchored to the strip
+ * itself, so the panel opens above it and its corridor runs from the strip.
  */
 /** A strip release and a covered-click report for the same press are one click. */
 const STRIP_CLICK_COALESCE_MS = 400;
@@ -288,7 +286,10 @@ function openFromStrip() {
   const act = !visible || pending ? 'open' : 'hide';
   log.trace('strip.click', { visible, hidePending: pending, act });
   if (act === 'hide') panel.hide('strip-toggle');
-  else openPinned();
+  // Not pinned, like a tray click: the panel now anchors to the strip
+  // (anchorRect), so the strip-to-panel corridor keeps it open while the
+  // pointer travels up (owner, 2026-10-20: it opened with the pin on).
+  else openPanel((strip && strip.anchorRect()) || anchorRect());
 }
 
 /* -------------------------------------------------------------------- ipc */
@@ -377,7 +378,7 @@ function registerIpc() {
    */
   ipcMain.on(IPC.PANEL_PIN, (event) => {
     if (!fromPanel(event)) return;
-    if (panel.pinned) panel.unpin(tray ? tray.bounds() : null, anchorSender);
+    if (panel.pinned) panel.unpin(anchorRect(), anchorSender);
     else openPinned();
   });
 
@@ -928,7 +929,7 @@ function bootstrap() {
     // `anchor.mode` — so without this it comes back saying "not pinned" while
     // main is pinned, and the pin control reports a state that is not the
     // panel's. Sends nothing when the panel is not on screen.
-    panel.sendCurrentAnchor(tray ? tray.bounds() : null, anchorSender);
+    panel.sendCurrentAnchor(anchorRect(), anchorSender);
   });
 }
 

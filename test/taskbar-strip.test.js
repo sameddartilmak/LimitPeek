@@ -941,8 +941,11 @@ test.describe('the strip page', () => {
     assert.match(src, /strip = new TaskbarStrip\(\{\s*BrowserWindow,\s*log,\s*makeDisplay: \(opts\) => new DisplayLayer\(\{ BrowserWindow, \.\.\.opts \}\),[\s\S]*?onCoveredClick: \(\) => openFromStrip\(\),\s*onChange: \(\) => \{ pushPreferences\(\); syncTrayPresence\(\); \},\s*\}\);/);
     assert.match(src, /ipcMain\.on\(IPC_STRIP\.HOVER, \(event, index\) => \{\s*if \(!fromStrip\(event\)\) return;\s*strip\.hover\(index\);/);
     assert.match(src, /applyTrayView\(settings\.trayView\);/);
-    // Left click opens pinned (the pointer is not on the tray icon), right click is the tray's menu.
-    assert.match(src, /function openFromStrip\(\)[\s\S]*?openPinned\(\);/);
+    // Left click opens unpinned, anchored to the strip; right click is the tray's menu.
+    const fromStripFn = src.slice(src.indexOf('function openFromStrip()'), src.indexOf('function fromStrip('));
+    assert.match(fromStripFn, /openPanel\(\(strip && strip\.anchorRect\(\)\) \|\| anchorRect\(\)\);/);
+    assert.doesNotMatch(fromStripFn, /openPinned\(\)/, 'a strip click opens unpinned (owner, 2026-10-20)');
+    assert.match(src, /panel\.unpin\(anchorRect\(\), anchorSender\)/, 'unpinning stays above the strip');
     assert.match(src, /if \(tray\) tray\.popUpMenu\(\);/);
   });
 });
