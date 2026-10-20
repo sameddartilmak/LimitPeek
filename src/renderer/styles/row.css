@@ -1232,3 +1232,132 @@
   color: var(--ink-500);
   font-variant-numeric: tabular-nums lining-nums;
 }
+
+/* --------------------------------------------- variant: activity rings */
+/* A TRIAL, behind `html[data-gauge="ring"]` (the dev harness sets it with
+ * ?gauge=ring; the app never does). The two windows of a tool become two
+ * concentric rings, Apple Watch style: five-hour outside, weekly inside, the
+ * figures and countdowns stacked to their right. The bars are untouched —
+ * this block only re-lays the SAME elements:
+ *
+ *   - .rail keeps role=meter and every aria value; it is drawn as an annulus
+ *     (a radial mask) positioned on the meter's left, one size per window;
+ *   - .rail__fill draws a conic sweep of --f turns instead of a scaleX;
+ *   - .rail__tick becomes the sweep's rounded end cap (an arm rotated by
+ *     --f), and .rail__fill::before the rounded start cap.
+ *
+ * CSS only, so it cannot animate the sweep (an unregistered --f does not
+ * interpolate); the ring snaps to a new value where the bar glides. */
+
+html[data-gauge="ring"] .meter:has(.rail) {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  row-gap: 10px;
+  min-height: 84px;
+  padding-left: 100px;
+}
+html[data-gauge="ring"] .meter:has(.rail) .win { position: static; gap: 2px; }
+/* Beside a ring the figure reads as a value on a line, not as the hero. */
+html[data-gauge="ring"] .meter:has(.rail) .win__head {
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+html[data-gauge="ring"] .meter:has(.rail) .win__gap { display: block; flex: 1 1 auto; }
+html[data-gauge="ring"] .meter:has(.rail) .win__pct { font-size: 20px; }
+html[data-gauge="ring"] .meter:has(.rail) .win__pct--none { font-size: var(--fs-body); }
+
+/* Which ring is which: a small legend glyph before each label — a hollow
+ * ring for the outer (five-hour) one, a dot for the inner (weekly) one. */
+html[data-gauge="ring"] .meter:has(.rail) .win__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+html[data-gauge="ring"] .meter:has(.rail) .win__label::before {
+  content: "";
+  flex: none;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 2.5px solid var(--state, var(--ink-500));
+}
+html[data-gauge="ring"] .meter:has(.rail) .win--7d .win__label::before {
+  width: 7px; height: 7px;
+  border: 0;
+  background: var(--state, var(--ink-500));
+}
+
+html[data-gauge="ring"] .meter .rail {
+  --ring: 84px;
+  --ring-w: 10px;
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  width: var(--ring);
+  height: var(--ring);
+  margin-top: calc(var(--ring) / -2);
+  border-radius: 50%;
+  /* The track is the ring's own hue, faint — the Activity look — so an empty
+   * ring still says which colour it will fill with. */
+  background: color-mix(in srgb, var(--state, var(--ink-500)) 20%, var(--ink-800));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+}
+/* Inner ring: 2px clear of the outer one. */
+html[data-gauge="ring"] .meter .rail--7d {
+  --ring: 60px;
+  left: 16px;
+}
+
+html[data-gauge="ring"] .meter .rail__fill {
+  inset: 0;
+  transform: none;
+  border-radius: 50%;
+  background: conic-gradient(var(--state, var(--calm)) calc(var(--f, 0) * 1turn), transparent 0);
+  -webkit-mask: none;
+  mask: none;
+}
+html[data-gauge="ring"] .meter .rail__band { display: none; }
+
+/* Start cap, at twelve o'clock. */
+html[data-gauge="ring"] .meter .rail__fill::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: var(--ring-w);
+  height: var(--ring-w);
+  margin-left: calc(var(--ring-w) / -2);
+  border-radius: 50%;
+  background: var(--state, var(--calm));
+}
+/* End cap: an arm from the centre to the rim, turned by the same fraction. */
+html[data-gauge="ring"] .meter .rail__tick {
+  top: 0;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  width: var(--ring-w);
+  height: 50%;
+  margin-left: calc(var(--ring-w) / -2);
+  background: none;
+  transform-origin: 50% 100%;
+  transform: rotate(calc(var(--f, 0) * 1turn));
+}
+html[data-gauge="ring"] .meter .rail__tick::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--ring-w);
+  height: var(--ring-w);
+  border-radius: 50%;
+  background: var(--state, var(--calm));
+  /* The end cap overlaps the start of the sweep past one turn; a soft edge
+   * keeps the head legible over its own tail, as on the Watch. */
+  box-shadow: 0 0 3px rgba(0, 0, 0, .45);
+}
+/* An error drains the ring exactly as it drains the bar. */
+html[data-gauge="ring"] .row[data-status="error"] .win { --state: var(--ink-400); }

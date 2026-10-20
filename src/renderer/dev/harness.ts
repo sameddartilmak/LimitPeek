@@ -536,6 +536,7 @@ controls.appendChild(logBox);
  * URL parameters, for screenshots of a given state without clicking through:
  *   ?s=<scenario id>  &theme=light|dark  &lang=en  &coach=done
  *   &view=settings  &tab=providers|usage|general  &expand=<provider id>
+ *   &gauge=ring (the activity-ring variant instead of bars)
  *   &shot=1 (the panel alone, no controls)
  *   &bare=1 (with shot: a transparent page, so the site's desktop scene shows
  *           around the panel, as the real transparent window does)
@@ -548,6 +549,8 @@ if (langParam === 'en' || langParam === 'zh') {
   prefs = { ...prefs, language: langParam, resolvedLanguage: langParam, formatLocale: defaultFormatLocale(langParam) };
 }
 if (params.get('coach') === 'done') prefs = { ...prefs, setupCoachDismissed: true };
+// ?gauge=ring: the activity-ring variant of the window meters (row.css).
+if (params.get('gauge') === 'ring') document.documentElement.setAttribute('data-gauge', 'ring');
 if (params.get('shot') === '1') document.body.classList.add('hx--shot');
 if (params.get('bare') === '1') document.body.classList.add('hx--bare');
 if (params.get('bare') === '1' && window.parent !== window) {
