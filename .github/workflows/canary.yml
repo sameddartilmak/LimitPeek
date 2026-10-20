@@ -1,0 +1,41 @@
+# Once a week: download the NEWEST Qwen Code, Kimi Code, Grok Build, Codex CLI
+# and Claude Code, run each once against a local fake model server, and check
+# our readers still understand what they wrote (scripts/real-cli-canary). A
+# vendor that moves or reshapes its usage files turns this red before a user
+# notices. Needs the internet to download the tools; the app itself never does.
+name: real-cli canary
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC (09:00 in Turkey)
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run canary:cli
+      # The runner's own environment variables are not in the `env` context,
+      # so the reports (%LOCALAPPDATA%\UsageNotch-canary\reports) are copied
+      # into the workspace before they are kept.
+      - name: Collect the report
+        if: always()
+        shell: pwsh
+        run: |
+          $src = Join-Path $env:LOCALAPPDATA 'UsageNotch-canary\reports'
+          if (Test-Path $src) { Copy-Item $src canary-reports -Recurse }
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-report
+          path: canary-reports/
+          if-no-files-found: warn
+          retention-days: 30

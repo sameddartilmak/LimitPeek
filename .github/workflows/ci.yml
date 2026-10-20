@@ -1,0 +1,30 @@
+# Every push and pull request: typecheck + the whole test suite, on Windows
+# (the app is Windows-only and the tests read Windows paths). A red run mails
+# the person who pushed.
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # src/renderer/dist is not committed (renderer-build.test.js checks it is
+      # built from the current source), so build it the way `npm start` does.
+      - run: node src/renderer/build.mjs
+      - run: npm test

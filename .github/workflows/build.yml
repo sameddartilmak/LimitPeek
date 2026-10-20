@@ -1,0 +1,32 @@
+# The installer, built in the cloud from a tagged commit (or by hand), kept as
+# a downloadable artifact. Nothing is published: releases stay a human step.
+# Unsigned until a code-signing certificate exists (docs/satis-plani.md).
+name: build installer
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node src/renderer/build.mjs
+      - run: npm test
+      - run: npm run dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: |
+            dist/*Setup*.exe
+            dist/*Setup*.exe.blockmap
+          if-no-files-found: error
+          retention-days: 30
