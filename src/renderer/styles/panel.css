@@ -816,49 +816,57 @@
 }
 
 /* ------------------------------------------------------------------ tabs */
+/* Apple HIG trial: the three tabs are a SEGMENTED CONTROL — the idiom a
+ * popover uses to switch between views of one thing. A recessed track, the
+ * selected segment raised on it (fill + shadow + weight, so it survives
+ * greyscale). Semantics unchanged: still role=tablist / role=tab. */
 .tabs {
   display: flex;
-  gap: var(--s-1);
-  padding: 0 var(--s-3);
-  border-bottom: 1px solid var(--ink-700);
+  gap: 2px;
+  margin: 0 var(--s-4) var(--s-1);
+  padding: 2px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--fill);
 }
 .tabs__tab {
   position: relative;
   flex: 1 1 0;
-  min-height: 32px;
+  min-height: 28px;
   padding: 0 var(--s-2);
   border: 0;
-  border-radius: 6px 6px 0 0;
+  border-radius: 7px;
   background: transparent;
-  color: var(--ink-300);
+  color: var(--ink-200);
   font: inherit;
-  font-size: var(--fs-meta);
+  font-size: var(--fs-body);
   font-weight: 500;
   cursor: pointer;
-  transition: color var(--dur-hover) linear, background-color var(--dur-hover) linear;
+  transition: color var(--dur-hover) linear, background-color var(--dur-spring) var(--ease-spring),
+    box-shadow var(--dur-spring) var(--ease-spring);
 }
-.tabs__tab:hover { color: var(--ink-100); background: var(--ink-800); }
-/* Selected: brighter ink AND a 2px underline, so it survives greyscale. */
-.tabs__tab[aria-selected="true"] { color: var(--ink-100); font-weight: 600; }
-.tabs__tab[aria-selected="true"]::after {
-  content: "";
-  position: absolute;
-  left: var(--s-2); right: var(--s-2); bottom: -1px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--ink-100);
+.tabs__tab:hover { color: var(--ink-100); }
+.tabs__tab[aria-selected="true"] {
+  color: var(--ink-100);
+  font-weight: 600;
+  background: var(--seg-on);
+  box-shadow: var(--shadow-seg);
 }
+/* iOS settings section header: a step down in size, secondary ink, inset to
+ * the group's text column. Sentence case — never uppercase (Turkish i/İ). */
 .settings__heading {
   margin: 0;
-  padding: var(--s-2) var(--s-4) var(--s-1);
+  padding: var(--s-4) calc(var(--s-4) + var(--s-4)) 6px;
   font-size: var(--fs-meta);
   font-weight: 600;
-  color: var(--ink-300);
+  color: var(--ink-400);
 }
 .settings__title {
   margin: 0;
-  font-size: var(--fs-name);
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
   font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--ink-100);
 }
 /* Section headings inside the view: "Araçlar" and "Görünüm". One step quieter
@@ -873,7 +881,7 @@
 }
 .settings__help {
   margin: 0;
-  padding: 0 var(--s-4) var(--s-3);
+  padding: var(--s-1) calc(var(--s-4) + var(--s-4)) var(--s-2);
   font-size: var(--fs-meta);
   line-height: 1.45;
   color: var(--ink-400);
@@ -887,27 +895,44 @@
 
 /* Each tool is a card: logo, name, state and the main-panel switch on one
  * line; the plan, when the tool has one, on a compact second line. */
+/* Apple HIG trial: ONE grouped inset list (iOS Settings). The tools share a
+ * rounded card; each row is separated from the next by a hairline INSET to
+ * the text column, so the marks read as one column down the card's edge. */
 .settings__list {
   list-style: none;
-  margin: 0;
-  padding: 0 var(--s-3) var(--s-3);
+  margin: 0 var(--s-4) var(--s-3);
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--s-2);
+  gap: 0;
+  border-radius: var(--radius-card);
+  background: var(--ink-800);
+  overflow: hidden;
 }
 
 .settings__item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  min-height: 44px;
-  padding: var(--s-2) var(--s-3);
-  border: 1px solid var(--ink-700);
-  border-radius: 8px;
-  background: var(--ink-800);
+  min-height: 52px;
+  padding: 10px var(--s-4);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   /* The plan field is the last child so it comes after the switch in the TAB
    * order; wrapping is what lets it still be drawn below the line. */
   flex-wrap: wrap;
+}
+/* The inset separator: from the text column to the card's right edge. */
+.settings__item + .settings__item::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: calc(var(--s-4) + var(--tile) + var(--s-3));
+  right: 0;
+  height: 1px;
+  background: var(--ink-700);
 }
 
 /* The mark is the same geometry the row uses, at the same two weights: brand
@@ -924,7 +949,7 @@
 }
 .settings__item[data-connected="true"] .settings__mark {
   background: color-mix(in srgb, var(--accent, #666666) var(--accent-tint), var(--ink-800));
-  border-color: color-mix(in srgb, var(--accent, #666666) 40%, transparent);
+  border-color: transparent;
   color: var(--accent, var(--ink-200));
 }
 /* Same per-theme shading as the row grip; see row.css and --accent-shade. */
@@ -976,20 +1001,20 @@
   min-width: 120px;
   max-width: 100%;
   height: 26px;
-  padding: 2px var(--s-1);
-  border: 1px solid var(--ink-700);
-  border-radius: 4px;
-  background: var(--ink-800, transparent);
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--fill);
   color: var(--ink-100);
   font: inherit;
-  font-size: var(--fs-micro);
+  font-size: var(--fs-meta);
 }
 .settings__plan-select[aria-busy="true"] { opacity: .7; }
 /* Main refused the write, so the field went back to what is stored. Held for a
  * moment as an attribute so the revert is SEEN and not only described in the
  * notice — the same treatment `data-revert` gives the switch. */
 .settings__item[data-plan-reverted="true"] .settings__plan-select {
-  border-color: var(--watch);
+  box-shadow: inset 0 0 0 1.5px var(--watch);
 }
 .settings__plan-hint {
   margin: 0;
@@ -1044,6 +1069,7 @@
 .btn--danger:hover { background: var(--spent); color: var(--on-tint); }
 .settings__name {
   font-size: var(--fs-name);
+  font-weight: 500;
   color: var(--ink-200);
   white-space: nowrap;
   overflow: hidden;
@@ -1051,7 +1077,7 @@
 }
 .settings__item[data-enabled="true"] .settings__name { color: var(--ink-100); }
 .settings__meta {
-  font-size: var(--fs-micro);
+  font-size: var(--fs-meta);
   color: var(--ink-400);
   white-space: nowrap;
   overflow: hidden;
@@ -1061,48 +1087,48 @@
 /* The add/remove switch. A real button[role=switch]; the track is decoration.
  * The knob moves AND the track fills, so the state is not carried by fill
  * alone — a 34px pill at one shade of grey is unreadable at a glance. */
+/* Apple HIG trial: the iOS switch, at 42x26 (iOS's 51x31 proportions scaled
+ * to a desktop row). A white knob with a shadow on a grey track that floods
+ * with the tint when on. State has three carriers: knob position, track
+ * fill (3.82:1 dark / 4.02:1 light against the card), and the announced
+ * aria-checked. The knob springs. */
 .switch {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  width: 36px; height: 20px;
+  width: 42px; height: 26px;
   padding: 0;
   border: 0;
+  border-radius: 13px;
   background: transparent;
   cursor: pointer;
 }
 .switch__track {
   position: relative;
   display: block;
-  width: 36px; height: 20px;
-  border-radius: 10px;
-  border: 1px solid var(--ink-600);
-  background: var(--ink-800);
-  transition: background-color 140ms linear, border-color 140ms linear;
+  width: 42px; height: 26px;
+  border-radius: 13px;
+  border: 0;
+  background: var(--switch-off);
+  transition: background-color var(--dur-spring) linear;
 }
 .switch__track::after {
   content: "";
   position: absolute;
   top: 2px; left: 2px;
-  width: 14px; height: 14px;
+  width: 22px; height: 22px;
   border-radius: 50%;
-  background: var(--ink-400);
-  transition: transform 140ms var(--ease-open), background-color 140ms linear;
+  background: var(--knob);
+  box-shadow: var(--shadow-knob);
+  transition: transform var(--dur-spring) var(--ease-spring), width var(--dur-hover) var(--ease-open);
 }
-.switch[aria-checked="true"] .switch__track {
-  background: var(--ink-100);
-  border-color: var(--ink-100);
-}
-.switch[aria-checked="true"] .switch__track::after {
-  transform: translateX(16px);
-  background: var(--ink-900);
-}
-.switch:hover .switch__track { border-color: var(--ink-500); }
-.switch[aria-checked="true"]:hover .switch__track {
-  background: var(--ink-max);
-  border-color: var(--ink-max);
-}
-.switch:active .switch__track { transform: scale(.97); }
+.switch[aria-checked="true"] .switch__track { background: var(--tint); }
+.switch[aria-checked="true"] .switch__track::after { transform: translateX(16px); }
+.switch:hover .switch__track { background: color-mix(in srgb, var(--switch-off), var(--ink-500) 25%); }
+.switch[aria-checked="true"]:hover .switch__track { background: var(--tint-fill); }
+/* The press stretches the knob, as iOS does. */
+.switch:active .switch__track::after { width: 26px; }
+.switch[aria-checked="true"]:active .switch__track::after { transform: translateX(12px); }
 
 /* In flight: the switch stays operable, but it says it is waiting. */
 .switch[aria-busy="true"] .switch__track { opacity: .6; }
@@ -1113,7 +1139,27 @@
 .settings__item[data-revert="true"] {
   animation: settings-revert 1600ms ease-out 1;
 }
-.settings__item--autostart { margin: var(--s-3) var(--s-3) var(--s-3); }
+/* A group of one, in the same grouped-inset style as the tool list. */
+.settings__item--autostart {
+  margin: var(--s-4) var(--s-4) var(--s-3);
+  border-radius: var(--radius-card);
+  background: var(--ink-800);
+}
+/* "Tanıtımı yeniden göster": an iOS action row — a full-width cell whose
+ * label is tinted text, not a free-floating outlined button. */
+.settings__replay { margin: 0 var(--s-4) var(--s-4); }
+.settings__replay .btn {
+  width: 100%;
+  height: 44px;
+  justify-content: flex-start;
+  padding: 0 var(--s-4);
+  border-radius: var(--radius-card);
+  background: var(--ink-800);
+  color: var(--tint-text);
+  font-size: var(--fs-body);
+}
+.settings__replay .btn:hover { background: color-mix(in srgb, var(--ink-800), var(--ink-500) 14%); color: var(--tint-text); }
+.settings__replay .btn:active { transform: none; }
 /* "Start with Windows" reuses the provider item, minus the mark. Its hint is
  * a whole sentence rather than a status word, so it wraps instead of being cut
  * off at the switch. */
@@ -1123,6 +1169,8 @@
   0%, 45% { background: color-mix(in srgb, var(--watch) 22%, var(--ink-800)); }
   100% { background: var(--ink-800); }
 }
+/* The list rows themselves are transparent on the shared card; ending the
+ * flash on the card colour is the same pixels. */
 
 /* ---------------------------------------------------------------- theme */
 /* Three choices, one selection: a native radio group in a fieldset, so arrow
@@ -1131,7 +1179,14 @@
  * take them out of the focus order and out of the accessibility tree, which is
  * the usual way a "custom radio" stops being a radio at all. */
 
+/* Apple HIG trial: each choice group is a SEGMENTED CONTROL, and its help
+ * line becomes the group's FOOTER (iOS draws explanations under the control
+ * they explain). Visual order only: `order` moves the help below the
+ * options, the DOM keeps it first, and the fieldset's aria-describedby
+ * points at it either way, so nothing a screen reader hears changes. */
 .theme {
+  display: flex;
+  flex-direction: column;
   margin: 0;
   padding: 0 0 var(--s-3);
   border: 0;
@@ -1141,17 +1196,22 @@
 }
 
 .theme__help {
+  order: 2;
   margin: 0;
-  padding: 0 var(--s-4) var(--s-2);
+  padding: 6px calc(var(--s-4) + var(--s-4)) 0;
   font-size: var(--fs-meta);
   line-height: 1.45;
   color: var(--ink-400);
 }
 
 .theme__opts {
+  order: 1;
   display: flex;
-  gap: var(--s-1);
-  padding: 0 var(--s-4);
+  gap: 2px;
+  margin: 0 var(--s-4);
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--fill);
 }
 
 /* Off-screen but focusable and hit-testable — the label is what is drawn. */
@@ -1168,42 +1228,42 @@
 
 .theme__opt {
   flex: 1 1 0;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 26px;
+  height: 28px;
   padding: 0 var(--s-2);
-  border: 1px solid var(--ink-600);
-  border-radius: 6px;
+  border: 0;
+  border-radius: 7px;
   background: transparent;
-  color: var(--ink-300);
-  font-size: var(--fs-meta);
+  color: var(--ink-200);
+  font-size: var(--fs-body);
   font-weight: 500;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
-  transition: background-color 120ms linear, color 120ms linear,
-    border-color 120ms linear;
+  transition: background-color var(--dur-spring) var(--ease-spring), color var(--dur-hover) linear,
+    box-shadow var(--dur-spring) var(--ease-spring);
 }
-.theme__opt:hover { color: var(--ink-100); border-color: var(--ink-500); background: var(--ink-700); }
+.theme__opt:hover { color: var(--ink-100); }
 
-/* Selected inverts, the same way the pin and the primary button do: the
- * distinction survives greyscale, and no state-ramp colour is borrowed for a
- * control that has nothing to do with a limit. */
+/* Selected: the raised segment — its own fill, a shadow and the heavier
+ * weight, so the choice survives greyscale. No state-ramp colour and no tint:
+ * a choice of appearance has nothing to do with a limit or an action. */
 .theme__radio:checked + .theme__opt {
-  background: var(--ink-100);
-  border-color: var(--ink-100);
-  color: var(--ink-900);
+  background: var(--seg-on);
+  color: var(--ink-100);
   font-weight: 600;
+  box-shadow: var(--shadow-seg);
 }
 
 /* The focus ring belongs on the drawn control, because the input itself is
  * one pixel wide and off-screen. */
 .theme__radio:focus-visible + .theme__opt {
-  outline: 2px solid var(--ink-100);
-  outline-offset: 2px;
-}
-.theme__radio:checked:focus-visible + .theme__opt {
-  outline-color: var(--ink-400);
+  outline: 2px solid var(--tint);
+  outline-offset: 1px;
 }
 
 /* In flight. The group stays operable — a control that goes dead for one round
@@ -1234,8 +1294,8 @@
 .usage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .usage__chooser {
   flex: none;
-  padding: var(--s-3) 0 var(--s-1);
-  border-bottom: 1px solid var(--ink-700);
+  padding: var(--s-3) 0 var(--s-2);
+  border-bottom: 0;
 }
 .usage__scroll {
   flex: 1 1 auto;
@@ -1244,12 +1304,12 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--ink-600) transparent;
-  padding: var(--s-2) 0 var(--s-3);
+  padding: var(--s-1) 0 var(--s-3);
 }
 
 .usage__intro {
   margin: 0;
-  padding: 0 var(--s-4) var(--s-2);
+  padding: 0 calc(var(--s-4) + var(--s-4)) var(--s-2);
   font-size: var(--fs-meta);
   line-height: 1.45;
   color: var(--ink-400);
@@ -1257,11 +1317,17 @@
 
 /* Segmented hafta/ay toggle. Same native-radio treatment as the theme control:
  * the inputs are visually replaced, not hidden, so they keep focus and arrow
- * keys, and the drawn label carries the ring. */
+ * keys, and the drawn label carries the ring. Drawn as a smaller segmented
+ * control than the tabs above it — a filter inside the page, not a page
+ * switch — so the two stacked controls do not read as one. */
 .seg {
   display: flex;
-  gap: var(--s-1);
-  padding: 0 var(--s-4) var(--s-2);
+  gap: 2px;
+  margin: 0 auto;
+  width: min(220px, calc(100% - 2 * var(--s-4)));
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--fill);
   min-inline-size: 0;
 }
 .seg__radio {
@@ -1279,30 +1345,30 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 26px;
+  height: 24px;
   padding: 0 var(--s-2);
-  border: 1px solid var(--ink-600);
+  border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--ink-300);
+  color: var(--ink-200);
   font-size: var(--fs-meta);
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 120ms linear, color 120ms linear, border-color 120ms linear;
+  transition: background-color var(--dur-spring) var(--ease-spring), color var(--dur-hover) linear,
+    box-shadow var(--dur-spring) var(--ease-spring);
 }
-.seg__opt:hover { color: var(--ink-100); border-color: var(--ink-500); background: var(--ink-700); }
+.seg__opt:hover { color: var(--ink-100); }
 .seg__radio:checked + .seg__opt {
-  background: var(--ink-100);
-  border-color: var(--ink-100);
-  color: var(--ink-900);
+  background: var(--seg-on);
+  color: var(--ink-100);
   font-weight: 600;
+  box-shadow: var(--shadow-seg);
 }
 .seg__radio:focus-visible + .seg__opt {
-  outline: 2px solid var(--ink-100);
-  outline-offset: 2px;
+  outline: 2px solid var(--tint);
+  outline-offset: 1px;
 }
-.seg__radio:checked:focus-visible + .seg__opt { outline-color: var(--ink-400); }
 
 .usage__list {
   list-style: none;
@@ -1359,8 +1425,8 @@
 }
 .usage__step svg { width: 13px; height: 13px; display: block; }
 .usage__step--prev svg { transform: rotate(180deg); }
-.usage__step:hover { background: var(--ink-700); color: var(--ink-100); }
-.usage__step:focus-visible { outline: 2px solid var(--ink-100); outline-offset: 1px; }
+.usage__step:hover { background: var(--fill); color: var(--ink-100); }
+.usage__step:focus-visible { outline: 2px solid var(--tint); outline-offset: 1px; }
 .usage__step[disabled] { visibility: hidden; }
 .usage__amount {
   grid-area: amount;
@@ -1425,9 +1491,9 @@
 }
 .usage__col:hover .usage__col-bar { background: var(--ink-400); }
 .usage__col:hover .usage__col-label { color: var(--ink-300); }
-.usage__col[aria-pressed="true"] .usage__col-bar { background: var(--ink-100); }
+.usage__col[aria-pressed="true"] .usage__col-bar { background: var(--tint); }
 .usage__col[aria-pressed="true"] .usage__col-label { color: var(--ink-100); font-weight: 600; }
-.usage__col:focus-visible { outline: 2px solid var(--ink-100); outline-offset: 2px; }
+.usage__col:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
 
 /* Per-model disclosure. Collapsed by default so a dozen periods stay short; the
  * toggle counts models and carries no figure (the period amount above already
@@ -1567,7 +1633,10 @@
 .usage__pending {
   margin: 0 var(--s-4) var(--s-2);
   padding-left: var(--s-2);
-  border-left: 2px solid var(--watch);
+  border-left: 0;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-ctl);
+  background: color-mix(in srgb, var(--watch) 12%, transparent);
   font-size: var(--fs-micro);
   line-height: 1.45;
   color: var(--ink-300);
