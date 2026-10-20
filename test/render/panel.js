@@ -1975,8 +1975,10 @@ app.whenReady().then(async () => {
     /uygulama/.test(pinOn.title || ''), pinOn.title);
   check('pinned and unpinned are different at a glance, not one shade apart',
     pinOn.bg !== pinOff.bg && pinOn.color !== pinOff.color, [pinOff.bg, pinOn.bg]);
-  check('pinned inverts to the brightest ink, so it survives greyscale',
-    pinOn.bg === 'rgb(237, 242, 240)', pinOn.bg);
+  // Apple HIG trial: pinned is a filled tint circle (dark --tint #0A84FF),
+  // a ground change rather than a shade, so it still survives greyscale.
+  check('pinned fills with the tint, so it survives greyscale',
+    pinOn.bg === 'rgb(10, 132, 255)', pinOn.bg);
   check('the pinned glyph stands upright', pinOn.tilt === null, pinOn.tilt);
   check('the footer states the pinned promise in words',
     /kal/.test(pinOn.foot || '') && pinOn.foot !== pinOff.foot, pinOn.foot);

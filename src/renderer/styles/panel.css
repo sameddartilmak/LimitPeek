@@ -314,10 +314,11 @@
 
 .fresh[data-fresh="live"]    { --fresh-color: var(--calm); }
 /* Aging: a small outlined chip, "1 dk önce". */
+/* Aging: the dot turns watch and the words return — no ground and no frame,
+ * which stays reserved for the alarm tier below. */
 .fresh[data-fresh="aging"]   {
   --fresh-color: var(--watch);
-  padding: 0 var(--s-2);
-  background: var(--fill);
+  padding: 0 var(--s-1);
   color: var(--ink-200);
 }
 .fresh[data-fresh="pending"] { --fresh-color: var(--ink-400); }
