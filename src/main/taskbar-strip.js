@@ -10,9 +10,9 @@ const { IconProbe } = require('./taskbar-icons');
  *
  * A small window ON the Windows 11 taskbar, just left of the notification
  * area: one tile per visible tool, its logo and a mini bar for the five-hour
- * and the seven-day window. Off by default; the tray icon stays either way (it
- * carries the menu, and it is what the user still has when the strip cannot be
- * shown).
+ * and the seven-day window. Off by default. While it is shown the tray icon is
+ * removed and the strip carries the click and the menu; the icon returns
+ * whenever the strip is not shown (index.js syncTrayPresence).
  *
  * HOW IT GETS ONTO THE TASKBAR (measured on this machine, 2026-10-20)
  * ------------------------------------------------------------------
@@ -407,6 +407,20 @@ class TaskbarStrip {
    *
    * @returns {boolean} whether the foreground was handed on
    */
+  /**
+   * Where the panel anchors while the tray icon is gone: the strip's own
+   * rectangle, in DIP like Tray.getBounds(). Null when the strip is not shown.
+   */
+  anchorRect() {
+    if (!this._shown || !this.win || this.win.isDestroyed()) return null;
+    try {
+      const b = this.win.getBounds();
+      return b && b.width > 0 && b.height > 0 ? b : null;
+    } catch {
+      return null;
+    }
+  }
+
   handBackFocus() {
     if (this._dead || !this._wanted || !this._shown || !this._api) return false;
     const api = this._api;

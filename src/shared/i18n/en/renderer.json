@@ -223,7 +223,7 @@
   "settings.trayView.legend": "Where usage is shown",
   "settings.trayView.tray": "Tray icon",
   "settings.trayView.strip": "Taskbar strip",
-  "settings.trayView.help": "The strip shows each tool's 5-hour and weekly usage in the taskbar, left of the clock. The tray icon stays too.",
+  "settings.trayView.help": "The strip shows each tool's 5-hour and weekly usage in the taskbar, left of the clock. While the strip shows, the tray icon is hidden; it comes back whenever the strip cannot be shown.",
   "settings.trayView.unavailable": "The taskbar strip cannot be shown on this computer; the tray icon is used instead.",
   "settings.trayView.noRoom": "There is no room on the taskbar for the strip: not even one tile fits between the icons and the clock. The tray icon is used instead.",
   "app.trayViewNotSaved": "The display setting could not be saved. The previous choice was restored.",

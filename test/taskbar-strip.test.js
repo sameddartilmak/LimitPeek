@@ -937,7 +937,7 @@ test.describe('the strip page', () => {
     assert.match(src, /strip\.themeChanged\(\)/);
     const quit = src.slice(src.indexOf("app.on('before-quit'"));
     assert.ok(quit.indexOf('strip.disable()') !== -1 && quit.indexOf('strip.disable()') < quit.indexOf('tray.destroy()'));
-    assert.match(src, /new TaskbarStrip\(\{ BrowserWindow, log, onChange: \(\) => pushPreferences\(\) \}\)/);
+    assert.match(src, /new TaskbarStrip\(\{ BrowserWindow, log, onChange: \(\) => \{ pushPreferences\(\); syncTrayPresence\(\); \} \}\)/);
     assert.match(src, /applyTrayView\(settings\.trayView\);/);
     // Left click opens pinned (the pointer is not on the tray icon), right click is the tray's menu.
     assert.match(src, /function openFromStrip\(\)[\s\S]*?openPinned\(\);/);
@@ -958,13 +958,50 @@ test.describe('the tray menu, reused for a right click on the strip', () => {
       t.popUpContextMenu = () => { popped += 1; };
       tray.popUpMenu();
       assert.equal(popped, 1);
-      tray.destroy();
+      let alone = 0;
+      tray._menu.popup = () => { alone += 1; };
+      assert.equal(tray.setPresent(false), 'removed');
       tray.popUpMenu();
       assert.equal(popped, 1);
+      assert.equal(alone, 1, 'the strip\'s right click still has a menu with the icon gone');
     } finally {
       fake.restore();
       delete require.cache[require.resolve('../src/main/tray')];
     }
+  });
+});
+
+test.describe('the tray icon steps aside while the strip is shown (owner, 2026-10-20)', () => {
+  test('setPresent removes the icon and builds it again with the same menu', () => {
+    const fake = require('./helpers/fake-electron').install();
+    try {
+      delete require.cache[require.resolve('../src/main/tray')];
+      const { TrayController } = require('../src/main/tray');
+      const tray = new TrayController({ onToggle() {}, onOpen() {} });
+      tray.create({ autostart: true, autostartByWindows: false, onToggleAutostart() {}, onQuit() {} });
+      assert.equal(tray.present(), true);
+      assert.equal(tray.setPresent(true), null, 'already there');
+      assert.equal(tray.setPresent(false), 'removed');
+      assert.equal(tray.present(), false);
+      assert.equal(tray.bounds(), null);
+      assert.equal(tray.setPresent(false), null);
+      assert.equal(tray.setPresent(true), 'created');
+      assert.equal(fake.trays.length, 2);
+      assert.equal(tray.present(), true);
+    } finally {
+      fake.restore();
+      delete require.cache[require.resolve('../src/main/tray')];
+    }
+  });
+
+  test('index.js: gone only while the strip is shown, back at once otherwise, never during quit', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/main/index.js'), 'utf8');
+    const fn = src.slice(src.indexOf('function syncTrayPresence()'), src.indexOf('function openFromStrip()'));
+    assert.match(fn, /if \(!tray \|\| isQuitting\) return;/);
+    assert.match(fn, /strip\.status\(\) === 'shown'/);
+    assert.match(fn, /tray\.setPresent\(true\) === 'created'/);
+    assert.match(fn, /setTimeout\([\s\S]*?if \(stripUp\(\)\) tray\.setPresent\(false\)/);
+    assert.match(src, /function anchorRect\(\) \{\s*return \(tray && tray\.bounds\(\)\) \|\| \(strip && strip\.anchorRect\(\)\) \|\| null;/);
   });
 });
 

@@ -202,7 +202,7 @@
   "settings.trayView.legend": "Kullanımın gösterildiği yer",
   "settings.trayView.tray": "Tepsi simgesi",
   "settings.trayView.strip": "Görev çubuğu şeridi",
-  "settings.trayView.help": "Şerit, her aracın 5 saatlik ve haftalık kullanımını görev çubuğunda, saatin solunda gösterir. Tepsi simgesi de yerinde kalır.",
+  "settings.trayView.help": "Şerit, her aracın 5 saatlik ve haftalık kullanımını görev çubuğunda, saatin solunda gösterir. Şerit görünürken tepsi simgesi gizlenir; şerit gösterilemezse geri gelir.",
   "settings.trayView.unavailable": "Görev çubuğu şeridi bu bilgisayarda gösterilemiyor; tepsi simgesi kullanılıyor.",
   "settings.trayView.noRoom": "Görev çubuğunda şerit için yer yok: simgeler ile saat arasına tek bir kutucuk bile sığmıyor. Tepsi simgesi kullanılıyor.",
   "app.trayViewNotSaved": "Görünüm ayarı kaydedilemedi. Önceki seçim geri alındı.",

@@ -202,7 +202,7 @@
   "settings.trayView.legend": "用量显示位置",
   "settings.trayView.tray": "托盘图标",
   "settings.trayView.strip": "任务栏条",
-  "settings.trayView.help": "任务栏条会在任务栏中时钟左侧显示每个工具的 5 小时和每周用量。托盘图标也会保留。",
+  "settings.trayView.help": "任务栏条会在任务栏中时钟左侧显示每个工具的 5 小时和每周用量。任务栏条显示时托盘图标会隐藏；任务栏条无法显示时托盘图标会恢复。",
   "settings.trayView.unavailable": "无法在此电脑上显示任务栏条，正在使用托盘图标。",
   "settings.trayView.noRoom": "任务栏上没有空间放置任务栏条：图标和时钟之间连一个方块也放不下。正在使用托盘图标。",
   "app.trayViewNotSaved": "无法保存显示设置，已恢复之前的选择。",

@@ -119,9 +119,17 @@ function anchorSender(anchor) {
  * pointer bookkeeping is `PanelWindow`'s, because it is the only object that
  * knows the window rect.
  */
+/**
+ * What the panel opens against: the tray icon, or the strip while the icon is
+ * gone for it (syncTrayPresence). Null lets the panel use its own fallback.
+ */
+function anchorRect() {
+  return (tray && tray.bounds()) || (strip && strip.anchorRect()) || null;
+}
+
 function openPanel() {
   if (!panel) return;
-  panel.open(tray ? tray.bounds() : null, anchorSender);
+  panel.open(anchorRect(), anchorSender);
   collector.setPanelOpen(true);
   if (collector.snapshot) panel.send(IPC.SNAPSHOT, collector.snapshot);
 }
@@ -129,7 +137,7 @@ function openPanel() {
 /** Pinned open: stays until an explicit close or unpin, whatever has focus. */
 function openPinned() {
   if (!panel) return;
-  panel.pin(tray ? tray.bounds() : null, anchorSender);
+  panel.pin(anchorRect(), anchorSender);
   collector.setPanelOpen(true);
   if (collector.snapshot) panel.send(IPC.SNAPSHOT, collector.snapshot);
 }
@@ -207,8 +215,9 @@ function pushPreferences() {
 /* ------------------------------------------------------------ taskbar strip */
 
 /**
- * Settings → Genel → Görünüm. 'strip' adds the taskbar strip; the tray icon
- * stays either way. When the strip cannot be shown here, `enable()` says so,
+ * Settings → Genel → Görünüm. 'strip' adds the taskbar strip, and the tray
+ * icon steps aside while it is shown (syncTrayPresence). When the strip cannot
+ * be shown here, `enable()` says so,
  * the app simply carries on as 'tray', and the next PREFERENCES push carries
  * `stripAvailable: false` for the settings screen to explain.
  */
@@ -220,6 +229,39 @@ function applyTrayView(view) {
   } else {
     strip.disable();
   }
+  syncTrayPresence();
+}
+
+/**
+ * The tray icon is gone while the strip is SHOWN, and back the moment it is
+ * not (no room, nothing to show, unavailable, covered, or 'tray' chosen), so
+ * there is always one place to click. Removal waits until the strip has been
+ * up for TRAY_AWAY_MS, so a strip that blinks on its way up never takes the
+ * icon with it; the return is immediate.
+ */
+const TRAY_AWAY_MS = 1500;
+let trayAwayTimer = null;
+function syncTrayPresence() {
+  // Quitting: the strip's disable() reports a status change on the way out, and
+  // the icon is about to be destroyed anyway.
+  if (!tray || isQuitting) return;
+  const stripUp = () => Boolean(strip && sanitizeTrayView(settings.trayView) === 'strip' && strip.status() === 'shown');
+  if (!stripUp()) {
+    if (trayAwayTimer) { clearTimeout(trayAwayTimer); trayAwayTimer = null; }
+    if (tray.setPresent(true) === 'created') {
+      // A new icon starts as the static PNG with the default tooltip.
+      trayIconDrawnKey = null;
+      trayTooltipShown = null;
+      if (collector && collector.snapshot) updateTray(collector.snapshot);
+    }
+    return;
+  }
+  if (!tray.present() || trayAwayTimer) return;
+  trayAwayTimer = setTimeout(() => {
+    trayAwayTimer = null;
+    if (stripUp()) tray.setPresent(false);
+  }, TRAY_AWAY_MS);
+  if (trayAwayTimer.unref) trayAwayTimer.unref();
 }
 
 /**
@@ -822,7 +864,7 @@ function bootstrap() {
   // After the tray, which it leans on for its right-click menu. Built always,
   // shown only for 'strip'; koffi is not even loaded for 'tray'. A status
   // change (shown, unavailable) is pushed so the settings screen can say it.
-  strip = new TaskbarStrip({ BrowserWindow, log, onChange: () => pushPreferences() });
+  strip = new TaskbarStrip({ BrowserWindow, log, onChange: () => { pushPreferences(); syncTrayPresence(); } });
   applyTrayView(settings.trayView);
 
   // The user flipping Windows between light and dark changes no snapshot

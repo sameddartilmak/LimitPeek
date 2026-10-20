@@ -5,9 +5,9 @@
  *
  *   'tray'   the tray icon's donut, as always. The default.
  *   'strip'  a small strip inside the taskbar, left of the tray, one tile per
- *            tool (src/main/taskbar-strip.js). The tray icon stays as well: it
- *            carries the right-click menu, and it is the fallback when the
- *            strip cannot be shown on this machine.
+ *            tool (src/main/taskbar-strip.js). While the strip is shown the
+ *            tray icon is removed (index.js syncTrayPresence); it comes back
+ *            whenever the strip is not shown, so one of the two is always there.
  *
  * A sibling of `theme.js`, for the same reason: the value comes out of a
  * hand-editable settings file, so a typo, a future value or a non-string all

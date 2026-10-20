@@ -86,6 +86,8 @@ class TrayController {
   }
 
   create({ autostart, autostartByWindows, onToggleAutostart, onQuit }) {
+    // Kept for setPresent(true), which builds the icon again from the same menu.
+    this._createOptions = { autostart, autostartByWindows, onToggleAutostart, onQuit };
     this.tray = new Tray(createTrayIcon());
     this.tray.setToolTip('Usage Notch');
 
@@ -161,7 +163,39 @@ class TrayController {
       { label: t('tray.menu.quit'), click: () => onQuit() },
     ]);
     // Left click must open the panel, so the menu is bound to right click only.
-    this.tray.setContextMenu(menu);
+    // Kept even while the icon is gone (setPresent), for the strip's right click.
+    this._menu = menu;
+    this._createOptions = { autostart, autostartByWindows, onToggleAutostart, onQuit };
+    if (this.tray) this.tray.setContextMenu(menu);
+  }
+
+  /**
+   * Whether the icon is in the notification area at all. With the taskbar
+   * strip shown, the strip is the one place to click (owner, 2026-10-20: "ya
+   * tepsi ya şerit"): a click on a tray icon hands the taskbar the foreground,
+   * and a foreground taskbar covers the strip for as long as the press lasts.
+   * Electron cannot hide a Tray, so it is destroyed and built again.
+   *
+   * @returns {'created'|'removed'|null} what changed; 'created' means the
+   *   caller must draw the icon and tooltip again
+   */
+  setPresent(present) {
+    const has = Boolean(this.tray && !this.tray.isDestroyed());
+    if (present && !has && this._createOptions) {
+      this.create(this._createOptions);
+      return 'created';
+    }
+    if (!present && has) {
+      this.tray.destroy();
+      this.tray = null;
+      return 'removed';
+    }
+    return null;
+  }
+
+  /** Whether the icon is in the notification area now. */
+  present() {
+    return Boolean(this.tray && !this.tray.isDestroyed());
   }
 
   /**
@@ -170,9 +204,9 @@ class TrayController {
    * does, from the one menu `setMenu` built.
    */
   popUpMenu() {
-    if (!this.tray || this.tray.isDestroyed()) return;
     try {
-      this.tray.popUpContextMenu();
+      if (this.tray && !this.tray.isDestroyed()) this.tray.popUpContextMenu();
+      else if (this._menu) this._menu.popup();
     } catch (err) {
       log.warn(`tray menu could not be shown: code=${(err && err.code) || 'UNKNOWN'}`);
     }
