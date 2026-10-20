@@ -973,6 +973,18 @@ test.describe('the tray menu, reused for a right click on the strip', () => {
   });
 });
 
+test('the strip opens on the RELEASE, and main coalesces a release with a covered-click report', () => {
+  // While the taskbar is the foreground only the release reaches the page, so
+  // a 'click' listener never fired (owner, 2026-10-20: one strip.click logged
+  // in six minutes of clicking).
+  const page = fs.readFileSync(path.join(ROOT, 'src/main/strip/strip.js'), 'utf8');
+  assert.match(page, /addEventListener\('mouseup', function \(e\) \{\s*if \(e\.button === 0\) api\.open\(\);/);
+  assert.doesNotMatch(page, /addEventListener\('click'/);
+  const src = fs.readFileSync(path.join(ROOT, 'src/main/index.js'), 'utf8');
+  const fn = src.slice(src.indexOf('function openFromStrip()'));
+  assert.match(fn, /now - lastStripClickAt < STRIP_CLICK_COALESCE_MS[\s\S]*?return;/);
+});
+
 test.describe('the tray icon steps aside while the strip is shown (owner, 2026-10-20)', () => {
   test('setPresent removes the icon and builds it again with the same menu', () => {
     const fake = require('./helpers/fake-electron').install();

@@ -100,7 +100,14 @@
 
   if (!api) return;
   api.onData(draw);
-  document.addEventListener('click', function (e) {
+  // The RELEASE opens the panel, not a full click. While the taskbar is the
+  // foreground (after any click on it: the clock, the ^ arrow, Start) the
+  // press goes to the taskbar and only the release reaches this page, so a
+  // 'click' never fired and the strip stopped opening anything until another
+  // app was clicked (owner, 2026-10-20; the trace showed one strip.click in
+  // six minutes of clicking). main coalesces a release and a covered-click
+  // report that arrive together.
+  document.addEventListener('mouseup', function (e) {
     if (e.button === 0) api.open();
   });
   document.addEventListener('contextmenu', function (e) {

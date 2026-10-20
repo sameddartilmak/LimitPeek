@@ -271,8 +271,18 @@ function syncTrayPresence() {
  * panel's tray-to-panel corridor would read it as gone and close the panel
  * (the same reason a second launch opens pinned, below).
  */
+/** A strip release and a covered-click report for the same press are one click. */
+const STRIP_CLICK_COALESCE_MS = 400;
+let lastStripClickAt = -Infinity;
+
 function openFromStrip() {
   if (!panel) return;
+  const now = Date.now();
+  if (now - lastStripClickAt < STRIP_CLICK_COALESCE_MS) {
+    log.trace('strip.click', { act: 'coalesced', sinceMs: now - lastStripClickAt });
+    return;
+  }
+  lastStripClickAt = now;
   const visible = panel.isVisible();
   const pending = panel.hidePending();
   const act = !visible || pending ? 'open' : 'hide';
