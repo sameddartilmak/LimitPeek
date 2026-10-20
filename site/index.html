@@ -55,7 +55,7 @@
         <label class="lang__opt" for="lang-en"><span aria-hidden="true">EN</span><span class="u-sr" lang="en">English</span></label>
       </fieldset>
     </nav>
-    <a class="btn btn--glow btn--nav top__cta" id="nav-cta" href="#install" data-sec="install"><span class="l-tr" lang="tr">Kurulum</span><span class="l-en" lang="en">Install</span></a>
+    <a class="btn btn--glow btn--nav top__cta" id="nav-cta" href="#install" data-sec="install"><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">Windows’a kur</span><span class="l-en" lang="en">Install on Windows</span></a>
   </div>
 </header>
 
@@ -87,15 +87,38 @@
   </div>
 
   <div class="wrap hero__demo drop d6">
-    <p class="hint" id="demo-hint"><span class="hint__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Dene: bu uygulamanın gerçek paneli; kartlara, Ayrıntılar'a ve ayarlara tıklayın</span><span class="l-en" lang="en">Try it: this is the app's real panel; click the cards, Details and settings</span></p>
+    <p class="hint" id="demo-hint"><span class="hint__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Dene: bu uygulamanın gerçek paneli; kartlara, Ayrıntılar'a ve ayarlara tıklayın, tepsi simgesiyle kapatıp açın</span><span class="l-en" lang="en">Try it: this is the app's real panel; click the cards, Details and settings, and the tray icon to close and open it</span></p>
 
     <!-- ========================================================= DEMO
-         The shipping renderer itself, mounted on sample data (the dev
-         harness in screenshot mode). Built by scripts/build-site-demo.js
-         into site/demo/; re-run it after any UI change. site.js keeps the
-         frame in the page's language. -->
-    <div class="demo-frame">
-      <iframe class="demo-frame__iframe" id="demo-frame" src="demo/dev/panel.html?shot=1&amp;s=vitrin&amp;coach=done" title="Usage Notch paneli, canlı demo" width="480" height="760" loading="lazy"></iframe>
+         A Windows desktop with the shipping renderer above the tray: the
+         panel is the dev harness in screenshot mode on sample data, with a
+         transparent page (bare=1) like the real window. Built by
+         scripts/build-site-demo.js into site/demo/; re-run it after any UI
+         change. site.js keeps the frame in the page's language and lets the
+         tray icon close and open it. -->
+    <div class="live ui" id="live-demo" data-theme="dark" data-open="true">
+      <div class="desk live__desk">
+        <div class="desk__win" aria-hidden="true">
+          <div class="desk__bar"><i></i><i></i><i></i><span class="desk__caps"><b></b><b></b><b></b></span></div>
+          <div class="desk__code">
+            <i class="c1"></i><i class="c2"></i><i class="c3"></i><i class="c4"></i><i class="c5"></i><i class="c6"></i><i class="c2"></i><i class="c7"></i><i class="c3"></i><i class="c5"></i><i class="c1"></i><i class="c6"></i>
+          </div>
+        </div>
+        <div class="live__anchor" id="live-anchor">
+          <iframe class="live__frame" id="demo-frame" src="demo/dev/panel.html?shot=1&amp;bare=1&amp;s=vitrin&amp;coach=done" title="Usage Notch paneli, canlı demo" width="480" height="760" loading="lazy"></iframe>
+        </div>
+        <div class="taskbar">
+          <span class="taskbar__apps" aria-hidden="true"><i class="app app--start"></i><i class="app"></i><i class="app app--on"></i><i class="app"></i><i class="app"></i></span>
+          <span class="taskbar__tray">
+            <span class="tb" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <button type="button" class="tb tray" id="live-tray" aria-expanded="true" aria-controls="live-anchor" aria-label="Usage Notch">
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle class="donut__track" cx="12" cy="12" r="8.5" fill="none" stroke-width="4.6"/><circle class="donut__sweep" data-state="calm" cx="12" cy="12" r="8.5" fill="none" stroke-width="4.6" stroke-dasharray="20.3 53.41" transform="rotate(-90 12 12)"/><circle class="donut__dot donut__dot--claude" cx="12" cy="12" r="2.4"/></svg>
+            </button>
+            <span class="tb" aria-hidden="true"><i class="tb__glyph"></i></span>
+            <span class="tb tb--clock" aria-hidden="true">14:32</span>
+          </span>
+        </div>
+      </div>
     </div>
   </div>
 </section>

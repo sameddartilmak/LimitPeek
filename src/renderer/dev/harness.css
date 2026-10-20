@@ -123,3 +123,5 @@ body.hx--shot .hx-stage { padding: 0; }
 body.hx--shot .hx-canvas { outline: 0; margin: 0; }
 body.hx--shot .hx-canvas::after { content: none; }
 html[data-theme="light"] body.hx.hx--shot { background: #D9DFDC; }
+/* ?bare=1: no page colour at all; the site draws its desktop behind the frame. */
+html body.hx.hx--shot.hx--bare { background: transparent; }

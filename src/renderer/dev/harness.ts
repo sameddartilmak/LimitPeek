@@ -526,6 +526,8 @@ controls.appendChild(logBox);
  *   ?s=<scenario id>  &theme=light|dark  &lang=en  &coach=done
  *   &view=settings  &tab=providers|usage|general  &expand=<provider id>
  *   &shot=1 (the panel alone, no controls)
+ *   &bare=1 (with shot: a transparent page, so the site's desktop scene shows
+ *           around the panel, as the real transparent window does)
  */
 const params = new URLSearchParams(window.location.search);
 const themeParam = params.get('theme');
@@ -536,6 +538,25 @@ if (langParam === 'en' || langParam === 'zh') {
 }
 if (params.get('coach') === 'done') prefs = { ...prefs, setupCoachDismissed: true };
 if (params.get('shot') === '1') document.body.classList.add('hx--shot');
+if (params.get('bare') === '1') document.body.classList.add('hx--bare');
+if (params.get('bare') === '1' && window.parent !== window) {
+  // Framed in the site: a wheel turn the panel cannot use itself (no
+  // scrollable box under the pointer with room in that direction) scrolls the
+  // page around the frame, or the visitor's wheel stops dead on the demo.
+  const canScroll = (start: EventTarget | null, dy: number): boolean => {
+    for (let el = start instanceof Element ? start : null; el; el = el.parentElement) {
+      const oy = getComputedStyle(el).overflowY;
+      if ((oy !== 'auto' && oy !== 'scroll') || el.scrollHeight <= el.clientHeight) continue;
+      if (dy < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1) return true;
+    }
+    return false;
+  };
+  window.addEventListener('wheel', (event) => {
+    if (event.ctrlKey || canScroll(event.target, event.deltaY)) return;
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1;
+    try { window.parent.scrollBy({ top: event.deltaY * unit, left: event.deltaX * unit }); } catch { /* not same-origin */ }
+  }, { passive: true });
+}
 remount(SCENARIOS.find((s) => s.id === params.get('s')) ?? (SCENARIOS[0] as Scenario));
 window.setTimeout(() => {
   const click = (selector: string): void => {

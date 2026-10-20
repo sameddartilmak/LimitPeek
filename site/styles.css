@@ -275,32 +275,37 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
 .hint__dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--accent); animation: ping 2.4s var(--ease) infinite; }
 @keyframes ping { 0% { transform: scale(1); opacity: .6; } 80%, 100% { transform: scale(2.8); opacity: 0; } }
 
-/* The live demo: the app's real panel on sample data, in a frame
-   (site/demo, scripts/build-site-demo.js). A desk-like surface around it. */
-.demo-frame {
-  display: flex;
-  justify-content: center;
-  margin: 0 auto;
-  max-width: 760px;
-  padding: 24px 12px 0;
-  border: 1px solid rgba(255, 255, 255, .06);
-  border-radius: 22px;
-  background: radial-gradient(120% 80% at 50% 0%, rgba(34, 245, 140, .06), transparent 60%), #101413;
-  overflow: hidden;
+/* The live demo: a Windows desktop with the app's real panel above the tray.
+   The panel is a frame (site/demo, scripts/build-site-demo.js) with a
+   transparent page, so the desktop shows around it as around the real
+   window. The frame ends at the taskbar's top edge: a frame swallows clicks
+   even where it is transparent, and the tray icon must stay clickable. */
+.live { position: relative; max-width: 1040px; margin: 0 auto; color: var(--ink-200); font-size: 13px; line-height: 1.25; }
+/* Room above the panel: the settings view is taller than the list and grows
+   upward, as in the app. */
+.live .live__desk { height: 868px; }
+.live__anchor {
+  position: absolute; z-index: 1; right: 8px; bottom: 52px; width: 480px; height: 760px;
+  transform-origin: calc(100% - 120px) 100%;
+  transition: opacity 170ms linear, transform 170ms var(--ease), visibility 0s;
 }
-.demo-frame__iframe {
-  display: block;
-  flex: none;
-  width: 480px;
-  height: 760px;
-  border: 0;
-  background: #101413;
-  color-scheme: dark;
+.live[data-open="false"] .live__anchor {
+  opacity: 0; visibility: hidden; transform: scaleY(.965) translateY(6px);
+  transition: opacity var(--ui) linear, transform var(--ui) ease-in, visibility 0s var(--ui);
 }
+.live__frame { display: block; width: 480px; height: 760px; border: 0; background: transparent; color-scheme: dark; }
 /* Narrow screens: the panel keeps its real layout and is drawn smaller,
-   rather than squeezed or cut off at the frame's edge. */
-@media (max-width: 540px) { .demo-frame__iframe { zoom: .78; } }
-@media (max-width: 420px) { .demo-frame__iframe { zoom: .7; } }
+   rather than squeezed or cut off at the desktop's edge. */
+@media (max-width: 540px) {
+  .live .live__desk { height: 720px; }
+  .live__anchor { right: 0; width: 374px; height: 593px; }
+  .live__frame { zoom: .78; }
+}
+@media (max-width: 420px) {
+  .live .live__desk { height: 660px; }
+  .live__anchor { width: 336px; height: 532px; }
+  .live__frame { zoom: .7; }
+}
 
 /* ==================================================================== demo */
 .demo { position: relative; color: var(--ink-200); font-size: 13px; line-height: 1.25; }
@@ -1020,4 +1025,32 @@ html:not(.js) .art[data-i="1"] { opacity: 1; visibility: visible; transform: non
   .appicon { display: none; }
   .moves__scene { min-height: 460px; }
   .wheel__art { min-height: 380px; }
+}
+
+/* =================================================================== legal
+ * privacy.html, terms.html, refund.html: long-form text pages. They share
+ * the landing page's tokens, pill and footer; no motion, no demo. */
+.legal-top { display: flex; justify-content: center; padding: 14px 12px 0; }
+.legal { max-width: 760px; margin: 0 auto; padding: 56px var(--gutter) 72px; }
+.legal__kicker { margin: 0 0 10px; color: var(--accent-hi); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.legal__title { font-size: clamp(30px, 3vw, 40px); line-height: 1.12; letter-spacing: -.02em; text-wrap: balance; }
+.legal__meta { margin: 12px 0 0; color: var(--faint); font-size: 14px; }
+.legal__lead { margin: 28px 0 0; padding: 18px 20px; border-radius: 14px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); }
+.legal h2 { margin: 44px 0 0; font-size: 21px; line-height: 1.3; letter-spacing: -.01em; }
+.legal h3 { margin: 26px 0 0; font-size: 16px; line-height: 1.4; }
+.legal p, .legal ul, .legal ol { margin: 12px 0 0; }
+.legal ul, .legal ol { padding-left: 22px; }
+.legal li + li { margin-top: 6px; }
+.legal strong { color: var(--text); font-weight: 600; }
+.legal a { color: var(--accent-hi); text-underline-offset: 3px; }
+.legal code { padding: 1px 6px; border-radius: 6px; background: rgba(237, 242, 240, .06); color: var(--text); font-family: var(--mono); font-size: .88em; overflow-wrap: anywhere; }
+.legal__nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 56px 0 0; padding: 0; list-style: none; }
+.legal__nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 999px; background: rgba(237, 242, 240, .05); color: var(--muted); font-size: 14px; text-decoration: none; }
+.legal__nav a:hover { color: var(--text); background: rgba(237, 242, 240, .09); }
+.legal__nav a[aria-current="page"] { color: var(--accent-hi); background: var(--accent-soft); }
+/* A value the owner still has to fill in before the site goes live. */
+.todo { padding: 0 4px; border-radius: 4px; background: rgba(224, 168, 69, .16); color: var(--watch); }
+@media (max-width: 640px) {
+  .legal { padding: 36px 16px 56px; }
+  .legal-top .pill__brand span { display: none; }
 }

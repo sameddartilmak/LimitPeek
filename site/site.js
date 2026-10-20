@@ -119,8 +119,19 @@
     var demoFrame = document.getElementById('demo-frame');
     if (demoFrame) {
       langListeners.push(function () {
-        var want = 'demo/dev/panel.html?shot=1&s=vitrin&coach=done' + (lang === 'en' ? '&lang=en' : '');
+        var want = 'demo/dev/panel.html?shot=1&bare=1&s=vitrin&coach=done' + (lang === 'en' ? '&lang=en' : '');
         if (demoFrame.getAttribute('src') !== want) demoFrame.setAttribute('src', want);
+      });
+    }
+    // The desktop around it: the tray icon closes and opens the panel, as in
+    // the app.
+    var live = document.getElementById('live-demo');
+    var liveTray = document.getElementById('live-tray');
+    if (live && liveTray) {
+      liveTray.addEventListener('click', function () {
+        var open = live.getAttribute('data-open') !== 'true';
+        live.setAttribute('data-open', String(open));
+        liveTray.setAttribute('aria-expanded', String(open));
       });
     }
     setupMoves();
