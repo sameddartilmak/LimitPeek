@@ -179,7 +179,7 @@ function stripChannelsFromContract() {
 
 test('the taskbar strip channels: one mirror, one preload, and none of them on the panel', () => {
   const expected = stripChannelsFromContract();
-  assert.deepEqual(Object.keys(expected), ['DATA', 'OPEN', 'MENU']);
+  assert.deepEqual(Object.keys(expected), ['DATA', 'OPEN', 'MENU', 'HOVER']);
   const { IPC_STRIP, IPC_EXT } = require('../src/shared/contract');
   assert.deepEqual(IPC_STRIP, expected);
   for (const value of Object.values(IPC_STRIP)) {
@@ -194,7 +194,7 @@ test('the taskbar strip channels: one mirror, one preload, and none of them on t
   // channel, no generic passthrough, never ipcRenderer itself.
   const exposed = stripPreload.slice(stripPreload.indexOf('exposeInMainWorld'));
   const methods = [...exposed.matchAll(/^ {2}([A-Za-z]+):/gm)].map((m) => m[1]);
-  assert.deepEqual(methods, ['onData', 'open', 'menu']);
+  assert.deepEqual(methods, ['onData', 'open', 'menu', 'hover']);
   for (const channel of Object.values(IPC)) assert.equal(stripPreload.includes(`'${channel}'`), false, channel);
   assert.equal(/invoke\(/.test(stripPreload), false, 'the strip invokes nothing');
   assert.equal(stripPreload.includes('ipcRenderer,'), false);
@@ -203,7 +203,7 @@ test('the taskbar strip channels: one mirror, one preload, and none of them on t
   for (const channel of Object.values(IPC_STRIP)) assert.equal(preload.includes(channel), false, channel);
   // Main takes a strip click only from the strip's own page.
   const main = codeOf(path.join(ROOT, 'src', 'main', 'index.js'));
-  for (const name of ['OPEN', 'MENU']) {
+  for (const name of ['OPEN', 'MENU', 'HOVER']) {
     const at = main.indexOf(`ipcMain.on(IPC_STRIP.${name}`);
     assert.notEqual(at, -1, `index.js does not listen on IPC_STRIP.${name}`);
     assert.ok(main.slice(at, at + 120).includes('if (!fromStrip(event)) return;'), `IPC_STRIP.${name} checks its sender`);
@@ -473,7 +473,7 @@ test('the push cadence main implements matches the one the contract advertises',
 });
 
 test('window hardening flags are set on every window with a preload: the panel and the taskbar strip', () => {
-  for (const file of ['panel-window.js', 'taskbar-strip.js']) {
+  for (const file of ['panel-window.js', 'taskbar-strip.js', 'taskbar-display.js']) {
     const src = fs.readFileSync(path.join(ROOT, 'src', 'main', file), 'utf8');
     for (const required of [
       'contextIsolation: true',
@@ -488,7 +488,9 @@ test('window hardening flags are set on every window with a preload: the panel a
     assert.ok(src.includes('loadFile('), `${file} is loaded from a local file`);
   }
   // The strip never offers devtools, packaged or not: it lives in the taskbar.
-  assert.ok(fs.readFileSync(path.join(ROOT, 'src', 'main', 'taskbar-strip.js'), 'utf8').includes('devTools: false'));
+  for (const file of ['taskbar-strip.js', 'taskbar-display.js']) {
+    assert.ok(fs.readFileSync(path.join(ROOT, 'src', 'main', file), 'utf8').includes('devTools: false'), file);
+  }
 });
 
 test('navigation and window-open are blocked process wide', () => {
@@ -623,7 +625,7 @@ test('spellcheck is off on every window, because the dictionary is a download (s
    * so this flag is a network control and cannot be dropped as cosmetic.
    */
   const withWindows = mainAndCore().filter(({ code }) => code.includes('webPreferences'));
-  assert.deepEqual(withWindows.map((o) => o.rel).sort(), ['src/main/panel-window.js', 'src/main/taskbar-strip.js', 'src/main/uninstall-prompt.js']);
+  assert.deepEqual(withWindows.map((o) => o.rel).sort(), ['src/main/panel-window.js', 'src/main/taskbar-display.js', 'src/main/taskbar-strip.js', 'src/main/uninstall-prompt.js']);
   for (const { rel, code } of withWindows) {
     assert.ok(code.includes('spellcheck: false'), `${rel} must keep spellcheck: false`);
   }
@@ -790,10 +792,11 @@ test('nothing the packaged app loads opens a socket', () => {
  *     to be called directly. win32.js says which techniques were measured
  *     and rejected (a child gets no input; an owned window couples input
  *     queues with Explorer).
- *   - koffi is loaded by two modules only — src/main/win32.js (main thread)
- *     and src/main/taskbar-icons-worker.js (a worker, for UI Automation) —
- *     lazily: a user on the tray icon never loads it. A load failure only
- *     makes the strip "unavailable".
+ *   - koffi is loaded by three modules only — src/main/win32.js (main
+ *     thread), src/main/taskbar-icons-worker.js (a worker, for UI Automation)
+ *     and src/main/taskbar-display-worker.js (a worker that owns the strip's
+ *     drawing window inside the taskbar) — lazily: a user on the tray icon
+ *     never loads it. A load failure only makes the strip "unavailable".
  *   - Its runtime JavaScript requires node:fs, node:util and node:module and
  *     nothing that reaches a network (grepped 2026-10-20, and scanned below;
  *     its install-time builder cnoke.cjs uses child_process and is excluded
@@ -815,7 +818,7 @@ test('package.json declares exactly one runtime dependency: koffi, pinned exactl
   assert.equal(lock.packages['node_modules/@koromix/koffi-win32-x64'].version, KOFFI_VERSION);
   // The only files that load it.
   const loaders = mainAndCore().filter(({ code }) => /require\(['"]koffi['"]\)/.test(code)).map((o) => o.rel).sort();
-  assert.deepEqual(loaders, ['src/main/taskbar-icons-worker.js', 'src/main/win32.js']);
+  assert.deepEqual(loaders, ['src/main/taskbar-display-worker.js', 'src/main/taskbar-icons-worker.js', 'src/main/win32.js']);
   // Lazily: inside a function, never at the top of the module.
   const win32 = codeOf(path.join(ROOT, 'src', 'main', 'win32.js'));
   assert.equal(/^const koffi = require/m.test(win32), false, 'koffi must not load at require time');

@@ -48,7 +48,13 @@ body[data-ground="light"] {
   border-radius: 6px;
   background: var(--tile);
 }
-.tile:hover { background: var(--tile-hover); }
+.tile:hover, .tile--hover { background: var(--tile-hover); }
+/* The input layer: laid out (for the clicks, the tooltip and the hover
+ * report) but invisible — the tiles on screen are the display layer's,
+ * drawn inside the taskbar. Opacity 0 keeps every tile hit-testable. */
+body[data-layer="input"] .strip { opacity: 0; }
+body[data-layer="display"] .tile:hover { background: var(--tile); }
+body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
 .tile__logo {
   flex: 0 0 18px;
   width: 18px;

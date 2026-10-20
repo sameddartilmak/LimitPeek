@@ -43,6 +43,7 @@ const {
 const { isStoreBuild } = require('./packaging');
 const { runUninstallPrompt, promptLook } = require('./uninstall-prompt');
 const { TaskbarStrip } = require('./taskbar-strip');
+const { DisplayLayer } = require('./taskbar-display');
 const { createSetTrayViewHandler } = require('./tray-view-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
 
@@ -564,6 +565,11 @@ function registerIpc() {
     if (!fromStrip(event)) return;
     if (tray) tray.popUpMenu();
   });
+  // The tile under the pointer, lit by the display layer inside the taskbar.
+  ipcMain.on(IPC_STRIP.HOVER, (event, index) => {
+    if (!fromStrip(event)) return;
+    strip.hover(index);
+  });
 
   // "Şimdi değil" on the first-run card. Persist, then push; nothing to apply.
   ipcMain.handle(IPC.SET_SETUP_COACH_DISMISSED, createSetSetupCoachDismissedHandler({
@@ -864,7 +870,16 @@ function bootstrap() {
   // After the tray, which it leans on for its right-click menu. Built always,
   // shown only for 'strip'; koffi is not even loaded for 'tray'. A status
   // change (shown, unavailable) is pushed so the settings screen can say it.
-  strip = new TaskbarStrip({ BrowserWindow, log, onChange: () => { pushPreferences(); syncTrayPresence(); } });
+  // The tiles themselves are drawn inside the taskbar by the display layer
+  // (taskbar-display.js), so they stay visible when the taskbar is clicked.
+  strip = new TaskbarStrip({
+    BrowserWindow,
+    log,
+    makeDisplay: (opts) => new DisplayLayer({ BrowserWindow, ...opts }),
+    // A click the foreground taskbar took from the invisible input window.
+    onCoveredClick: () => openFromStrip(),
+    onChange: () => { pushPreferences(); syncTrayPresence(); },
+  });
   applyTrayView(settings.trayView);
 
   // The user flipping Windows between light and dark changes no snapshot

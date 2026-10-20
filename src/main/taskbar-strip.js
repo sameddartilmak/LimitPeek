@@ -65,11 +65,24 @@ const { IconProbe } = require('./taskbar-icons');
  * button probe are passed in, so `test/taskbar-strip.test.js` drives this
  * exact class.
  *
- * KNOWN LIMIT (measured): after Start or Search has been used, while the
- * taskbar itself is the foreground window, Windows lifts it into a z-band no
- * ordinary topmost window can enter, and it covers the strip; the strip is
- * back as soon as anything else is clicked. Only an in-Explorer component
- * could do better.
+ * TWO LAYERS (owner, 2026-10-20: any click on the taskbar made the strip vanish)
+ * -------------------------------------------------------------------------
+ * Any click on the taskbar — the ^ arrow, the clock, Wi-Fi, Start — makes it
+ * the foreground window, and a foreground taskbar sits in a z-band no ordinary
+ * topmost window can enter. So the tiles the user SEES are drawn by a DISPLAY
+ * layer inside the taskbar (taskbar-display.js: the page rendered offscreen,
+ * shown by a native child of the taskbar owned by a worker thread), and the
+ * window placed here becomes the INPUT layer: laid out but invisible, it takes
+ * the clicks, shows the native tooltip and reports the hovered tile, which the
+ * display layer lights. While the taskbar is the foreground the input layer is
+ * under it, and a click on a tile lands on the taskbar instead (measured:
+ * mousedown never reached the page). So while the taskbar is the foreground
+ * and covers the input window, a light watch (CLICK_WATCH_*: cursor position
+ * and the left button's state, read, never consumed) turns a press and
+ * release over the strip into the same left click. Right-click is left to the
+ * taskbar there (it opens its own menu). Until the display layer
+ * has shown a frame, and whenever it is unavailable, this window draws the
+ * tiles itself (layer 'full'), exactly as before.
  *
  * PHASE 2 (not done here): secondary monitors' taskbars
  * (`Shell_SecondaryTrayWnd`); a vertical taskbar; anchoring the panel to the
@@ -96,6 +109,9 @@ const SAMPLE_INSET = 3;
 const POLL_MS = 2000;
 /** Z-order and full-screen check, this often, while the strip is wanted. */
 const GUARD_MS = 500;
+/** The covered-click watch: fast while the cursor is over the strip, slow elsewhere. */
+const CLICK_WATCH_INSIDE_MS = 30;
+const CLICK_WATCH_OUTSIDE_MS = 120;
 /** A window the shell keeps killing is not rebuilt for ever. */
 const MAX_REBUILDS = 20;
 const FALLBACK_COLOUR = '#202020';
@@ -190,10 +206,21 @@ class TaskbarStrip {
     this.BrowserWindow = deps.BrowserWindow;
     this.win32 = deps.win32 || defaultWin32;
     this.makeIconProbe = deps.makeIconProbe || ((opts) => new IconProbe(opts));
+    /** Optional: the display layer inside the taskbar (index.js passes it). */
+    this.makeDisplay = deps.makeDisplay || null;
+    this._display = null;
+    this._hover = -1;
     this.log = deps.log;
     this.onChange = deps.onChange || (() => {});
     this._setInterval = deps.setInterval || setInterval;
     this._clearInterval = deps.clearInterval || clearInterval;
+    this._setTimeout = deps.setTimeout || setTimeout;
+    this._clearTimeout = deps.clearTimeout || clearTimeout;
+    /** A left click that the taskbar took (see TWO LAYERS); index.js opens the panel. */
+    this.onCoveredClick = deps.onCoveredClick || null;
+    this._watch = null;
+    this._pressed = false;
+    this._target = null;
     this._now = deps.now || Date.now;
 
     this._api = null;
@@ -252,6 +279,14 @@ class TaskbarStrip {
     }
     this._icons = this.makeIconProbe({ log: this.log, onChange: () => this._sync('icons') });
     this._icons.start();
+    if (this.makeDisplay) {
+      this._display = this.makeDisplay({
+        log: this.log,
+        wake: (tid) => Boolean(this._api && this._api.wakeThread(tid)),
+        onState: () => { if (this._wanted && !this._dead) this._sync('display'); },
+      });
+      this._display.start();
+    }
     this._startTimers();
     this._sync('poll');
     return true;
@@ -260,8 +295,10 @@ class TaskbarStrip {
   disable() {
     this._wanted = false;
     this._stopTimers();
+    this._stopClickWatch();
     if (this._icons) this._icons.stop();
     this._icons = null;
+    this._stopDisplay();
     this._drop();
     this._bar = 0;
     this._setStatus(this._dead ? 'unavailable' : 'off');
@@ -280,7 +317,62 @@ class TaskbarStrip {
     if (this._wanted && this._api) this._sync('theme');
   }
 
+  /** The input page's hovered tile (-1: none), passed on to the display layer. */
+  hover(index) {
+    const i = Number.isInteger(index) && index >= 0 && index < 16 ? index : -1;
+    if (i === this._hover) return;
+    this._hover = i;
+    if (this._display && this._display.usable()) this._sync('hover');
+  }
+
+  /** 'input' while the display layer shows the tiles, 'full' otherwise. */
+  layer() {
+    return this._display && this._display.usable() ? 'input' : 'full';
+  }
+
   /* --------------------------------------------------------------- internals */
+
+  /** Runs while the taskbar is the foreground (it then covers the input window). */
+  _startClickWatch() {
+    if (this._watch || !this.onCoveredClick) return;
+    this._pressed = false;
+    this._watch = this._setTimeout(() => this._clickTick(), CLICK_WATCH_OUTSIDE_MS);
+  }
+
+  _stopClickWatch() {
+    if (this._watch) this._clearTimeout(this._watch);
+    this._watch = null;
+    this._pressed = false;
+  }
+
+  _clickTick() {
+    this._watch = null;
+    const api = this._api;
+    const t = this._target;
+    if (this._dead || !this._wanted || !this._shown || !api || !t) return;
+    const p = api.cursor();
+    const inside = Boolean(p && p.x >= t.left && p.x < t.right && p.y >= t.top && p.y < t.bottom);
+    // Only where the taskbar really covers us: otherwise the page gets the click.
+    if (inside && api.rootAt(p.x, p.y) !== this._hwnd) {
+      if (api.leftButtonDown()) {
+        this._pressed = true;
+      } else if (this._pressed) {
+        this._pressed = false;
+        try { this.onCoveredClick(); } catch { /* the panel's problem */ }
+      }
+    } else {
+      this._pressed = false;
+    }
+    this._watch = this._setTimeout(() => this._clickTick(), inside ? CLICK_WATCH_INSIDE_MS : CLICK_WATCH_OUTSIDE_MS);
+  }
+
+  _stopDisplay() {
+    const d = this._display;
+    this._display = null;
+    if (d) {
+      try { d.stop(); } catch { /* going */ }
+    }
+  }
 
   _startTimers() {
     for (const [fn, ms] of [[() => this._sync('poll'), POLL_MS], [() => this._guard(), GUARD_MS]]) {
@@ -321,6 +413,8 @@ class TaskbarStrip {
     if (this.win && !this.win.isDestroyed() && this._shown) {
       try { this.win.hide(); } catch { /* best effort */ }
     }
+    if (this._display) this._display.hide();
+    this._stopClickWatch();
     this._shown = false;
     this._geomKey = null;
     if (status) this._setStatus(status);
@@ -331,8 +425,10 @@ class TaskbarStrip {
     if (this._dead) return;
     this._dead = true;
     this._stopTimers();
+    this._stopClickWatch();
     if (this._icons) this._icons.stop();
     this._icons = null;
+    this._stopDisplay();
     this._drop();
     this.log.warn('taskbar strip: rebuilt too often; giving up for this session');
     this._setStatus('unavailable');
@@ -381,6 +477,9 @@ class TaskbarStrip {
       this._hide('covered');
       return;
     }
+    const taskbarFront = Boolean(fg && (fg.cls === 'Shell_TrayWnd' || fg.cls === 'Shell_SecondaryTrayWnd'));
+    if (taskbarFront) this._startClickWatch();
+    else this._stopClickWatch();
     if (api.isBelow(this._hwnd, this._bar)) api.raise(this._hwnd);
   }
 
@@ -527,9 +626,18 @@ class TaskbarStrip {
       }
       this._shown = true;
       this._geomKey = key;
+      this._target = { left: x, top: y, right: x + place.width, bottom: y + place.height };
     }
 
-    const payload = { ground, tileWidth: TILE_WIDTH, tiles: tiles.slice(0, place.count) };
+    const base = { ground, tileWidth: TILE_WIDTH, tiles: tiles.slice(0, place.count) };
+    const display = this._display;
+    if (display && !display.failed()) {
+      // The same tiles, drawn inside the taskbar at the same place.
+      display.attach(bar);
+      display.place({ x: place.x, y: place.y, w: place.width, h: place.height, scale: place.scale, colour });
+      display.data({ ...base, hover: this._hover });
+    }
+    const payload = { ...base, layer: this.layer() };
     const sentKey = JSON.stringify(payload);
     if (sentKey !== this._sentKey) {
       try {

@@ -501,7 +501,8 @@ test.describe('enable and disable', () => {
     assert.equal(w.shown, 1);
     const data = lastData(w);
     assert.equal(data.ground, 'dark');
-    assert.deepEqual(Object.keys(data).sort(), ['ground', 'tileWidth', 'tiles']);
+    assert.deepEqual(Object.keys(data).sort(), ['ground', 'layer', 'tileWidth', 'tiles']);
+    assert.equal(data.layer, 'full', 'no display layer: this window draws the tiles itself');
     assert.equal(data.tileWidth, TILE_WIDTH);
     assert.deepEqual(data.tiles.map((t) => t.id), ['claude', 'codex']);
     assert.equal(r.strip.status(), 'shown');
@@ -915,10 +916,10 @@ test.describe('the strip page', () => {
     assert.match(html, /<script src="\.\/strip\.js"><\/script>/);
   });
 
-  test('the page builds with textContent only and asks main for nothing but the two clicks', () => {
+  test('the page builds with textContent only and asks main for nothing but the two clicks and the hovered tile', () => {
     const js = read('src/main/strip/strip.js');
     assert.equal(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/.test(js), false);
-    assert.deepEqual([...js.matchAll(/api\.([a-zA-Z]+)\(/g)].map((m) => m[1]).sort(), ['menu', 'onData', 'open']);
+    assert.deepEqual([...new Set([...js.matchAll(/api\.([a-zA-Z]+)\(/g)].map((m) => m[1]))].sort(), ['hover', 'menu', 'onData', 'open']);
   });
 
   test('every logo the page names exists, under the renderer\'s own file names', () => {
@@ -937,7 +938,8 @@ test.describe('the strip page', () => {
     assert.match(src, /strip\.themeChanged\(\)/);
     const quit = src.slice(src.indexOf("app.on('before-quit'"));
     assert.ok(quit.indexOf('strip.disable()') !== -1 && quit.indexOf('strip.disable()') < quit.indexOf('tray.destroy()'));
-    assert.match(src, /new TaskbarStrip\(\{ BrowserWindow, log, onChange: \(\) => \{ pushPreferences\(\); syncTrayPresence\(\); \} \}\)/);
+    assert.match(src, /strip = new TaskbarStrip\(\{\s*BrowserWindow,\s*log,\s*makeDisplay: \(opts\) => new DisplayLayer\(\{ BrowserWindow, \.\.\.opts \}\),[\s\S]*?onCoveredClick: \(\) => openFromStrip\(\),\s*onChange: \(\) => \{ pushPreferences\(\); syncTrayPresence\(\); \},\s*\}\);/);
+    assert.match(src, /ipcMain\.on\(IPC_STRIP\.HOVER, \(event, index\) => \{\s*if \(!fromStrip\(event\)\) return;\s*strip\.hover\(index\);/);
     assert.match(src, /applyTrayView\(settings\.trayView\);/);
     // Left click opens pinned (the pointer is not on the tray icon), right click is the tray's menu.
     assert.match(src, /function openFromStrip\(\)[\s\S]*?openPinned\(\);/);

@@ -1307,6 +1307,12 @@ export const IPC_STRIP = {
   OPEN: 'strip:open',
   /** strip page -> main send(): a right click; the tray icon's menu. */
   MENU: 'strip:menu',
+  /**
+   * input page -> main send(index): the tile under the pointer (-1: none).
+   * The visible tiles are drawn inside the taskbar by a separate display
+   * layer, so the hover highlight is passed on to it.
+   */
+  HOVER: 'strip:hover',
 } as const;
 
 /**

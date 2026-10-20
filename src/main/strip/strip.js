@@ -5,6 +5,14 @@
  * which windows, the rounded figure, the ramp colour and the words — so this
  * file only checks the shapes and builds the DOM with textContent. A left
  * click asks main to open the panel; a right click asks for the tray menu.
+ *
+ * One page, three LAYERS (data.layer, taskbar-strip.js):
+ *   'full'     the visible top-level window draws and takes the mouse — the
+ *              fallback when the display layer is not up;
+ *   'input'    the same window, its tiles laid out but invisible: it takes the
+ *              clicks, shows the native tooltip and reports the hovered tile;
+ *   'display'  rendered offscreen and shown inside the taskbar
+ *              (taskbar-display.js), at `data.scale`, with the hovered tile lit.
  */
 (function () {
   var api = window.usageNotchStrip;
@@ -45,9 +53,13 @@
     return line;
   }
 
-  function tile(t, width) {
+  var hovered = -1;
+
+  function tile(t, width, index, lit) {
     var el = document.createElement('div');
-    el.className = 'tile';
+    el.className = lit ? 'tile tile--hover' : 'tile';
+    el.addEventListener('mouseenter', function () { report(index); });
+    el.addEventListener('mouseleave', function () { report(-1); });
     el.style.width = (width - 4) + 'px';
     el.title = text(t.title, 200);
     var logo = document.createElement('span');
@@ -63,14 +75,26 @@
     return el;
   }
 
+  function report(index) {
+    if (index === hovered || !api || typeof api.hover !== 'function') return;
+    hovered = index;
+    api.hover(index);
+  }
+
   function draw(data) {
     if (!data || typeof data !== 'object') return;
+    var layer = data.layer === 'input' || data.layer === 'display' ? data.layer : 'full';
+    document.body.setAttribute('data-layer', layer);
+    // The offscreen page draws in physical pixels: zoomed by the taskbar's scale.
+    var scale = layer === 'display' && typeof data.scale === 'number' && data.scale >= 1 && data.scale <= 4 ? data.scale : 1;
+    document.documentElement.style.zoom = String(scale);
+    var lit = layer === 'display' && Number.isInteger(data.hover) ? data.hover : -1;
     document.body.setAttribute('data-ground', data.ground === 'light' ? 'light' : 'dark');
     var width = typeof data.tileWidth === 'number' && data.tileWidth > 20 && data.tileWidth < 400 ? data.tileWidth : 180;
     var tiles = Array.isArray(data.tiles) ? data.tiles.slice(0, 8) : [];
     while (root.firstChild) root.removeChild(root.firstChild);
-    tiles.forEach(function (t) {
-      if (t && typeof t === 'object') root.appendChild(tile(t, width));
+    tiles.forEach(function (t, i) {
+      if (t && typeof t === 'object') root.appendChild(tile(t, width, i, i === lit));
     });
   }
 

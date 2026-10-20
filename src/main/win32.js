@@ -77,6 +77,9 @@ const MOVE_FLAGS = SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_SHOWW
 const RAISE_FLAGS = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
 /** How far up the z-order the "is the taskbar above us" walk looks. */
 const ZORDER_WALK = 64;
+const WM_APP = 0x8000;
+const VK_LBUTTON = 0x01;
+const GA_ROOT = 2;
 /** GetPixel's "could not read". */
 const CLR_INVALID = 0xFFFFFFFF;
 
@@ -97,6 +100,7 @@ function bind() {
   const user32 = koffi.load('user32.dll');
   const gdi32 = koffi.load('gdi32.dll');
   koffi.struct('UN_RECT', { left: 'int32', top: 'int32', right: 'int32', bottom: 'int32' });
+  koffi.struct('UN_POINT', { x: 'int32', y: 'int32' });
   koffi.struct('UN_MONITORINFO', { cbSize: 'uint32', rcMonitor: 'UN_RECT', rcWork: 'UN_RECT', dwFlags: 'uint32' });
   return {
     FindWindowW: user32.func('intptr __stdcall FindWindowW(str16 cls, str16 name)'),
@@ -118,6 +122,11 @@ function bind() {
     GetDC: user32.func('intptr __stdcall GetDC(intptr h)'),
     ReleaseDC: user32.func('int __stdcall ReleaseDC(intptr h, intptr dc)'),
     GetPixel: gdi32.func('uint32 __stdcall GetPixel(intptr dc, int x, int y)'),
+    GetCursorPos: user32.func('bool __stdcall GetCursorPos(_Out_ UN_POINT* p)'),
+    GetAsyncKeyState: user32.func('int16 __stdcall GetAsyncKeyState(int vk)'),
+    WindowFromPoint: user32.func('intptr __stdcall WindowFromPoint(UN_POINT p)'),
+    GetAncestor: user32.func('intptr __stdcall GetAncestor(intptr h, uint flags)'),
+    PostThreadMessageW: user32.func('bool __stdcall PostThreadMessageW(uint32 tid, uint msg, uintptr wp, intptr lp)'),
     MONITORINFO_SIZE: koffi.sizeof('UN_MONITORINFO'),
   };
 }
@@ -203,6 +212,23 @@ function makeApi(f) {
     isLiveWindow: guard('isLiveWindow', (h) => Boolean(h && f.IsWindow(h) && f.IsWindowVisible(h)), false),
     /** Hand the foreground to a window; Windows may refuse, which is fine. */
     setForeground: guard('setForeground', (h) => Boolean(h && f.SetForegroundWindow(h)), false),
+    /**
+     * Wakes the strip's display worker out of its message wait (WM_APP; the
+     * worker ignores the message itself and reads its command port).
+     */
+    wakeThread: guard('wakeThread', (tid) => Boolean(tid && f.PostThreadMessageW(tid, WM_APP, 0, 0)), false),
+    /** The cursor in physical screen pixels, or null. */
+    cursor: guard('cursor', () => {
+      const p = {};
+      return f.GetCursorPos(p) ? { x: p.x, y: p.y } : null;
+    }, null),
+    /** Is the primary (left) mouse button down right now? Reads, never consumes. */
+    leftButtonDown: guard('leftButtonDown', () => (f.GetAsyncKeyState(VK_LBUTTON) & 0x8000) !== 0, false),
+    /** The top-level window under a screen point (GA_ROOT), or 0. */
+    rootAt: guard('rootAt', (x, y) => {
+      const h = num(f.WindowFromPoint({ x, y }));
+      return h ? num(f.GetAncestor(h, GA_ROOT)) : 0;
+    }, 0),
     /** The desktop window (Progman), or 0. */
     findDesktop: guard('findDesktop', () => num(f.FindWindowW('Progman', null)), 0),
     /**

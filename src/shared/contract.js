@@ -50,6 +50,7 @@ const IPC_STRIP = {
   DATA: 'strip:data',
   OPEN: 'strip:open',
   MENU: 'strip:menu',
+  HOVER: 'strip:hover',
 };
 
 /**

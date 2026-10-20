@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 /**
  * The taskbar strip page's whole surface (src/main/strip/strip.js): one
- * subscription and two fire-and-forget clicks. Not the panel's preload, and
+ * subscription, two fire-and-forget clicks and the hovered tile. Not the panel's preload, and
  * deliberately much smaller: the strip draws what main sends and can ask for
  * nothing else — no snapshot, no settings, no setup.
  *
@@ -15,10 +15,11 @@ const CH = {
   DATA: 'strip:data',
   OPEN: 'strip:open',
   MENU: 'strip:menu',
+  HOVER: 'strip:hover',
 };
 
 contextBridge.exposeInMainWorld('usageNotchStrip', {
-  /** main -> page: `{ ground, tileWidth, tiles }`. Returns an unsubscribe. */
+  /** main -> page: `{ layer, ground, tileWidth, tiles, hover?, scale? }`. Returns an unsubscribe. */
   onData: (cb) => {
     if (typeof cb !== 'function') return () => {};
     const listener = (_event, payload) => {
@@ -31,4 +32,6 @@ contextBridge.exposeInMainWorld('usageNotchStrip', {
   open: () => ipcRenderer.send(CH.OPEN),
   /** Right click: the tray icon's menu. */
   menu: () => ipcRenderer.send(CH.MENU),
+  /** The tile under the pointer, or -1; only a small integer reaches main. */
+  hover: (index) => ipcRenderer.send(CH.HOVER, Number.isInteger(index) && index >= -1 && index < 16 ? index : -1),
 });
