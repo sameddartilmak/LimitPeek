@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="tr" data-title-tr="Listeden çıktın — LimitPeek" data-title-en="You are unsubscribed — LimitPeek">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0E1211">
+<title>Listeden çıktın — LimitPeek</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<script src="legal.js"></script>
+</head>
+<body>
+<a class="skip" href="#main"><span class="l-tr" lang="tr">İçeriğe geç</span><span class="l-en" lang="en">Skip to content</span></a>
+
+<header class="legal-top">
+  <nav class="pill" aria-label="LimitPeek">
+    <a class="pill__brand" href="index.html"><img src="assets/icon.svg" alt="" width="22" height="22"><span>LimitPeek</span></a>
+    <fieldset class="lang">
+      <legend class="u-sr"><span class="l-tr" lang="tr">Sayfa dili</span><span class="l-en" lang="en">Page language</span></legend>
+      <input class="lang__input u-sr" type="radio" name="lang" id="lang-tr" value="tr" checked>
+      <label class="lang__opt" for="lang-tr"><span aria-hidden="true">TR</span><span class="u-sr" lang="tr">Türkçe</span></label>
+      <input class="lang__input u-sr" type="radio" name="lang" id="lang-en" value="en">
+      <label class="lang__opt" for="lang-en"><span aria-hidden="true">EN</span><span class="u-sr" lang="en">English</span></label>
+    </fieldset>
+  </nav>
+</header>
+
+<!-- The waitlist Worker redirects here from the unsubscribe link in a mail
+     (GET /unsubscribe?token=...). It answers the same whether or not the
+     token matched, so this page never says whether an address was listed.
+     #error: the database could not be reached. -->
+<main id="main" tabindex="-1" class="legal">
+
+<section class="state state--ok">
+  <div class="l-tr" lang="tr">
+    <p class="legal__kicker">Haber listesi</p>
+    <h1 class="legal__title">Listeden çıktın.</h1>
+    <p class="legal__lead">Bu bağlantıya ait kayıt silindi: e-posta adresin ve cevapların. Sana bir daha haber listesinden e-posta gelmez.</p>
+    <p>Fikrini değiştirirsen ana sayfadaki formla yeniden yazılabilirsin.</p>
+  </div>
+  <div class="l-en" lang="en">
+    <p class="legal__kicker">Waitlist</p>
+    <h1 class="legal__title">You are unsubscribed.</h1>
+    <p class="legal__lead">The entry behind this link is deleted: your email address and your answers. You will get no more waitlist emails.</p>
+    <p>If you change your mind, you can sign up again with the form on the home page.</p>
+  </div>
+</section>
+
+<section class="state state--alt" id="error">
+  <div class="l-tr" lang="tr">
+    <p class="legal__kicker">Haber listesi</p>
+    <h1 class="legal__title">Bir şeyler ters gitti.</h1>
+    <p class="legal__lead">Kaydın şu an silinemedi. Bağlantıyı biraz sonra yeniden aç ya da <span class="todo">[destek e-postası]</span> adresine yaz; elle sileriz.</p>
+  </div>
+  <div class="l-en" lang="en">
+    <p class="legal__kicker">Waitlist</p>
+    <h1 class="legal__title">Something went wrong.</h1>
+    <p class="legal__lead">Your entry could not be deleted just now. Open the link again later, or write to <span class="todo">[support email]</span> and we will delete it by hand.</p>
+  </div>
+</section>
+
+<p class="legal__back"><a class="btn btn--ghost" href="index.html"><span class="l-tr" lang="tr">Ana sayfaya dön</span><span class="l-en" lang="en">Back to the home page</span></a></p>
+
+</main>
+
+<footer class="foot-site">
+  <div class="wrap foot-site__in">
+    <span class="foot-site__brand"><img src="assets/icon.svg" alt="" width="20" height="20"><span>LimitPeek</span></span>
+    <p><span class="l-tr" lang="tr">Bu sayfa çerez kullanmaz ve dışarıya hiçbir istek göndermez.</span><span class="l-en" lang="en">This page sets no cookies and sends no outside requests.</span></p>
+    <ul class="foot-site__links">
+      <li><a href="privacy.html"><span class="l-tr" lang="tr">Gizlilik</span><span class="l-en" lang="en">Privacy</span></a></li>
+      <li><a href="terms.html"><span class="l-tr" lang="tr">Kullanım koşulları</span><span class="l-en" lang="en">Terms</span></a></li>
+      <li><a href="refund.html"><span class="l-tr" lang="tr">İade</span><span class="l-en" lang="en">Refunds</span></a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

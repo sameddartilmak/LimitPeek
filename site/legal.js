@@ -1,7 +1,7 @@
-/* Usage Notch legal pages (privacy, terms, refund): the only script. It picks
- * TR/EN before first paint and keeps <html lang> and the title in step with
- * the radio. Without it the CSS still switches language from the radio.
- * No network, no storage. */
+/* LimitPeek text pages (privacy, terms, refund, thanks, unsubscribed): the
+ * only script. It picks TR/EN before first paint and keeps <html lang> and
+ * the title in step with the radio. Without it the CSS still switches
+ * language from the radio. No network, no storage. */
 (function () {
   'use strict';
 

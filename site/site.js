@@ -6,7 +6,9 @@
  *                 html.sdt-js (a rAF-throttled scroll handler writes --p) and
  *                 html.js-io (IntersectionObserver entrances)
  *   3. nav        CTA slides in after the hero; active section gets a pill
- *   4. release    the RELEASE CONFIG block; renders nothing while empty
+ *   4. release    the RELEASE CONFIG block: version row, Store button
+ *                 ("coming soon" while storeUrl is empty), waitlist form
+ *                 (disabled while waitlistUrl is empty or not in the CSP)
  *   5. demo       the interactive panel: tray, pin, close, theme, language,
  *                 reorder (drag + Alt+arrows), disclosures, settings view.
  *                 Everything it does exists in the app (src/renderer).
@@ -26,7 +28,7 @@
   var S = {
     tr: {
       title: 'LimitPeek — Yapay zekâ limitlerin, bir bakışta tepside',
-      description: 'LimitPeek, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.',
+      description: 'Ücretsiz beta. LimitPeek, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.',
       settings: 'Ayarlar', settingsClose: 'Ayarları kapat',
       pinOff: 'Paneli ekranda tut', pinOn: 'Paneli ekranda tutmayı bırak',
       close: 'Paneli kapat', refresh: 'Şimdi yenile', back: 'Ayarlardan çık, kullanım listesine dön',
@@ -43,7 +45,7 @@
     },
     en: {
       title: 'LimitPeek — Your AI usage limits, at a glance in the tray',
-      description: 'LimitPeek shows the 5-hour and weekly limits of Claude Code, Codex and Antigravity in one small panel in the Windows tray. It never shows a percentage it cannot verify.',
+      description: 'Free beta. LimitPeek shows the 5-hour and weekly limits of Claude Code, Codex and Antigravity in one small panel in the Windows tray. It never shows a percentage it cannot verify.',
       settings: 'Settings', settingsClose: 'Close settings',
       pinOff: 'Keep the panel on screen', pinOn: 'Stop keeping the panel on screen',
       close: 'Close the panel', refresh: 'Refresh now', back: 'Leave settings and return to the usage list',
@@ -200,7 +202,7 @@
   }
 
   /* ====================================================== release meta */
-  var LABELS = { version: ['Sürüm', 'Version'], fileName: ['Dosya adı', 'File name'], size: ['Boyut', 'Size'], sha256: ['SHA-256', 'SHA-256'], verify: ['Doğrulama', 'Verify'] };
+  var LABELS = { version: ['Sürüm', 'Version'] };
   function bilingual(pair) {
     var f = document.createDocumentFragment();
     [['tr', 0], ['en', 1]].forEach(function (p) {
@@ -208,31 +210,55 @@
     });
     return f;
   }
-  function addRow(list, key, value, asCode) {
+  function addRow(list, key, value) {
     var dt = document.createElement('dt'); dt.appendChild(bilingual(LABELS[key]));
-    var dd = document.createElement('dd');
-    if (asCode) { var c = document.createElement('code'); c.textContent = value; dd.appendChild(c); } else { dd.textContent = value; }
+    var dd = document.createElement('dd'); dd.textContent = value;
     list.appendChild(dt); list.appendChild(dd);
   }
   function clean(v) { return typeof v === 'string' ? v.trim() : ''; }
+  function httpsUrl(v) {
+    try { var u = new URL(v); return u.protocol === 'https:' && !u.username && !u.password ? u : null; } catch (err) { return null; }
+  }
+  function show(id, on) { var el = document.getElementById(id); if (el) el.hidden = !on; }
+  // The page's CSP is a static meta: a form whose origin it does not list
+  // would be blocked on submit, so such a form stays disabled instead.
+  // scripts/check-site-config.js fails the build in the same case.
+  function cspAllowsForm(origin) {
+    var meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+    var m = meta && /(?:^|;)\s*form-action\s+([^;]*)/i.exec(meta.getAttribute('content') || '');
+    return !!m && m[1].trim().split(/\s+/).indexOf(origin) !== -1;
+  }
   function renderRelease() {
     var block = document.getElementById('release-config');
-    var list = document.getElementById('release-meta');
-    if (!block || !list) return;
+    if (!block) return;
     var cfg; try { cfg = JSON.parse(block.textContent); } catch (err) { return; }
     if (!cfg || typeof cfg !== 'object') return;
-    var version = clean(cfg.version), fileName = clean(cfg.fileName), size = clean(cfg.size);
-    var sha = clean(cfg.sha256).toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(sha)) sha = ''; // a malformed hash is not shown
-    if (version) addRow(list, 'version', version, false);
-    if (fileName) addRow(list, 'fileName', fileName, true);
-    if (size) addRow(list, 'size', size, false);
-    if (sha) addRow(list, 'sha256', sha, true);
-    if (sha && fileName) {
-      // PowerShell single-quoted literal: the only escape is '' for a quote.
-      addRow(list, 'verify', "Get-FileHash -LiteralPath '" + fileName.replace(/'/g, "''") + "' -Algorithm SHA256", true);
+
+    var list = document.getElementById('release-meta');
+    var version = clean(cfg.version);
+    if (list && version) { addRow(list, 'version', version); list.hidden = false; }
+
+    // Store: a real link only for an https page on microsoft.com.
+    var store = httpsUrl(clean(cfg.storeUrl));
+    if (store && !(store.hostname === 'microsoft.com' || /\.microsoft\.com$/.test(store.hostname))) store = null;
+    var link = document.getElementById('store-link');
+    if (store && link) {
+      link.setAttribute('href', store.href);
+      show('store-link', true); show('store-soon', false);
+      show('store-note-live', true); show('store-note-soon', false);
     }
-    if (list.childNodes.length > 0) list.hidden = false;
+
+    // Waitlist: enabled only when the URL is https and the CSP allows it.
+    var wl = httpsUrl(clean(cfg.waitlistUrl));
+    var form = document.getElementById('waitlist-form');
+    var set = document.getElementById('waitlist-set');
+    if (wl && form && set && cspAllowsForm(wl.origin)) {
+      form.setAttribute('action', wl.href);
+      set.disabled = false;
+      show('waitlist-soon', false);
+    }
+    var locale = document.getElementById('wl-locale');
+    if (locale) langListeners.push(function () { locale.value = lang; });
   }
 
   /* ============================================================ theme */

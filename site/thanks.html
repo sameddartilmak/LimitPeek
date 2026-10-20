@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="tr" data-title-tr="Listeye yazıldın — LimitPeek" data-title-en="You are on the list — LimitPeek">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0E1211">
+<title>Listeye yazıldın — LimitPeek</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<script src="legal.js"></script>
+</head>
+<body>
+<a class="skip" href="#main"><span class="l-tr" lang="tr">İçeriğe geç</span><span class="l-en" lang="en">Skip to content</span></a>
+
+<header class="legal-top">
+  <nav class="pill" aria-label="LimitPeek">
+    <a class="pill__brand" href="index.html"><img src="assets/icon.svg" alt="" width="22" height="22"><span>LimitPeek</span></a>
+    <fieldset class="lang">
+      <legend class="u-sr"><span class="l-tr" lang="tr">Sayfa dili</span><span class="l-en" lang="en">Page language</span></legend>
+      <input class="lang__input u-sr" type="radio" name="lang" id="lang-tr" value="tr" checked>
+      <label class="lang__opt" for="lang-tr"><span aria-hidden="true">TR</span><span class="u-sr" lang="tr">Türkçe</span></label>
+      <input class="lang__input u-sr" type="radio" name="lang" id="lang-en" value="en">
+      <label class="lang__opt" for="lang-en"><span aria-hidden="true">EN</span><span class="u-sr" lang="en">English</span></label>
+    </fieldset>
+  </nav>
+</header>
+
+<!-- The waitlist Worker (worker/waitlist) redirects here after a sign-up.
+     A fragment picks the outcome: none = saved, #invalid, #limit, #error.
+     styles.css shows the :target section in place of the default one. -->
+<main id="main" tabindex="-1" class="legal">
+
+<section class="state state--ok">
+  <div class="l-tr" lang="tr">
+    <p class="legal__kicker">Haber listesi</p>
+    <h1 class="legal__title">Teşekkürler, listeye yazıldın.</h1>
+    <p class="legal__lead">Ücretli sürüm çıkınca ve beta hakkında görüş sormak için yazacağız. Başka bir şey göndermeyiz. Her e-postada listeden çıkma bağlantısı olur.</p>
+    <p>Cevaplarını değiştirmek istersen formu aynı adresle yeniden gönder; eski kaydın güncellenir. Ne sakladığımızı <a href="privacy.html#waitlist">gizlilik politikasında</a> anlatıyoruz.</p>
+  </div>
+  <div class="l-en" lang="en">
+    <p class="legal__kicker">Waitlist</p>
+    <h1 class="legal__title">Thanks, you are on the list.</h1>
+    <p class="legal__lead">We will write when the paid version is out and to ask about the beta. Nothing else. Every email has an unsubscribe link.</p>
+    <p>To change your answers, send the form again with the same address; your entry is updated. What we keep is in the <a href="privacy.html#waitlist-en">privacy policy</a>.</p>
+  </div>
+</section>
+
+<section class="state state--alt" id="invalid">
+  <div class="l-tr" lang="tr">
+    <p class="legal__kicker">Haber listesi</p>
+    <h1 class="legal__title">Bu e-posta adresi geçersiz görünüyor.</h1>
+    <p class="legal__lead">Hiçbir şey kaydedilmedi. Geri dönüp adresi kontrol et ve yeniden gönder.</p>
+  </div>
+  <div class="l-en" lang="en">
+    <p class="legal__kicker">Waitlist</p>
+    <h1 class="legal__title">That email address does not look valid.</h1>
+    <p class="legal__lead">Nothing was saved. Go back, check the address and send it again.</p>
+  </div>
+</section>
+
+<section class="state state--alt" id="limit">
+  <div class="l-tr" lang="tr">
+    <p class="legal__kicker">Haber listesi</p>
+    <h1 class="legal__title">Kısa sürede çok fazla deneme geldi.</h1>
+    <p class="legal__lead">Hiçbir şey kaydedilmedi. Bir saat sonra yeniden dene.</p>
+  </div>
+  <div class="l-en" lang="en">
+    <p class="legal__kicker">Waitlist</p>
+    <h1 class="legal__title">Too many tries in a short time.</h1>
+    <p class="legal__lead">Nothing was saved. Please try again in an hour.</p>
+  </div>
+</section>
+
+<section class="state state--alt" id="error">
+  <div class="l-tr" lang="tr">
+    <p class="legal__kicker">Haber listesi</p>
+    <h1 class="legal__title">Bir şeyler ters gitti.</h1>
+    <p class="legal__lead">Kaydın alınamadı. Biraz sonra yeniden dene; sorun sürerse <span class="todo">[destek e-postası]</span> adresine yaz.</p>
+  </div>
+  <div class="l-en" lang="en">
+    <p class="legal__kicker">Waitlist</p>
+    <h1 class="legal__title">Something went wrong.</h1>
+    <p class="legal__lead">Your entry could not be saved. Please try again later; if it keeps failing, write to <span class="todo">[support email]</span>.</p>
+  </div>
+</section>
+
+<p class="legal__back"><a class="btn btn--ghost" href="index.html"><span class="l-tr" lang="tr">Ana sayfaya dön</span><span class="l-en" lang="en">Back to the home page</span></a></p>
+
+</main>
+
+<footer class="foot-site">
+  <div class="wrap foot-site__in">
+    <span class="foot-site__brand"><img src="assets/icon.svg" alt="" width="20" height="20"><span>LimitPeek</span></span>
+    <p><span class="l-tr" lang="tr">Bu sayfa çerez kullanmaz ve dışarıya hiçbir istek göndermez.</span><span class="l-en" lang="en">This page sets no cookies and sends no outside requests.</span></p>
+    <ul class="foot-site__links">
+      <li><a href="privacy.html"><span class="l-tr" lang="tr">Gizlilik</span><span class="l-en" lang="en">Privacy</span></a></li>
+      <li><a href="terms.html"><span class="l-tr" lang="tr">Kullanım koşulları</span><span class="l-en" lang="en">Terms</span></a></li>
+      <li><a href="refund.html"><span class="l-tr" lang="tr">İade</span><span class="l-en" lang="en">Refunds</span></a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

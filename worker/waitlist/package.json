@@ -1,0 +1,6 @@
+{
+  "name": "limitpeek-waitlist",
+  "private": true,
+  "type": "module",
+  "description": "LimitPeek waitlist Worker. No dependencies; deploy with `npx wrangler deploy` (README.md)."
+}

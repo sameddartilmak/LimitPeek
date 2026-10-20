@@ -185,6 +185,14 @@ main:focus-visible { outline: none; }
 }
 .btn--ghost:hover { background: rgba(237, 242, 240, .07); box-shadow: inset 0 0 0 1px rgba(237, 242, 240, .22); }
 .btn--wide { width: 100%; }
+.btn[hidden] { display: none; }
+/* Not a link and not a button: the Store CTA before the Store page exists. */
+.btn--soon {
+  background: rgba(237, 242, 240, .03); box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--muted); cursor: default;
+}
+.btn--soon:active { transform: none; }
+.btn--soon .ico--win { color: var(--muted); }
 .btn--wide::before { width: 900px; height: 900px; margin: -450px 0 0 -450px; }
 
 /* ===================================================================== nav */
@@ -258,10 +266,13 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
   color: var(--text-2); font-size: 13px; font-weight: 500;
 }
 .badge .ico { color: var(--muted); }
+.badge__beta { color: var(--accent-hi); font-weight: 600; }
+.badge__sep { width: 3px; height: 3px; margin: 0 2px; border-radius: 50%; background: var(--faint); }
 .hero__title { max-width: 18em; font-size: clamp(40px, 4.45vw, 66px); line-height: 1.02; letter-spacing: -.034em; text-wrap: balance; }
 .hero__title .line { display: block; }
 .accent { font-style: normal; color: var(--accent); }
 .hero__sub { max-width: 36em; margin-top: 24px; font-size: 20px; line-height: 1.5; color: var(--muted); text-wrap: balance; }
+.hero__beta { max-width: 40em; margin-top: 14px; font-size: 15px; line-height: 1.55; color: var(--faint); text-wrap: balance; }
 .cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 36px; }
 .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 28px 0 0; padding: 0; list-style: none; }
 .chip {
@@ -852,6 +863,63 @@ html:not(.js) .top__cta { opacity: 1; visibility: visible; transform: none; }
 .meta dd { margin: 0; min-width: 0; color: var(--text); }
 .meta code { font-family: var(--mono); font-size: 12px; word-break: break-all; }
 
+/* ================================================================ waitlist */
+/* A plain form inside one fieldset. While the list is not open the fieldset
+ * is disabled (nothing can be typed or sent) and the controls are dimmed;
+ * the "opens soon" line above them stays at full strength. */
+.wl {
+  position: relative; max-width: 780px; margin-top: 48px; padding: 32px 36px 36px; overflow: hidden;
+  border-radius: 24px; background: linear-gradient(180deg, #141A19, #101514);
+  box-shadow: inset 0 0 0 1px var(--line-2), 0 40px 90px -50px #000;
+}
+.wl::before { content: ""; position: absolute; left: 12%; right: 12%; top: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(63, 184, 158, .7), transparent); }
+.wl__set { display: grid; gap: 24px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.wl__set:disabled > :not(.wl__soon) { opacity: .5; }
+.wl__soon {
+  display: inline-flex; align-items: center; gap: 10px; justify-self: start; min-height: 34px; padding: 6px 15px 6px 12px;
+  border-radius: 999px; background: rgba(224, 168, 69, .08); box-shadow: inset 0 0 0 1px rgba(224, 168, 69, .3);
+  color: var(--text-2); font-size: 14px; font-weight: 500;
+}
+.wl__soon[hidden] { display: none; }
+.wl__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #E0A845; }
+.wl__field { display: grid; gap: 8px; }
+.wl__label { display: block; margin: 0; padding: 0; color: var(--text); font-size: 15px; font-weight: 500; }
+.wl__input {
+  width: 100%; height: 48px; padding: 0 16px; border: 0; border-radius: 12px;
+  background: var(--raised); box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--text); font: 400 16px/1.2 var(--font);
+  transition: box-shadow var(--ui) linear;
+}
+.wl__input:hover:enabled { box-shadow: inset 0 0 0 1px rgba(237, 242, 240, .22); }
+.wl__input:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-soft); }
+.wl__input:disabled { cursor: not-allowed; }
+.wl__hint { color: var(--faint); font-size: 13px; }
+.wl__optional { margin-bottom: -8px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; font-weight: 500; }
+.wl__q { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.wl__q > legend { margin-bottom: 12px; }
+.opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt {
+  display: inline-flex; align-items: center; gap: 9px; min-height: 40px; padding: 0 15px 0 12px; border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--line-2); color: var(--text-2); font-size: 14px; font-weight: 500; cursor: pointer;
+  transition: background-color var(--ui) linear, box-shadow var(--ui) linear, color var(--ui) linear;
+}
+.opt input { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: inherit; }
+.opt:hover { background: rgba(237, 242, 240, .05); color: var(--text); }
+.opt:has(input:checked) { background: var(--accent-soft); box-shadow: inset 0 0 0 1px rgba(63, 184, 158, .45); color: var(--text); }
+.opt:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: 2px; }
+.opt:has(input:disabled) { cursor: not-allowed; }
+.opt:has(input:disabled):hover { background: transparent; color: var(--text-2); }
+.wl__hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.wl__send { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; padding-top: 8px; }
+.wl__send .btn { flex: none; }
+.wl__send .btn:disabled { cursor: not-allowed; box-shadow: none; }
+.wl__send .btn:disabled::before { display: none; }
+.wl__send .btn:disabled::after { inset: 0; box-shadow: inset 0 0 0 1px var(--line-2); }
+.wl__send .btn:disabled:active { transform: none; }
+.wl__consent { flex: 1 1 280px; color: var(--faint); font-size: 13px; line-height: 1.55; }
+.wl__consent a { color: var(--muted); text-underline-offset: 3px; }
+.wl__consent a:hover { color: var(--text); }
+
 /* ===================================================================== faq */
 .faq { max-width: calc(780px + 2 * var(--gutter)); }
 .qa { margin-top: 40px; border-top: 1px solid var(--line); }
@@ -1012,6 +1080,8 @@ html:not(.js) .art[data-i="1"] { opacity: 1; visibility: visible; transform: non
   .tools { grid-template-columns: minmax(0, 1fr); }
   .isteps { padding: 8px 22px; }
   .get { padding: 28px 22px; }
+  .wl { padding: 24px 20px 28px; border-radius: 20px; }
+  .wl__send .btn { width: 100%; }
   .closing { padding: 120px 0 120px; }
   .closing__glow { width: 700px; margin-left: -350px; bottom: -300px; height: 600px; }
   .foot-site__links { margin-left: 0; }
@@ -1032,10 +1102,10 @@ html:not(.js) .art[data-i="1"] { opacity: 1; visibility: visible; transform: non
  * the landing page's tokens, pill and footer; no motion, no demo. */
 .legal-top { display: flex; justify-content: center; padding: 14px 12px 0; }
 .legal { max-width: 760px; margin: 0 auto; padding: 56px var(--gutter) 72px; }
-.legal__kicker { margin: 0 0 16px; color: var(--accent-hi); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.legal__kicker { margin: 0 0 16px; color: var(--accent-hi); font-size: 13px; font-weight: 600; letter-spacing: .02em; }
 .legal__title { font-size: clamp(30px, 3vw, 40px); line-height: 1.12; letter-spacing: -.02em; text-wrap: balance; }
 .legal__meta { margin: 12px 0 0; color: var(--faint); font-size: 14px; }
-.legal__lead { margin: 28px 0 0; padding: 18px 20px; border-radius: 14px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); }
+.legal .legal__lead { margin: 28px 0 0; padding: 18px 20px; border-radius: 14px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); }
 .legal h2 { margin: 44px 0 0; font-size: 21px; line-height: 1.3; letter-spacing: -.01em; }
 .legal h3 { margin: 26px 0 0; font-size: 16px; line-height: 1.4; }
 .legal p, .legal ul, .legal ol { margin: 12px 0 0; }
@@ -1049,7 +1119,14 @@ html:not(.js) .art[data-i="1"] { opacity: 1; visibility: visible; transform: non
 .legal__nav a:hover { color: var(--text); background: rgba(237, 242, 240, .09); }
 .legal__nav a[aria-current="page"] { color: var(--accent-hi); background: var(--accent-soft); }
 /* A value the owner still has to fill in before the site goes live. */
-.todo { padding: 0 4px; border-radius: 4px; background: rgba(224, 168, 69, .16); color: var(--watch); }
+.todo { padding: 0 4px; border-radius: 4px; background: rgba(224, 168, 69, .16); color: #E0A845; }
+/* thanks.html / unsubscribed.html: one page, several outcomes. The Worker
+ * redirects with a fragment (#invalid, #limit, #error) and :target shows
+ * that outcome instead of the default one. No script needed. */
+.state--alt { display: none; }
+.state--alt:target { display: block; }
+.legal:has(.state--alt:target) .state--ok { display: none; }
+.legal__back { margin-top: 32px; }
 @media (max-width: 640px) {
   .legal { padding: 36px 16px 56px; }
   .legal-top .pill__brand span { display: none; }

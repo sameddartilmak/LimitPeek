@@ -1,0 +1,26 @@
+# LimitPeek waitlist Worker. A TEMPLATE: fill the two empty values below
+# before `npx wrangler deploy` (README.md, steps 4 and 7). Deploying with an
+# empty database_id fails on purpose; an empty SITE_URL makes every request
+# answer "SITE_URL is not set" instead of redirecting anywhere.
+
+name = "limitpeek-waitlist"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+# The site's address, ending in "/", e.g. "https://limitpeek.pages.dev/".
+# After a sign-up the Worker redirects to SITE_URL + "thanks.html".
+SITE_URL = ""
+
+# IP_SALT is a SECRET, not a var: `npx wrangler secret put IP_SALT`.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "limitpeek-waitlist"
+# From the output of `npx wrangler d1 create limitpeek-waitlist`.
+database_id = ""
+
+# Hourly clean-up of rate-limit rows older than a day.
+[triggers]
+crons = ["17 * * * *"]

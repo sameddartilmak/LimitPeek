@@ -10,7 +10,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0E1211">
 <title>LimitPeek — Yapay zekâ limitlerin, bir bakışta tepside</title>
-<meta name="description" content="LimitPeek, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.">
+<meta name="description" content="Ücretsiz beta. LimitPeek, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
 <!-- Synchronous on purpose: picks the language before first paint. -->
@@ -65,7 +65,7 @@
 <section class="hero" id="top" aria-labelledby="h-hero">
   <div class="hero__glow" aria-hidden="true"></div>
   <div class="wrap hero__in">
-    <p class="badge drop d1"><svg class="ico" aria-hidden="true"><use href="#i-desktop"/></svg><span class="l-tr" lang="tr">Windows için</span><span class="l-en" lang="en">Built for Windows</span></p>
+    <p class="badge drop d1"><span class="badge__beta"><span class="l-tr" lang="tr">Ücretsiz beta</span><span class="l-en" lang="en">Free beta</span></span><span class="badge__sep" aria-hidden="true"></span><svg class="ico" aria-hidden="true"><use href="#i-desktop"/></svg><span class="l-tr" lang="tr">Windows için</span><span class="l-en" lang="en">Built for Windows</span></p>
     <h1 class="hero__title drop d2" id="h-hero">
       <span class="l-tr" lang="tr"><span class="line">Yapay zekâ limitlerin,</span> <span class="line">bir bakışta <em class="accent">tepside</em>.</span></span>
       <span class="l-en" lang="en"><span class="line">Your AI usage limits,</span> <span class="line">at a glance in the <em class="accent">tray</em>.</span></span>
@@ -73,6 +73,10 @@
     <p class="hero__sub drop d3">
       <span class="l-tr" lang="tr">Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitleri tek küçük panelde. Doğrulayamadığı yüzdeyi göstermez.</span>
       <span class="l-en" lang="en">The 5-hour and weekly limits of Claude Code, Codex and Antigravity in one small panel. It never shows a percentage it cannot verify.</span>
+    </p>
+    <p class="hero__beta drop d3">
+      <span class="l-tr" lang="tr">Beta boyunca ücretsiz. İleride ücretli bir sürüm gelebilir; bir şey değişmeden önce beta kullanıcılarına haber veririz.</span>
+      <span class="l-en" lang="en">Free during the beta. A paid version may come later; beta users will hear from us before anything changes.</span>
     </p>
     <div class="cta drop d4" id="hero-cta">
       <a class="btn btn--glow" href="#install"><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">Windows’a kur</span><span class="l-en" lang="en">Install on Windows</span></a>
@@ -362,20 +366,20 @@
   <div class="wrap">
     <div class="sec__head rise">
       <h2 class="h2" id="h-install"><span class="h2__a"><span class="l-tr" lang="tr">Kurmadan önce.</span><span class="l-en" lang="en">Before you install.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Ne göreceğini bil.</span><span class="l-en" lang="en">Know what you will see.</span></span></h2>
-      <p class="lede"><span class="l-tr" lang="tr">Kullanıcı başına kurulur, yönetici izni istemez. Yükleyici kod imzalı değil.</span><span class="l-en" lang="en">It installs per user and asks for no administrator rights. The installer is not code-signed.</span></p>
+      <p class="lede"><span class="l-tr" lang="tr">Microsoft Store’dan ücretsiz kurulur. Kullanıcı başına kurulur, yönetici izni istemez.</span><span class="l-en" lang="en">It installs free from the Microsoft Store, per user, and asks for no administrator rights.</span></p>
     </div>
 
     <div class="install rise">
       <ol class="isteps">
         <li class="istep">
           <span class="istep__n" aria-hidden="true">1</span>
-          <div><h3><span class="l-tr" lang="tr">SmartScreen uyarabilir</span><span class="l-en" lang="en">SmartScreen may warn</span></h3>
-          <p><span class="l-tr" lang="tr">Yayımcı “bilinmeyen” görünür ve dosya adı bir şey kanıtlamaz. Asıl kontrol SHA-256 özetidir; bir sürüm yayımlandığında burada görünür.</span><span class="l-en" lang="en">The publisher shows as unknown, and a file name proves nothing. The real check is the SHA-256 hash; it appears here once a release is published.</span></p></div>
+          <div><h3><span class="l-tr" lang="tr">Store’dan kur</span><span class="l-en" lang="en">Install from the Store</span></h3>
+          <p><span class="l-tr" lang="tr">Store sayfasında “Yükle”ye bas. Ödeme, kart ya da hesap istenmez.</span><span class="l-en" lang="en">Press “Install” on the Store page. No payment, card or account is asked for.</span></p></div>
         </li>
         <li class="istep">
           <span class="istep__n" aria-hidden="true">2</span>
-          <div><h3><span class="l-tr" lang="tr">Çalıştırmak senin kararın</span><span class="l-en" lang="en">Running it is your decision</span></h3>
-          <p><span class="l-tr" lang="tr">“Daha fazla bilgi”, ardından “Yine de çalıştır”. Bu bir güvence değil; emin değilsen çalıştırma.</span><span class="l-en" lang="en">“More info”, then “Run anyway”. This is not a reassurance; if you are not sure, do not run it.</span></p></div>
+          <div><h3><span class="l-tr" lang="tr">Araçlarını bağla</span><span class="l-en" lang="en">Connect your tools</span></h3>
+          <p><span class="l-tr" lang="tr">Claude Code için durum satırı köprüsünü sen onaylarsın; ne değişeceği önce gösterilir. Codex için kurulacak bir şey yok.</span><span class="l-en" lang="en">For Claude Code you approve the status line bridge; you see what changes first. Codex needs nothing installed.</span></p></div>
         </li>
         <li class="istep">
           <span class="istep__n" aria-hidden="true">3</span>
@@ -389,31 +393,42 @@
           <span class="get__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" class="appicon__track" stroke-width="4.2"/><circle cx="12" cy="12" r="8.5" fill="none" class="appicon__sweep" stroke-width="4.2" stroke-dasharray="20.3 53.41" transform="rotate(-90 12 12)"/><circle cx="12" cy="12" r="2.3" class="appicon__dot"/></svg></span>
           <span class="get__name">LimitPeek</span>
           <ul class="get__facts">
+            <li class="chip"><span class="l-tr" lang="tr">Ücretsiz beta</span><span class="l-en" lang="en">Free beta</span></li>
             <li class="chip"><span class="l-tr" lang="tr">Kullanıcı başına</span><span class="l-en" lang="en">Per user</span></li>
             <li class="chip"><span class="l-tr" lang="tr">Yönetici izni yok</span><span class="l-en" lang="en">No admin rights</span></li>
-            <li class="chip"><span class="l-tr" lang="tr">İmzasız yükleyici</span><span class="l-en" lang="en">Unsigned installer</span></li>
           </ul>
         </div>
-        <a class="btn btn--glow btn--wide" href="https://github.com/sameddartilmak/ai-usage-monitor/releases" rel="noreferrer"><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">GitHub Releases</span><span class="l-en" lang="en">GitHub Releases</span></a>
-        <p class="get__note"><span class="l-tr" lang="tr">İndirme başlatmaz; yayımlanan sürümlerin sayfasını açar. Uygulama kendini güncellemez.</span><span class="l-en" lang="en">Does not start a download; it opens the page of published releases. The app does not update itself.</span></p>
+        <!-- Two states, one shown. Until RELEASE CONFIG has a storeUrl the
+             page shows the "coming soon" pill, which is not a link; site.js
+             swaps in the real link once storeUrl is a valid https address on
+             microsoft.com. Without JavaScript the pill stays. -->
+        <a class="btn btn--glow btn--wide" id="store-link" rel="noreferrer" hidden><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">Microsoft Store’dan al</span><span class="l-en" lang="en">Get it from Microsoft Store</span></a>
+        <p class="btn btn--soon btn--wide" id="store-soon"><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">Yakında Microsoft Store’da</span><span class="l-en" lang="en">Coming soon to the Microsoft Store</span></p>
+        <p class="get__note" id="store-note-soon"><span class="l-tr" lang="tr">Store sayfası yayımlanınca bu düğme oraya götürür.</span><span class="l-en" lang="en">Once the Store page is published, this button takes you there.</span></p>
+        <p class="get__note" id="store-note-live" hidden><span class="l-tr" lang="tr">Uygulama kendini güncellemez; güncellemeleri Microsoft Store getirir.</span><span class="l-en" lang="en">The app does not update itself; updates come through the Microsoft Store.</span></p>
 
         <!-- ================================================================
-             RELEASE CONFIG — fill these in when a real release exists.
-             Every value is optional. site.js renders a row only for a
-             non-empty value, and renders nothing at all while every value is
-             empty. Never put a guessed or placeholder value here.
-               version   e.g. the tag shown on the Releases page
-               fileName  the installer's exact file name
-               size      human-readable size, as shown on the Releases page
-               sha256    64 hex characters
+             RELEASE CONFIG — fill these in when they exist. Every value is
+             optional; never put a guessed or placeholder value here.
+               version      e.g. "0.6.27"; shown under the button
+               storeUrl     the Store page, https://apps.microsoft.com/...;
+                            while empty the button reads "coming soon"
+               waitlistUrl  the deployed waitlist Worker,
+                            https://limitpeek-waitlist.<you>.workers.dev/;
+                            while empty the form is shown disabled.
+                            ALSO change form-action in this page's CSP meta
+                            from 'none' to: 'self' <the Worker's origin>
+                            (worker/waitlist/README.md). site.js keeps the
+                            form disabled while the two disagree, and
+                            `node scripts/check-site-config.js` (part of
+                            npm test) fails.
              This block is data, not script: CSP does not execute it.
              ================================================================ -->
         <script type="application/json" id="release-config">
         {
           "version": "",
-          "fileName": "",
-          "size": "",
-          "sha256": ""
+          "storeUrl": "",
+          "waitlistUrl": ""
         }
         </script>
         <dl class="meta" id="release-meta" hidden></dl>
@@ -422,8 +437,79 @@
   </div>
 </section>
 
+<!-- ========================================================== WAITLIST
+     A plain HTML form: no fetch, no script sends anything. It is shown with
+     its fieldset disabled (nothing can be typed or sent) until RELEASE
+     CONFIG has a waitlistUrl AND the CSP form-action allows its origin;
+     site.js then sets the action and enables it. The Worker
+     (worker/waitlist) answers with a redirect to thanks.html. -->
+<section class="sec band" id="waitlist" aria-labelledby="h-waitlist">
+  <div class="wrap">
+    <div class="sec__head rise">
+      <h2 class="h2" id="h-waitlist"><span class="h2__a"><span class="l-tr" lang="tr">Ücretli sürüm çıkınca haber ver.</span><span class="l-en" lang="en">Tell me when the paid version is out.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">İstersen üç soru da cevapla.</span><span class="l-en" lang="en">And three optional questions.</span></span></h2>
+      <p class="lede"><span class="l-tr" lang="tr">Beta ücretsiz. Ücretli bir sürüm gelirse önce bu listeye yazarız. Sorular isteğe bağlı; fiyata ve önceliklere bunlara bakarak karar vereceğiz.</span><span class="l-en" lang="en">The beta is free. If a paid version comes, this list hears first. The questions are optional; they will shape the price and what comes next.</span></p>
+    </div>
+
+    <form class="wl rise" id="waitlist-form" method="post" accept-charset="utf-8">
+      <fieldset class="wl__set" id="waitlist-set" disabled>
+        <legend class="u-sr"><span class="l-tr" lang="tr">Haber listesi</span><span class="l-en" lang="en">Waitlist</span></legend>
+        <p class="wl__soon" id="waitlist-soon"><span class="wl__dot" aria-hidden="true"></span><span class="l-tr" lang="tr">Liste yakında açılıyor. Şimdilik bir şey gönderilemez.</span><span class="l-en" lang="en">The list opens soon. Nothing can be sent yet.</span></p>
+
+        <div class="wl__field">
+          <label class="wl__label" for="wl-email"><span class="l-tr" lang="tr">E-posta</span><span class="l-en" lang="en">Email</span></label>
+          <input class="wl__input" id="wl-email" type="email" name="email" required maxlength="254" autocomplete="email" inputmode="email" spellcheck="false" autocapitalize="off">
+        </div>
+
+        <p class="wl__optional"><span class="l-tr" lang="tr">İsteğe bağlı</span><span class="l-en" lang="en">Optional</span></p>
+
+        <fieldset class="wl__q">
+          <legend class="wl__label"><span class="l-tr" lang="tr">Hangi araçları kullanıyorsun?</span><span class="l-en" lang="en">Which tools do you use?</span></legend>
+          <div class="opts">
+            <label class="opt"><input type="checkbox" name="tools" value="claude-code"><span>Claude Code</span></label>
+            <label class="opt"><input type="checkbox" name="tools" value="codex"><span>Codex</span></label>
+            <label class="opt"><input type="checkbox" name="tools" value="antigravity"><span>Antigravity</span></label>
+            <label class="opt"><input type="checkbox" name="tools" value="kimi-code"><span>Kimi Code</span></label>
+            <label class="opt"><input type="checkbox" name="tools" value="qwen-code"><span>Qwen Code</span></label>
+            <label class="opt"><input type="checkbox" name="tools" value="grok-build"><span>Grok Build</span></label>
+            <label class="opt"><input type="checkbox" name="tools" value="other"><span><span class="l-tr" lang="tr">Diğer</span><span class="l-en" lang="en">Other</span></span></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="wl__q">
+          <legend class="wl__label"><span class="l-tr" lang="tr">Ücretli sürüme ayda ne kadar öderdin?</span><span class="l-en" lang="en">What would you pay per month for a paid version?</span></legend>
+          <div class="opts">
+            <label class="opt"><input type="radio" name="price" value="none"><span><span class="l-tr" lang="tr">Ödemezdim</span><span class="l-en" lang="en">Nothing</span></span></label>
+            <label class="opt"><input type="radio" name="price" value="upto3"><span><span class="l-tr" lang="tr">3 dolara kadar</span><span class="l-en" lang="en">Up to $3</span></span></label>
+            <label class="opt"><input type="radio" name="price" value="3to5"><span><span class="l-tr" lang="tr">3–5 dolar</span><span class="l-en" lang="en">$3–5</span></span></label>
+            <label class="opt"><input type="radio" name="price" value="5to10"><span><span class="l-tr" lang="tr">5–10 dolar</span><span class="l-en" lang="en">$5–10</span></span></label>
+            <label class="opt"><input type="radio" name="price" value="more"><span><span class="l-tr" lang="tr">Daha fazla</span><span class="l-en" lang="en">More</span></span></label>
+          </div>
+        </fieldset>
+
+        <div class="wl__field">
+          <label class="wl__label" for="wl-feature"><span class="l-tr" lang="tr">En çok hangi özelliği istersin?</span><span class="l-en" lang="en">Which feature do you want most?</span></label>
+          <input class="wl__input" id="wl-feature" type="text" name="feature" maxlength="200" autocomplete="off" aria-describedby="wl-feature-hint">
+          <p class="wl__hint" id="wl-feature-hint"><span class="l-tr" lang="tr">En fazla 200 karakter.</span><span class="l-en" lang="en">200 characters at most.</span></p>
+        </div>
+
+        <!-- The page language, so a mail can be written in it. site.js keeps
+             it in step with the TR/EN switch. -->
+        <input type="hidden" name="locale" id="wl-locale" value="tr">
+        <!-- Honeypot: hidden from people and from assistive technology; a bot
+             that fills it is ignored by the Worker. -->
+        <div class="wl__hp" aria-hidden="true"><label>Website <input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+
+        <div class="wl__send">
+          <button class="btn btn--glow" type="submit"><span class="l-tr" lang="tr">Listeye yaz</span><span class="l-en" lang="en">Add me to the list</span></button>
+          <p class="wl__consent"><span class="l-tr" lang="tr">“Listeye yaz”a basınca e-postan ve cevapların kaydedilir. Yalnızca ücretli sürümü duyurmak ve beta hakkında görüş sormak için yazarız. Her e-postada listeden çıkma bağlantısı olur. Ayrıntılar: <a href="privacy.html#waitlist">Gizlilik politikası</a>.</span><span class="l-en" lang="en">Pressing “Add me to the list” saves your email and answers. We write only to announce the paid version and to ask about the beta. Every email has an unsubscribe link. Details: <a href="privacy.html#waitlist-en">Privacy policy</a>.</span></p>
+        </div>
+      </fieldset>
+    </form>
+  </div>
+</section>
+
 <!-- =============================================================== FAQ -->
-<section class="sec band" id="faq" aria-labelledby="h-faq">
+<section class="sec" id="faq" aria-labelledby="h-faq">
   <div class="wrap faq">
     <h2 class="h2 rise" id="h-faq"><span class="h2__a"><span class="l-tr" lang="tr">Sorular.</span><span class="l-en" lang="en">Questions.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Kısa cevaplar.</span><span class="l-en" lang="en">Short answers.</span></span></h2>
     <div class="qa rise">
@@ -445,7 +531,23 @@
       </details>
       <details class="q">
         <summary><span class="l-tr" lang="tr">Kendini güncelliyor mu?</span><span class="l-en" lang="en">Does it update itself?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
-        <p><span class="l-tr" lang="tr">Hayır, otomatik güncelleme yok. Yeni bir sürümü GitHub Releases sayfasından kendin kurarsın.</span><span class="l-en" lang="en">No, there is no automatic update. You install a new version yourself from the GitHub Releases page.</span></p>
+        <p><span class="l-tr" lang="tr">Hayır. Uygulama güncelleme denetlemez ve kendiliğinden ağa çıkmaz. Microsoft Store’dan kurduysan yeni sürümleri Store getirir; bunu Store’un kendi ayarlarından yönetirsin.</span><span class="l-en" lang="en">No. The app does not check for updates and makes no network requests of its own. If you installed it from the Microsoft Store, the Store brings new versions; you manage that in the Store’s own settings.</span></p>
+      </details>
+      <details class="q">
+        <summary><span class="l-tr" lang="tr">Neden ücretsiz?</span><span class="l-en" lang="en">Why is it free?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p><span class="l-tr" lang="tr">Çünkü bu bir beta. Önce uygulamanın işine yarayıp yaramadığını ve neyin eksik olduğunu görmek istiyoruz. Beta boyunca deneme süresi, kart ya da hesap yok.</span><span class="l-en" lang="en">Because it is a beta. First we want to see whether the app is useful to you and what is missing. During the beta there is no trial clock, no card and no account.</span></p>
+      </details>
+      <details class="q">
+        <summary><span class="l-tr" lang="tr">Ücretli olacak mı?</span><span class="l-en" lang="en">Will it be paid?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p><span class="l-tr" lang="tr">İleride ücretli bir sürüm gelebilir. Fiyat, kapsam ve tarih henüz belli değil. Bir şey değişmeden önce beta kullanıcılarına haber veririz: haber listesindeysen e-postayla, değilsen bu sitede ve Store sayfasında.</span><span class="l-en" lang="en">A paid version may come later. Price, scope and date are not decided yet. Beta users will hear from us before anything changes: by email if you are on the waitlist, otherwise on this site and the Store page.</span></p>
+      </details>
+      <details class="q">
+        <summary><span class="l-tr" lang="tr">Betada ne eksik olabilir?</span><span class="l-en" lang="en">What may be missing in the beta?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p><span class="l-tr" lang="tr">Kimi Code, Qwen Code ve Grok Build desteği deneysel. Varsayılan olarak kapalı, limit yüzdesi göstermez, yalnızca kullanım rakamlarını gösterir ve bu araçların yeni sürümleriyle bozulabilir. Başka yerlerde de küçük pürüzler görebilirsin. Görürsen yaz; beta bunun için var.</span><span class="l-en" lang="en">Support for Kimi Code, Qwen Code and Grok Build is experimental. It is off by default, shows no limit percentage, only usage figures, and may break with new versions of those tools. You may find rough edges elsewhere too. If you do, tell us; that is what the beta is for.</span></p>
+      </details>
+      <details class="q">
+        <summary><span class="l-tr" lang="tr">Geri bildirimi nereye yazarım?</span><span class="l-en" lang="en">Where do I send feedback?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
+        <p><span class="l-tr" lang="tr"><span class="todo">[destek e-postası]</span> adresine yaz. Hangi aracı ve hangi Windows sürümünü kullandığını eklersen daha hızlı çözeriz. Uygulama kendisi hiçbir şey göndermez; ne yazacağına sen karar verirsin.</span><span class="l-en" lang="en">Write to <span class="todo">[support email]</span>. Mention which tool and which Windows version you use, and we can fix it faster. The app itself sends nothing; you decide what to write.</span></p>
       </details>
     </div>
   </div>
@@ -457,8 +559,8 @@
   <div class="wrap closing__in rise">
     <h2 class="closing__title" id="h-close"><span class="h2__a"><span class="l-tr" lang="tr">Tepsiye bir bakış.</span><span class="l-en" lang="en">One glance at the tray.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">Gerisi panelde.</span><span class="l-en" lang="en">The rest is in the panel.</span></span></h2>
     <div class="cta">
-      <a class="btn btn--glow" href="https://github.com/sameddartilmak/ai-usage-monitor/releases" rel="noreferrer"><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">GitHub Releases</span><span class="l-en" lang="en">GitHub Releases</span></a>
-      <a class="btn btn--ghost" href="#install"><span class="l-tr" lang="tr">Kurulum notları</span><span class="l-en" lang="en">Install notes</span></a>
+      <a class="btn btn--glow" href="#install"><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">Windows’a kur</span><span class="l-en" lang="en">Install on Windows</span></a>
+      <a class="btn btn--ghost" href="#waitlist"><span class="l-tr" lang="tr">Haber listesi</span><span class="l-en" lang="en">Waitlist</span></a>
     </div>
     <ul class="chips">
       <li class="chip"><svg class="ico" aria-hidden="true"><use href="#i-user"/></svg><span class="l-tr" lang="tr">Yönetici izni gerekmez</span><span class="l-en" lang="en">No admin rights needed</span></li>
@@ -473,12 +575,11 @@
 <footer class="foot-site">
   <div class="wrap foot-site__in">
     <span class="foot-site__brand"><img src="assets/icon.svg" alt="" width="20" height="20"><span>LimitPeek</span></span>
-    <p><span class="l-tr" lang="tr">Bu sayfa çerez kullanmaz ve dışarıya hiçbir istek göndermez.</span><span class="l-en" lang="en">This page sets no cookies and sends no outside requests.</span></p>
+    <p><span class="l-tr" lang="tr">Bu sayfa çerez kullanmaz ve kendiliğinden dışarıya hiçbir istek göndermez. Haber listesi formu yalnızca sen gönderince gider.</span><span class="l-en" lang="en">This page sets no cookies and sends no outside requests on its own. The waitlist form is sent only when you submit it.</span></p>
     <ul class="foot-site__links">
       <li><a href="privacy.html"><span class="l-tr" lang="tr">Gizlilik</span><span class="l-en" lang="en">Privacy</span></a></li>
       <li><a href="terms.html"><span class="l-tr" lang="tr">Kullanım koşulları</span><span class="l-en" lang="en">Terms</span></a></li>
       <li><a href="refund.html"><span class="l-tr" lang="tr">İade</span><span class="l-en" lang="en">Refunds</span></a></li>
-      <li><a href="https://github.com/sameddartilmak/ai-usage-monitor" rel="noreferrer"><span class="l-tr" lang="tr">GitHub deposu</span><span class="l-en" lang="en">GitHub repository</span></a></li>
       <li><a href="assets/fonts/Inter-OFL.txt"><span class="l-tr" lang="tr">Inter lisansı</span><span class="l-en" lang="en">Inter licence</span></a></li>
       <li><a href="assets/fonts/JetBrainsMono-OFL.txt"><span class="l-tr" lang="tr">JetBrains Mono lisansı</span><span class="l-en" lang="en">JetBrains Mono licence</span></a></li>
     </ul>

@@ -8,7 +8,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0E1211">
 <title>Gizlilik politikası — LimitPeek</title>
-<meta name="description" content="LimitPeek hangi dosyaları okur, neyi bilgisayarınızda saklar, ne gönderir.">
+<meta name="description" content="LimitPeek hangi dosyaları okur, neyi bilgisayarınızda saklar, ne gönderir; haber listesinde ne tutulur.">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
 <script src="legal.js"></script>
@@ -40,7 +40,7 @@
   <p class="legal__lead"><strong>Kısaca:</strong> LimitPeek bilgisayarınızda çalışır ve yapay zekâ araçlarınızın kendi kayıt dosyalarından yalnızca kullanım rakamlarını okur. Uygulamanın şu anki sürümü <strong>hiçbir internet bağlantısı açmaz</strong>. Konuşmalarınız, kodunuz ve dosyalarınız bilgisayarınızdan çıkmaz.</p>
 
   <h2>1. Biz kimiz</h2>
-  <p>LimitPeek'i <span class="todo">[işletme adı]</span> geliştirir ve satar (bu sayfada "biz"). Adres: <span class="todo">[adres]</span>. İletişim: <span class="todo">[destek e-postası]</span>. 6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) ve Avrupa Birliği Genel Veri Koruma Tüzüğü (GDPR) bakımından, aşağıda anlatılan sınırlı veriler için veri sorumlusu biziz.</p>
+  <p>LimitPeek'i <span class="todo">[ad soyad ya da işletme adı]</span> geliştirir (bu sayfada "biz"). LimitPeek şu an ücretsiz bir betadır; ücretli sürüm çıkarsa satışı da biz yaparız. Adres: <span class="todo">[adres]</span>. İletişim: <span class="todo">[destek e-postası]</span>. 6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) ve Avrupa Birliği Genel Veri Koruma Tüzüğü (GDPR) bakımından, aşağıda anlatılan sınırlı veriler için veri sorumlusu biziz.</p>
 
   <h2>2. Uygulama bilgisayarınızda ne okur</h2>
   <p>Uygulama, kullandığınız araçların bilgisayarınıza zaten yazdığı dosyaları okur. Yalnızca açık olan araçların klasörlerine bakar; her aracı Ayarlar'dan kapatabilirsiniz.</p>
@@ -63,30 +63,48 @@
 
   <h2>4. Bilgisayarınızdan ne çıkar</h2>
   <p><strong>Uygulamanın şu anki sürümünden hiçbir şey.</strong> Analiz, reklam, hata raporu ya da kullanım istatistiği gönderilmez. Bunu Windows çekirdeğinin ağ kaydıyla ölçüyoruz: uygulama 16 dakikalık ölçümde tek bir ağ bağlantısı açmadı.</p>
+  <p>Uygulamayı Microsoft Store'dan kurduysanız, Store ve Windows kendi bilgilerini (örneğin indirme sayısı, çökme bildirimi) Microsoft'un gizlilik bildirimine göre toplar. Bunlar uygulamamızdan gelmez ve uygulamamız onlara bir şey eklemez; Microsoft bunları bize Partner Center'da özet olarak gösterir.</p>
 
   <h3>Ücretli sürümle gelecek tek bağlantı</h3>
   <p>Abonelik başladığında uygulama, aboneliğinizin sürdüğünü doğrulamak için <strong>günde bir kez, tek bir adresimize</strong> bağlanacak. Bu istekte yalnızca şunlar gider: lisans anahtarınız, uygulamanın ilk açılışta rastgele ürettiği cihaz kimliği ve uygulama sürümü. Cevap olarak yalnızca lisans durumu ve en yeni sürüm numarası döner. Kullanım rakamlarınız, dosyalarınız ya da konuşmalarınız bu istekte <strong>yer almaz</strong>. Bu bağlantı eklenmeden önce bu sayfa güncellenecek ve bağlantı uygulamanın Ayarlar ekranında açıkça yazacak.</p>
 
-  <h2>5. Ödeme</h2>
-  <p>Ödemeleri <strong>Polar</strong> (polar.sh) satıcı sıfatıyla alır; faturayı ve vergileri Polar düzenler. Kart bilgileriniz bize hiç gelmez. Polar'ın topladığı bilgiler onun kendi gizlilik politikasına tabidir. Biz Polar'dan yalnızca lisansı teslim etmek ve destek vermek için gereken bilgileri alırız: e-posta adresiniz, ülkeniz ve aboneliğinizin durumu.</p>
+  <h2>5. Ödeme (ücretli sürümde)</h2>
+  <p>Beta ücretsizdir; şu an hiçbir ödeme alınmaz. Ücretli sürüm çıkarsa ödemeleri <strong>Polar</strong> (polar.sh) satıcı sıfatıyla alır; faturayı ve vergileri Polar düzenler. Kart bilgileriniz bize hiç gelmez. Polar'ın topladığı bilgiler onun kendi gizlilik politikasına tabidir. Biz Polar'dan yalnızca lisansı teslim etmek ve destek vermek için gereken bilgileri alırız: e-posta adresiniz, ülkeniz ve aboneliğinizin durumu.</p>
 
   <h2>6. Web sitesi</h2>
-  <p>Bu site çerez kullanmaz ve sayfaları dışarıya istek göndermez. İleride ziyaretçi sayımı eklersek çerezsiz bir yöntem kullanır ve bu sayfayı önceden güncelleriz.</p>
+  <p>Bu site çerez kullanmaz. Sayfalar kendiliğinden dışarıya istek göndermez: dış bir betik, yazı tipi ya da görsel yüklenmez. Haber listesi formu yalnızca siz "Listeye yaz"a bastığınızda, yalnızca haber listesi sunucumuza gider (bölüm 7).</p>
+  <p>Siteyi Cloudflare sunar. Her web sunucusu gibi Cloudflare de sayfayı gönderebilmek için isteğin teknik bilgilerini (IP adresi, tarayıcı türü, istenen sayfa) işler. Ziyaretçi sayısına bakarsak bunu sayfaya betik eklemeden, Cloudflare'in sunucu tarafında tuttuğu çerezsiz istek sayımıyla yaparız. Bu sayım sizi tanımaz ve bize kim olduğunuzu söylemez.</p>
 
-  <h2>7. Destek yazışmaları</h2>
+  <h2 id="waitlist">7. Haber listesi</h2>
+  <p>Ana sayfadaki "Ücretli sürüm çıkınca haber ver" formunu gönderirseniz şunları saklarız:</p>
+  <ul>
+    <li>e-posta adresiniz (küçük harfe çevrilmiş olarak),</li>
+    <li>cevapladıysanız isteğe bağlı üç sorunun cevabı: kullandığınız araçlar, ücretli sürüme ayda ne kadar ödeyeceğiniz ve en çok istediğiniz özellik,</li>
+    <li>sayfayı hangi dilde gördüğünüz (Türkçe ya da İngilizce), size o dilde yazmak için,</li>
+    <li>kayıt ve son güncelleme zamanı,</li>
+    <li>listeden çıkma bağlantısı için rastgele üretilmiş bir anahtar.</li>
+  </ul>
+  <p><strong>Neden:</strong> yalnızca ücretli sürümü duyurmak ve beta hakkında görüş sormak için. Cevapları fiyata ve önceliklere karar verirken toplu olarak inceleriz. Reklam yapmayız; listeyi kimseyle paylaşmaz ve satmayız. Dayanağı açık rızanızdır (formu kendiniz gönderirsiniz); rızanızı istediğiniz an geri alabilirsiniz.</p>
+  <p><strong>Nerede:</strong> Cloudflare'in D1 veritabanında, <span class="todo">[bölge, ör. Batı Avrupa]</span>. Cloudflare bu veriyi yalnızca bizim adımıza saklar. Duyuru e-postalarını göndermek için bir e-posta hizmeti kullanırsak, göndermeden önce adını bu sayfaya yazarız; adresiniz ona yalnızca o gönderim için verilir.</p>
+  <p><strong>Kötüye kullanıma karşı:</strong> aynı yerden bir saatte çok fazla kayıt gelirse durdururuz. Bunun için IP adresinizi saklamayız. Yalnızca IP adresinden, gizli ve her gün değişen bir anahtarla üretilmiş, geri çevrilemeyen bir özet en fazla 24 saat tutulur.</p>
+  <p><strong>Ne kadar süre:</strong> listeden çıkana kadar. Ücretli sürümü duyurduktan 30 gün sonra listeyi tamamen sileriz. Ücretli sürüm hiç çıkmazsa, projeyi bıraktığımızı duyurduğumuzda sileriz.</p>
+  <p><strong>Listeden çıkmak:</strong> her e-postada listeden çıkma bağlantısı olur; tıklayınca kaydınız hemen silinir. <span class="todo">[destek e-postası]</span> adresine yazarak da çıkabilirsiniz.</p>
+
+  <h2>8. Destek yazışmaları</h2>
   <p>Bize yazdığınızda, cevap verebilmek için e-postanızı ve yazdıklarınızı saklarız. İsterseniz sileriz.</p>
 
-  <h2>8. Saklama süresi ve silme</h2>
+  <h2>9. Saklama süresi ve silme</h2>
   <ul>
     <li>Bilgisayarınızdaki veriler siz silene kadar sizde kalır. Uygulamayı kaldırdığınızda bu veriler de silinir; kaldırma ekranında "Ayarlarımı ve kullanım geçmişimi sakla" kutusunu işaretlerseniz bırakılır. Klasörleri elle de silebilirsiniz.</li>
-    <li>Abonelik ve fatura kayıtları yasal saklama süreleri boyunca tutulur.</li>
+    <li>Haber listesi: listeden çıkana kadar, en geç ücretli sürümün duyurusundan 30 gün sonrasına kadar (bölüm 7). Kötüye kullanım için tutulan IP özeti en fazla 24 saat.</li>
+    <li>Ücretli sürüm çıkarsa abonelik ve fatura kayıtları yasal saklama süreleri boyunca tutulur.</li>
     <li>Destek yazışmaları, konu kapandıktan sonra en fazla 2 yıl saklanır.</li>
   </ul>
 
-  <h2>9. Haklarınız</h2>
+  <h2>10. Haklarınız</h2>
   <p>KVKK'nın 11. maddesi ve GDPR kapsamında, hakkınızda hangi verileri tuttuğumuzu öğrenme, düzeltilmesini veya silinmesini isteme, işlenmesine itiraz etme ve verilerinizi taşınabilir biçimde alma haklarınız vardır. Bunun için <span class="todo">[destek e-postası]</span> adresine yazın; en geç 30 gün içinde cevap veririz. Bulunduğunuz ülkenin veri koruma kurumuna şikâyette de bulunabilirsiniz (Türkiye'de Kişisel Verileri Koruma Kurumu).</p>
 
-  <h2>10. Değişiklikler</h2>
+  <h2>11. Değişiklikler</h2>
   <p>Bu politikayı değiştirirsek tarihi güncelleriz. Önemli bir değişiklik olursa (örneğin uygulamaya yeni bir bağlantı eklenmesi) bunu uygulama güncellemesinden önce sitede duyururuz.</p>
 
   <ul class="legal__nav" aria-label="Yasal sayfalar">
@@ -105,7 +123,7 @@
   <p class="legal__lead"><strong>In short:</strong> LimitPeek runs on your PC and reads only usage figures from your AI tools' own log files. The current version of the app <strong>opens no internet connection at all</strong>. Your conversations, code and files never leave your computer.</p>
 
   <h2>1. Who we are</h2>
-  <p>LimitPeek is developed and sold by <span class="todo">[business name]</span> ("we"). Address: <span class="todo">[address]</span>. Contact: <span class="todo">[support email]</span>. We are the data controller, under the Turkish Personal Data Protection Law No. 6698 (KVKK) and the EU General Data Protection Regulation (GDPR), for the limited data described below.</p>
+  <p>LimitPeek is developed by <span class="todo">[full name or business name]</span> ("we"). LimitPeek is a free beta for now; if a paid version comes, we will sell it too. Address: <span class="todo">[address]</span>. Contact: <span class="todo">[support email]</span>. We are the data controller, under the Turkish Personal Data Protection Law No. 6698 (KVKK) and the EU General Data Protection Regulation (GDPR), for the limited data described below.</p>
 
   <h2>2. What the app reads on your PC</h2>
   <p>The app reads files your tools already write to your computer. It looks only in the folders of tools that are switched on; you can switch each tool off in Settings.</p>
@@ -128,30 +146,48 @@
 
   <h2>4. What leaves your PC</h2>
   <p><strong>Nothing, from the current version of the app.</strong> No analytics, ads, crash reports or usage statistics are sent. We measure this with the Windows kernel's network trace: the app opened not a single network connection in a 16-minute measurement.</p>
+  <p>If you installed the app from the Microsoft Store, the Store and Windows collect their own data (for example download counts and crash reports) under Microsoft's privacy statement. That does not come from our app, and our app adds nothing to it; Microsoft shows them to us as summaries in Partner Center.</p>
 
   <h3>The one connection the paid version will add</h3>
   <p>Once subscriptions start, the app will connect <strong>once a day, to one address of ours</strong>, to confirm your subscription is active. The request carries only your license key, a device id the app generates at random on first start, and the app version. The reply carries only the license status and the newest version number. Your usage figures, files and conversations are <strong>not</strong> part of it. This page will be updated before that connection is added, and the app's Settings will state it plainly.</p>
 
-  <h2>5. Payments</h2>
-  <p>Payments are taken by <strong>Polar</strong> (polar.sh) as the seller of record; Polar issues the invoice and handles taxes. Your card details never reach us. What Polar collects is governed by Polar's own privacy policy. From Polar we receive only what we need to deliver your license and support you: your email address, your country and your subscription status.</p>
+  <h2>5. Payments (paid version)</h2>
+  <p>The beta is free; no payment is taken now. If a paid version comes, payments are taken by <strong>Polar</strong> (polar.sh) as the seller of record; Polar issues the invoice and handles taxes. Your card details never reach us. What Polar collects is governed by Polar's own privacy policy. From Polar we receive only what we need to deliver your license and support you: your email address, your country and your subscription status.</p>
 
   <h2>6. Website</h2>
-  <p>This site sets no cookies and its pages send no outside requests. If we ever add visitor counting, it will be cookieless and this page will be updated first.</p>
+  <p>This site sets no cookies. Its pages send no outside requests on their own: no outside script, font or image is loaded. The waitlist form is sent only when you press "Add me to the list", and only to our waitlist server (section 7).</p>
+  <p>The site is served by Cloudflare. Like any web server, Cloudflare processes the technical details of each request (IP address, browser type, the page asked for) in order to deliver the page. If we look at visitor numbers, we do it without any script on the page, from Cloudflare's cookieless server-side request counts. Those counts do not recognise you and do not tell us who you are.</p>
 
-  <h2>7. Support emails</h2>
+  <h2 id="waitlist-en">7. Waitlist</h2>
+  <p>If you send the "Tell me when the paid version is out" form on the home page, we keep:</p>
+  <ul>
+    <li>your email address (lower-cased),</li>
+    <li>if you answered them, the three optional questions: the tools you use, what you would pay per month for a paid version, and the feature you want most,</li>
+    <li>which language you saw the page in (Turkish or English), so we can write to you in it,</li>
+    <li>when you signed up and last updated your entry,</li>
+    <li>a randomly generated key for the unsubscribe link.</li>
+  </ul>
+  <p><strong>Why:</strong> only to announce the paid version and to ask for feedback on the beta. We look at the answers in aggregate when deciding on price and priorities. No advertising; we do not share or sell the list. The legal basis is your explicit consent (you send the form yourself), which you can withdraw at any time.</p>
+  <p><strong>Where:</strong> in Cloudflare's D1 database, <span class="todo">[region, e.g. Western Europe]</span>. Cloudflare stores it only on our behalf. If we use an email service to send the announcement, we will name it on this page before sending; your address goes to it only for that sending.</p>
+  <p><strong>Against abuse:</strong> if too many sign-ups come from one place within an hour, we stop them. We do not store your IP address for this. Only a one-way digest of it, made with a secret key that changes every day, is kept for at most 24 hours.</p>
+  <p><strong>How long:</strong> until you unsubscribe. We delete the whole list 30 days after announcing the paid version. If a paid version never comes, we delete it when we announce that the project has ended.</p>
+  <p><strong>Unsubscribing:</strong> every email has an unsubscribe link; clicking it deletes your entry at once. You can also write to <span class="todo">[support email]</span>.</p>
+
+  <h2>8. Support emails</h2>
   <p>When you write to us, we keep your email address and message so we can reply. We delete them on request.</p>
 
-  <h2>8. Retention and deletion</h2>
+  <h2>9. Retention and deletion</h2>
   <ul>
     <li>Data on your PC stays with you until you delete it. Uninstalling the app deletes it too, unless you tick "Keep my settings and usage history" on the uninstall screen. You can also delete the folders by hand.</li>
-    <li>Subscription and invoice records are kept for the legally required periods.</li>
+    <li>Waitlist: until you unsubscribe, and at the latest until 30 days after the paid version is announced (section 7). The anti-abuse IP digest: at most 24 hours.</li>
+    <li>If a paid version comes, subscription and invoice records are kept for the legally required periods.</li>
     <li>Support emails are kept for at most 2 years after the matter is closed.</li>
   </ul>
 
-  <h2>9. Your rights</h2>
+  <h2>10. Your rights</h2>
   <p>Under Article 11 of KVKK and under the GDPR you may ask what data we hold about you, have it corrected or deleted, object to its processing, and receive it in a portable format. Write to <span class="todo">[support email]</span>; we reply within 30 days. You may also complain to the data protection authority of your country.</p>
 
-  <h2>10. Changes</h2>
+  <h2>11. Changes</h2>
   <p>If we change this policy we update the date above. For a significant change (for example a new connection in the app) we announce it on this site before the app update ships.</p>
 
   <ul class="legal__nav" aria-label="Legal pages">
