@@ -1285,6 +1285,28 @@ export const IPC = {
    * space beside and above the panel swallowed clicks meant for other apps).
    */
   PANEL_HIT: 'panel:hit',
+  /**
+   * renderer -> main invoke(view: TrayView). Persists where the usage is shown
+   * outside the panel ('tray' | 'strip'), then main shows or removes the
+   * taskbar strip and pushes PREFERENCES (whose `stripAvailable` says whether
+   * the strip could be shown). Anything but the two literals is refused.
+   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
+   */
+  SET_TRAY_VIEW: 'prefs:set-tray-view',
+} as const;
+
+/**
+ * The taskbar strip's own channels (src/main/taskbar-strip.js). Its page is
+ * not the panel and gets its own, smaller preload (src/main/strip-preload.js)
+ * exposing only these three; the panel's preload carries none of them.
+ */
+export const IPC_STRIP = {
+  /** main -> strip page: the tiles to draw, and dark or light ink for the taskbar under them. */
+  DATA: 'strip:data',
+  /** strip page -> main send(): a left click; opens the panel like the tray. */
+  OPEN: 'strip:open',
+  /** strip page -> main send(): a right click; the tray icon's menu. */
+  MENU: 'strip:menu',
 } as const;
 
 /**
@@ -1295,6 +1317,13 @@ export type ThemeChoice = 'dark' | 'light' | 'system';
 
 /** ADR-004. 'system' resolves in MAIN from the OS display language. */
 export type LanguageChoice = 'tr' | 'en' | 'zh' | 'system';
+
+/**
+ * Where the usage is shown outside the panel. 'tray' (the default) is the tray
+ * icon's donut; 'strip' adds a strip inside the taskbar, left of the tray, with
+ * one tile per tool. The tray icon stays in both.
+ */
+export type TrayView = 'tray' | 'strip';
 
 export interface Preferences {
   theme: ThemeChoice;
@@ -1338,6 +1367,22 @@ export interface Preferences {
    * as `true`.
    */
   setupCoachDismissed: boolean;
+  /** Settings → Genel → Görünüm. Anything that is not a TrayView is 'tray'. */
+  trayView: TrayView;
+  /**
+   * False once the taskbar strip was asked for and could not be shown on this
+   * machine (the native helper did not load). The settings screen then says
+   * so under the option, and the app behaves as 'tray'. True until tried.
+   * Anything that is not `false` reaches the renderer as `true`.
+   */
+  stripAvailable: boolean;
+  /**
+   * True while the strip is wanted but the taskbar has no room for even one
+   * tile between its buttons and the tray (or the buttons could not be
+   * measured yet). The strip is hidden then and the settings screen says why.
+   * Anything that is not `true` reaches the renderer as `false`.
+   */
+  stripNoRoom: boolean;
 }
 
 /**
@@ -1441,6 +1486,8 @@ export interface UsageNotchApi {
   setAutostart(enabled: boolean): Promise<{ ok: boolean }>;
   /** Persist "Şimdi değil" on the first-run card. See IPC.SET_SETUP_COACH_DISMISSED. */
   setSetupCoachDismissed(dismissed: boolean): Promise<{ ok: boolean }>;
+  /** Persist where the usage is shown outside the panel. See IPC.SET_TRAY_VIEW. */
+  setTrayView(view: TrayView): Promise<{ ok: boolean }>;
   /**
    * Persist the plan the user says they are on for ONE tool, or clear it. See
    * IPC.SET_PLAN_LABEL and `ProviderSnapshot.planLabel`.

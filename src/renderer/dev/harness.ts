@@ -63,6 +63,9 @@ let prefs: Preferences = {
   autostartByWindows: false,
   // A fresh install, so the first-run card can be reviewed.
   setupCoachDismissed: false,
+  trayView: 'tray',
+  stripAvailable: true,
+  stripNoRoom: false,
 };
 let prefsCb: ((p: Preferences) => void) | null = null;
 
@@ -257,6 +260,14 @@ function makeBridge(scenario: Scenario): Bridge {
     async setSetupCoachDismissed(dismissed: boolean): Promise<boolean> {
       log(`setSetupCoachDismissed(${dismissed})`);
       prefs = { ...prefs, setupCoachDismissed: dismissed };
+      prefsCb?.(prefs);
+      return true;
+    },
+
+    /** Persist, then push. A browser has no taskbar: the strip is "unavailable". */
+    async setTrayView(view: 'tray' | 'strip'): Promise<boolean> {
+      log(`setTrayView(${view})`);
+      prefs = { ...prefs, trayView: view, stripAvailable: view !== 'strip' };
       prefsCb?.(prefs);
       return true;
     },

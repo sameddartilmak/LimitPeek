@@ -420,7 +420,7 @@ test.describe('applyLanguage and preferences(), driven for real', () => {
       'resetTooltip',
       'snapshot:en',
       'tooltip:tip-en',
-      'preferences:{"theme":"system","language":"en","resolvedLanguage":"en","formatLocale":"en-US","autostart":true,"autostartByWindows":false,"setupCoachDismissed":true}',
+      'preferences:{"theme":"system","language":"en","resolvedLanguage":"en","formatLocale":"en-US","autostart":true,"autostartByWindows":false,"setupCoachDismissed":true,"trayView":"tray","stripAvailable":true,"stripNoRoom":false}',
     ]);
   });
 
@@ -454,9 +454,9 @@ test.describe('applyLanguage and preferences(), driven for real', () => {
     const r = rig({ os: UK_MACHINE, stored: 'tr' });
     assert.deepEqual(r.handler({}, 'system'), { ok: true });
     assert.deepEqual(r.preferences(),
-      { theme: 'system', language: 'system', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false, setupCoachDismissed: true });
+      { theme: 'system', language: 'system', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false, setupCoachDismissed: true, trayView: 'tray', stripAvailable: true, stripNoRoom: false });
     assert.ok(r.calls.includes('setLocale:en/en-GB'), r.calls.join(' | '));
-    assert.ok(r.calls.includes('preferences:{"theme":"system","language":"system","resolvedLanguage":"en","formatLocale":"en-GB","autostart":true,"autostartByWindows":false,"setupCoachDismissed":true}'),
+    assert.ok(r.calls.includes('preferences:{"theme":"system","language":"system","resolvedLanguage":"en","formatLocale":"en-GB","autostart":true,"autostartByWindows":false,"setupCoachDismissed":true,"trayView":"tray","stripAvailable":true,"stripNoRoom":false}'),
       r.calls.join(' | '));
   });
 
@@ -466,17 +466,17 @@ test.describe('applyLanguage and preferences(), driven for real', () => {
       currentLocale: () => null,
       readOs: () => UK_MACHINE,
     });
-    assert.deepEqual(early(), { theme: 'system', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false, setupCoachDismissed: true });
+    assert.deepEqual(early(), { theme: 'system', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false, setupCoachDismissed: true, trayView: 'tray', stripAvailable: true, stripNoRoom: false });
     const noSettings = createPreferences({
       getSettings: () => null, currentLocale: () => null, readOs: () => TURKISH_MACHINE,
     });
-    assert.deepEqual(noSettings(), { theme: 'system', language: 'system', resolvedLanguage: 'tr', formatLocale: 'tr-TR', autostart: true, autostartByWindows: false, setupCoachDismissed: true });
+    assert.deepEqual(noSettings(), { theme: 'system', language: 'system', resolvedLanguage: 'tr', formatLocale: 'tr-TR', autostart: true, autostartByWindows: false, setupCoachDismissed: true, trayView: 'tray', stripAvailable: true, stripNoRoom: false });
     const kept = createPreferences({
       getSettings: () => ({ theme: 'dark', language: 'tr' }),
       currentLocale: () => ({ language: 'en', resolvedLanguage: 'en', formatLocale: 'en-AU' }),
       readOs: () => { throw new Error('the OS must not be re-read when a locale is current'); },
     });
-    assert.deepEqual(kept(), { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-AU', autostart: true, autostartByWindows: false, setupCoachDismissed: true });
+    assert.deepEqual(kept(), { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-AU', autostart: true, autostartByWindows: false, setupCoachDismissed: true, trayView: 'tray', stripAvailable: true, stripNoRoom: false });
   });
 
   test('applyLanguage tolerates a tray and a collector that do not exist yet', () => {
@@ -628,7 +628,7 @@ test.describe('what can only be read off index.js (it requires electron), commen
     for (const needle of [
       'ipcMain.handle(IPC.SET_LANGUAGE, createSetLanguageHandler({ fromPanel, getSettings: () => settings, save: (s) => settingsStore.save(userDataDir(), s), apply: applyLanguage, push: pushPreferences, log, }))',
       'const applyLanguage = createApplyLanguage({ refreshLocale, getTray: () => tray, trayMenuOptions, resetTooltip: () => { trayTooltipShown = null; }, getCollector: () => collector, })',
-      'const preferences = createPreferences({ getSettings: () => settings, currentLocale: () => locale, readOs: () => osLocale(app), storeBuild: () => isStoreBuild(), })',
+      'const preferences = createPreferences({ getSettings: () => settings, currentLocale: () => locale, readOs: () => osLocale(app), storeBuild: () => isStoreBuild(), stripAvailable: () => !strip || strip.available(), stripNoRoom: () => Boolean(strip && strip.status() === \'no-room\'), })',
       'const resolveLocale = createLocaleResolver({ getSettings: () => settings, readOs: () => osLocale(app), setLocale: i18n.setLocale, log, })',
       'function refreshLocale() { locale = resolveLocale(); return locale; }',
       'function pushPreferences() { if (panel) panel.send(IPC.PREFERENCES, preferences()); }',

@@ -13,6 +13,7 @@ import type {
   RefreshNotice,
   Snapshot,
   ThemeChoice,
+  TrayView,
 } from '../../shared/contract.js';
 import { CADENCE } from '../../shared/contract.js';
 import { DEFAULT_THEME } from './theme.js';
@@ -191,6 +192,20 @@ export interface PanelState {
   autostartReverted: boolean;
   /** A Store package: Windows owns the setting, so there is no switch. */
   autostartByWindows: boolean;
+  /**
+   * Görünüm: the tray icon alone, or the taskbar strip as well. Optimistic,
+   * like `theme`; main is asked afterwards and the choice goes back if it
+   * refuses.
+   */
+  trayView: TrayView;
+  /** True while a setTrayView call is in flight. */
+  trayViewPending: boolean;
+  /** Set briefly when main refused the change and the radio went back. */
+  trayViewReverted: boolean;
+  /** False once main tried the strip and it cannot be shown here. */
+  stripAvailable: boolean;
+  /** True while the strip finds no room on the taskbar. */
+  stripNoRoom: boolean;
 }
 
 const INITIAL: PanelState = {
@@ -228,6 +243,11 @@ const INITIAL: PanelState = {
   autostartPending: false,
   autostartReverted: false,
   autostartByWindows: false,
+  trayView: 'tray',
+  trayViewPending: false,
+  trayViewReverted: false,
+  stripAvailable: true,
+  stripNoRoom: false,
 };
 
 type Listener = (state: PanelState) => void;

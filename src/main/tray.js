@@ -164,6 +164,20 @@ class TrayController {
     this.tray.setContextMenu(menu);
   }
 
+  /**
+   * The same right-click menu, popped up at the cursor: a right click on the
+   * taskbar strip (taskbar-strip.js) shows what a right click on this icon
+   * does, from the one menu `setMenu` built.
+   */
+  popUpMenu() {
+    if (!this.tray || this.tray.isDestroyed()) return;
+    try {
+      this.tray.popUpContextMenu();
+    } catch (err) {
+      log.warn(`tray menu could not be shown: code=${(err && err.code) || 'UNKNOWN'}`);
+    }
+  }
+
   /** Screen-coordinate rect of the icon, or null when Windows will not say. */
   bounds() {
     if (!this.tray || this.tray.isDestroyed()) return null;

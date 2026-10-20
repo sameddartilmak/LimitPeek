@@ -2,6 +2,7 @@
 const { isLanguage, resolveLanguage } = require('../core/language');
 const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeAutostart, DEFAULT_AUTOSTART } = require('./autostart-ipc');
+const { sanitizeTrayView } = require('../core/tray-view');
 
 /**
  * The main-process half of the language preference that talks to Electron and
@@ -167,8 +168,13 @@ function createApplyLanguage({ refreshLocale, getTray, trayMenuOptions, resetToo
  * @param {() => object|null} deps.getSettings
  * @param {() => object|null} deps.currentLocale
  * @param {() => {preferredLanguages?: string[], systemLocale?: string|null}} deps.readOs
+ * @param {() => boolean} [deps.storeBuild]
+ * @param {() => boolean} [deps.stripAvailable]  false once the taskbar strip failed here
+ * @param {() => boolean} [deps.stripNoRoom]  true while the strip finds no room on the taskbar
  */
-function createPreferences({ getSettings, currentLocale, readOs, storeBuild = () => false }) {
+function createPreferences({
+  getSettings, currentLocale, readOs, storeBuild = () => false, stripAvailable = () => true, stripNoRoom = () => false,
+}) {
   return () => {
     const settings = getSettings();
     const lang = currentLocale() || resolveLanguage(settings && settings.language, readOs());
@@ -183,6 +189,12 @@ function createPreferences({ getSettings, currentLocale, readOs, storeBuild = ()
       // Only a real `false` shows the first-run card; anything else keeps it
       // closed, the safe side for a value that only ever hides a suggestion.
       setupCoachDismissed: !(settings && settings.setupCoachDismissed === false),
+      trayView: sanitizeTrayView(settings && settings.trayView),
+      // Only a real `false` (tried here and failed) says the strip cannot be
+      // shown; until it is tried, nothing is known against it.
+      stripAvailable: stripAvailable() !== false,
+      // Only a real `true`: the strip is wanted but the taskbar has no room.
+      stripNoRoom: stripNoRoom() === true,
     };
   };
 }

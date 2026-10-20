@@ -287,6 +287,8 @@ module.exports = {
   windowResetting,
   stateForPercentage,
   windowPercentage,
+  percentageOfWindow,
+  trayFiveHourWindow,
   drawablePercentage,
   leadProvider,
   traySpecFromSnapshot,

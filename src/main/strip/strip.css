@@ -1,0 +1,94 @@
+/*
+ * The taskbar strip (src/main/taskbar-strip.js). The window is transparent and
+ * sits over the taskbar, so the taskbar's own material shows between the
+ * tiles; each tile is a light overlay that reads on either ground. Main says
+ * which ground (from the sampled taskbar colour), and sends the bar fills
+ * already stepped on the tray donut's ramp.
+ */
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+body {
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  /* Dark ground; [data-ground="light"] below. */
+  --tile: rgba(255, 255, 255, 0.06);
+  --tile-hover: rgba(255, 255, 255, 0.11);
+  --label: #A9B4B1;
+  --track: rgba(255, 255, 255, 0.14);
+}
+body[data-ground="light"] {
+  --tile: rgba(0, 0, 0, 0.045);
+  --tile-hover: rgba(0, 0, 0, 0.09);
+  --label: #4F5B58;
+  --track: rgba(0, 0, 0, 0.14);
+}
+.strip {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  box-sizing: border-box;
+}
+.tile {
+  /* The width main placed the window by: one tile each, gap included. */
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px;
+  padding: 0 7px 0 6px;
+  border-radius: 6px;
+  background: var(--tile);
+}
+.tile:hover { background: var(--tile-hover); }
+.tile__logo {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  background: center / contain no-repeat;
+}
+.tile__logo[data-logo="claude"]      { background-image: url(../../renderer/assets/logos/claude-color.svg); }
+.tile__logo[data-logo="codex"]       { background-image: url(../../renderer/assets/logos/codex-color.svg); }
+.tile__logo[data-logo="antigravity"] { background-image: url(../../renderer/assets/logos/antigravity-color.svg); }
+.tile__logo[data-logo="kimi"]        { background-image: url(../../renderer/assets/logos/kimi-color.svg); }
+.tile__logo[data-logo="qwen"]        { background-image: url(../../renderer/assets/logos/qwen-color.svg); }
+.tile__logo[data-logo="grok"]        { background-image: url(../../renderer/assets/logos/grok-color.svg); }
+.tile__rows {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+.tile__row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tile__label {
+  flex: 0 0 auto;
+  min-width: 18px;
+  font-size: 10px;
+  line-height: 12px;
+  font-weight: 600;
+  color: var(--label);
+  white-space: nowrap;
+}
+.tile__bar {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+.tile__fill {
+  height: 100%;
+  border-radius: 2px;
+}

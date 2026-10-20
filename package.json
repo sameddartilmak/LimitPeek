@@ -30,7 +30,8 @@
     "productName": "Usage Notch",
     "asar": true,
     "asarUnpack": [
-      "bridge/**"
+      "bridge/**",
+      "node_modules/@koromix/koffi-win32-x64/**"
     ],
     "files": [
       "package.json",
@@ -51,7 +52,16 @@
       "!src/renderer/tsconfig.json",
       "!**/*.ts",
       "!test/**",
-      "!scripts/**"
+      "!scripts/**",
+      "!node_modules/koffi/{doc,lib,vendor}/**",
+      "!node_modules/koffi/build/**",
+      "!node_modules/koffi/src/koffi/src/abi/**",
+      "!node_modules/koffi/src/koffi/src/*.{cc,hh,inc,def}",
+      "!node_modules/koffi/src/koffi/CMakeLists.txt",
+      "!node_modules/koffi/{cnoke.cjs,index.d.ts,index.js,indirect.js,CHANGELOG.md,README.md}",
+      "!node_modules/koffi/src/koffi/{index.js,indirect.js,src/static.js,src/trampolines.js}",
+      "!node_modules/@koromix/koffi-!(win32-x64)/**",
+      "!node_modules/@koromix/koffi-win32-x64/**/*.lib"
     ],
     "win": {
       "target": [
@@ -80,5 +90,8 @@
         "tr-TR"
       ]
     }
+  },
+  "dependencies": {
+    "koffi": "3.3.3"
   }
 }

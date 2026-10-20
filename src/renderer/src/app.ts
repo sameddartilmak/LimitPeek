@@ -13,6 +13,7 @@ import type {
   SetupAction,
   Snapshot,
   ThemeChoice,
+  TrayView,
 } from '../../shared/contract.js';
 import type { Bridge } from './bridge.js';
 import { bindVisibility, everySecond } from './clock.js';
@@ -89,6 +90,9 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     autostartByWindows: initialPrefs?.autostartByWindows ?? false,
     // No preload means no main to have said "fresh install": the card stays shut.
     setupCoachDismissed: initialPrefs?.setupCoachDismissed ?? true,
+    trayView: initialPrefs?.trayView ?? 'tray',
+    stripAvailable: initialPrefs?.stripAvailable ?? true,
+    stripNoRoom: initialPrefs?.stripNoRoom ?? false,
   });
   disposers.push(() => theme.destroy());
   // 400 ms on hover, at once on keyboard focus (tooltip.ts).
@@ -148,6 +152,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onThemeChange: (choice) => void applyTheme(choice),
     onLanguageChange: (choice) => void applyLanguage(choice),
     onAutostartChange: (enabled) => void applyAutostart(enabled),
+    onTrayViewChange: (view) => void applyTrayView(view),
     coachDismissed: false,
     onReorder: (ids) => void applyOrder(ids),
     onKeepAlive: () => bridge.panelOpened(),
@@ -574,6 +579,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   function acceptPreferences(prefs: Preferences): void {
     acceptLanguage(prefs);
     acceptAutostart(prefs);
+    acceptTrayView(prefs);
     // Main's persisted answer. Only ever moves the card SHUT from here: a push
     // that crossed a "Şimdi değil" in flight must not re-open it under the user.
     if (prefs.setupCoachDismissed && !store.get().setupCoachDismissed) {
@@ -638,6 +644,54 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     confirmedAutostart = prefs.autostart;
     if (autostartRequest !== null) return;
     if (prefs.autostart !== store.get().autostart) store.set({ autostart: prefs.autostart });
+  }
+
+  // --- Görünüm: tray icon or taskbar strip ---------------------------------
+
+  /** The newest tray view asked of main. Same shape as autostartRequest. */
+  let trayViewRequest: { view: TrayView; at: number } | null = null;
+  /** Same role as `confirmedAutostart`: what main is known to hold. */
+  let confirmedTrayView: TrayView = store.get().trayView;
+
+  /**
+   * Optimistic, then reconciled, exactly like applyAutostart. Main shows or
+   * removes the strip and pushes PREFERENCES; a strip that cannot be shown
+   * here is not a refusal — it comes back as `stripAvailable: false` and the
+   * option says so.
+   */
+  async function applyTrayView(next: TrayView): Promise<void> {
+    if (next === store.get().trayView) return;
+
+    const request = { view: next, at: Date.now() };
+    trayViewRequest = request;
+    store.set({ trayView: next, trayViewPending: true, trayViewReverted: false, notice: null });
+
+    const ok = await bridge.setTrayView(next);
+    if (ok) confirmedTrayView = next;
+
+    if (trayViewRequest !== request) return;
+    trayViewRequest = null;
+    store.set({ trayViewPending: false });
+    if (ok) return;
+
+    store.set({ trayView: confirmedTrayView, trayViewReverted: true });
+    say(t('app.trayViewNotSaved'), 'error');
+    window.setTimeout(() => {
+      if (store.get().trayViewReverted) store.set({ trayViewReverted: false });
+    }, 1_600);
+  }
+
+  /** Main's value, pushed. Adopted unless a pick is still in flight. */
+  function acceptTrayView(prefs: Preferences): void {
+    if (prefs.stripAvailable !== store.get().stripAvailable) {
+      store.set({ stripAvailable: prefs.stripAvailable });
+    }
+    if (prefs.stripNoRoom !== store.get().stripNoRoom) {
+      store.set({ stripNoRoom: prefs.stripNoRoom });
+    }
+    confirmedTrayView = prefs.trayView;
+    if (trayViewRequest !== null) return;
+    if (prefs.trayView !== store.get().trayView) store.set({ trayView: prefs.trayView });
   }
 
   // --- language -----------------------------------------------------------

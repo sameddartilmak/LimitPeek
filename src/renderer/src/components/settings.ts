@@ -50,6 +50,7 @@ import type {
   PeriodUsage,
   ProviderSnapshot,
   ThemeChoice,
+  TrayView,
   UsageHistory,
 } from '../../../shared/contract.js';
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
@@ -78,6 +79,8 @@ const THEME_TITLE_ID = 'settings-theme-title';
 const THEME_HELP_ID = 'settings-theme-help';
 const LANGUAGE_TITLE_ID = 'settings-language-title';
 const LANGUAGE_HELP_ID = 'settings-language-help';
+const TRAY_VIEW_TITLE_ID = 'settings-tray-view-title';
+const TRAY_VIEW_HELP_ID = 'settings-tray-view-help';
 const AUTOSTART_NAME_ID = 'settings-autostart-name';
 const AUTOSTART_HELP_ID = 'settings-autostart-help';
 
@@ -103,6 +106,8 @@ export interface SettingsContext {
   onLanguage(language: LanguageChoice): void;
   /** The user flipped "start with Windows". Optimistic; the app owns the revert. */
   onAutostart(enabled: boolean): void;
+  /** The user picked tray icon or taskbar strip. Optimistic; the app owns the revert. */
+  onTrayView(view: TrayView): void;
   /** Leave settings and go back to the usage list. */
   onBack(): void;
   /** The user picked a tab. The store keeps it across hide and rebuild. */
@@ -690,6 +695,79 @@ function createLanguageControl(ctx: SettingsContext): LanguageHandleLocal {
   }
 
   return { el: root, update, focusChecked };
+}
+
+/**
+ * Görünüm, second half: where the usage is shown outside the panel. "Tepsi
+ * simgesi" (the default, the donut every earlier version had) or "Görev
+ * çubuğu şeridi" (a strip inside the taskbar, left of the tray; the tray icon
+ * stays too). The theme's native-radio fieldset and CSS, directly under it
+ * and under the same "Görünüm" heading, because both answer "what does it
+ * look like". Its own legend keeps the group named for a screen reader.
+ *
+ * When main tried the strip and it cannot be shown on this machine, or the
+ * taskbar has no room for it between its buttons and the tray, the help line
+ * says so in place of the explanation, and the app carries on as 'tray'.
+ */
+interface TrayViewHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+}
+
+function createTrayViewControl(ctx: SettingsContext): TrayViewHandleLocal {
+  const CHOICES: ReadonlyArray<{ v: TrayView; key: MessageKey }> = [
+    { v: 'tray', key: 'settings.trayView.tray' },
+    { v: 'strip', key: 'settings.trayView.strip' },
+  ];
+
+  const inputs = new Map<TrayView, HTMLInputElement>();
+  const options = el('div', { class: 'theme__opts' });
+
+  for (const choice of CHOICES) {
+    const id = 'tray-view-' + choice.v;
+    const input = el('input', {
+      type: 'radio',
+      name: 'usage-notch-tray-view',
+      id,
+      value: choice.v,
+      class: 'theme__radio',
+    }) as HTMLInputElement;
+    const label = el('label', { class: 'theme__opt', for: id }, t(choice.key));
+    on(input, 'change', () => {
+      if (input.checked) ctx.onTrayView(choice.v);
+    });
+    inputs.set(choice.v, input);
+    options.appendChild(input);
+    options.appendChild(label);
+  }
+
+  const help = el('p', { class: 'theme__help', id: TRAY_VIEW_HELP_ID }, '');
+
+  const root = el(
+    'fieldset',
+    { class: 'theme theme--tray-view', 'aria-describedby': TRAY_VIEW_HELP_ID },
+    el('legend', { class: 'u-sr', id: TRAY_VIEW_TITLE_ID }, t('settings.trayView.legend')),
+    help,
+    options,
+  );
+
+  function update(state: PanelState): void {
+    for (const [choice, input] of inputs) {
+      const on_ = state.trayView === choice;
+      if (input.checked !== on_) input.checked = on_;
+    }
+    setAttr(root, 'data-pending', state.trayViewPending ? 'true' : null);
+    setAttr(root, 'data-revert', state.trayViewReverted ? 'true' : null);
+    setAttr(root, 'aria-busy', state.trayViewPending ? 'true' : null);
+    const unavailable = state.trayView === 'strip' && !state.stripAvailable;
+    const noRoom = state.trayView === 'strip' && !unavailable && state.stripNoRoom === true;
+    setAttr(root, 'data-unavailable', unavailable || noRoom ? 'true' : null);
+    setText(help, t(unavailable
+      ? 'settings.trayView.unavailable'
+      : noRoom ? 'settings.trayView.noRoom' : 'settings.trayView.help'));
+  }
+
+  return { el: root, update };
 }
 
 /**
@@ -1619,6 +1697,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   // --- "Genel": appearance, language, start with Windows --------------------
   const theme = createThemeControl(ctx);
   const languageControl = createLanguageControl(ctx);
+  const trayView = createTrayViewControl(ctx);
   const autostart = createAutostartControl(ctx);
   // The first-run introduction, on request: it runs once, so this is the way
   // back to it (and how the owner can look at it again).
@@ -1637,6 +1716,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
         content: [
           el('h3', { class: 'settings__heading' }, t('settings.theme.legend')),
           theme.el,
+          trayView.el,
           el('h3', { class: 'settings__heading' }, t('settings.language.legend')),
           languageControl.el,
           autostart.el,
@@ -1711,6 +1791,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     // must still be able to pick a theme and see its history.
     theme.update(state);
     languageControl.update(state);
+    trayView.update(state);
     autostart.update(state);
     // The FULL snapshot list, not the added subset: a model row names its tool
     // even when that tool's card was removed from the main panel.

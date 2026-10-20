@@ -838,8 +838,10 @@ test.describe('main-process wiring', () => {
       ['../core/donut', '../core/log', 'electron'],
       'the tray image may use electron and nothing else',
     );
+    // The one runtime dependency is koffi, for the taskbar strip only
+    // (contract-mirror.test.js says why); the tray icon added none.
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-    assert.deepEqual(pkg.dependencies || {}, {}, 'the tray icon added a runtime dependency');
+    assert.deepEqual(Object.keys(pkg.dependencies || {}), ['koffi'], 'the tray icon added a runtime dependency');
   });
 
   test('the preload exposes setOrder and main handles it', () => {

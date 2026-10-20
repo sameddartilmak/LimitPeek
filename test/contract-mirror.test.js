@@ -155,10 +155,59 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // count is asserted so a new channel — above all one that reaches the
   // network — cannot arrive unnoticed.
   assert.ok(declared.has('setPointerOverPanel'), 'contract.ts should declare setPointerOverPanel()');
+  // 21 with setTrayView (2026-10-20): Görünüm, tray icon or taskbar strip. A
+  // local settings write; the strip itself speaks only IPC_STRIP, below.
+  assert.ok(declared.has('setTrayView'), 'contract.ts should declare setTrayView()');
   for (const gone of ['requestKeyEntry', 'removeKey', 'openTokenPage', 'refreshKey']) {
     assert.equal(declared.has(gone), false, `${gone}() belonged to the removed key feature`);
   }
-  assert.equal(declared.size, 20, `expected the 20 declared methods, saw ${[...declared].join(',')}`);
+  assert.equal(declared.size, 21, `expected the 21 declared methods, saw ${[...declared].join(',')}`);
+});
+
+/** Parses `export const IPC_STRIP = { ... } as const;`. */
+function stripChannelsFromContract() {
+  const src = contractSource();
+  const start = src.indexOf('export const IPC_STRIP');
+  assert.notEqual(start, -1, 'contract.ts no longer declares `export const IPC_STRIP`');
+  const block = src.slice(start, src.indexOf('} as const;', start));
+  const out = {};
+  const re = /^\s*([A-Z_]+):\s*'([^']+)'/gm;
+  let m;
+  while ((m = re.exec(block)) !== null) out[m[1]] = m[2];
+  return out;
+}
+
+test('the taskbar strip channels: one mirror, one preload, and none of them on the panel', () => {
+  const expected = stripChannelsFromContract();
+  assert.deepEqual(Object.keys(expected), ['DATA', 'OPEN', 'MENU']);
+  const { IPC_STRIP, IPC_EXT } = require('../src/shared/contract');
+  assert.deepEqual(IPC_STRIP, expected);
+  for (const value of Object.values(IPC_STRIP)) {
+    assert.equal(Object.values(IPC).includes(value), false, `${value} collides with a panel channel`);
+    assert.equal(Object.values(IPC_EXT).includes(value), false, `${value} collides with an extension channel`);
+  }
+  const stripPreload = fs.readFileSync(path.join(ROOT, 'src', 'main', 'strip-preload.js'), 'utf8');
+  for (const [name, channel] of Object.entries(expected)) {
+    assert.ok(stripPreload.includes(`${name}: '${channel}'`), `strip-preload.js is missing ${name} ('${channel}')`);
+  }
+  // The strip page can subscribe and click, and nothing else: no panel
+  // channel, no generic passthrough, never ipcRenderer itself.
+  const exposed = stripPreload.slice(stripPreload.indexOf('exposeInMainWorld'));
+  const methods = [...exposed.matchAll(/^ {2}([A-Za-z]+):/gm)].map((m) => m[1]);
+  assert.deepEqual(methods, ['onData', 'open', 'menu']);
+  for (const channel of Object.values(IPC)) assert.equal(stripPreload.includes(`'${channel}'`), false, channel);
+  assert.equal(/invoke\(/.test(stripPreload), false, 'the strip invokes nothing');
+  assert.equal(stripPreload.includes('ipcRenderer,'), false);
+  // And the panel's preload carries none of the strip's channels.
+  const preload = fs.readFileSync(path.join(ROOT, 'src', 'main', 'preload.js'), 'utf8');
+  for (const channel of Object.values(IPC_STRIP)) assert.equal(preload.includes(channel), false, channel);
+  // Main takes a strip click only from the strip's own page.
+  const main = codeOf(path.join(ROOT, 'src', 'main', 'index.js'));
+  for (const name of ['OPEN', 'MENU']) {
+    const at = main.indexOf(`ipcMain.on(IPC_STRIP.${name}`);
+    assert.notEqual(at, -1, `index.js does not listen on IPC_STRIP.${name}`);
+    assert.ok(main.slice(at, at + 120).includes('if (!fromStrip(event)) return;'), `IPC_STRIP.${name} checks its sender`);
+  }
 });
 
 /** Parses `export const STATE_THRESHOLDS = { ... } as const;`. */
@@ -423,19 +472,23 @@ test('the push cadence main implements matches the one the contract advertises',
   assert.equal(collector.SWEEP_IDLE_MS, Number(idleMs[1].replace(/_/g, '')));
 });
 
-test('window hardening flags are set on the only BrowserWindow we create', () => {
-  const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'panel-window.js'), 'utf8');
-  for (const required of [
-    'contextIsolation: true',
-    'nodeIntegration: false',
-    'sandbox: true',
-    'webSecurity: true',
-    'webviewTag: false',
-  ]) {
-    assert.ok(src.includes(required), `panel-window.js must set ${required}`);
+test('window hardening flags are set on every window with a preload: the panel and the taskbar strip', () => {
+  for (const file of ['panel-window.js', 'taskbar-strip.js']) {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'main', file), 'utf8');
+    for (const required of [
+      'contextIsolation: true',
+      'nodeIntegration: false',
+      'sandbox: true',
+      'webSecurity: true',
+      'webviewTag: false',
+    ]) {
+      assert.ok(src.includes(required), `${file} must set ${required}`);
+    }
+    assert.equal(/loadURL\s*\(\s*['"`]https?:/.test(src), false, `${file} must never load a remote URL`);
+    assert.ok(src.includes('loadFile('), `${file} is loaded from a local file`);
   }
-  assert.equal(/loadURL\s*\(\s*['"`]https?:/.test(src), false, 'the panel must never load a remote URL');
-  assert.ok(src.includes('loadFile('), 'the panel is loaded from a local file');
+  // The strip never offers devtools, packaged or not: it lives in the taskbar.
+  assert.ok(fs.readFileSync(path.join(ROOT, 'src', 'main', 'taskbar-strip.js'), 'utf8').includes('devTools: false'));
 });
 
 test('navigation and window-open are blocked process wide', () => {
@@ -570,7 +623,7 @@ test('spellcheck is off on every window, because the dictionary is a download (s
    * so this flag is a network control and cannot be dropped as cosmetic.
    */
   const withWindows = mainAndCore().filter(({ code }) => code.includes('webPreferences'));
-  assert.deepEqual(withWindows.map((o) => o.rel).sort(), ['src/main/panel-window.js', 'src/main/uninstall-prompt.js']);
+  assert.deepEqual(withWindows.map((o) => o.rel).sort(), ['src/main/panel-window.js', 'src/main/taskbar-strip.js', 'src/main/uninstall-prompt.js']);
   for (const { rel, code } of withWindows) {
     assert.ok(code.includes('spellcheck: false'), `${rel} must keep spellcheck: false`);
   }
@@ -724,14 +777,117 @@ test('nothing the packaged app loads opens a socket', () => {
   assert.deepEqual(offenders, []);
 });
 
-test('package.json declares no runtime dependencies', () => {
+/**
+ * THE ONE RUNTIME DEPENDENCY, AND WHY IT IS ALLOWED (2026-10-20)
+ *
+ * A runtime dependency is an operational commitment, and until the taskbar
+ * strip there were none. koffi is the single, justified exception:
+ *
+ *   - Windows 11 offers no API for content on the taskbar. Electron can
+ *     neither read the taskbar's geometry nor style a window as a topmost,
+ *     never-activating tool window, and only UI Automation knows where the
+ *     XAML task buttons end — so user32, gdi32 and UIA (ole32/oleaut32) have
+ *     to be called directly. win32.js says which techniques were measured
+ *     and rejected (a child gets no input; an owned window couples input
+ *     queues with Explorer).
+ *   - koffi is loaded by two modules only — src/main/win32.js (main thread)
+ *     and src/main/taskbar-icons-worker.js (a worker, for UI Automation) —
+ *     lazily: a user on the tray icon never loads it. A load failure only
+ *     makes the strip "unavailable".
+ *   - Its runtime JavaScript requires node:fs, node:util and node:module and
+ *     nothing that reaches a network (grepped 2026-10-20, and scanned below;
+ *     its install-time builder cnoke.cjs uses child_process and is excluded
+ *     from the package).
+ *   - It ships a prebuilt N-API binary, so nothing is compiled on install and
+ *     the binary is ABI-stable across Electron versions. Only win32-x64's
+ *     ships; every other platform's is excluded (next test).
+ *
+ * Pinned EXACTLY, so an update is a reviewed change, not a resolution.
+ */
+const KOFFI_VERSION = '3.3.3';
+
+test('package.json declares exactly one runtime dependency: koffi, pinned exactly', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-  assert.deepEqual(pkg.dependencies || {}, {}, 'a runtime dependency is an operational commitment; there are none');
+  assert.deepEqual(pkg.dependencies || {}, { koffi: KOFFI_VERSION }, 'a runtime dependency is an operational commitment; koffi is the only one');
+  const lock = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8'));
+  assert.equal(lock.packages[''].dependencies.koffi, KOFFI_VERSION, 'package-lock.json agrees');
+  assert.equal(lock.packages['node_modules/koffi'].version, KOFFI_VERSION);
+  assert.equal(lock.packages['node_modules/@koromix/koffi-win32-x64'].version, KOFFI_VERSION);
+  // The only files that load it.
+  const loaders = mainAndCore().filter(({ code }) => /require\(['"]koffi['"]\)/.test(code)).map((o) => o.rel).sort();
+  assert.deepEqual(loaders, ['src/main/taskbar-icons-worker.js', 'src/main/win32.js']);
+  // Lazily: inside a function, never at the top of the module.
+  const win32 = codeOf(path.join(ROOT, 'src', 'main', 'win32.js'));
+  assert.equal(/^const koffi = require/m.test(win32), false, 'koffi must not load at require time');
   // Build-time only: none of these ships in the package, and nothing at runtime
   // requires any of them. electron-builder is the packager, added on purpose
   // for the NSIS installer; it runs at `npm run dist` and is never loaded by
   // the app.
   assert.deepEqual(Object.keys(pkg.devDependencies).sort(), ['electron', 'electron-builder', 'typescript']);
+});
+
+test('the only koffi binary that ships is win32-x64, unpacked from the asar', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+  const files = pkg.build.files;
+  // A .node file cannot be loaded from inside an asar archive.
+  assert.ok(pkg.build.asarUnpack.includes('node_modules/@koromix/koffi-win32-x64/**'));
+  // Every other platform's prebuilt package is excluded by name pattern, and
+  // the import library, the C++ sources and the install-time builder too.
+  for (const pattern of [
+    '!node_modules/@koromix/koffi-!(win32-x64)/**',
+    '!node_modules/@koromix/koffi-win32-x64/**/*.lib',
+    '!node_modules/koffi/{doc,lib,vendor}/**',
+    '!node_modules/koffi/src/koffi/src/abi/**',
+    '!node_modules/koffi/build/**',
+  ]) {
+    assert.ok(files.includes(pattern), `build.files must include ${pattern}`);
+  }
+  assert.ok(files.some((f) => f.startsWith('!node_modules/koffi/{cnoke.cjs')), 'the install-time builder (child_process) is excluded');
+  // On this machine npm installed only the one optional binary package.
+  const koromix = path.join(ROOT, 'node_modules', '@koromix');
+  if (fs.existsSync(koromix)) {
+    assert.deepEqual(fs.readdirSync(koromix), ['koffi-win32-x64']);
+  }
+  // A packaged build, when one is on disk and has the strip: exactly one
+  // .node file of koffi's, and it is win32-x64's.
+  const unpacked = path.join(ROOT, 'dist', 'win-unpacked', 'resources', 'app.asar.unpacked', 'node_modules');
+  if (fs.existsSync(path.join(unpacked, '@koromix'))) {
+    const found = [];
+    const walk = (d) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (e.name.endsWith('.node')) found.push(path.relative(unpacked, full).split(path.sep).join('/'));
+      }
+    };
+    walk(unpacked);
+    assert.deepEqual(found, ['@koromix/koffi-win32-x64/win32_x64/koffi.node']);
+  }
+});
+
+test("koffi's shipped JavaScript reaches no network and spawns nothing", () => {
+  // The scan above skips node_modules, so the one dependency is scanned here,
+  // over the JavaScript that ships (build.files keeps the CommonJS loader, the
+  // static table and the platform package's index.js).
+  const shipped = [
+    'node_modules/koffi/index.cjs',
+    'node_modules/koffi/indirect.cjs',
+    'node_modules/koffi/src/koffi/index.cjs',
+    'node_modules/koffi/src/koffi/indirect.cjs',
+    'node_modules/koffi/src/koffi/src/static.cjs',
+    'node_modules/koffi/src/koffi/src/trampolines.cjs',
+    'node_modules/@koromix/koffi-win32-x64/index.js',
+  ];
+  let scanned = 0;
+  for (const rel of shipped) {
+    const full = path.join(ROOT, rel);
+    if (!fs.existsSync(full)) continue;
+    scanned += 1;
+    const code = fs.readFileSync(full, 'utf8');
+    for (const needle of NETWORK_NEEDLES) assert.equal(code.includes(needle), false, `${rel}: ${needle}`);
+    for (const pattern of NETWORK_PATTERNS) assert.equal(pattern.test(code), false, `${rel}: ${pattern}`);
+  }
+  if (fs.existsSync(path.join(ROOT, 'node_modules', 'koffi'))) assert.ok(scanned >= 3, 'the scan found koffi\'s loader');
 });
 
 test('the packaged app excludes both the harness source and its compiled output', () => {

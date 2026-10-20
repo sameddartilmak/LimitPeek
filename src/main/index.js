@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { app, ipcMain, dialog, nativeTheme, BrowserWindow } = require('electron');
 
-const { IPC, IPC_EXT } = require('../shared/contract');
+const { IPC, IPC_EXT, IPC_STRIP } = require('../shared/contract');
 const { Collector } = require('../core/collector');
 const { isProviderId, getProvider } = require('../core/providers');
 const { sanitizeOrder } = require('../core/order');
@@ -42,6 +42,9 @@ const {
 } = require('./bridge-install');
 const { isStoreBuild } = require('./packaging');
 const { runUninstallPrompt, promptLook } = require('./uninstall-prompt');
+const { TaskbarStrip } = require('./taskbar-strip');
+const { createSetTrayViewHandler } = require('./tray-view-ipc');
+const { sanitizeTrayView } = require('../core/tray-view');
 
 // Must run before `ready`: some of it is command-line switches.
 security.applyAll();
@@ -81,6 +84,8 @@ if (!app.requestSingleInstanceLock()) {
 
 let panel = null;
 let tray = null;
+/** The taskbar strip; built at bootstrap, shown only when trayView is 'strip'. */
+let strip = null;
 let collector = null;
 let settings = null;
 let isQuitting = false;
@@ -171,6 +176,8 @@ const preferences = createPreferences({
   // deliberately not used, is documented where it is measured (language-ipc.js).
   readOs: () => osLocale(app),
   storeBuild: () => isStoreBuild(),
+  stripAvailable: () => !strip || strip.available(),
+  stripNoRoom: () => Boolean(strip && strip.status() === 'no-room'),
 });
 
 // Re-resolves the language and hands it to main's t(), so the tray, the dialogs
@@ -197,7 +204,46 @@ function pushPreferences() {
   if (panel) panel.send(IPC.PREFERENCES, preferences());
 }
 
+/* ------------------------------------------------------------ taskbar strip */
+
+/**
+ * Settings → Genel → Görünüm. 'strip' adds the taskbar strip; the tray icon
+ * stays either way. When the strip cannot be shown here, `enable()` says so,
+ * the app simply carries on as 'tray', and the next PREFERENCES push carries
+ * `stripAvailable: false` for the settings screen to explain.
+ */
+function applyTrayView(view) {
+  if (!strip) return;
+  if (sanitizeTrayView(view) === 'strip') {
+    strip.enable();
+    if (collector && collector.snapshot) strip.update(collector.snapshot);
+  } else {
+    strip.disable();
+  }
+}
+
+/**
+ * A left click on the strip. The tray click's toggle, except that it opens
+ * PINNED: the pointer is on the strip, not on the tray icon, so the unpinned
+ * panel's tray-to-panel corridor would read it as gone and close the panel
+ * (the same reason a second launch opens pinned, below).
+ */
+function openFromStrip() {
+  if (!panel) return;
+  const visible = panel.isVisible();
+  const pending = panel.hidePending();
+  const act = !visible || pending ? 'open' : 'hide';
+  log.trace('strip.click', { visible, hidePending: pending, act });
+  if (act === 'hide') panel.hide('strip-toggle');
+  else openPinned();
+}
+
 /* -------------------------------------------------------------------- ipc */
+
+/** The strip's two clicks are taken from the strip's own page only. */
+function fromStrip(event) {
+  return Boolean(strip && strip.isSender(event.sender));
+}
 
 /** Every handler drops messages that did not come from our own panel. */
 function fromPanel(event) {
@@ -456,6 +502,27 @@ function registerIpc() {
     log,
   }));
 
+  // Görünüm: tray icon or taskbar strip. Persist, apply, push; rollback on a
+  // failed write. Tested in tray-view-ipc.js's own suite.
+  ipcMain.handle(IPC.SET_TRAY_VIEW, createSetTrayViewHandler({
+    fromPanel,
+    getSettings: () => settings,
+    save: (s) => settingsStore.save(userDataDir(), s),
+    apply: applyTrayView,
+    push: pushPreferences,
+    log,
+  }));
+
+  // The strip page's clicks: left opens the panel, right shows the tray menu.
+  ipcMain.on(IPC_STRIP.OPEN, (event) => {
+    if (!fromStrip(event)) return;
+    openFromStrip();
+  });
+  ipcMain.on(IPC_STRIP.MENU, (event) => {
+    if (!fromStrip(event)) return;
+    if (tray) tray.popUpMenu();
+  });
+
   // "Şimdi değil" on the first-run card. Persist, then push; nothing to apply.
   ipcMain.handle(IPC.SET_SETUP_COACH_DISMISSED, createSetSetupCoachDismissedHandler({
     fromPanel,
@@ -669,6 +736,7 @@ function bootstrap() {
   collector.on('snapshot', (snapshot) => {
     if (panel) panel.send(IPC.SNAPSHOT, snapshot);
     updateTray(snapshot);
+    if (strip) strip.update(snapshot);
   });
   collector.on('stats', (stats) => {
     log.info(`scan: ${stats.filesParsed}/${stats.filesSeen} files, ${stats.records} events, ${stats.ms} ms`);
@@ -748,6 +816,12 @@ function bootstrap() {
   });
   tray.create(trayMenuOptions());
 
+  // After the tray, which it leans on for its right-click menu. Built always,
+  // shown only for 'strip'; koffi is not even loaded for 'tray'. A status
+  // change (shown, unavailable) is pushed so the settings screen can say it.
+  strip = new TaskbarStrip({ BrowserWindow, log, onChange: () => pushPreferences() });
+  applyTrayView(settings.trayView);
+
   // The user flipping Windows between light and dark changes no snapshot
   // field, so nothing else in this process would ever ask for a repaint. The
   // ground is in the icon key, so this call finds a changed key and redraws;
@@ -755,6 +829,11 @@ function bootstrap() {
   nativeTheme.on('updated', () => {
     log.trace('os.theme', { ground: trayGround() });
     if (collector && collector.snapshot) updateTray(collector.snapshot);
+    // The taskbar repaints a moment after the event; read its colour then.
+    if (strip) {
+      const timer = setTimeout(() => { if (strip) strip.themeChanged(); }, 700);
+      if (timer.unref) timer.unref();
+    }
   });
 
   // The collector emitted its first snapshot inside start(), before the tray
@@ -864,6 +943,9 @@ app.on('window-all-closed', () => { /* stay resident in the tray */ });
 app.on('before-quit', () => {
   isQuitting = true;
   if (collector) collector.stop();
+  // Off the taskbar before the tray goes: the strip's window, its timers and
+  // its UI Automation worker stop here, not at process teardown.
+  if (strip) strip.disable();
   if (tray) tray.destroy();
   trayIconDrawnKey = null;
   trayTooltipShown = null;

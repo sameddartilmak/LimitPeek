@@ -39,6 +39,17 @@ const IPC = {
   DISCONNECT_PROVIDER: 'provider:disconnect',
   SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
   PANEL_HIT: 'panel:hit',
+  SET_TRAY_VIEW: 'prefs:set-tray-view',
+};
+
+/**
+ * The taskbar strip's own channels, mirrored from `contract.ts` IPC_STRIP
+ * under the same drift test. Only `strip-preload.js` speaks them.
+ */
+const IPC_STRIP = {
+  DATA: 'strip:data',
+  OPEN: 'strip:open',
+  MENU: 'strip:menu',
 };
 
 /**
@@ -63,4 +74,4 @@ const IPC_EXT = {
   INITIAL_PREFERENCES: 'prefs:initial',
 };
 
-module.exports = { IPC, IPC_EXT, STATE_THRESHOLDS };
+module.exports = { IPC, IPC_EXT, IPC_STRIP, STATE_THRESHOLDS };

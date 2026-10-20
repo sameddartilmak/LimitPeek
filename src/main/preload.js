@@ -33,6 +33,7 @@ const CH = {
   DISCONNECT_PROVIDER: 'provider:disconnect',
   SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
   PANEL_HIT: 'panel:hit',
+  SET_TRAY_VIEW: 'prefs:set-tray-view',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -211,6 +212,16 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   setSetupCoachDismissed: (dismissed) => ipcRenderer.invoke(CH.SET_SETUP_COACH_DISMISSED, dismissed === true),
+
+  /**
+   * Persists where the usage is shown outside the panel: 'tray' or 'strip'.
+   * Coerced to a string for convenience only; main checks it against the two
+   * literals. `{ok:false}` means nothing changed anywhere.
+   *
+   * @param {'tray'|'strip'} view
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setTrayView: (view) => ipcRenderer.invoke(CH.SET_TRAY_VIEW, String(view)),
 
   /**
    * Persists the plan the user says they are on for ONE tool, or clears it.

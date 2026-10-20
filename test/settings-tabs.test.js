@@ -477,3 +477,64 @@ test.describe('Settings → Tools tooltips say what "bağlı" means (2026-09-30)
     assert.notEqual(tip.meta, 'Ana panelde · bağlı', 'the tooltip only repeated the line');
   });
 });
+
+// ------------------------------------------- Görünüm: tray icon or taskbar strip
+
+test.describe('Görünüm: "Tepsi simgesi" or "Görev çubuğu şeridi", on the "Genel" tab', () => {
+  function mountView() {
+    const picked = [];
+    const handle = settingsMod.createSettings({
+      onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
+      onDisconnect() {},
+      onTrayView(view) { picked.push(view); },
+    });
+    const group = walk(handle.el).find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--tray-view'));
+    assert.ok(group, 'no tray view group');
+    const radios = walk(group).filter((el) => el.tagName === 'INPUT');
+    return { handle, group, radios, picked };
+  }
+
+  test('two native radios in a named group, on the Genel tab under the Görünüm heading', () => {
+    const { handle, group, radios } = mountView();
+    assert.deepEqual(radios.map((r) => [r.getAttribute('type'), r.getAttribute('value')]), [['radio', 'tray'], ['radio', 'strip']]);
+    const labels = walk(group).filter((el) => el.tagName === 'LABEL').map((el) => el.textContent);
+    assert.deepEqual(labels, ['Tepsi simgesi', 'Görev çubuğu şeridi']);
+    assert.ok(walk(group).find((el) => el.tagName === 'LEGEND').textContent, 'the group has a name');
+    // It sits in the "Genel" panel, after the theme group and before "Dil".
+    const general = walk(handle.el).find((el) => el.getAttribute('role') === 'tabpanel' && walk(el).includes(group));
+    assert.ok(general, 'not on a tab panel');
+    const kids = walk(general);
+    const heading = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Görünüm');
+    const language = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Dil');
+    assert.ok(kids.indexOf(heading) < kids.indexOf(group) && kids.indexOf(group) < kids.indexOf(language));
+  });
+
+  test('the checked radio follows the state, and a pick tells the app', () => {
+    const { handle, radios, picked } = mountView();
+    handle.render(state({ trayView: 'tray', trayViewPending: false, trayViewReverted: false, stripAvailable: true }), []);
+    assert.deepEqual(radios.map((r) => r.checked), [true, false]);
+    radios[1].checked = true;
+    radios[1].dispatch('change');
+    assert.deepEqual(picked, ['strip']);
+    handle.render(state({ trayView: 'strip', trayViewPending: true, trayViewReverted: false, stripAvailable: true }), []);
+    assert.deepEqual(radios.map((r) => r.checked), [false, true]);
+  });
+
+  test('the help line explains; when the strip cannot be shown here it says so instead', () => {
+    const { handle, group } = mountView();
+    const help = walk(group).find((el) => el.tagName === 'P');
+    handle.render(state({ trayView: 'strip', stripAvailable: true }), []);
+    assert.match(help.textContent, /saatin solunda/);
+    assert.equal(group.getAttribute('data-unavailable'), null);
+    handle.render(state({ trayView: 'strip', stripAvailable: false }), []);
+    assert.match(help.textContent, /gösterilemiyor; tepsi simgesi kullanılıyor/);
+    assert.equal(group.getAttribute('data-unavailable'), 'true');
+    handle.render(state({ trayView: 'tray', stripAvailable: false }), []);
+    assert.equal(group.getAttribute('data-unavailable'), null, 'no note while the tray icon is chosen');
+    handle.render(state({ trayView: 'strip', stripAvailable: true, stripNoRoom: true }), []);
+    assert.match(help.textContent, /Görev çubuğunda şerit için yer yok/);
+    assert.equal(group.getAttribute('data-unavailable'), 'true');
+    handle.render(state({ trayView: 'strip', stripAvailable: false, stripNoRoom: true }), []);
+    assert.match(help.textContent, /gösterilemiyor/, '"cannot be shown here" wins over "no room"');
+  });
+});

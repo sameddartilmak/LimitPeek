@@ -28,6 +28,7 @@ import type {
   Provenance,
   ProviderSnapshot,
   RefreshNotice,
+  TrayView,
   RowStatus,
   SetupAction,
   SetupKind,
@@ -1064,7 +1065,15 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   // Only a real `false` opens the first-run card; a main that predates the
   // field, or any odd value, keeps it closed.
   const setupCoachDismissed = source.setupCoachDismissed !== false;
-  return { theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed };
+  // Görünüm: anything but the two literals is the tray icon, as main's own
+  // load() says; and only a real `false` claims the strip cannot be shown.
+  const trayView: TrayView = source.trayView === 'strip' ? 'strip' : 'tray';
+  const stripAvailable = source.stripAvailable !== false;
+  const stripNoRoom = source.stripNoRoom === true;
+  return {
+    theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed,
+    trayView, stripAvailable, stripNoRoom,
+  };
 }
 
 /** Returns null when the payload is not a usable Snapshot at all. */

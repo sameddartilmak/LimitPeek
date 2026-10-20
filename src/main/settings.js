@@ -6,6 +6,7 @@ const { sanitizeEnabled } = require('../core/enabled');
 const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeLanguage, DEFAULT_LANGUAGE } = require('../core/language');
 const { migratePlanLabels } = require('../core/plan-labels');
+const { sanitizeTrayView, DEFAULT_TRAY_VIEW } = require('../core/tray-view');
 
 /**
  * App settings, stored in the app's own userData. Small and hand-editable.
@@ -66,6 +67,13 @@ const DEFAULTS = Object.freeze({
    * someone who has used the app for weeks (UI plan 2026-09-29).
    */
   setupCoachDismissed: false,
+  /**
+   * 'tray' | 'strip': where the usage is shown outside the panel (Settings →
+   * Genel → Görünüm). 'tray' is the tray icon alone, the look every earlier
+   * version had; 'strip' adds the taskbar strip (src/main/taskbar-strip.js).
+   * An unknown value is 'tray', see `src/core/tray-view.js`.
+   */
+  trayView: DEFAULT_TRAY_VIEW,
 });
 
 function file(userDataDir) {
@@ -115,6 +123,9 @@ function load(userDataDir) {
     // Absent means "written before the first-run card existed": an existing
     // user, who is not shown onboarding by an update.
     setupCoachDismissed: typeof raw.setupCoachDismissed === 'boolean' ? raw.setupCoachDismissed : true,
+    // Absent (every file written before the strip existed), a typo or a
+    // future value: the tray icon, the look the user already has.
+    trayView: sanitizeTrayView(raw.trayView),
   };
 }
 

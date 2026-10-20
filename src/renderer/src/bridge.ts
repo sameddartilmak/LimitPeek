@@ -19,6 +19,7 @@ import type {
   Preferences,
   Snapshot,
   ThemeChoice,
+  TrayView,
   UsageNotchApi,
 } from '../../shared/contract.js';
 import { sanitizeAnchor, sanitizePreferences, sanitizeSnapshot } from './sanitize.js';
@@ -103,6 +104,11 @@ export interface Bridge {
   setAutostart(enabled: boolean): Promise<boolean>;
   /** Persist "Şimdi değil" on the first-run card. `false` means nothing changed. */
   setSetupCoachDismissed(dismissed: boolean): Promise<boolean>;
+  /**
+   * Persist Görünüm, tray icon or taskbar strip (IPC.SET_TRAY_VIEW). Same
+   * all-or-nothing promise as setAutostart: `false` means main wrote NOTHING.
+   */
+  setTrayView(view: TrayView): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
@@ -140,6 +146,7 @@ function nullBridge(): Bridge {
     setLanguage: async () => false,
     setAutostart: async () => false,
     setSetupCoachDismissed: async () => false,
+    setTrayView: async () => false,
     close: () => {},
     pin: () => {},
     setPointerOverPanel: () => {},
@@ -388,6 +395,20 @@ export function createBridge(): Bridge {
       }
       try {
         const result = await api.setAutostart(enabled);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** Mirrors setAutostart: any failure is a real instruction to revert. */
+    async setTrayView(view: TrayView): Promise<boolean> {
+      if (typeof api.setTrayView !== 'function') {
+        missing('setTrayView');
+        return false;
+      }
+      try {
+        const result = await api.setTrayView(view);
         return !!result && result.ok === true;
       } catch {
         return false;

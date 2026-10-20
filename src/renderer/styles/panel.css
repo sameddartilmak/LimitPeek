@@ -1192,6 +1192,10 @@
   border-radius: 6px;
 }
 
+/* Görünüm's second group (tray icon / taskbar strip). The strip could not be
+ * shown here: the help line says so, a step brighter than an explanation. */
+.theme--tray-view[data-unavailable="true"] .theme__help { color: var(--ink-200); }
+
 /* --------------------------------------------------------- total usage */
 /* Per-period notional cost. Never a merged token total (README/ADR-001); the
  * figures arrive resolved from main and the section only frames and lays them
