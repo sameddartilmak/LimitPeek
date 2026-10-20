@@ -554,7 +554,11 @@ if (params.get('bare') === '1' && window.parent !== window) {
   window.addEventListener('wheel', (event) => {
     if (event.ctrlKey || canScroll(event.target, event.deltaY)) return;
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1;
-    try { window.parent.scrollBy({ top: event.deltaY * unit, left: event.deltaX * unit }); } catch { /* not same-origin */ }
+    // 'instant': the site sets smooth scrolling, and a smooth scroll restarted
+    // on every wheel tick crawls and stutters instead of following the wheel.
+    try {
+      window.parent.scrollBy({ top: event.deltaY * unit, left: event.deltaX * unit, behavior: 'instant' });
+    } catch { /* not same-origin */ }
   }, { passive: true });
 }
 remount(SCENARIOS.find((s) => s.id === params.get('s')) ?? (SCENARIOS[0] as Scenario));
