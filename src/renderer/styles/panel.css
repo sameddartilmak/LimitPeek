@@ -1661,7 +1661,7 @@
 
 .usage__empty {
   margin: 0;
-  padding: var(--s-2) var(--s-4) var(--s-3);
+  padding: var(--s-2) calc(var(--s-4) + var(--s-4)) var(--s-3);
   font-size: var(--fs-meta);
   color: var(--ink-400);
 }
