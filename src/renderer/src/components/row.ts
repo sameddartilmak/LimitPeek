@@ -742,7 +742,7 @@ function chevron(): SVGElement {
     svg('path', {
       d: 'M6 4l4 4-4 4',
       stroke: 'currentColor',
-      'stroke-width': '1.4',
+      'stroke-width': '1.5',
       'stroke-linecap': 'round',
       'stroke-linejoin': 'round',
     }),
