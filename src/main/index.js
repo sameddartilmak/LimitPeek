@@ -752,6 +752,9 @@ function bootstrap() {
     onVisibilityChange: (visible) => {
       if (!visible) collector.setPanelOpen(false);
     },
+    // With the strip on, the foreground goes back to the user's window rather
+    // than to the taskbar, which would cover the strip (TaskbarStrip.handBackFocus).
+    onBeforeConceal: () => { if (strip) strip.handBackFocus(); },
   });
   panel.create();
 

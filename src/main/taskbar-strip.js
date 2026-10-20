@@ -201,6 +201,9 @@ class TaskbarStrip {
     this._wanted = false;
     this._dead = false;
     this._status = 'off';
+    /** The last window the user worked in (see handBackFocus). */
+    this._lastApp = 0;
+    this._pid = process.pid;
     this._timers = [];
     this._snapshot = null;
 
@@ -366,7 +369,9 @@ class TaskbarStrip {
   _guard() {
     if (this._dead || !this._wanted || !this._api) return;
     const api = this._api;
-    const fullscreen = isFullscreen(api.foreground(), this._monitor, this._hwnd);
+    const fg = api.foreground();
+    this._noteForeground(fg);
+    const fullscreen = isFullscreen(fg, this._monitor, this._hwnd);
     if (this._status === 'covered' && !fullscreen) {
       this._sync('poll');
       return;
@@ -377,6 +382,40 @@ class TaskbarStrip {
       return;
     }
     if (api.isBelow(this._hwnd, this._bar)) api.raise(this._hwnd);
+  }
+
+  /**
+   * The last window the user was working in: not the shell, not the desktop,
+   * not one of ours. handBackFocus() returns the foreground to it.
+   */
+  _noteForeground(fg) {
+    if (!fg || !fg.hwnd || NOT_FULLSCREEN.has(fg.cls)) return;
+    if (this._api.pidOf(fg.hwnd) === this._pid) return;
+    this._lastApp = fg.hwnd;
+  }
+
+  /**
+   * The panel is about to close. Without this, Windows gives the foreground to
+   * the taskbar (the tray was the last thing clicked), and a foreground taskbar
+   * sits in a z-band above every ordinary window: the strip vanished under it
+   * and came back on the next click, a blink on every open and close (owner,
+   * 2026-10-20; measured: the foreground was Shell_TrayWnd right after the
+   * panel went). Hand it back to the window the user was in, or to the
+   * desktop, as Windows' own flyouts do. Only when the foreground is still
+   * ours or the taskbar: a panel closed by clicking another app has already
+   * given the foreground to that app.
+   *
+   * @returns {boolean} whether the foreground was handed on
+   */
+  handBackFocus() {
+    if (this._dead || !this._wanted || !this._shown || !this._api) return false;
+    const api = this._api;
+    const fg = api.foreground();
+    const ours = Boolean(fg && fg.hwnd && api.pidOf(fg.hwnd) === this._pid);
+    const shell = Boolean(fg && (fg.cls === 'Shell_TrayWnd' || fg.cls === 'Shell_SecondaryTrayWnd'));
+    if (!ours && !shell) return false;
+    const target = this._lastApp && api.isLiveWindow(this._lastApp) ? this._lastApp : api.findDesktop();
+    return target ? api.setForeground(target) : false;
   }
 
   _sync(reason) {

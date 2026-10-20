@@ -209,6 +209,12 @@ class PanelWindow {
     this._open = false;
     this.onPinChange = options.onPinChange || (() => {});
     this.onVisibilityChange = options.onVisibilityChange || (() => {});
+    /**
+     * Called while a visible panel is still on screen and still holds the
+     * foreground, just before it is concealed: the moment the taskbar strip
+     * hands the foreground back (TaskbarStrip.handBackFocus).
+     */
+    this.onBeforeConceal = options.onBeforeConceal || (() => {});
   }
 
   create() {
@@ -692,6 +698,7 @@ class PanelWindow {
       // next show is the composite transition that flashes; a moved one has no
       // show to pay for. `_conceal()` clears `_open`, so `isVisible()` reads
       // false from here on.
+      try { this.onBeforeConceal(); } catch (err) { log.warn(`panel: before-conceal hook failed: code=${(err && err.code) || 'UNKNOWN'}`); }
       this._conceal();
       this.onVisibilityChange(false);
     }

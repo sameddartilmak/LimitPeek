@@ -107,6 +107,10 @@ function bind() {
     SetWindowPos: user32.func('bool __stdcall SetWindowPos(intptr h, intptr after, int x, int y, int cx, int cy, uint flags)'),
     GetWindow: user32.func('intptr __stdcall GetWindow(intptr h, uint cmd)'),
     GetForegroundWindow: user32.func('intptr __stdcall GetForegroundWindow()'),
+    SetForegroundWindow: user32.func('bool __stdcall SetForegroundWindow(intptr h)'),
+    IsWindow: user32.func('bool __stdcall IsWindow(intptr h)'),
+    IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(intptr h)'),
+    GetWindowThreadProcessId: user32.func('uint32 __stdcall GetWindowThreadProcessId(intptr h, _Out_ uint32_t* pid)'),
     GetClassNameW: user32.func('int __stdcall GetClassNameW(intptr h, _Out_ uint16_t* buf, int n)'),
     MonitorFromWindow: user32.func('intptr __stdcall MonitorFromWindow(intptr h, uint flags)'),
     GetMonitorInfoW: user32.func('bool __stdcall GetMonitorInfoW(intptr m, _Inout_ UN_MONITORINFO* info)'),
@@ -188,6 +192,19 @@ function makeApi(f) {
       if (!h) return null;
       return { hwnd: h, cls: classOf(h), rect: rectOf(h) };
     }, null),
+    /** The process that owns a window, or 0. */
+    pidOf: guard('pidOf', (h) => {
+      const pid = [0];
+      if (!h) return 0;
+      f.GetWindowThreadProcessId(h, pid);
+      return num(pid[0]);
+    }, 0),
+    /** A window that still exists and is shown. */
+    isLiveWindow: guard('isLiveWindow', (h) => Boolean(h && f.IsWindow(h) && f.IsWindowVisible(h)), false),
+    /** Hand the foreground to a window; Windows may refuse, which is fine. */
+    setForeground: guard('setForeground', (h) => Boolean(h && f.SetForegroundWindow(h)), false),
+    /** The desktop window (Progman), or 0. */
+    findDesktop: guard('findDesktop', () => num(f.FindWindowW('Progman', null)), 0),
     /**
      * Our window: out of Alt+Tab, never activated by a click, and topmost.
      * The ONE place the z-order is set without being asked for (see raise).

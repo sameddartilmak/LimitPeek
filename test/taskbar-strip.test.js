@@ -367,6 +367,10 @@ function fakeWin32({ available = true } = {}) {
     raised: 0,
     samples: 0,
     loads: 0,
+    pids: {},
+    live: new Set([9]),
+    handed: [],
+    desktop: 5,
   };
   const api = {
     findTaskbar: () => state.bar,
@@ -385,6 +389,10 @@ function fakeWin32({ available = true } = {}) {
     isBelow: () => state.below,
     raise: () => { state.raised += 1; state.below = false; return true; },
     sampleColour: () => { state.samples += 1; return state.colour; },
+    pidOf: (h) => state.pids[h] || 4242,
+    isLiveWindow: (h) => state.live.has(h),
+    setForeground: (h) => { state.handed.push(h); return true; },
+    findDesktop: () => state.desktop,
   };
   return {
     state,
@@ -590,6 +598,48 @@ test.describe('room on the taskbar', () => {
     r.probe.onChange(r.probe.rect);
     assert.equal(r.strip.status(), 'no-room');
     assert.equal(w.hidden, 1);
+  });
+});
+
+test.describe('the foreground after the panel closes (owner, 2026-10-20: the strip blinked)', () => {
+  const TASKBAR_FG = { hwnd: 100, cls: 'Shell_TrayWnd', rect: { ...BAR } };
+  const panelFg = () => ({ hwnd: 31, cls: 'Chrome_WidgetWin_1', rect: { left: 1240, top: 110, right: 1840, bottom: 1010 } });
+
+  test('the panel closing hands the foreground back to the window the user was in', () => {
+    const r = shownRig();
+    r.guard(); // Notepad (hwnd 9) is the foreground: remembered
+    r.w32.state.pids[31] = process.pid;
+    r.w32.state.foreground = panelFg();
+    r.guard(); // our own panel is never remembered
+    assert.equal(r.strip.handBackFocus(), true);
+    assert.deepEqual(r.w32.state.handed, [9]);
+  });
+
+  test('a foreground taskbar is handed on too; a closed window falls back to the desktop', () => {
+    const r = shownRig();
+    r.guard();
+    r.w32.state.live.delete(9);
+    r.w32.state.foreground = TASKBAR_FG;
+    r.guard(); // the shell is never remembered
+    assert.equal(r.strip.handBackFocus(), true);
+    assert.deepEqual(r.w32.state.handed, [5]);
+  });
+
+  test('a panel closed by clicking another app leaves that app alone', () => {
+    const r = shownRig();
+    r.guard();
+    r.w32.state.live.add(12);
+    r.w32.state.foreground = { hwnd: 12, cls: 'Chrome_WidgetWin_1', rect: { left: 0, top: 0, right: 800, bottom: 600 } };
+    assert.equal(r.strip.handBackFocus(), false);
+    assert.deepEqual(r.w32.state.handed, []);
+  });
+
+  test('with the strip off or not shown, nothing is touched', () => {
+    const r = rig();
+    assert.equal(r.strip.handBackFocus(), false);
+    r.strip.enable();
+    assert.equal(r.strip.handBackFocus(), false, 'enabled but nothing shown yet');
+    assert.deepEqual(r.w32.state.handed, []);
   });
 });
 

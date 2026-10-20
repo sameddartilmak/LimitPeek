@@ -129,6 +129,21 @@ test.describe('pinned means the panel stays', () => {
     assert.equal(panel.win.isFocused(), true);
   });
 
+  test('closing a visible panel calls onBeforeConceal while it is still on screen, once', () => {
+    const seen = [];
+    const panel = new PanelWindow({ entry: __filename, onBeforeConceal: () => seen.push(panel.isVisible()) });
+    panel.create();
+    panel.pin({ x: 1800, y: 1032, width: 24, height: 48 }, () => {});
+    panel.hide();
+    panel.hide(); // already hidden: no second call
+    assert.deepEqual(seen, [true]);
+    const throwing = new PanelWindow({ entry: __filename, onBeforeConceal: () => { throw new Error('x'); } });
+    throwing.create();
+    throwing.pin({ x: 1800, y: 1032, width: 24, height: 48 }, () => {});
+    throwing.hide();
+    assert.equal(throwing.isVisible(), false, 'a failing hook never keeps the panel up');
+  });
+
   test('an explicit close ends it, and clears the pinned state', () => {
     const { panel, send, trayRect, pins } = build();
     panel.pin(trayRect, send);
