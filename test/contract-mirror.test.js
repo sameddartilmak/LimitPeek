@@ -164,7 +164,10 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   for (const gone of ['requestKeyEntry', 'removeKey', 'openTokenPage', 'refreshKey']) {
     assert.equal(declared.has(gone), false, `${gone}() belonged to the removed key feature`);
   }
-  assert.equal(declared.size, 22, `expected the 22 declared methods, saw ${[...declared].join(',')}`);
+  // 23 with setReduceTransparency (2026-10-21): Görünüm → "Saydamlığı
+  // azalt", the panel's glass drawn opaque. A local settings write; no network.
+  assert.ok(declared.has('setReduceTransparency'), 'contract.ts should declare setReduceTransparency()');
+  assert.equal(declared.size, 23, `expected the 23 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const IPC_STRIP = { ... } as const;`. */

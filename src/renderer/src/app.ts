@@ -79,6 +79,18 @@ function paintGauge(gauge: Gauge): void {
   document.documentElement.dataset.gauge = gauge;
 }
 
+/**
+ * Görünüm → "Saydamlığı azalt" on the document: tokens.css turns every glass
+ * surface opaque under `html[data-reduce-transparency]`. Set when the user
+ * asked OR Windows did (reduced transparency, high contrast; the CSS media
+ * features say the same live, this covers what main measured). Frame one,
+ * like the gauge, or the glass flashes before it goes opaque.
+ */
+function paintGlass(reduce: boolean, system: boolean): void {
+  if (reduce || system) document.documentElement.dataset.reduceTransparency = 'true';
+  else delete document.documentElement.dataset.reduceTransparency;
+}
+
 export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const store = new Store();
   const disposers: Array<() => void> = [];
@@ -94,6 +106,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   applyLocale(initialPrefs);
   const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
   paintGauge(initialPrefs?.gauge ?? 'bar');
+  paintGlass(initialPrefs?.reduceTransparency === true, initialPrefs?.systemReducedTransparency === true);
   store.set({
     theme: theme.choice(),
     language: initialPrefs?.language ?? 'system',
@@ -105,6 +118,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     stripAvailable: initialPrefs?.stripAvailable ?? true,
     stripNoRoom: initialPrefs?.stripNoRoom ?? false,
     gauge: initialPrefs?.gauge ?? 'bar',
+    reduceTransparency: initialPrefs?.reduceTransparency === true,
+    systemReducedTransparency: initialPrefs?.systemReducedTransparency === true,
   });
   disposers.push(() => theme.destroy());
   // 400 ms on hover, at once on keyboard focus (tooltip.ts).
@@ -166,6 +181,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onAutostartChange: (enabled) => void applyAutostart(enabled),
     onTrayViewChange: (view) => void applyTrayView(view),
     onGaugeChange: (gauge) => void applyGauge(gauge),
+    onReduceTransparencyChange: (reduce) => void applyReduceTransparency(reduce),
     coachDismissed: false,
     onReorder: (ids) => void applyOrder(ids),
     onKeepAlive: () => bridge.panelOpened(),
@@ -594,6 +610,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     acceptAutostart(prefs);
     acceptTrayView(prefs);
     acceptGauge(prefs);
+    acceptReduceTransparency(prefs);
     // Main's persisted answer. Only ever moves the card SHUT from here: a push
     // that crossed a "Şimdi değil" in flight must not re-open it under the user.
     if (prefs.setupCoachDismissed && !store.get().setupCoachDismissed) {
@@ -753,6 +770,58 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     if (prefs.gauge === store.get().gauge) return;
     paintGauge(prefs.gauge);
     store.set({ gauge: prefs.gauge });
+  }
+
+  // --- Görünüm: "Saydamlığı azalt" -----------------------------------------
+
+  /** The newest value asked of main. Same shape as gaugeRequest. */
+  let glassRequest: { reduce: boolean; at: number } | null = null;
+  /** Same role as `confirmedGauge`: what main is known to hold. */
+  let confirmedReduce: boolean = store.get().reduceTransparency;
+
+  /**
+   * Optimistic, then reconciled, exactly like applyGauge: the glass goes
+   * opaque (or comes back) on the gesture and main is asked afterwards.
+   * `{ok:false}` puts the old value back on the document as well as on the
+   * switch, so the screen never shows a choice that will not survive a
+   * restart.
+   */
+  async function applyReduceTransparency(next: boolean): Promise<void> {
+    if (next === store.get().reduceTransparency) return;
+
+    const request = { reduce: next, at: Date.now() };
+    glassRequest = request;
+    paintGlass(next, store.get().systemReducedTransparency);
+    store.set({ reduceTransparency: next, reduceTransparencyPending: true, reduceTransparencyReverted: false, notice: null });
+
+    const ok = await bridge.setReduceTransparency(next);
+    if (ok) confirmedReduce = next;
+
+    if (glassRequest !== request) return;
+    glassRequest = null;
+    store.set({ reduceTransparencyPending: false });
+    if (ok) return;
+
+    paintGlass(confirmedReduce, store.get().systemReducedTransparency);
+    store.set({ reduceTransparency: confirmedReduce, reduceTransparencyReverted: true });
+    say(t('app.reduceTransparencyNotSaved'), 'error');
+    window.setTimeout(() => {
+      if (store.get().reduceTransparencyReverted) store.set({ reduceTransparencyReverted: false });
+    }, 1_600);
+  }
+
+  /**
+   * Main's values, pushed. Windows' half is adopted at once (it is not the
+   * user's to revert); the user's half unless a flip is still in flight.
+   */
+  function acceptReduceTransparency(prefs: Preferences): void {
+    confirmedReduce = prefs.reduceTransparency;
+    const system = prefs.systemReducedTransparency;
+    const reduce = glassRequest !== null ? store.get().reduceTransparency : prefs.reduceTransparency;
+    const current = store.get();
+    if (reduce === current.reduceTransparency && system === current.systemReducedTransparency) return;
+    paintGlass(reduce, system);
+    store.set({ reduceTransparency: reduce, systemReducedTransparency: system });
   }
 
   // --- language -----------------------------------------------------------

@@ -41,6 +41,7 @@ const IPC = {
   PANEL_HIT: 'panel:hit',
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   SET_GAUGE: 'prefs:set-gauge',
+  SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
 };
 
 /**

@@ -35,6 +35,7 @@ const CH = {
   PANEL_HIT: 'panel:hit',
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   SET_GAUGE: 'prefs:set-gauge',
+  SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -233,6 +234,16 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   setGauge: (gauge) => ipcRenderer.invoke(CH.SET_GAUGE, String(gauge)),
+
+  /**
+   * Persists "Saydamlığı azalt": the panel's glass drawn opaque. Passed as
+   * the boolean it is (`=== true`, never truthiness); main checks it is a real
+   * boolean. `{ok:false}` means nothing changed anywhere.
+   *
+   * @param {boolean} reduce
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setReduceTransparency: (reduce) => ipcRenderer.invoke(CH.SET_REDUCE_TRANSPARENCY, reduce === true),
 
   /**
    * Persists the plan the user says they are on for ONE tool, or clears it.

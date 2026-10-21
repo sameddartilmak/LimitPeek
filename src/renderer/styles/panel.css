@@ -1226,6 +1226,11 @@
  * a whole sentence rather than a status word, so it wraps instead of being cut
  * off at the switch. */
 .settings__item--autostart .settings__meta { white-space: normal; }
+/* A switch row has no plan field to wrap below it, and a help line long
+ * enough to fill the row ("Saydamlığı azalt") must wrap inside the text
+ * column rather than push the switch onto a line of its own. */
+.settings__item--autostart { flex-wrap: nowrap; }
+.settings__item--autostart .switch { flex: none; }
 
 @keyframes settings-revert {
   0%, 45% { background: color-mix(in srgb, var(--watch) 22%, var(--ink-800)); }

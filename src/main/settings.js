@@ -8,6 +8,7 @@ const { sanitizeLanguage, DEFAULT_LANGUAGE } = require('../core/language');
 const { migratePlanLabels } = require('../core/plan-labels');
 const { sanitizeTrayView, DEFAULT_TRAY_VIEW } = require('../core/tray-view');
 const { sanitizeGauge, DEFAULT_GAUGE } = require('../core/gauge');
+const { sanitizeReduceTransparency, DEFAULT_REDUCE_TRANSPARENCY } = require('../core/reduce-transparency');
 
 /**
  * App settings, stored in the app's own userData. Small and hand-editable.
@@ -82,6 +83,13 @@ const DEFAULTS = Object.freeze({
    * 'bar', see `src/core/gauge.js`.
    */
   gauge: DEFAULT_GAUGE,
+  /**
+   * Settings → Genel → Görünüm → "Saydamlığı azalt": the panel's glass
+   * (header, settings tab band) drawn opaque. Off by default; only a real
+   * `true` is on, see `src/core/reduce-transparency.js`. Windows' own reduced
+   * transparency and high contrast do the same without touching this.
+   */
+  reduceTransparency: DEFAULT_REDUCE_TRANSPARENCY,
 });
 
 function file(userDataDir) {
@@ -137,6 +145,9 @@ function load(userDataDir) {
     // Absent (every file written before the rings existed), a typo or a
     // future value: the bars, the look the user already has.
     gauge: sanitizeGauge(raw.gauge),
+    // Absent (every file written before the glass existed) or not a real
+    // boolean: the glass, the look the trial ships with.
+    reduceTransparency: sanitizeReduceTransparency(raw.reduceTransparency),
   };
 }
 

@@ -48,6 +48,7 @@ const { DisplayLayer } = require('./taskbar-display');
 const { createSetTrayViewHandler } = require('./tray-view-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
 const { createSetGaugeHandler } = require('./gauge-ipc');
+const { createSetReduceTransparencyHandler } = require('./reduce-transparency-ipc');
 
 // userData is %APPDATA%\usage-notch by name, whatever the product is called
 // (packaging.js). First, before the early exits below and the single-instance
@@ -194,7 +195,20 @@ const preferences = createPreferences({
   storeBuild: () => isStoreBuild(),
   stripAvailable: () => !strip || strip.available(),
   stripNoRoom: () => Boolean(strip && strip.status() === 'no-room'),
+  // Windows' "Saydamlık efektleri" off, or high contrast on: the panel's glass
+  // goes opaque (Görünüm → "Saydamlığı azalt" says why). Re-read on every
+  // build; nativeTheme 'updated' below pushes when either moves.
+  systemReducedTransparency: () => systemReducedTransparency(),
 });
+
+/** Both nativeTheme reads, guarded: a property this Electron lacks reads as false. */
+function systemReducedTransparency() {
+  try {
+    return nativeTheme.prefersReducedTransparency === true || nativeTheme.inForcedColorsMode === true;
+  } catch {
+    return false;
+  }
+}
 
 // Re-resolves the language and hands it to main's t(), so the tray, the dialogs
 // and the snapshot's setup text cannot disagree.
@@ -584,6 +598,16 @@ function registerIpc() {
     log,
   }));
 
+  // Görünüm: "Saydamlığı azalt". Persist, then push; rollback on a failed
+  // write. Panel only. Tested in reduce-transparency-ipc.js's suite.
+  ipcMain.handle(IPC.SET_REDUCE_TRANSPARENCY, createSetReduceTransparencyHandler({
+    fromPanel,
+    getSettings: () => settings,
+    save: (s) => settingsStore.save(userDataDir(), s),
+    push: pushPreferences,
+    log,
+  }));
+
   // The strip page's clicks: left opens the panel, right shows the tray menu.
   ipcMain.on(IPC_STRIP.OPEN, (event) => {
     if (!fromStrip(event)) return;
@@ -923,9 +947,17 @@ function bootstrap() {
   // field, so nothing else in this process would ever ask for a repaint. The
   // ground is in the icon key, so this call finds a changed key and redraws;
   // if the OS theme did not actually move, the key matches and it is free.
+  let systemGlassOff = systemReducedTransparency();
   nativeTheme.on('updated', () => {
     log.trace('os.theme', { ground: trayGround() });
     if (collector && collector.snapshot) updateTray(collector.snapshot);
+    // High contrast or "Saydamlık efektleri" moved: the settings screen says
+    // why the glass is off. Pushed only on a change, not on every theme event.
+    const glassOff = systemReducedTransparency();
+    if (glassOff !== systemGlassOff) {
+      systemGlassOff = glassOff;
+      pushPreferences();
+    }
     // The taskbar repaints a moment after the event; read its colour then.
     if (strip) {
       const timer = setTimeout(() => { if (strip) strip.themeChanged(); }, 700);

@@ -67,6 +67,8 @@ let prefs: Preferences = {
   stripAvailable: true,
   stripNoRoom: false,
   gauge: 'bar',
+  reduceTransparency: false,
+  systemReducedTransparency: false,
 };
 let prefsCb: ((p: Preferences) => void) | null = null;
 
@@ -277,6 +279,14 @@ function makeBridge(scenario: Scenario): Bridge {
     async setGauge(gauge: 'bar' | 'ring'): Promise<boolean> {
       log(`setGauge(${gauge})`);
       prefs = { ...prefs, gauge };
+      prefsCb?.(prefs);
+      return true;
+    },
+
+    /** Persist, then push, like setGauge. */
+    async setReduceTransparency(reduce: boolean): Promise<boolean> {
+      log(`setReduceTransparency(${reduce})`);
+      prefs = { ...prefs, reduceTransparency: reduce };
       prefsCb?.(prefs);
       return true;
     },
@@ -546,6 +556,7 @@ controls.appendChild(logBox);
  *   ?s=<scenario id>  &theme=light|dark  &lang=en  &coach=done
  *   &view=settings  &tab=providers|usage|general  &expand=<provider id>
  *   &gauge=ring (Görünüm → Gösterge: rings instead of bars)
+ *   &rt=1 (Görünüm → "Saydamlığı azalt" on)  &rtsys=1 (Windows asks for it)
  *   &shot=1 (the panel alone, no controls)
  *   &bare=1 (with shot: a transparent page, so the site's desktop scene shows
  *           around the panel, as the real transparent window does)
@@ -561,6 +572,9 @@ if (params.get('coach') === 'done') prefs = { ...prefs, setupCoachDismissed: tru
 // ?gauge=ring: the activity rings instead of bars, through the same
 // preference the Settings control writes (app.ts paints it in frame one).
 if (params.get('gauge') === 'ring') prefs = { ...prefs, gauge: 'ring' };
+// ?rt=1 / ?rtsys=1: the glass opaque, by the user's switch or by Windows.
+if (params.get('rt') === '1') prefs = { ...prefs, reduceTransparency: true };
+if (params.get('rtsys') === '1') prefs = { ...prefs, systemReducedTransparency: true };
 if (params.get('shot') === '1') document.body.classList.add('hx--shot');
 if (params.get('bare') === '1') document.body.classList.add('hx--bare');
 if (params.get('bare') === '1' && window.parent !== window) {

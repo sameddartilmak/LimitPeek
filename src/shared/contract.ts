@@ -1300,6 +1300,13 @@ export const IPC = {
    * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
    */
   SET_GAUGE: 'prefs:set-gauge',
+  /**
+   * renderer -> main invoke(reduce: boolean). Persists "Saydamlığı azalt",
+   * the panel's glass drawn opaque, then pushes PREFERENCES. Panel only:
+   * nothing is applied in main. Anything but a real boolean is refused.
+   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
+   */
+  SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
 } as const;
 
 /**
@@ -1410,6 +1417,20 @@ export interface Preferences {
    * paint is a visible flash of bars turning into rings.
    */
   gauge: Gauge;
+  /**
+   * Settings → Genel → Görünüm → "Saydamlığı azalt": the panel's glass (the
+   * header, the settings tab band) drawn opaque. Only a real `true` is on.
+   * Read in frame one, like the theme.
+   */
+  reduceTransparency: boolean;
+  /**
+   * Windows itself asks for less transparency: "Saydamlık efektleri" is off,
+   * or high contrast is on (nativeTheme.prefersReducedTransparency /
+   * inForcedColorsMode, re-read on nativeTheme 'updated'). The glass goes
+   * opaque whatever `reduceTransparency` says, and the settings screen says
+   * why. Anything that is not `true` reaches the renderer as `false`.
+   */
+  systemReducedTransparency: boolean;
 }
 
 /**
@@ -1517,6 +1538,8 @@ export interface UsageNotchApi {
   setTrayView(view: TrayView): Promise<{ ok: boolean }>;
   /** Persist bars or rings for the panel's windows. See IPC.SET_GAUGE. */
   setGauge(gauge: Gauge): Promise<{ ok: boolean }>;
+  /** Persist "Saydamlığı azalt". See IPC.SET_REDUCE_TRANSPARENCY. */
+  setReduceTransparency(reduce: boolean): Promise<{ ok: boolean }>;
   /**
    * Persist the plan the user says they are on for ONE tool, or clear it. See
    * IPC.SET_PLAN_LABEL and `ProviderSnapshot.planLabel`.

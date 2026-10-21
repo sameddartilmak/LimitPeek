@@ -84,6 +84,8 @@ const TRAY_VIEW_TITLE_ID = 'settings-tray-view-title';
 const TRAY_VIEW_HELP_ID = 'settings-tray-view-help';
 const GAUGE_TITLE_ID = 'settings-gauge-title';
 const GAUGE_HELP_ID = 'settings-gauge-help';
+const GLASS_NAME_ID = 'settings-glass-name';
+const GLASS_HELP_ID = 'settings-glass-help';
 const AUTOSTART_NAME_ID = 'settings-autostart-name';
 const AUTOSTART_HELP_ID = 'settings-autostart-help';
 
@@ -113,6 +115,8 @@ export interface SettingsContext {
   onTrayView(view: TrayView): void;
   /** The user picked bars or rings. Optimistic; the app owns the revert. */
   onGauge(gauge: Gauge): void;
+  /** The user flipped "Saydamlığı azalt". Optimistic; the app owns the revert. */
+  onReduceTransparency(reduce: boolean): void;
   /** Leave settings and go back to the usage list. */
   onBack(): void;
   /** The user picked a tab. The store keeps it across hide and rebuild. */
@@ -833,6 +837,56 @@ function createGaugeControl(ctx: SettingsContext): GaugeHandleLocal {
     setAttr(root, 'data-pending', state.gaugePending ? 'true' : null);
     setAttr(root, 'data-revert', state.gaugeReverted ? 'true' : null);
     setAttr(root, 'aria-busy', state.gaugePending ? 'true' : null);
+  }
+
+  return { el: root, update };
+}
+
+/**
+ * Görünüm, last part: "Saydamlığı azalt", the panel's glass (the header and
+ * the tab band) drawn opaque. A switch row like "Windows açılışında başlat",
+ * because it is an on/off choice and not one of several looks. While Windows
+ * itself asks for less transparency (or high contrast is on) the glass is
+ * off whatever the switch says, and the line under it says so instead of the
+ * usual help: a switch that seems to do nothing must say why.
+ */
+interface GlassHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+}
+
+function createGlassControl(ctx: SettingsContext): GlassHandleLocal {
+  const name = el('span', { class: 'settings__name', id: GLASS_NAME_ID }, t('settings.glass.label'));
+  const hint = el('span', { class: 'settings__meta', id: GLASS_HELP_ID }, t('settings.glass.help'));
+  const control = el('button', {
+    type: 'button',
+    class: 'switch',
+    role: 'switch',
+    'aria-checked': 'false',
+    'aria-labelledby': GLASS_NAME_ID,
+    'aria-describedby': GLASS_HELP_ID,
+  }) as HTMLButtonElement;
+  control.appendChild(el('span', { class: 'switch__track', 'aria-hidden': 'true' }));
+
+  const root = el(
+    'div',
+    { class: 'settings__item settings__item--autostart settings__item--glass' },
+    el('span', { class: 'settings__text' }, name, hint),
+    control,
+  );
+
+  on(control, 'click', () => {
+    // The rendered state, not a captured one, as the autostart switch does.
+    ctx.onReduceTransparency(control.getAttribute('aria-checked') !== 'true');
+  });
+
+  function update(state: PanelState): void {
+    setText(hint, t(state.systemReducedTransparency ? 'settings.glass.bySystem' : 'settings.glass.help'));
+    setAttr(control, 'aria-checked', state.reduceTransparency ? 'true' : 'false');
+    setAttr(root, 'data-enabled', state.reduceTransparency ? 'true' : 'false');
+    setAttr(control, 'aria-busy', state.reduceTransparencyPending ? 'true' : null);
+    setAttr(root, 'data-pending', state.reduceTransparencyPending ? 'true' : null);
+    setAttr(root, 'data-revert', state.reduceTransparencyReverted ? 'true' : null);
   }
 
   return { el: root, update };
@@ -1767,6 +1821,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   const languageControl = createLanguageControl(ctx);
   const trayView = createTrayViewControl(ctx);
   const gauge = createGaugeControl(ctx);
+  const glass = createGlassControl(ctx);
   const autostart = createAutostartControl(ctx);
   // The first-run introduction, on request: it runs once, so this is the way
   // back to it (and how the owner can look at it again).
@@ -1787,6 +1842,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
           theme.el,
           trayView.el,
           gauge.el,
+          glass.el,
           el('h3', { class: 'settings__heading' }, t('settings.language.legend')),
           languageControl.el,
           autostart.el,
@@ -1863,6 +1919,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     languageControl.update(state);
     trayView.update(state);
     gauge.update(state);
+    glass.update(state);
     autostart.update(state);
     // The FULL snapshot list, not the added subset: a model row names its tool
     // even when that tool's card was removed from the main panel.

@@ -4,6 +4,7 @@ const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeAutostart, DEFAULT_AUTOSTART } = require('./autostart-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
 const { sanitizeGauge } = require('../core/gauge');
+const { sanitizeReduceTransparency } = require('../core/reduce-transparency');
 
 /**
  * The main-process half of the language preference that talks to Electron and
@@ -172,9 +173,11 @@ function createApplyLanguage({ refreshLocale, getTray, trayMenuOptions, resetToo
  * @param {() => boolean} [deps.storeBuild]
  * @param {() => boolean} [deps.stripAvailable]  false once the taskbar strip failed here
  * @param {() => boolean} [deps.stripNoRoom]  true while the strip finds no room on the taskbar
+ * @param {() => boolean} [deps.systemReducedTransparency]  true while Windows asks for less transparency
  */
 function createPreferences({
   getSettings, currentLocale, readOs, storeBuild = () => false, stripAvailable = () => true, stripNoRoom = () => false,
+  systemReducedTransparency = () => false,
 }) {
   return () => {
     const settings = getSettings();
@@ -198,6 +201,11 @@ function createPreferences({
       stripNoRoom: stripNoRoom() === true,
       // Görünüm → Gösterge, re-sanitised: anything but 'ring' is the bars.
       gauge: sanitizeGauge(settings && settings.gauge),
+      // Görünüm → "Saydamlığı azalt", re-sanitised: only a real `true` is on.
+      reduceTransparency: sanitizeReduceTransparency(settings && settings.reduceTransparency),
+      // Windows asks for it (reduced transparency, high contrast). Only a real
+      // `true`, so a nativeTheme without the property means "not asked".
+      systemReducedTransparency: systemReducedTransparency() === true,
     };
   };
 }

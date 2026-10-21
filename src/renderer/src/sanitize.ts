@@ -1074,9 +1074,13 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   // Gösterge: anything but 'ring' is the bars, as main's own load() says; a
   // main from before the rings sends nothing and gets the bars it always drew.
   const gauge: Gauge = source.gauge === 'ring' ? 'ring' : 'bar';
+  // Saydamlığı azalt, and Windows asking for it: only a real `true` either
+  // way, so a main from before the glass sends nothing and gets the glass.
+  const reduceTransparency = source.reduceTransparency === true;
+  const systemReducedTransparency = source.systemReducedTransparency === true;
   return {
     theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed,
-    trayView, stripAvailable, stripNoRoom, gauge,
+    trayView, stripAvailable, stripNoRoom, gauge, reduceTransparency, systemReducedTransparency,
   };
 }
 

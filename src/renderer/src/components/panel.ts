@@ -90,6 +90,8 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onTrayViewChange(view: TrayView): void;
   /** The user picked Görünüm → Gösterge: bars or rings. Optimistic. */
   onGaugeChange(gauge: Gauge): void;
+  /** The user flipped Görünüm → "Saydamlığı azalt". Optimistic. */
+  onReduceTransparencyChange(reduce: boolean): void;
   /** The user pressed a card's "Ayrıntılar". */
   onToggleExpand(providerId: string): void;
   /** "Bağla" on the first-run card: the same consent path, drawn in the card. */
@@ -206,6 +208,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onAutostart: (enabled) => ctx.onAutostartChange(enabled),
     onTrayView: (view) => ctx.onTrayViewChange(view),
     onGauge: (gauge) => ctx.onGaugeChange(gauge),
+    onReduceTransparency: (reduce) => ctx.onReduceTransparencyChange(reduce),
     onBack: () => ctx.onSettingsToggle(),
     onTab: (tab) => ctx.onSettingsTab(tab),
   });

@@ -595,3 +595,61 @@ test.describe('Görünüm → "Gösterge": "Çubuk" or "Halka", on the "Genel" t
     assert.equal(group.getAttribute('data-revert'), 'true');
   });
 });
+
+// ------------------------------------------------ Görünüm: "Saydamlığı azalt"
+
+test.describe('Görünüm → "Saydamlığı azalt": a switch on the "Genel" tab', () => {
+  function mountGlass() {
+    const flipped = [];
+    const handle = settingsMod.createSettings({
+      onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
+      onDisconnect() {}, onTrayView() {}, onGauge() {},
+      onReduceTransparency(reduce) { flipped.push(reduce); },
+    });
+    const row = walk(handle.el).find((el) => (el.getAttribute('class') || '').includes('settings__item--glass'));
+    assert.ok(row, 'no "Saydamlığı azalt" row');
+    const control = walk(row).find((el) => el.getAttribute('role') === 'switch');
+    return { handle, row, control, flipped };
+  }
+
+  test('a real switch named "Saydamlığı azalt", after "Gösterge" and before "Dil"', () => {
+    const { handle, row, control } = mountGlass();
+    assert.equal(control.tagName, 'BUTTON');
+    const name = findById(handle.el, control.getAttribute('aria-labelledby'));
+    assert.equal(name.textContent, 'Saydamlığı azalt');
+    const help = findById(handle.el, control.getAttribute('aria-describedby'));
+    assert.match(help.textContent, /cam efektini kapatır; Windows'ta yüksek kontrast açıksa kendiliğinden kapanır/);
+    const general = walk(handle.el).find((el) => el.getAttribute('role') === 'tabpanel' && walk(el).includes(row));
+    assert.ok(general, 'not on a tab panel');
+    assert.equal(general.getAttribute('data-tab'), 'general');
+    const kids = walk(general);
+    const gauge = kids.find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--gauge'));
+    const language = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Dil');
+    assert.ok(kids.indexOf(gauge) < kids.indexOf(row) && kids.indexOf(row) < kids.indexOf(language));
+  });
+
+  test('the switch follows the state, a press tells the app, pending and revert are on the row', () => {
+    const { handle, row, control, flipped } = mountGlass();
+    handle.render(state({ reduceTransparency: false }), []);
+    assert.equal(control.getAttribute('aria-checked'), 'false');
+    control.click();
+    assert.deepEqual(flipped, [true]);
+    handle.render(state({ reduceTransparency: true, reduceTransparencyPending: true }), []);
+    assert.equal(control.getAttribute('aria-checked'), 'true');
+    assert.equal(control.getAttribute('aria-busy'), 'true');
+    assert.equal(row.getAttribute('data-pending'), 'true');
+    handle.render(state({ reduceTransparency: false, reduceTransparencyReverted: true }), []);
+    assert.equal(control.getAttribute('aria-checked'), 'false');
+    assert.equal(row.getAttribute('data-pending'), null);
+    assert.equal(row.getAttribute('data-revert'), 'true');
+  });
+
+  test('while Windows asks for it, the line under the switch says why the glass is already off', () => {
+    const { handle, control } = mountGlass();
+    const help = findById(handle.el, control.getAttribute('aria-describedby'));
+    handle.render(state({ systemReducedTransparency: true }), []);
+    assert.match(help.textContent, /Windows saydamlığın azaltılmasını istiyor/);
+    handle.render(state({ systemReducedTransparency: false }), []);
+    assert.match(help.textContent, /cam efektini kapatır/);
+  });
+});

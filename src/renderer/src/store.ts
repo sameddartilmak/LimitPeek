@@ -216,6 +216,17 @@ export interface PanelState {
   gaugePending: boolean;
   /** Set briefly when main refused the change and the radio went back. */
   gaugeReverted: boolean;
+  /**
+   * Görünüm → "Saydamlığı azalt": the glass drawn opaque. Optimistic, like
+   * `gauge`: the document flips on the gesture and main is asked afterwards.
+   */
+  reduceTransparency: boolean;
+  /** True while a setReduceTransparency call is in flight. */
+  reduceTransparencyPending: boolean;
+  /** Set briefly when main refused the change and the switch went back. */
+  reduceTransparencyReverted: boolean;
+  /** Windows asks for less transparency (or high contrast): glass off anyway. */
+  systemReducedTransparency: boolean;
 }
 
 const INITIAL: PanelState = {
@@ -261,6 +272,10 @@ const INITIAL: PanelState = {
   gauge: 'bar',
   gaugePending: false,
   gaugeReverted: false,
+  reduceTransparency: false,
+  reduceTransparencyPending: false,
+  reduceTransparencyReverted: false,
+  systemReducedTransparency: false,
 };
 
 type Listener = (state: PanelState) => void;

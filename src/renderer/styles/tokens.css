@@ -420,6 +420,11 @@
  * live. The panel's own "Saydamlığı azalt" adds the same through
  * `html[data-reduce-transparency]` (app.ts). Re-pointing the tokens rather
  * than overriding components keeps it one rule wide, in both themes. */
+:root[data-reduce-transparency] {
+  --glass: var(--ink-900);
+  --glass-filter: none;
+  --glass-ctl: var(--ink-850);
+}
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
   :root,
   :root[data-theme="light"] {

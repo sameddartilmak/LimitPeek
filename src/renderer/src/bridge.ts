@@ -115,6 +115,11 @@ export interface Bridge {
    * all-or-nothing promise: `false` means main wrote NOTHING.
    */
   setGauge(gauge: Gauge): Promise<boolean>;
+  /**
+   * Persist Görünüm → "Saydamlığı azalt" (IPC.SET_REDUCE_TRANSPARENCY). Same
+   * all-or-nothing promise: `false` means main wrote NOTHING.
+   */
+  setReduceTransparency(reduce: boolean): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
@@ -154,6 +159,7 @@ function nullBridge(): Bridge {
     setSetupCoachDismissed: async () => false,
     setTrayView: async () => false,
     setGauge: async () => false,
+    setReduceTransparency: async () => false,
     close: () => {},
     pin: () => {},
     setPointerOverPanel: () => {},
@@ -430,6 +436,20 @@ export function createBridge(): Bridge {
       }
       try {
         const result = await api.setGauge(gauge);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** Mirrors setGauge: any failure is a real instruction to revert. */
+    async setReduceTransparency(reduce: boolean): Promise<boolean> {
+      if (typeof api.setReduceTransparency !== 'function') {
+        missing('setReduceTransparency');
+        return false;
+      }
+      try {
+        const result = await api.setReduceTransparency(reduce);
         return !!result && result.ok === true;
       } catch {
         return false;
