@@ -199,6 +199,10 @@ body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
   display: flex;
   align-items: baseline;
   gap: 4px;
+  /* The figure's line, exactly: aligning the smaller name's baseline drops
+   * its box 2.4px, which would make the line taller (measured on the live
+   * strip: 19.4px) and push the time left under it down. */
+  height: 17px;
   white-space: nowrap;
 }
 .tile__tag {
@@ -207,8 +211,6 @@ body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
   font-weight: 600;
   color: var(--label);
 }
-/* The figure's own line height, so the smaller name beside it does not make
- * the line taller and push the time left down past the ring. */
 .tile__bigline .tile__tag { line-height: 17px; }
 body[data-style="fill"] .tile__bigline .tile__tag { color: var(--fill-label); }
 .tile__chip .tile__tag { margin-right: 4px; line-height: 13px; }
