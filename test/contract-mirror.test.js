@@ -802,7 +802,10 @@ test('nothing the packaged app loads opens a socket', () => {
  *     thread), src/main/taskbar-icons-worker.js (a worker, for UI Automation)
  *     and src/main/taskbar-display-worker.js (a worker that owns the strip's
  *     drawing window inside the taskbar) — lazily: a user on the tray icon
- *     never loads it. A load failure only makes the strip "unavailable".
+ *     loads it only for the panel's two DWM window attributes on Windows 11
+ *     (win32.loadDwm: light/dark acrylic, a neutral hairline). A load failure
+ *     only makes the strip "unavailable" and leaves Windows' defaults on the
+ *     panel.
  *   - Its runtime JavaScript requires node:fs, node:util and node:module and
  *     nothing that reaches a network (grepped 2026-10-20, and scanned below;
  *     its install-time builder cnoke.cjs uses child_process and is excluded
