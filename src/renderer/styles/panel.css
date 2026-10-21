@@ -975,38 +975,49 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
  * one soft shadow, no blur of its own — and the selected segment stays the
  * raised fill on it. Selection is still carried by fill, weight and shadow
  * together, never by colour alone. */
+/* Owner, 2026-10-21: the segmented tabs read as one more choice among the
+ * Görünüm choices under them. So the tabs are Windows 11's own idiom for
+ * switching pages: plain words on a hairline, the selected one in the
+ * strong ink and weight with the accent bar under it. The segmented look is
+ * left to the choices. Same 32px band, so --tabs-h is unchanged. */
 .tabs {
   display: flex;
-  gap: 2px;
+  gap: var(--s-1);
   margin: 0 var(--s-4);
-  padding: 2px;
+  padding: 0;
   border: 0;
-  border-radius: 9px;
-  background: var(--glass-ctl);
-  box-shadow: inset 0 0 0 .5px var(--glass-ctl-edge), var(--glass-ctl-shadow);
+  box-shadow: inset 0 -1px 0 var(--ink-700);
 }
 .tabs__tab {
   position: relative;
   flex: 1 1 0;
-  min-height: 28px;
+  min-height: 32px;
   padding: 0 var(--s-2);
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px 6px 0 0;
   background: transparent;
-  color: var(--ink-200);
+  color: var(--ink-300);
   font: inherit;
   font-size: var(--fs-body);
   font-weight: 500;
   cursor: pointer;
-  transition: color var(--dur-hover) linear, background-color var(--dur-spring) var(--ease-spring),
-    box-shadow var(--dur-spring) var(--ease-spring);
+  transition: color var(--dur-hover) linear, background-color var(--dur-hover) linear;
 }
-.tabs__tab:hover { color: var(--ink-100); }
+.tabs__tab:hover { color: var(--ink-100); background: var(--fill); }
 .tabs__tab[aria-selected="true"] {
   color: var(--ink-100);
   font-weight: 600;
-  background: var(--seg-on);
-  box-shadow: var(--shadow-seg);
+}
+.tabs__tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 28px;
+  height: 3px;
+  margin-left: -14px;
+  border-radius: 2px;
+  background: var(--tint);
 }
 /* iOS settings section header: a step down in size, secondary ink, inset to
  * the group's text column. Sentence case — never uppercase (Turkish i/İ). */
@@ -1922,8 +1933,9 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
   .usage__row { border: 1px solid CanvasText; }
 
   /* Segmented controls: the selected segment is the one in Highlight. */
-  .tabs, .theme__opts, .seg { border: 1px solid ButtonText; }
-  .tabs__tab[aria-selected="true"],
+  .theme__opts, .seg { border: 1px solid ButtonText; }
+  .tabs { box-shadow: inset 0 -1px 0 CanvasText; }
+  .tabs__tab[aria-selected="true"]::after { forced-color-adjust: none; background: Highlight; }
   .theme__radio:checked + .theme__opt,
   .seg__radio:checked + .seg__opt {
     forced-color-adjust: none;

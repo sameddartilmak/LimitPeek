@@ -79,7 +79,9 @@ test('the layouts\' bars are row.css\'s meters: no layout rule paints a bar, so 
 
 test('a selected segment and an "on" switch keep their fill, in Highlight', () => {
   const block = forcedBlock(css('panel.css'));
-  assert.match(block, /\.tabs__tab\[aria-selected="true"\],\s*\.theme__radio:checked \+ \.theme__opt,\s*\.seg__radio:checked \+ \.seg__opt \{\s*forced-color-adjust: none;\s*background: Highlight;\s*color: HighlightText;/);
+  assert.match(block, /\.theme__radio:checked \+ \.theme__opt,\s*\.seg__radio:checked \+ \.seg__opt \{\s*forced-color-adjust: none;\s*background: Highlight;\s*color: HighlightText;/);
+  // The tabs are underline tabs: the selected one's bar is the Highlight.
+  assert.match(block, /\.tabs__tab\[aria-selected="true"\]::after \{ forced-color-adjust: none; background: Highlight; \}/);
   assert.match(block, /\.switch\[aria-checked="true"\] \.switch__track \{ background: Highlight;/);
   assert.match(block, /:focus-visible \{ outline: 2px solid Highlight;/);
 });
