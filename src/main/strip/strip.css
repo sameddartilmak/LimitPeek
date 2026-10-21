@@ -194,6 +194,21 @@ body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
   color: var(--figure);
   white-space: nowrap;
 }
+/* The figure and its window's name: "%62 5sa". */
+.tile__bigline {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+.tile__tag {
+  font-size: 10px;
+  line-height: 12px;
+  font-weight: 600;
+  color: var(--label);
+}
+body[data-style="fill"] .tile__bigline .tile__tag { color: var(--fill-label); }
+.tile__chip .tile__tag { margin-right: 4px; }
 .tile__sub {
   font-size: 10.5px;
   line-height: 13px;

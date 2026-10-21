@@ -101,25 +101,33 @@
   }
 
   /**
-   * The lead row's words, for "Halkalı" and "Dolgulu": the figure large, the
-   * time left under it. A weekly lead names itself ("7g · 5gün 1sa").
+   * The lead row's words, for "Halkalı" and "Dolgulu": the figure large with
+   * its window's name beside it ("%62 5sa"), the time left under it.
    */
   function lead(r, colourFigure) {
     var box = span('tile__lead');
+    var line = span('tile__bigline');
     var figure = span('tile__big', text(r.percentText, 8));
     var state = stateOf(r);
     if (colourFigure && state) figure.setAttribute('data-state', state);
-    var left = text(r.left, 16);
-    var label = r.kind === 'sevenDay' ? text(r.label, 6) : '';
-    box.appendChild(figure);
-    box.appendChild(span('tile__sub', label && left ? label + ' · ' + left : label || left));
+    line.appendChild(figure);
+    var label = text(r.label, 6);
+    if (label) line.appendChild(span('tile__tag', label));
+    box.appendChild(line);
+    box.appendChild(span('tile__sub', text(r.left, 16)));
     return box;
   }
 
-  /** "Dolgulu": the weekly figure in a chip, in its state colour, and its time left under it. */
+  /**
+   * "Dolgulu": the weekly figure in a chip with its name ("7g %41"), in its
+   * state colour, and its time left under it.
+   */
   function chip(r) {
     var box = span('tile__wk');
-    var el = span('tile__chip', text(r.percentText, 8));
+    var el = span('tile__chip');
+    var label = text(r.label, 6);
+    if (label) el.appendChild(span('tile__tag', label));
+    el.appendChild(document.createTextNode(text(r.percentText, 8)));
     var state = stateOf(r);
     if (state) el.setAttribute('data-state', state);
     box.appendChild(el);

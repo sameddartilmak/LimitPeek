@@ -191,9 +191,11 @@ test.describe('the page draws each style from the same payload', () => {
     assert.equal(big.getAttribute('data-state'), 'watch', 'the text step, not a hex');
     assert.match(find(claude, 'tile__sub')[0].textContent, /^2sa 12dk$/);
     assert.equal(find(claude, 'tile__bar').length, 0, 'no bars in this style');
-    // One window: one ring, at the outer size, and the weekly lead names itself.
+    // Every lead figure names its window beside it; one window: one ring, at
+    // the outer size, and that weekly lead says so.
+    assert.equal(find(claude, 'tile__tag')[0].textContent, '5sa');
     assert.deepEqual(find(codex, 'tile__sweep').map((c) => c.getAttribute('r')), ['13.5']);
-    assert.match(find(codex, 'tile__sub')[0].textContent, /^7g · /);
+    assert.equal(find(codex, 'tile__tag')[0].textContent, '7g');
     assert.equal(claude.style.width, '176px', 'the same 180px tile, gap included');
   });
 
@@ -209,7 +211,9 @@ test.describe('the page draws each style from the same payload', () => {
     assert.equal(find(claude, 'tile__big')[0].textContent, '%62');
     assert.equal(find(claude, 'tile__big')[0].getAttribute('data-state'), null, 'the figure on the fill is the neutral ink');
     const chip = find(claude, 'tile__chip')[0];
-    assert.equal(chip.textContent, '%91');
+    // The chip names its window too: "7g %91".
+    assert.equal(chip.textContent, '7g%91');
+    assert.equal(find(chip, 'tile__tag')[0].textContent, '7g');
     assert.equal(chip.getAttribute('data-state'), 'ember');
     // One window: the fill is that window's, and there is no chip to repeat it.
     assert.equal(find(codex, 'tile__ground')[0].style.width, '41%');
