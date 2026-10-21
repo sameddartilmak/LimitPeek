@@ -1772,3 +1772,73 @@
   pointer-events: none;
 }
 .tip[hidden] { display: none !important; }
+
+/* --------------------------------------------------------- high contrast */
+/* Windows high contrast (forced-colors). Chromium repaints every colour with
+ * the user's system palette and drops the shadows, so everything that was
+ * told apart by a FILL STEP alone — the cards on the base, the selected
+ * segment, the switch, the capsule — would vanish into one Canvas. Each gets
+ * a real edge in the system colours instead, and the few marks whose fill IS
+ * the meaning (a selected segment, an "on" switch, the chart columns) keep it
+ * with forced-color-adjust: none, drawn in Highlight / HighlightText. The
+ * glass is already opaque here (tokens.css). Nothing new is said by colour:
+ * the words and the shapes carry every state, as they do without this. */
+@media (forced-colors: active) {
+  .panel { border-color: CanvasText; }
+  .hdr[data-under="true"] { border-bottom: 1px solid CanvasText; }
+  .panel__tail svg path { fill: Canvas; stroke: CanvasText; }
+
+  .hdr__actions { border: 1px solid ButtonText; }
+  .iconbtn { color: ButtonText; }
+  .iconbtn:hover { outline: 1px solid Highlight; outline-offset: -1px; }
+  .iconbtn--pin[aria-pressed="true"],
+  .iconbtn--pin[aria-pressed="true"]:hover {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  /* The freshness dot is a state on its own at the quiet level. */
+  .fresh__dot { forced-color-adjust: none; background: CanvasText; }
+  /* Its resting 1px border is transparent, which forcing would draw. */
+  .fresh { border-color: Canvas; }
+  .fresh[data-fresh="stale"],
+  .fresh[data-fresh="offline"] { border-color: CanvasText; }
+
+  .btn { border: 1px solid ButtonText; }
+  .btn[disabled] { border-color: GrayText; color: GrayText; }
+
+  /* Cards and grouped lists: an edge where the fill step was. */
+  .strip, .toast, .coach, .consent, .onb, .empty,
+  .settings__list, .settings__item--autostart, .settings__replay .btn,
+  .usage__row { border: 1px solid CanvasText; }
+
+  /* Segmented controls: the selected segment is the one in Highlight. */
+  .tabs, .theme__opts, .seg { border: 1px solid ButtonText; }
+  .tabs__tab[aria-selected="true"],
+  .theme__radio:checked + .theme__opt,
+  .seg__radio:checked + .seg__opt {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  /* The switch: an outlined track, the knob in the text colour; "on" fills
+   * the track with Highlight and the knob takes HighlightText. */
+  .switch__track { forced-color-adjust: none; background: Canvas; border: 1px solid ButtonText; }
+  .switch__track::after { top: 1px; left: 1px; background: ButtonText; }
+  .switch[aria-checked="true"] .switch__track { background: Highlight; border-color: Highlight; }
+  .switch[aria-checked="true"] .switch__track::after { background: HighlightText; }
+
+  /* The usage chart: columns in the text colour, the chosen one in Highlight. */
+  .usage__col-track { forced-color-adjust: none; background: Canvas; }
+  .usage__col-bar { forced-color-adjust: none; background: CanvasText; }
+  .usage__col[aria-pressed="true"] .usage__col-bar { background: Highlight; }
+
+  .tip { border: 1px solid CanvasText; }
+
+  /* The keyboard ring in the palette's own focus colour, never forced away. */
+  :focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+  .theme__radio:focus-visible + .theme__opt,
+  .seg__radio:focus-visible + .seg__opt { outline: 2px solid CanvasText; outline-offset: 1px; }
+}

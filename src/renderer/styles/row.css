@@ -1460,3 +1460,51 @@ html[data-gauge="ring"] .row[data-status="error"] .rail__fill {
 html[data-gauge="ring"] .row[data-status="stale"] .win__label { color: var(--ink-400); }
 /* An error drains the ring exactly as it drains the bar. */
 html[data-gauge="ring"] .row[data-status="error"] .win { --state: var(--ink-400); }
+
+/* --------------------------------------------------------- high contrast */
+/* Windows high contrast (forced-colors; see the note in panel.css). A card is
+ * an outlined box instead of a fill step. A meter's fill would be repainted
+ * as Canvas on a Canvas track — an empty groove at any reading — so the
+ * meters opt out of the forcing and draw in the SYSTEM palette instead of the
+ * ramp: an outlined Canvas track, the reading in Highlight, the tick in
+ * Canvas. The user's own colours, so the contrast is theirs; the figure beside
+ * it still prints the value, the "≈" and the "itibarıyla" line still say
+ * estimate and stale, and the hatch still lies over a stale fill. The rings
+ * do the same: a CanvasText-tinted groove, the sweep and both caps in
+ * Highlight, the legend glyph lit in Highlight on a GrayText pair. */
+@media (forced-colors: active) {
+  .row { border: 1px solid CanvasText; }
+  .row__chip, .tag-experimental { border: 1px solid CanvasText; }
+  .row__detail { border-top-color: CanvasText; }
+
+  .rail {
+    forced-color-adjust: none;
+    background: Canvas;
+    box-shadow: inset 0 0 0 1px CanvasText;
+  }
+  .rail__fill { --state: Highlight; background-color: Highlight; }
+  .rail__band { --state: Highlight; }
+  .rail__tick { background: Canvas; }
+  /* Stale keeps its hatch but not the 45% fade, which would thin Highlight
+   * toward the ground; an error drains to the palette's disabled ink. */
+  .row[data-status="stale"] .rail__fill { opacity: 1; }
+  .row[data-status="error"] .rail__fill { background-color: GrayText; }
+  .win { --glyph-dim: GrayText; }
+  .win__label::before { forced-color-adjust: none; }
+  .win[data-state] { --state: Highlight; }
+  .sk { forced-color-adjust: none; background: GrayText; }
+  .sk::after { display: none; }
+  /* The cost composition: the largest share in the text colour, the rest in
+   * the disabled ink, the 1px gaps showing the ground between them. */
+  .cost__bar { forced-color-adjust: none; background: Canvas; box-shadow: inset 0 0 0 1px CanvasText; }
+  .cost__seg { forced-color-adjust: none; background: GrayText; }
+  .cost__seg[data-rank="0"] { background: CanvasText; }
+
+  html[data-gauge="ring"] .meter .rail {
+    background: color-mix(in srgb, CanvasText 30%, Canvas);
+    box-shadow: none;
+  }
+  html[data-gauge="ring"] .meter .rail__fill.rail__fill--estimated,
+  html[data-gauge="ring"] .meter .rail__fill { --ring-ink: Highlight; background-color: transparent; }
+  html[data-gauge="ring"] .meter .rail__tick::before { box-shadow: 0 0 0 1px Canvas; }
+}
