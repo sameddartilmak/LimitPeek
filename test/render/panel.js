@@ -805,6 +805,23 @@ app.whenReady().then(async () => {
   await js('window.__probe.setFailOrder(false)');
 
   // ---- pointer drag, via real OS-level input ---------------------------
+  //
+  // The list is a bounded scroller (checked above), and the keyboard section
+  // focused grips further down it, which scrolls it. The Apple HIG cards are
+  // about a quarter taller, so in this 420x700 window five of them overflow
+  // the list by ~165px where they used to overflow it by ~35px: a focused
+  // bottom grip leaves the first two rows' grips scrolled up under the header.
+  // `sendInputEvent` then presses the header, no drag session starts, and the
+  // upward-drag checks fail for a reason that has nothing to do with dragging.
+  // So every real-mouse section starts from the top of the list, with the rows
+  // it is about to grab inside the scroller's visible box.
+  const listToTop = () => js(`(() => {
+    const band = document.querySelector('.panel__band--list');
+    if (band) band.scrollTop = 0;
+    return band ? band.scrollTop : null;
+  })()`);
+  await listToTop();
+  await sleep(60);
   const geom = await js(`(() => {
     const rows = [...document.querySelectorAll('li.row[data-provider]')];
     const g = rows[0].querySelector('.grip').getBoundingClientRect();
@@ -909,6 +926,8 @@ app.whenReady().then(async () => {
   // too, which is exactly how the defect survived.
   await js(`window.__probe.setOrderDirect(${JSON.stringify(before2)})`);
   await sleep(200);
+  await listToTop();
+  await sleep(60);
   const shape = await js(`(() => {
     const rows = [...document.querySelectorAll('li.row[data-provider]')];
     const listTop = rows[0].getBoundingClientRect().top;
@@ -919,6 +938,18 @@ app.whenReady().then(async () => {
   say('row shape: ' + JSON.stringify(shape));
   check('the fixture has rows of DIFFERENT heights, or this section proves nothing',
     new Set(shape.h).size > 1, shape.h);
+  // The precondition the drags below depend on, stated, so a geometry change
+  // fails HERE by name instead of as "no drag session started".
+  const reach = await js(`(() => {
+    const band = document.querySelector('.panel__band--list').getBoundingClientRect();
+    const mid = (i) => {
+      const g = [...document.querySelectorAll('li.row[data-provider]')][i].querySelector('.grip').getBoundingClientRect();
+      return g.top + g.height / 2;
+    };
+    return { top: band.top, bottom: band.bottom, grips: [mid(0), mid(1)] };
+  })()`);
+  check('the two grips the upward drag uses sit inside the list\'s visible box',
+    reach.grips.every((y) => y > reach.top && y < reach.bottom), reach);
 
   // Pick the second row up and put it down again without crossing anything.
   // `targetIndex(dy = 0) === from` is the invariant that actually broke: row 1
