@@ -212,6 +212,9 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onBack: () => ctx.onSettingsToggle(),
     onTab: (tab) => ctx.onSettingsTab(tab),
   });
+  // One top row in the settings view: its back button and title take the
+  // brand's place in the header (header.ts, SETTINGS IN THE HEADER).
+  header.mountSettingsBar(settings.bar);
 
   // --- the status strip: the ONE place "no connection" is stated ----------
   const strip = el('p', { class: 'strip', role: 'status' }, t('panel.offline'));

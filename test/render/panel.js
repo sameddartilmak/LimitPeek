@@ -1050,7 +1050,11 @@ app.whenReady().then(async () => {
       names: items.map(i => (i.querySelector('.settings__name') || {}).textContent),
       metas: items.map(i => (i.querySelector('.settings__meta') || {}).textContent),
       focus: document.activeElement.getAttribute('aria-label'),
-      titled: !!view.querySelector('h2.settings__title'),
+      // The view's title row lives in the header while the view is open (one
+      // top row, header.ts), named by the view's aria-labelledby.
+      titled: !!document.querySelector('.hdr h2.settings__title')
+        && document.getElementById(view.getAttribute('aria-labelledby')) === document.querySelector('.hdr h2.settings__title')
+        && getComputedStyle(document.querySelector('.iconbtn--settings')).display === 'none',
     };
   })()`);
   check('the settings view opens inside the panel', settings.visible && settings.expanded === 'true', settings.visible);
@@ -1061,7 +1065,7 @@ app.whenReady().then(async () => {
     settings.switches.every(s => s && s.role === 'switch' && s.checked === 'true'), settings.switches);
   check('each switch is labelled by the provider name, not by its own state',
     settings.switches.every((s, i) => s.labelledby === 'settings-name-' + settings.ids[i]), settings.switches[0]);
-  check('the settings view has a heading', settings.titled);
+  check('the settings view has a heading, in the header, and no second settings button', settings.titled);
   check('focus moved into the settings view', /Ayarlardan/.test(settings.focus || ''), settings.focus);
   check('the added/not-added state is stated in words as well as in the switch',
     /Ana panelde/.test(settings.metas[0] || ''), settings.metas[0]);

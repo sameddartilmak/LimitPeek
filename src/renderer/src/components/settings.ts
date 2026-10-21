@@ -145,6 +145,12 @@ export interface SettingsContext {
 
 export interface SettingsHandle {
   el: HTMLElement;
+  /**
+   * The view's title row: the back button and "Ayarlar". Not inside `el`: the
+   * panel mounts it in the header, which shows it in place of the brand while
+   * the view is open (header.ts), so the view has ONE top row.
+   */
+  bar: HTMLElement;
   render(state: PanelState, providers: readonly ProviderSnapshot[]): void;
   /** Focus the way out. It is the first thing in the view, so tab order runs
    *  forwards from it into the list. */
@@ -1858,6 +1864,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   );
   tabs.select(current);
 
+  const top = el('div', { class: 'settings__top' }, tabs.list);
   const root = el(
     'section',
     {
@@ -1866,10 +1873,18 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
       role: 'group',
       'aria-labelledby': SETTINGS_TITLE_ID,
     },
-    el('div', { class: 'settings__top' }, bar, tabs.list),
+    top,
     ...tabs.panels,
   );
   root.hidden = true;
+
+  // While the open page is scrolled under the glass tab band, the band draws
+  // its edge and shadow (panel.css), as the header does over the list.
+  function syncUnder(): void {
+    const open = tabs.panels.find((p) => !p.hidden);
+    setAttr(top, 'data-under', open && open.scrollTop > 0 ? 'true' : null);
+  }
+  for (const page of tabs.panels) page.addEventListener('scroll', syncUnder, { passive: true });
 
   /**
    * Reconciled by id in the order given, exactly like the main list: the
@@ -1912,6 +1927,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
       current = state.settingsTab;
       tabs.select(current);
     }
+    syncUnder();
     syncItems(state, providers);
     // Painted regardless of the tools list: a machine with no recognised tools
     // must still be able to pick a theme and see its history.
@@ -1950,6 +1966,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
 
   return {
     el: root,
+    bar,
     render,
     focusFirst(): void {
       back.focus({ preventScroll: true });

@@ -852,23 +852,64 @@
   height: var(--list-max, 520px);
   min-height: 0;
 }
-.settings__top { flex: none; }
+/* THE TAB BAND IS GLASS TOO (2026-10-21). The view's title row moved into the
+ * header (header.ts), so this band holds the tabs alone, and it is drawn in
+ * the header's material: a page scrolled up passes under it, blurred, exactly
+ * as a card passes under the header. Same trick, same reason: the page is
+ * pulled up beneath the band by --tabs-h (2 + 32 + 6, fixed by the geometry
+ * below) and padded back by as much, so nothing moves. "Kullanım" keeps its
+ * own scroller under its period chooser and is left as it was. */
+.settings { --tabs-h: 40px; }
+.settings__top {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  padding: 2px 0 6px;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  transition: box-shadow var(--dur-hover) linear;
+}
+.settings__top[data-under="true"] {
+  box-shadow: 0 .5px 0 var(--glass-edge), var(--glass-shadow);
+}
 .settings__panel {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--ink-600) transparent;
   padding-top: var(--s-3);
+}
+.settings__panel:not(.settings__panel--usage) {
+  margin-top: calc(-1 * var(--tabs-h));
+  padding-top: calc(var(--tabs-h) + var(--s-3));
+  scroll-padding-top: var(--tabs-h);
+}
+/* The list's scrollbar treatment (see .panel__band--list), inset by the band. */
+.settings__panel::-webkit-scrollbar { width: 8px; }
+.settings__panel::-webkit-scrollbar-track {
+  background: transparent;
+  margin-top: var(--tabs-h);
+  margin-bottom: 4px;
+}
+.settings__panel::-webkit-scrollbar-thumb {
+  background: var(--ink-600);
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background-clip: padding-box;
 }
 .settings__panel--usage { display: flex; flex-direction: column; overflow: hidden; padding-top: 0; }
 
+/* Back and "Ayarlar", in the header's row while the view is open. The back
+ * button's 32px circle is pulled 8px into the gutter so its chevron sits
+ * where the brand tile's left edge is. */
+.hdr__lead { display: flex; align-items: center; min-width: 0; }
 .settings__bar {
   display: flex;
   align-items: center;
-  gap: var(--s-2);
-  padding: var(--s-1) var(--s-4) var(--s-2) var(--s-3);
+  gap: var(--s-1);
+  min-width: 0;
+  margin-left: calc(var(--s-2) * -1);
 }
 
 /* ------------------------------------------------------------------ tabs */
@@ -884,7 +925,7 @@
 .tabs {
   display: flex;
   gap: 2px;
-  margin: 0 var(--s-4) var(--s-1);
+  margin: 0 var(--s-4);
   padding: 2px;
   border: 0;
   border-radius: 9px;
