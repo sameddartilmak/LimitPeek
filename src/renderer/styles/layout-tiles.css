@@ -1,0 +1,315 @@
+/* Görünüm → Düzen → "Kutucuklar" (html[data-layout="tiles"]): the tools in a
+ * two-column grid of tiles, Control Centre style, and four quick tiles under
+ * it. Each tile is the tool's own card (row.ts) re-laid:
+ *
+ *     [logo] Claude Code  Max 20x
+ *          ( ( %62 ) )          the double ring, five-hour outside, weekly
+ *                               inside, the five-hour figure in its middle
+ *     5 saatlik · 2 sa 13 dk kaldı
+ *     Haftalık %41
+ *
+ * The meter keeps its elements and its meters' aria; its blocks are laid out
+ * with `display: contents` straight onto one grid. A tool with one window
+ * draws that ring at the outer size and puts its figure in the middle; a
+ * window with no figure keeps its words ("bilinmiyor") in the figure's place.
+ * The stale "itibarıyla" line stays under the first window's countdown;
+ * the reason a figure is missing and the second window's countdown are in
+ * the details. */
+
+html[data-layout="tiles"] .rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+html[data-layout="tiles"] .row:not([data-expanded]) {
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  align-content: start;
+  column-gap: var(--s-2);
+  row-gap: var(--s-2);
+  min-height: 158px;
+  padding: var(--s-3);
+  border-radius: 18px;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) > .grip {
+  align-self: start;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .mark { width: 16px; height: 16px; }
+/* Two lines for the name and its chips, whether or not they fill them, so the
+ * rings of two tiles side by side sit at one height. */
+html[data-layout="tiles"] .row:not([data-expanded]) .row__line {
+  align-self: start;
+  align-content: flex-start;
+  min-height: 40px;
+  padding-top: 3px;
+  flex-wrap: wrap;
+  column-gap: 6px;
+  row-gap: 3px;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .row__name {
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: 650;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .row__plan { max-width: 100%; }
+html[data-layout="tiles"] .row:not([data-expanded]) .row__gap { flex-basis: 0; }
+html[data-layout="tiles"] .row:not([data-expanded]) .row__stalehint { display: none; }
+
+/* --- the ring, and the two lines under it -------------------------------- */
+html[data-layout="tiles"] .row:not([data-expanded]) .meter,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter:has(.rail) {
+  position: relative;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-rows: 104px;
+  grid-template-areas:
+    "ring ring"
+    "l5   r5"
+    "as   as"
+    "l7   p7";
+  column-gap: 5px;
+  row-gap: 0;
+  align-items: baseline;
+  min-height: 0;
+  padding: 0;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .meter > .win,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__head,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__foot { display: contents; }
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__gap { display: none; }
+
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .rail,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .sk--rail {
+  --ring: 100px;
+  --ring-w: 9px;
+  grid-area: ring;
+  position: relative;
+  left: auto;
+  top: auto;
+  margin: 0;
+  justify-self: center;
+  align-self: center;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .rail--7d { --ring: 76px; }
+/* One window: its ring at the outer size. */
+html[data-layout="tiles"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .rail--7d { --ring: 100px; }
+
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__label {
+  font-size: var(--fs-micro);
+  gap: 4px;
+  color: var(--ink-400);
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__label::before { width: 11px; height: 11px; }
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__reset,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__asof {
+  min-width: 0;
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The lead window: the five-hour one, else the only one there is. */
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d {
+  --a-pct: ring;
+  --a-label: l5;
+  --a-reset: r5;
+  --a-asof: as;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d {
+  --a-pct: p7;
+  --a-label: l7;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__label { grid-area: var(--a-label, l7); }
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__pct { grid-area: var(--a-pct, p7); }
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__reset { grid-area: var(--a-reset, r5); }
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__asof { grid-area: var(--a-asof, as); }
+/* Under the second window: its figure only. */
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d .win__reset,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d .win__asof,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__reason { display: none; }
+
+/* "5 saatlik · 2 sa 13 dk kaldı": the dot only where a countdown follows. */
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h:has(.win__reset:not([hidden])) .win__label::after,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d:has(.win__reset:not([hidden])) .win__label::after {
+  content: "·";
+  margin-left: 1px;
+  color: var(--ink-500);
+}
+
+/* A window that is there but has no figure has no ring (meter.ts builds
+ * none), so its groove is drawn empty and neutral where the ring would be:
+ * the tile still shows two rings' worth of place, and the words in the
+ * figure's place say why. A window that does not exist gets no groove. */
+html[data-layout="tiles"] .row:not([data-expanded]) .meter:has(> .win--5h .win__pct--none)::before,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter:not(:has(> .win--5h)):has(> .win--7d .win__pct--none)::before,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter:has(> .win--5h):has(> .win--7d .win__pct--none)::after {
+  --ring-w: 9px;
+  content: "";
+  grid-area: ring;
+  justify-self: center;
+  align-self: center;
+  width: var(--ring, 100px);
+  height: var(--ring, 100px);
+  border-radius: 50%;
+  background: var(--ink-700);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .meter:has(> .win--5h):has(> .win--7d .win__pct--none)::after { --ring: 76px; }
+
+/* The lead figure in the middle of the ring; the second one small. */
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__pct {
+  justify-self: start;
+  font-size: var(--fs-meta);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h .win__pct,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d .win__pct {
+  z-index: 1;
+  justify-self: center;
+  align-self: center;
+  font-size: 22px;
+  letter-spacing: -.02em;
+  line-height: 1;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h .win__pct.win__pct--none,
+html[data-layout="tiles"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d .win__pct.win__pct--none {
+  max-width: 64px;
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+}
+
+/* A tool with no quota: its main measure in the ring's place. */
+html[data-layout="tiles"] .row:not([data-expanded]) .row__primary {
+  min-height: 104px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+html[data-layout="tiles"] .row:not([data-expanded]) .row__err { flex-wrap: wrap; row-gap: 4px; }
+html[data-layout="tiles"] .row:not([data-expanded]) .row__err > span { white-space: normal; }
+html[data-layout="tiles"] .row--passive:not([data-expanded]) { align-content: start; }
+html[data-layout="tiles"] .row--passive:not([data-expanded]) .row__meta {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+html[data-layout="tiles"] .row--passive:not([data-expanded]) .row__meta-detail { white-space: normal; }
+
+/* --- loading: the ring skeleton at the tile's sizes ----------------------- */
+html[data-layout="tiles"] .row[data-status="loading"] .meter .sk--rail {
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+}
+html[data-layout="tiles"] .row[data-status="loading"] .meter .win + .win .sk--rail { --ring: 76px; }
+html[data-layout="tiles"] .row[data-status="loading"] .meter .win:first-child .sk--label { grid-area: l5; }
+html[data-layout="tiles"] .row[data-status="loading"] .meter .win:first-child .sk--pct { grid-area: ring; justify-self: center; align-self: center; }
+html[data-layout="tiles"] .row[data-status="loading"] .meter .win:first-child .sk--foot { grid-area: r5; }
+html[data-layout="tiles"] .row[data-status="loading"] .meter .win + .win .sk--label { grid-area: l7; }
+html[data-layout="tiles"] .row[data-status="loading"] .meter .win + .win .sk--pct { grid-area: p7; }
+html[data-layout="tiles"] .row[data-status="loading"] .meter .win + .win .sk--foot { display: none; }
+html[data-layout="tiles"] .row[data-status="loading"] .meter .sk--label,
+html[data-layout="tiles"] .row[data-status="loading"] .meter .sk--foot { margin-top: 6px; }
+
+/* ------------------------------------------------------------ quick tiles */
+/* Tema, Şerit, Ayarlar and Yenile (layouts.ts), in the footer's place: the
+ * same two columns as the tiles, on the same card surface, half as tall. An
+ * "on" control shows its icon on the tint; Ayarlar has no state to show. */
+.quicks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 var(--s-3) var(--s-3);
+}
+.quicks[hidden] { display: none; }
+.quick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 54px;
+  padding: 10px var(--s-3);
+  border: 0;
+  border-radius: 16px;
+  background: var(--ink-800);
+  color: var(--ink-100);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow var(--dur-hover) linear, transform var(--dur-spring) var(--ease-spring);
+}
+.quick:hover { box-shadow: inset 0 0 0 1px var(--fill); }
+.quick:active { transform: scale(.97); }
+.quick[hidden] { display: none; }
+.quick[disabled] { cursor: default; }
+.quick[disabled] .quick__text { opacity: .6; }
+.quick[data-pending="true"] .quick__icon { opacity: .7; }
+.quick__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--ink-200);
+}
+.quick__icon svg { width: 16px; height: 16px; display: block; }
+.quick--theme .quick__icon,
+.quick--refresh .quick__icon,
+.quick--strip[data-on="true"] .quick__icon {
+  background: var(--tint);
+  color: var(--on-tint);
+}
+.quick[data-busy="true"] .quick__icon svg { animation: spin 900ms linear infinite; }
+.quick__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.quick__name {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.quick__value {
+  font-size: var(--fs-micro);
+  color: var(--ink-400);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.quick__value[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .quick[data-busy="true"] .quick__icon svg { animation: none; }
+  .quick:active { transform: none; }
+}
+
+/* --------------------------------------------------------- high contrast */
+/* The tiles are cards and already take row.css's outline. The quick tiles
+ * get the same, their icon an outlined circle, and an "on" one the system's
+ * Highlight, as a selected segment does (panel.css). */
+@media (forced-colors: active) {
+  .quick { border: 1px solid ButtonText; color: ButtonText; }
+  .quick:hover { box-shadow: none; outline: 1px solid Highlight; outline-offset: -1px; }
+  .quick__icon { forced-color-adjust: none; background: Canvas; color: ButtonText; box-shadow: inset 0 0 0 1px ButtonText; }
+  .quick--theme .quick__icon,
+  .quick--refresh .quick__icon,
+  .quick--strip[data-on="true"] .quick__icon { background: Highlight; color: HighlightText; box-shadow: none; }
+  .quick[disabled] { border-color: GrayText; color: GrayText; }
+  .quick[disabled] .quick__icon { background: Canvas; color: GrayText; box-shadow: inset 0 0 0 1px GrayText; }
+  .quick__value { color: CanvasText; }
+}

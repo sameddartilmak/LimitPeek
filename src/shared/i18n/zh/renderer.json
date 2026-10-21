@@ -338,5 +338,20 @@
   "settings.stripStyle.fill": "填充",
   "settings.stripStyle.help": "任务栏条样式：任务栏中磁贴的外观。圆环和填充以更大、带颜色的方式显示 5 小时用量。",
   "app.layoutNotSaved": "无法保存布局设置，已恢复之前的选择。",
-  "app.stripStyleNotSaved": "无法保存任务栏条样式，已恢复之前的选择。"
+  "app.stripStyleNotSaved": "无法保存任务栏条样式，已恢复之前的选择。",
+
+  "layout.focus.kicker": "最接近限额",
+  "layout.sheet.back": "全部工具",
+  "layout.sheet.backLabel": "关闭详情并返回全部工具",
+  "layout.quick.label": "快捷设置",
+  "layout.quick.theme": "主题",
+  "layout.quick.themeLabel": "主题：{value}",
+  "layout.quick.themeTitle": "在浅色、深色和跟随系统之间切换",
+  "layout.quick.strip": "任务栏条",
+  "layout.quick.stripLabel": "任务栏条",
+  "layout.quick.stripTitle": "同时在任务栏中显示或隐藏用量",
+  "layout.quick.on": "开",
+  "layout.quick.off": "关",
+  "layout.quick.unavailable": "无法显示",
+  "layout.focus.rowsLabel": "工具，最接近限额的排在最前，其余按托盘顺序"
 }

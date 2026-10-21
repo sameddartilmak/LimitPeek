@@ -1,0 +1,388 @@
+/* Görünüm → Düzen → "Öne çıkan" (html[data-layout="focus"]): the tool closest
+ * to its limit on top, Activity style, and one compact row per other tool
+ * under it. panel.ts moves that tool to the top of the list and marks it
+ * data-hero (with data-lead, the window that put it there); everything else
+ * is the tool's own card (row.ts) re-laid with `display: contents`:
+ *
+ *     ((  [logo]  ))   Limite en yakın
+ *     ((          ))   %84                 the lead window's figure
+ *                      5 saatlik · 58 dk kaldı
+ *                      Haftalık %23        the other window, small
+ *                      Antigravity  Pro
+ *
+ *     (( )) [logo] Codex           5 saatlik  %18
+ *               4 sa 2 dk kaldı    Haftalık   %57
+ *
+ * The big ring is 132px with 16px strokes, the small one 52px with 7px. A
+ * tool with one window draws that ring at the outer size. The stale
+ * "itibarıyla" line stays under the lead window; the reason a figure is
+ * missing and the second window's countdown are in the details. */
+
+html[data-layout="focus"] .rows:not([data-sheet="true"]) { gap: 0; }
+
+/* --- the hero --------------------------------------------------------------- */
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) {
+  grid-template-columns: 132px 18px max-content minmax(0, 1fr);
+  grid-template-areas:
+    "ring . kick kick"
+    "ring . big  big"
+    "ring . sl   sr"
+    "ring . la   la"
+    "ring . ol   op"
+    "ring . who  who"
+    "ring . err  err"
+    "ring . hint hint";
+  align-items: baseline;
+  align-content: center;
+  column-gap: 0;
+  row-gap: 0;
+  margin-bottom: var(--s-4);
+  padding: var(--s-4) var(--s-4) var(--s-4) var(--s-3);
+  border-radius: 18px;
+}
+/* The kicker: "Limite en yakın", from panel.ts. */
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded])::before {
+  content: attr(data-kicker);
+  grid-area: kick;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--ink-400);
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .row__body,
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter,
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter > .win,
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__head,
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__foot { display: contents; }
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__gap { display: none; }
+
+/* The logo in the middle of the rings. */
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) > .grip {
+  grid-area: ring;
+  z-index: 1;
+  justify-self: center;
+  align-self: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .mark { width: 26px; height: 26px; }
+
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .rail {
+  --ring: 132px;
+  --ring-w: 16px;
+  grid-area: ring;
+  position: relative;
+  left: auto;
+  top: auto;
+  margin: 0;
+  justify-self: center;
+  align-self: center;
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .rail--7d { --ring: 94px; }
+/* A five-hour window with no figure (the weekly one put the tool here): its
+ * groove, empty and neutral, where its ring would be. */
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]):has(.win--5h .win__pct--none)::after {
+  --ring-w: 16px;
+  content: "";
+  grid-area: ring;
+  justify-self: center;
+  align-self: center;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: var(--ink-700);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]):not(:has(.win--5h)) .meter .rail--7d { --ring: 132px; }
+
+/* Which window leads: its figure large, its countdown beside its name. */
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win {
+  --a-pct: op;
+  --a-label: ol;
+  --a-asof: la;
+  --a-reset-show: none;
+}
+html[data-layout="focus"] .row[data-hero="true"][data-lead="5h"]:not([data-expanded]) .meter .win--5h,
+html[data-layout="focus"] .row[data-hero="true"][data-lead="7d"]:not([data-expanded]) .meter .win--7d {
+  --a-pct: big;
+  --a-label: sl;
+  --a-asof: la;
+  --a-reset-show: block;
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__label { grid-area: var(--a-label); }
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__pct { grid-area: var(--a-pct); }
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__reset:not([hidden]) {
+  display: var(--a-reset-show);
+  grid-area: sr;
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__asof { grid-area: var(--a-asof); }
+html[data-layout="focus"] .row[data-hero="true"][data-lead="5h"]:not([data-expanded]) .meter .win--7d .win__asof,
+html[data-layout="focus"] .row[data-hero="true"][data-lead="7d"]:not([data-expanded]) .meter .win--5h .win__asof,
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__reason { display: none; }
+
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__label {
+  margin-top: 4px;
+  gap: 5px;
+  font-size: var(--fs-body);
+  color: var(--ink-300);
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__label::before { width: 13px; height: 13px; }
+html[data-layout="focus"] .row[data-hero="true"][data-lead="5h"]:not([data-expanded]) .meter .win--5h:has(.win__reset:not([hidden])) .win__label::after,
+html[data-layout="focus"] .row[data-hero="true"][data-lead="7d"]:not([data-expanded]) .meter .win--7d:has(.win__reset:not([hidden])) .win__label::after {
+  content: "·";
+  margin-right: 5px;
+  color: var(--ink-500);
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__reset,
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__asof {
+  min-width: 0;
+  font-size: var(--fs-body);
+  color: var(--ink-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__asof { font-size: var(--fs-meta); color: var(--ink-400); }
+/* The other window's figure: beside its name, small. */
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__pct {
+  justify-self: start;
+  margin-left: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+/* The lead figure. */
+html[data-layout="focus"] .row[data-hero="true"][data-lead="5h"]:not([data-expanded]) .meter .win--5h .win__pct,
+html[data-layout="focus"] .row[data-hero="true"][data-lead="7d"]:not([data-expanded]) .meter .win--7d .win__pct {
+  margin: 4px 0 2px;
+  font-size: 46px;
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 1;
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win .win__pct.win__pct--none { margin: 0 0 0 6px; font-size: var(--fs-body); font-weight: 500; }
+
+/* The tool: name, plan, chips and its action, under the figures. */
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .row__line {
+  grid-area: who;
+  min-height: 0;
+  margin-top: var(--s-2);
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .row__err { grid-area: err; margin-top: var(--s-2); }
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .row__stalehint { grid-area: hint; margin-top: var(--s-2); }
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .row__err > span { white-space: normal; }
+html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) > .consent { grid-column: 1 / -1; }
+
+/* --- the compact rows ------------------------------------------------------- */
+/* One inset group under the hero: the rows touch, a hairline between them,
+ * the group's corners on its first and last row. */
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) {
+  grid-template-columns: 52px 20px minmax(0, 1fr) max-content max-content;
+  grid-template-areas:
+    "ring logo name l5 p5"
+    "ring .    left l7 p7"
+    "ring .    as   as as";
+  align-items: center;
+  align-content: center;
+  column-gap: var(--s-2);
+  row-gap: 1px;
+  min-height: 76px;
+  padding: var(--s-3) var(--s-4) var(--s-3) var(--s-3);
+  border-radius: 0;
+}
+/* A connect action on the title line ("Bağla" on a card that already has
+ * windows): the line takes the row's width so the button sits at its end,
+ * and the figures move down beside the time left. */
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]):has(.row__line .row__action) {
+  grid-template-areas:
+    "ring logo name name name"
+    "ring .    left l5   p5"
+    "ring .    as   l7   p7";
+  row-gap: 3px;
+}
+html[data-layout="focus"] .rows:not([data-sheet="true"]) > .row:not([data-hero]):first-child,
+html[data-layout="focus"] .rows:not([data-sheet="true"]) > .row[data-hero] + .row {
+  border-top-left-radius: var(--radius-card);
+  border-top-right-radius: var(--radius-card);
+}
+html[data-layout="focus"] .rows:not([data-sheet="true"]) > .row:not([data-hero]):last-child {
+  border-bottom-left-radius: var(--radius-card);
+  border-bottom-right-radius: var(--radius-card);
+}
+html[data-layout="focus"] .rows:not([data-sheet="true"]) > .row:not([data-hero]) + .row::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 76px;
+  right: 0;
+  height: 1px;
+  background: var(--ink-700);
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .row__body,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter > .win,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__head,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__foot { display: contents; }
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__gap { display: none; }
+
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) > .grip {
+  grid-area: logo;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .mark { width: 14px; height: 14px; }
+/* No ring to draw (not connected, no quota, no figure yet): the logo takes
+ * the ring's place, so the names still line up. */
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]):not(:has(.rail, .sk--rail)) > .grip {
+  grid-area: ring;
+  justify-self: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-tile);
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]):not(:has(.rail, .sk--rail)) .mark { width: 22px; height: 22px; }
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]):not(:has(.rail, .sk--rail)) .row__line,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]):not(:has(.rail, .sk--rail)) .row__meta {
+  grid-column: 2 / -1;
+}
+
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .rail,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .sk--rail {
+  --ring: 52px;
+  --ring-w: 7px;
+  grid-area: ring;
+  grid-row: 1 / -1;
+  position: relative;
+  left: auto;
+  top: auto;
+  margin: 0;
+  justify-self: center;
+  align-self: center;
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .rail--7d { --ring: 32px; }
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]):not(:has(.win--5h)) .meter .rail--7d { --ring: 52px; }
+
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .row__line {
+  grid-area: name;
+  min-height: 0;
+  column-gap: 6px;
+}
+/* The name keeps its width; the plan chip is what shortens. */
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .row__name {
+  flex: 0 0 auto;
+  max-width: 100%;
+  font-size: var(--fs-name);
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .row__plan { min-width: 0; }
+
+/* Names and figures: "5 saatlik %18" over "Haftalık %57". */
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win--5h,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]):not(:has(.win--5h)) .meter .win--7d {
+  --a-label: l5;
+  --a-pct: p5;
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win--5h ~ .win--7d {
+  --a-label: l7;
+  --a-pct: p7;
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__label {
+  grid-area: var(--a-label, l7);
+  justify-self: end;
+  gap: 4px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--ink-400);
+}
+/* The names say which figure is which; the ring glyph would only take the
+ * name's room here. */
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__label::before { display: none; }
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__pct {
+  grid-area: var(--a-pct, p7);
+  justify-self: end;
+  min-width: 2.6em;
+  text-align: right;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win--5h .win__pct,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]):not(:has(.win--5h)) .meter .win--7d .win__pct { font-size: 20px; }
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win .win__pct.win__pct--none {
+  min-width: 0;
+  font-size: var(--fs-micro);
+  font-weight: 500;
+}
+
+/* The time left of the first window, under the name; its "itibarıyla" too. */
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__reset,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__asof {
+  min-width: 0;
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__reset { grid-area: left; }
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__asof { grid-area: as; }
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win--5h ~ .win--7d .win__reset,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win--5h ~ .win--7d .win__asof,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__reason,
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .row__stalehint { display: none; }
+
+/* A tool with no quota: its main measure where the figures are. */
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .row__primary {
+  grid-column: 4 / -1;
+  grid-row: 1 / span 2;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .row__primary-value { font-size: 17px; }
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .row__err {
+  grid-column: 3 / -1;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .row__err > span { white-space: normal; }
+html[data-layout="focus"] .row--passive:not([data-hero]):not([data-expanded]) { min-height: 60px; }
+html[data-layout="focus"] .row--passive:not([data-hero]):not([data-expanded]) .row__meta { margin-top: 0; }
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) > .consent { grid-column: 1 / -1; }
+
+/* Loading: the small ring's grooves, the lines where the words will be. */
+html[data-layout="focus"] .row[data-status="loading"] .meter .sk--rail {
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+}
+html[data-layout="focus"] .row[data-status="loading"] .meter .win + .win .sk--rail { --ring: 32px; }
+html[data-layout="focus"] .row[data-status="loading"] .row__line { grid-column: 2 / 4; }
+html[data-layout="focus"] .row[data-status="loading"] .meter .win:first-child .sk--label { grid-area: l5; }
+html[data-layout="focus"] .row[data-status="loading"] .meter .win:first-child .sk--pct { grid-area: p5; }
+html[data-layout="focus"] .row[data-status="loading"] .meter .win:first-child .sk--foot { grid-area: left; }
+html[data-layout="focus"] .row[data-status="loading"] .meter .win + .win .sk--label { grid-area: l7; }
+html[data-layout="focus"] .row[data-status="loading"] .meter .win + .win .sk--pct { grid-area: p7; }
+html[data-layout="focus"] .row[data-status="loading"] .meter .win + .win .sk--foot { display: none; }
+html[data-layout="focus"] .row[data-status="loading"] .grip--empty { grid-area: logo; width: 20px; height: 20px; }
+html[data-layout="focus"] .rows[aria-busy="true"] > .row + .row::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 76px;
+  right: 0;
+  height: 1px;
+  background: var(--ink-700);
+}
+
+/* --------------------------------------------------------- high contrast */
+/* The hero is a card and takes row.css's outline; the compact rows are one
+ * group, so its hairlines become the text colour. */
+@media (forced-colors: active) {
+  html[data-layout="focus"] .rows > .row + .row::after { background: CanvasText; }
+  html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) + .row:not([data-hero]) { border-top-width: 0; }
+}

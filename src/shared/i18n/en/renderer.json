@@ -359,5 +359,20 @@
   "settings.stripStyle.fill": "Fill",
   "settings.stripStyle.help": "Strip style: how the tiles in the taskbar look. Rings and Fill show 5-hour usage larger and in colour.",
   "app.layoutNotSaved": "The layout setting could not be saved. The previous choice was restored.",
-  "app.stripStyleNotSaved": "The strip style could not be saved. The previous choice was restored."
+  "app.stripStyleNotSaved": "The strip style could not be saved. The previous choice was restored.",
+
+  "layout.focus.kicker": "Closest to its limit",
+  "layout.sheet.back": "All tools",
+  "layout.sheet.backLabel": "Close details and return to all tools",
+  "layout.quick.label": "Quick settings",
+  "layout.quick.theme": "Theme",
+  "layout.quick.themeLabel": "Theme: {value}",
+  "layout.quick.themeTitle": "Switches between Light, Dark and System",
+  "layout.quick.strip": "Strip",
+  "layout.quick.stripLabel": "Taskbar strip",
+  "layout.quick.stripTitle": "Show or hide the usage in the taskbar as well",
+  "layout.quick.on": "On",
+  "layout.quick.off": "Off",
+  "layout.quick.unavailable": "Unavailable",
+  "layout.focus.rowsLabel": "Tools, the one closest to its limit first, then in tray order"
 }

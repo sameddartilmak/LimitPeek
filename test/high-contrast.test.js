@@ -32,10 +32,11 @@ function forcedBlock(text) {
   throw new Error('unterminated forced-colors block');
 }
 
-const SYSTEM = /^(Canvas|CanvasText|ButtonText|Highlight|HighlightText|GrayText|transparent|none|0|1px|2px|-1px|1|var\(--[a-z-]+\)|color-mix\(in srgb, CanvasText 30%, Canvas\))$/;
+const SYSTEM = /^(Canvas|CanvasText|ButtonText|Highlight|HighlightText|GrayText|LinkText|transparent|none|0|1px|2px|-1px|1|var\(--[a-z-]+\)|color-mix\(in srgb, CanvasText 30%, Canvas\))$/;
 
 test('every colour in the high-contrast blocks is a system colour', () => {
-  for (const file of ['panel.css', 'row.css']) {
+  // The layouts' own passes too (Görünüm → Düzen).
+  for (const file of ['panel.css', 'row.css', 'layouts.css', 'layout-focus.css', 'layout-tiles.css']) {
     const block = forcedBlock(css(file));
     assert.doesNotMatch(block, /#[0-9A-Fa-f]{3,8}\b|rgba?\(/, `${file}: a literal colour in high contrast`);
     for (const m of block.matchAll(/(?:^|[;{]\s*)(background(?:-color)?|color|border-color|--state|--ring-ink|--glyph-dim):\s*([^;]+);/gm)) {

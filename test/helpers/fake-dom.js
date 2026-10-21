@@ -49,6 +49,11 @@ class ClassList {
 
 function matches(node, selector) {
   if (!node || node.nodeType !== 1) return false;
+  // A selector list, and a bare `[attr]` / `[attr="value"]`: row.ts asks
+  // closest('button, a, …, [role="button"]') of a click's target.
+  if (selector.includes(',')) return selector.split(',').some((part) => matches(node, part.trim()));
+  const attr = /^\[([a-z-]+)(?:="([^"]*)")?\]$/.exec(selector);
+  if (attr) return attr[2] === undefined ? node.hasAttribute(attr[1]) : node.getAttribute(attr[1]) === attr[2];
   const sel = selector.split(':')[0];
   if (sel.startsWith('.')) return node.classList.contains(sel.slice(1));
   if (sel.startsWith('#')) return node.getAttribute('id') === sel.slice(1);

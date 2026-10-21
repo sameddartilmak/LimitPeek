@@ -338,5 +338,20 @@
   "settings.stripStyle.fill": "Dolgulu",
   "settings.stripStyle.help": "Şerit stili: görev çubuğundaki kutucukların görünümü. Halkalı ve Dolgulu, 5 saatlik kullanımı büyük ve renkli gösterir.",
   "app.layoutNotSaved": "Düzen ayarı kaydedilemedi. Önceki seçim geri alındı.",
-  "app.stripStyleNotSaved": "Şerit stili kaydedilemedi. Önceki seçim geri alındı."
+  "app.stripStyleNotSaved": "Şerit stili kaydedilemedi. Önceki seçim geri alındı.",
+
+  "layout.focus.kicker": "Limite en yakın",
+  "layout.sheet.back": "Tüm araçlar",
+  "layout.sheet.backLabel": "Ayrıntıları kapat ve tüm araçlara dön",
+  "layout.quick.label": "Hızlı ayarlar",
+  "layout.quick.theme": "Tema",
+  "layout.quick.themeLabel": "Tema: {value}",
+  "layout.quick.themeTitle": "Açık, Koyu ve Sistem arasında geçer",
+  "layout.quick.strip": "Şerit",
+  "layout.quick.stripLabel": "Görev çubuğu şeridi",
+  "layout.quick.stripTitle": "Kullanımı görev çubuğunda da göster ya da gizle",
+  "layout.quick.on": "Açık",
+  "layout.quick.off": "Kapalı",
+  "layout.quick.unavailable": "Gösterilemiyor",
+  "layout.focus.rowsLabel": "Araçlar, limite en yakın olan en üstte, sonra tepsi sırasıyla"
 }
