@@ -343,6 +343,122 @@ html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .
 html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .win + .win .sk--pct { margin-top: 9px; }
 html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .sk--label { width: 60px; }
 
+/* --- a tile alone on its line: the grid's width, laid out wide ----------- */
+/* One tool, or the last of an odd number, would leave the line's other half
+ * empty (owner, 2026-10-21: "yan tarafı boş kalıyor"). That tile takes both
+ * columns, and its meter turns on its side, so the tile is shorter too:
+ *
+ *     [logo] Claude Code  Max 20x
+ *     ( ( %62 ) )   5 saatlik · 2 sa 13 dk kaldı
+ *                   Haftalık %41
+ *                     3 gün 4 sa kaldı
+ *
+ * in bars, the two windows side by side:
+ *
+ *     %62                          Haftalık %41
+ *     [===========.......]         [=======...........]
+ *     5 saatlik · 2 sa 13 dk kaldı 3 gün 4 sa kaldı */
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) {
+  grid-column: 1 / -1;
+  min-height: 0;
+}
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .row__line { min-height: 0; }
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter,
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter:has(.rail) {
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-rows: none;
+  grid-template-areas:
+    "l5 r5"
+    "as as"
+    "l7 p7"
+    "r7 r7";
+  align-content: center;
+  min-height: 104px;
+  padding-left: 118px;
+}
+/* The ring at the left, out of the lines' sizing: as a grid item spanning
+ * them it would share its height out among them and spread the words. */
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .rail,
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .sk--rail,
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter::before,
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter::after {
+  position: absolute;
+  grid-area: auto;
+  left: calc(52px - var(--ring, 100px) / 2);
+  top: calc(50% - var(--ring, 100px) / 2);
+}
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .win--5h .win__pct,
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d .win__pct {
+  position: absolute;
+  grid-area: auto;
+  left: 0;
+  top: 50%;
+  width: 104px;
+  transform: translateY(-50%);
+  text-align: center;
+}
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded])[data-status="loading"] .meter .win:first-child .sk--pct {
+  position: absolute;
+  grid-area: auto;
+  left: 52px;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .win--5h .win__pct.win__pct--none,
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d .win__pct.win__pct--none {
+  left: 20px;
+  width: 64px;
+}
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .win--5h ~ .win--7d .win__label,
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .win--5h ~ .win--7d .win__pct { margin-top: 6px; }
+html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .row__primary { min-height: 0; }
+
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter,
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter:has(.rail) {
+  grid-template-columns: max-content minmax(0, 1fr) 20px max-content minmax(0, 1fr);
+  grid-template-rows: none;
+  grid-template-areas:
+    "p5 p5 . l7 p7"
+    "b5 b5 . b7 b7"
+    "l5 r5 . r7 r7"
+    "as as . .  .  ";
+  min-height: 0;
+  padding-left: 0;
+}
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .rail,
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .sk--rail,
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .win--5h .win__pct,
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d .win__pct {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: auto;
+  transform: none;
+  text-align: left;
+}
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .rail { grid-area: var(--a-bar, b7); }
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded])[data-status="loading"] .meter .win:first-child .sk--pct {
+  position: relative;
+  grid-area: p5;
+  left: auto;
+  top: auto;
+  transform: none;
+}
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .win--5h .win__pct,
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d .win__pct { grid-area: p5; }
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .win--5h ~ .win--7d .win__label,
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .win--5h ~ .win--7d .win__pct {
+  align-self: end;
+  margin: 0 0 1px;
+}
+/* Both bars on one line, at the lead's weight. */
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .meter .win--5h ~ .win--7d .rail {
+  height: 8px;
+  margin: 7px 0 6px;
+  border-radius: 4px;
+}
+html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded]) .row__primary { min-height: 0; }
+
 /* ------------------------------------------------------------ quick tiles */
 /* Tema, Şerit, Ayarlar and Yenile (layouts.ts), in the footer's place: the
  * same two columns as the tiles, on the same card surface, half as tall. An

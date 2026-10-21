@@ -644,6 +644,27 @@ test.describe('the stylesheets', () => {
     }
   });
 
+  test('a tile alone on its line takes the grid\'s width and lies on its side, in rings and in bars', () => {
+    const tiles = rules(read('src/renderer/styles/layout-tiles.css'));
+    const body = (selector) => {
+      const found = tiles.find(([selectors]) => selectors.includes(selector));
+      assert.ok(found, `no rule for ${selector}`);
+      return found[1];
+    };
+    const W = 'html[data-layout="tiles"] .rows > .row:last-child:nth-child(odd):not([data-expanded])';
+    const WB = 'html[data-layout="tiles"][data-gauge="bar"] .rows > .row:last-child:nth-child(odd):not([data-expanded])';
+    assert.match(body(W), /grid-column: 1 \/ -1;/);
+    assert.match(body(W), /min-height: 0;/, 'not the two-up tile\'s height');
+    // Rings: the ring at the left, out of the lines' sizing; the words beside it.
+    assert.match(body(`${W} .meter`), /grid-template-areas:\s*"l5 r5"\s*"as as"\s*"l7 p7"\s*"r7 r7";/);
+    assert.match(body(`${W} .meter`), /padding-left: 118px;/);
+    assert.match(body(`${W} .meter .rail`), /position: absolute;/);
+    // Bars: the two windows side by side, the ring's placement undone.
+    assert.match(body(`${WB} .meter`), /grid-template-areas:\s*"p5 p5 \. l7 p7"\s*"b5 b5 \. b7 b7"\s*"l5 r5 \. r7 r7"/);
+    assert.match(body(`${WB} .meter`), /padding-left: 0;/);
+    assert.match(body(`${WB} .meter .rail`), /position: relative;/);
+  });
+
   test('reduced motion and the bars: no bar rule animates anything; the fill keeps row.css\'s --dur-fill', () => {
     for (const f of ['layout-focus.css', 'layout-tiles.css']) {
       for (const [selectors, body] of rules(read(`src/renderer/styles/${f}`))) {
