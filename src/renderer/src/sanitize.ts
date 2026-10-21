@@ -32,6 +32,8 @@ import type {
   Gauge,
   PanelMaterial,
   PanelFrame,
+  Layout,
+  StripStyle,
   RowStatus,
   SetupAction,
   SetupKind,
@@ -1089,10 +1091,15 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   // a look that is right over any window.
   const material: PanelMaterial = source.material === 'acrylic' ? 'acrylic' : 'none';
   const frame: PanelFrame = source.frame === 'fitted' ? 'fitted' : 'canvas';
+  // Düzen and Şerit stili: anything but the other literals is the default, as
+  // main's own load() says; a main from before them sends nothing and gets the
+  // list and the plain strip it always drew.
+  const layout: Layout = source.layout === 'focus' || source.layout === 'tiles' ? source.layout : 'list';
+  const stripStyle: StripStyle = source.stripStyle === 'rings' || source.stripStyle === 'fill' ? source.stripStyle : 'plain';
   return {
     theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed,
     trayView, stripAvailable, stripNoRoom, gauge, reduceTransparency, systemReducedTransparency,
-    material, frame,
+    material, frame, layout, stripStyle,
   };
 }
 

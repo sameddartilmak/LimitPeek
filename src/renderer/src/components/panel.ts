@@ -26,9 +26,21 @@
  *            error stays until closed
  *   footer   "Son tarama" and "Yenile", nothing else; the pin's promise moved
  *            into the pin's own tooltip
+ *
+ * THREE LAYOUTS, ONE LIST (Görünüm → Düzen)
+ * ----------------------------------------
+ * "Liste", "Öne çıkan" and "Kutucuklar" are the SAME cards in the same list,
+ * reconciled the same way; html[data-layout] restyles them (layout-*.css).
+ * This file adds only what CSS cannot: in "Öne çıkan" the tool closest to its
+ * limit moves to the top of the list and is marked as the hero (components/
+ * layouts.ts pickHero); outside the list the cards cannot be dragged, a click
+ * on a card opens its details, and open details are a sheet over the other
+ * tools with "‹ Tüm araçlar" above it; and in "Kutucuklar" the footer's
+ * refresh moves into the quick tiles under the grid. The user's order is
+ * never rewritten by any of it: the hero is a display order, nothing else.
  */
 
-import type { Gauge, LanguageChoice, ProviderSnapshot, ThemeChoice, TrayView } from '../../../shared/contract.js';
+import type { Gauge, LanguageChoice, Layout, ProviderSnapshot, StripStyle, ThemeChoice, TrayView } from '../../../shared/contract.js';
 import { defaultPlacement, FITTED_MAX_HEIGHT, fittedPlacement, placePanel, type PanelPlacement } from '../anchor.js';
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { clockTime } from '../format.js';
@@ -40,6 +52,7 @@ import { createHeader, type HeaderHandle } from './header.js';
 import { providerMark } from './logo.js';
 import { createSettings, type SettingsHandle } from './settings.js';
 import { createOnboarding, type OnboardingHandle } from './onboarding.js';
+import { createQuickTiles, createSheetBack, detailsAreSheet, pickHero, type QuickTilesHandle } from './layouts.js';
 import {
   createRow,
   createSkeletonRow,
@@ -92,6 +105,10 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onGaugeChange(gauge: Gauge): void;
   /** The user flipped Görünüm → "Saydamlığı azalt". Optimistic. */
   onReduceTransparencyChange(reduce: boolean): void;
+  /** The user picked Görünüm → Düzen: list, focus or tiles. Optimistic. */
+  onLayoutChange(layout: Layout): void;
+  /** The user picked Görünüm → Şerit stili. Optimistic. */
+  onStripStyleChange(style: StripStyle): void;
   /** The user pressed a card's "Ayrıntılar". */
   onToggleExpand(providerId: string): void;
   /** "Bağla" on the first-run card: the same consent path, drawn in the card. */
@@ -137,6 +154,8 @@ export interface PanelHandle {
   focusView(view: PanelView): void;
   /** After a rebuild for a new language: back onto the language radio. */
   focusLanguage(): void;
+  /** Back onto a tool's own "Ayrıntılar" control, after its details closed. */
+  focusTool(providerId: string): void;
   /** Re-place the panel against the newest tray geometry. */
   applyAnchor(state: PanelState): void;
   /** Measured panel size in CSS px, for the canvas-fit check. */
@@ -211,6 +230,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onTrayView: (view) => ctx.onTrayViewChange(view),
     onGauge: (gauge) => ctx.onGaugeChange(gauge),
     onReduceTransparency: (reduce) => ctx.onReduceTransparencyChange(reduce),
+    onLayout: (layout) => ctx.onLayoutChange(layout),
+    onStripStyle: (style) => ctx.onStripStyleChange(style),
     onBack: () => ctx.onSettingsToggle(),
     onTab: (tab) => ctx.onSettingsTab(tab),
   });
@@ -302,10 +323,17 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onConnect: (id) => ctx.onCoachConnect(id),
   });
 
+  // Outside the list, a tool's open details are a sheet: this is the way back.
+  const sheetBack = createSheetBack(() => {
+    const open = lastState?.expandedProviderId;
+    if (open) ctx.onToggleExpand(open);
+  });
+
   const listBand = el(
     'div',
     { class: 'panel__band panel__band--list' },
     reorderHelp,
+    sheetBack,
     onboarding.el,
     skeletonList,
     rowList,
@@ -409,7 +437,16 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     refreshButton,
   );
 
-  const footBand = el('div', { class: 'panel__band panel__band--foot' }, toasts, liveRegion, foot);
+  // "Kutucuklar": Tema, Şerit, Ayarlar and Yenile under the grid, in the
+  // footer's place (its refresh becomes the "Yenile" tile).
+  const quick: QuickTilesHandle = createQuickTiles({
+    onTheme: (theme) => ctx.onThemeChange(theme),
+    onTrayView: (view) => ctx.onTrayViewChange(view),
+    onSettings: () => ctx.onSettingsToggle(),
+    onRefresh: () => ctx.onRefresh(),
+  });
+
+  const footBand = el('div', { class: 'panel__band panel__band--foot' }, toasts, liveRegion, foot, quick.el);
   footBand.style.setProperty('--band-delay', '80ms');
 
   const root = el(
@@ -471,7 +508,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onDragEnd: () => {
       if (lastState) render(lastState, lastNow);
     },
-    enabled: () => (lastState ? lastState.bridgeAvailable : false),
+    // Only the list rearranges; the other layouts follow the stored order.
+    enabled: () => (lastState ? lastState.bridgeAvailable && lastState.layout === 'list' : false),
   });
 
   /** Provider id currently at index 0, i.e. the one main draws the tray from. */
@@ -488,6 +526,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     isTrayRow: (id) => id === trayRowId,
     isExpanded: (id) => lastState?.expandedProviderId === id,
     onToggleExpand: (id) => ctx.onToggleExpand(id),
+    canReorder: () => (lastState?.layout ?? 'list') === 'list',
+    opensOnCard: (id) => !!lastState && detailsAreSheet(lastState.layout) && lastState.expandedProviderId !== id,
     get generatedAt(): string | null {
       return ctx.generatedAt;
     },
@@ -766,6 +806,27 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     }
   }
 
+  /**
+   * The one painter of a refresh control, the footer's or the "Yenile"
+   * tile's: while the first scan runs it says so and waits; while the
+   * service is unreachable it cannot do anything and its tooltip says why;
+   * its accessible name follows the words on it.
+   */
+  function paintRefresh(button: HTMLButtonElement, label: HTMLElement, state: PanelState, title: string | null): void {
+    const scanning = !state.hasData && state.bridgeAvailable;
+    button.disabled = state.refreshing || !state.bridgeAvailable || scanning;
+    const busy = state.refreshing || scanning;
+    setAttr(button, 'data-busy', busy ? 'true' : null);
+    const busyText = scanning ? t('panel.scanning') : state.refreshing ? t('panel.refreshing') : null;
+    setText(label, busyText ?? t('panel.refresh'));
+    // The accessible name follows the words on the button. It was the fixed
+    // "Şimdi yenile", which overrode the visible "Yenileniyor", so a screen
+    // reader was offered the action the button was in the middle of doing.
+    setAttr(button, 'aria-label', busyText ?? t('panel.refreshLabel'));
+    setAttr(button, 'aria-busy', busy ? 'true' : null);
+    setAttr(button, 'title', !state.bridgeAvailable ? t('panel.refreshOffline') : title ?? t('panel.refreshLabel'));
+  }
+
   function render(state: PanelState, now: number): void {
     lastState = state;
     lastNow = now;
@@ -776,6 +837,13 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     const providers = visibleOf(state);
     // The tray icon follows the first ENABLED provider.
     trayRowId = providers.length > 0 ? providers[0].id : null;
+
+    // "Öne çıkan": the tool closest to its limit leads the list. A display
+    // order only, never written back (state.order and the drag are the list's).
+    const hero = state.layout === 'focus' ? pickHero(providers, now) : null;
+    const shown = hero
+      ? [...providers.filter((p) => p.id === hero.id), ...providers.filter((p) => p.id !== hero.id)]
+      : providers;
 
     header.update(state, now);
 
@@ -791,8 +859,16 @@ export function createPanel(ctx: PanelContext): PanelHandle {
           rows.delete(id);
         }
       }
-      syncList(rowList, providers, now);
+      syncList(rowList, shown, now);
     }
+    for (const [id, handle] of rows) {
+      const isHero = hero !== null && hero.id === id;
+      setAttr(handle.el, 'data-hero', isHero ? 'true' : null);
+      setAttr(handle.el, 'data-lead', isHero ? hero.lead : null);
+      setAttr(handle.el, 'data-kicker', isHero ? t('layout.focus.kicker') : null);
+    }
+    // The list's name says what its order is: the tray's, or the hero first.
+    setAttr(rowList, 'aria-label', hero ? t('layout.focus.rowsLabel') : t('panel.rowsLabel'));
 
     // --- the first-run introduction: it owns the list area while it runs ---
     onboarding.update(state);
@@ -822,6 +898,13 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       emptyAction.disabled = nothingKnown && (state.refreshing || !state.bridgeAvailable);
     }
 
+    // --- details as a sheet, outside the list ---
+    const sheetId = !inSettings && !introducing && detailsAreSheet(state.layout) ? state.expandedProviderId : null;
+    const sheet = sheetId !== null && rows.has(sheetId) && !rowList.hidden;
+    setAttr(rowList, 'data-sheet', sheet ? 'true' : null);
+    if (!sheet && sheetBack.contains(document.activeElement)) root.focus({ preventScroll: true });
+    sheetBack.hidden = !sheet;
+
     // --- the status strip, the one home of "no connection" ---
     strip.hidden = state.bridgeAvailable;
 
@@ -829,29 +912,21 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     placeConsent(state);
 
     // --- footer ---
-    // While the first scan runs, the button says so and waits; while the
-    // service is unreachable it cannot do anything and its tooltip says why.
-    // Hidden where the empty state already offers "Yeniden tara".
-    const scanning = !state.hasData && state.bridgeAvailable;
+    // "Kutucuklar" on the usage view: the quick tiles take the footer's place
+    // and their "Yenile" is the refresh. Everywhere else the footer as ever.
+    const quickTiles = state.layout === 'tiles' && !inSettings && !introducing;
+    quick.el.hidden = !quickTiles;
+    foot.hidden = quickTiles;
+    if (quickTiles) quick.update(state);
     // Hidden in both empty states: each offers its own one action.
     refreshButton.hidden = !emptyState.hidden;
-    refreshButton.disabled = state.refreshing || !state.bridgeAvailable || scanning;
-    const busy = state.refreshing || scanning;
-    setAttr(refreshButton, 'data-busy', busy ? 'true' : null);
-    const busyText = scanning ? t('panel.scanning') : state.refreshing ? t('panel.refreshing') : null;
-    setText(refreshLabel, busyText ?? t('panel.refresh'));
-    // The accessible name follows the words on the button. It was the fixed
-    // "Şimdi yenile", which overrode the visible "Yenileniyor", so a screen
-    // reader was offered the action the button was in the middle of doing.
-    setAttr(refreshButton, 'aria-label', busyText ?? t('panel.refreshLabel'));
-    setAttr(refreshButton, 'aria-busy', busy ? 'true' : null);
-    setAttr(refreshButton, 'title', !state.bridgeAvailable ? t('panel.refreshOffline') : t('panel.refreshLabel'));
+    quick.refreshButton.hidden = !emptyState.hidden;
+    paintRefresh(refreshButton, refreshLabel, state, null);
 
     const generatedAt = state.snapshot?.generatedAt ?? null;
-    setText(
-      scanText,
-      generatedAt ? t('panel.lastScan', { time: clockTime(generatedAt) }) : t('panel.noScan'),
-    );
+    const lastScan = generatedAt ? t('panel.lastScan', { time: clockTime(generatedAt) }) : t('panel.noScan');
+    setText(scanText, lastScan);
+    paintRefresh(quick.refreshButton, quick.refreshLabel, state, lastScan);
 
     // Only when we know we are NOT pointing at a measured tray icon.
     coach.hidden = ctx.coachDismissed || state.anchor?.anchorSource !== 'cursor';
@@ -871,11 +946,14 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     }
     refreshBubble.hidden = !showToolToast;
 
-    // A card whose details just opened is brought into view, gently.
+    // A card whose details just opened is brought into view, gently. As a
+    // sheet it is the only card, so the list starts at its top instead.
     const expanded = inSettings ? null : state.expandedProviderId;
     if (expanded && expanded !== lastExpanded) {
       const handle = rows.get(expanded);
-      if (handle) {
+      if (handle && sheet) {
+        listBand.scrollTop = 0;
+      } else if (handle) {
         requestAnimationFrame(() => {
           handle.el.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
         });
@@ -927,6 +1005,10 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     },
     focusLanguage(): void {
       settings.focusLanguage();
+    },
+    focusTool(providerId: string): void {
+      const handle = rows.get(providerId);
+      if (handle && !handle.moreButton.hidden) handle.moreButton.focus({ preventScroll: true });
     },
     destroy(): void {
       document.removeEventListener('pointerup', onUp);

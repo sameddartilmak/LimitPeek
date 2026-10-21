@@ -11,10 +11,10 @@ const { isGauge } = require('../core/gauge');
  * object and one file. The value is checked against the two literals, never
  * coerced: anything else is a bug or a hostile message.
  *
- * After the write, `apply()` hands the gauge to the taskbar strip (its tiles
- * draw mini rings for 'ring'; best effort, like SET_TRAY_VIEW's apply: the
- * choice is stored either way) and `push()` sends PREFERENCES. The tray donut
- * does not change.
+ * Nothing is applied in main: the gauge is drawn by the renderer alone, and
+ * only in the list layout (the tray donut does not change, and the taskbar
+ * strip has its own style, SET_STRIP_STYLE), so after the write there is
+ * only the PREFERENCES push, which other listeners and a later reload read.
  *
  * `{ok:false}` means the value changed NOWHERE and the renderer must revert.
  *
@@ -22,11 +22,10 @@ const { isGauge } = require('../core/gauge');
  * @param {(event: object) => boolean} deps.fromPanel
  * @param {() => object} deps.getSettings   the live settings object, mutated in place
  * @param {(settings: object) => boolean} deps.save
- * @param {(gauge: 'bar'|'ring') => void} [deps.apply]  the strip's redraw
  * @param {() => void} deps.push
  * @param {{warn: Function}} deps.log
  */
-function createSetGaugeHandler({ fromPanel, getSettings, save, apply = () => {}, push, log }) {
+function createSetGaugeHandler({ fromPanel, getSettings, save, push, log }) {
   return (event, gauge) => {
     if (!fromPanel(event)) return { ok: false };
     if (!isGauge(gauge)) return { ok: false };
@@ -38,9 +37,6 @@ function createSetGaugeHandler({ fromPanel, getSettings, save, apply = () => {},
       settings.gauge = previous;
       log.warn('gauge could not be persisted; nothing changed');
       return { ok: false };
-    }
-    try { apply(gauge); } catch (err) {
-      log.warn(`gauge could not be applied: code=${(err && err.code) || 'UNKNOWN'}`);
     }
     // Best effort, like SET_THEME's: the renderer already shows the new
     // gauge, so a push that fails costs an echo, not a disagreement.

@@ -52,6 +52,8 @@ const { createSetGaugeHandler } = require('./gauge-ipc');
 const { createSetReduceTransparencyHandler } = require('./reduce-transparency-ipc');
 const { panelFrameFor, acrylicAvailable, createPanelLook } = require('../core/panel-material');
 const win32 = require('./win32');
+const { createSetLayoutHandler } = require('./layout-ipc');
+const { createSetStripStyleHandler } = require('./strip-style-ipc');
 
 // userData is %APPDATA%\usage-notch by name, whatever the product is called
 // (packaging.js). First, before the early exits below and the single-instance
@@ -623,14 +625,13 @@ function registerIpc() {
     log,
   }));
 
-  // Görünüm: bars or activity rings. Persist, hand it to the taskbar strip
-  // (mini rings in its tiles), push; rollback on a failed write. Tested in
-  // gauge-ipc.js's suite.
+  // Görünüm: bars or activity rings. Persist, then push; rollback on a failed
+  // write. Panel only (the strip has its own style, below), so nothing to
+  // apply in main. Tested in gauge-ipc.js's suite.
   ipcMain.handle(IPC.SET_GAUGE, createSetGaugeHandler({
     fromPanel,
     getSettings: () => settings,
     save: (s) => settingsStore.save(userDataDir(), s),
-    apply: (gauge) => { if (strip) strip.setGauge(gauge); },
     push: pushPreferences,
     log,
   }));
@@ -641,6 +642,28 @@ function registerIpc() {
     fromPanel,
     getSettings: () => settings,
     save: (s) => settingsStore.save(userDataDir(), s),
+    push: pushPreferences,
+    log,
+  }));
+
+  // Görünüm: "Düzen", list, focus or tiles. Persist, then push; rollback on a
+  // failed write. Panel only. Tested in layout-ipc.js's suite.
+  ipcMain.handle(IPC.SET_LAYOUT, createSetLayoutHandler({
+    fromPanel,
+    getSettings: () => settings,
+    save: (s) => settingsStore.save(userDataDir(), s),
+    push: pushPreferences,
+    log,
+  }));
+
+  // Görünüm: "Şerit stili". Persist, hand it to the taskbar strip (the same
+  // window redraws its tiles), push; rollback on a failed write. Tested in
+  // strip-style-ipc.js's suite.
+  ipcMain.handle(IPC.SET_STRIP_STYLE, createSetStripStyleHandler({
+    fromPanel,
+    getSettings: () => settings,
+    save: (s) => settingsStore.save(userDataDir(), s),
+    apply: (style) => { if (strip) strip.setStyle(style); },
     push: pushPreferences,
     log,
   }));
@@ -982,8 +1005,8 @@ function bootstrap() {
     onCoveredClick: () => openFromStrip(),
     onChange: () => { pushPreferences(); syncTrayPresence(); },
   });
-  // Before it is enabled, so its first frame already has the user's gauge.
-  strip.setGauge(settings.gauge);
+  // Before it is enabled, so its first frame already has the user's style.
+  strip.setStyle(settings.stripStyle);
   applyTrayView(settings.trayView);
 
   // The user flipping Windows between light and dark changes no snapshot

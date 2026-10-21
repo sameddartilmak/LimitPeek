@@ -67,7 +67,7 @@ test.describe('the value', () => {
 });
 
 test.describe('SET_GAUGE', () => {
-  function rig({ fromPanel = true, saves = [], stored = 'bar', pushThrows = false, applyThrows = false } = {}) {
+  function rig({ fromPanel = true, saves = [], stored = 'bar', pushThrows = false } = {}) {
     const calls = [];
     const warnings = [];
     const settings = { theme: 'dark', gauge: stored };
@@ -76,17 +76,16 @@ test.describe('SET_GAUGE', () => {
       fromPanel: () => fromPanel,
       getSettings: () => settings,
       save: (s) => { calls.push(`persist:${s.gauge}`); const ok = saves[n] !== false; n += 1; return ok; },
-      apply: (g) => { calls.push(`apply:${g}`); if (applyThrows) throw Object.assign(new Error('x'), { code: 'ESTRIP' }); },
       push: () => { calls.push('push'); if (pushThrows) throw Object.assign(new Error('x'), { code: 'EPUSH' }); },
       log: { warn: (m) => warnings.push(m) },
     });
     return { handler, calls, warnings, settings };
   }
 
-  test('persist, hand it to the strip, then push', () => {
+  test('persist, then push: the strip is not told (it has its own style now)', () => {
     const r = rig();
     assert.deepEqual(r.handler({}, 'ring'), { ok: true });
-    assert.deepEqual(r.calls, ['persist:ring', 'apply:ring', 'push']);
+    assert.deepEqual(r.calls, ['persist:ring', 'push']);
     assert.equal(r.settings.gauge, 'ring');
     assert.deepEqual(r.handler({}, 'bar'), { ok: true });
     assert.equal(r.settings.gauge, 'bar');
@@ -112,14 +111,6 @@ test.describe('SET_GAUGE', () => {
     assert.ok(r.warnings.some((w) => w.includes('could not be persisted')));
   });
 
-  test('a strip that throws is logged; the choice is stored and still pushed', () => {
-    const r = rig({ applyThrows: true });
-    assert.deepEqual(r.handler({}, 'ring'), { ok: true });
-    assert.deepEqual(r.calls, ['persist:ring', 'apply:ring', 'push']);
-    assert.equal(r.settings.gauge, 'ring');
-    assert.ok(r.warnings.some((w) => w.includes('ESTRIP')));
-  });
-
   test('a push that throws is logged, and the stored choice still stands', () => {
     const r = rig({ pushThrows: true });
     assert.deepEqual(r.handler({}, 'ring'), { ok: true });
@@ -129,8 +120,9 @@ test.describe('SET_GAUGE', () => {
 
   test('index.js registers this handler once, and the preload passes a string over its own channel', () => {
     const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'index.js'), 'utf8').replace(/\s+/g, ' ');
-    assert.ok(main.includes('ipcMain.handle(IPC.SET_GAUGE, createSetGaugeHandler({ fromPanel, getSettings: () => settings, save: (s) => settingsStore.save(userDataDir(), s), apply: (gauge) => { if (strip) strip.setGauge(gauge); }, push: pushPreferences, log, }))'));
+    assert.ok(main.includes('ipcMain.handle(IPC.SET_GAUGE, createSetGaugeHandler({ fromPanel, getSettings: () => settings, save: (s) => settingsStore.save(userDataDir(), s), push: pushPreferences, log, }))'));
     assert.equal(main.split('IPC.SET_GAUGE').length - 1, 1);
+    assert.doesNotMatch(main, /strip\.setGauge/, 'the gauge no longer reaches the strip');
     const preload = fs.readFileSync(path.join(ROOT, 'src', 'main', 'preload.js'), 'utf8');
     assert.match(preload, /setGauge: \(gauge\) => ipcRenderer\.invoke\(CH\.SET_GAUGE, String\(gauge\)\)/);
     assert.ok(preload.includes("SET_GAUGE: 'prefs:set-gauge'"));
@@ -159,8 +151,9 @@ test.describe('the renderer', () => {
 
   test('app.ts writes html[data-gauge] in frame one, before the store or the panel exist', () => {
     const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'src', 'app.ts'), 'utf8');
-    assert.match(app, /document\.documentElement\.dataset\.gauge = gauge;/);
-    const first = app.indexOf("paintGauge(initialPrefs?.gauge ?? 'bar');");
+    // The gauge DRAWN: the user's in the list, the rings in focus and tiles.
+    assert.match(app, /root\.dataset\.gauge = layout === 'focus' \|\| layout === 'tiles' \? 'ring' : gauge;/);
+    const first = app.indexOf("paintLayout(initialPrefs?.layout ?? 'list', initialPrefs?.gauge ?? 'bar');");
     assert.notEqual(first, -1, 'the frame-one paint is missing');
     assert.ok(first < app.search(/store\.set\(\{\s+theme: theme\.choice\(\)/), 'painted before the first store write');
     assert.ok(first < app.indexOf('createPanel('), 'painted before the panel is built');

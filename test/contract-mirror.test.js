@@ -170,7 +170,12 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // 24 with setPanelHeight (2026-10-21): a fitted Windows 11 window is the
   // panel, so main sizes it to the panel's height. Fire-and-forget, local.
   assert.ok(declared.has('setPanelHeight'), 'contract.ts should declare setPanelHeight()');
-  assert.equal(declared.size, 24, `expected the 24 declared methods, saw ${[...declared].join(',')}`);
+  // 24 with setLayout and 25 with setStripStyle (2026-10-21): Görünüm →
+  // Düzen (list, focus, tiles) and Şerit stili (plain, rings, fill). Local
+  // settings writes; no network.
+  assert.ok(declared.has('setLayout'), 'contract.ts should declare setLayout()');
+  assert.ok(declared.has('setStripStyle'), 'contract.ts should declare setStripStyle()');
+  assert.equal(declared.size, 26, `expected the 26 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const IPC_STRIP = { ... } as const;`. */

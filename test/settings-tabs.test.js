@@ -273,6 +273,7 @@ function state(over = {}) {
     themeReverted: false, language: 'system', languagePending: false, languageReverted: false,
     autostart: true, autostartPending: false, autostartReverted: false, autostartByWindows: false,
     enabledOverride: {}, enabledPending: [], revertedId: null, planPending: [], planReverted: null,
+    trayView: 'tray', layout: 'list', stripStyle: 'plain',
     ...over,
   };
 }
@@ -651,5 +652,89 @@ test.describe('Görünüm → "Saydamlığı azalt": a switch on the "Genel" tab
     assert.match(help.textContent, /Windows saydamlığın azaltılmasını istiyor/);
     handle.render(state({ systemReducedTransparency: false }), []);
     assert.match(help.textContent, /cam efektini kapatır/);
+  });
+});
+
+// ------------------------------------------ Görünüm: "Düzen" and "Şerit stili"
+
+test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', () => {
+  function mountLooks() {
+    const picked = { layout: [], strip: [] };
+    const handle = settingsMod.createSettings({
+      onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
+      onDisconnect() {}, onTrayView() {}, onGauge() {}, onReduceTransparency() {},
+      onLayout(layout) { picked.layout.push(layout); },
+      onStripStyle(style) { picked.strip.push(style); },
+    });
+    const group = (name) => walk(handle.el).find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes(name));
+    const layout = group('theme--layout');
+    const strip = group('theme--strip-style');
+    const gauge = group('theme--gauge');
+    assert.ok(layout && strip && gauge, 'a group is missing');
+    const radios = (g) => walk(g).filter((el) => el.tagName === 'INPUT');
+    const labels = (g) => walk(g).filter((el) => el.tagName === 'LABEL').map((el) => el.textContent);
+    return { handle, layout, strip, gauge, radios, labels, picked };
+  }
+
+  test('"Düzen: Liste / Öne çıkan / Kutucuklar": three native radios, before "Gösterge"', () => {
+    const { handle, layout, gauge, radios, labels } = mountLooks();
+    assert.deepEqual(radios(layout).map((r) => [r.getAttribute('type'), r.getAttribute('value')]),
+      [['radio', 'list'], ['radio', 'focus'], ['radio', 'tiles']]);
+    assert.deepEqual(labels(layout), ['Liste', 'Öne çıkan', 'Kutucuklar']);
+    assert.equal(walk(layout).find((el) => el.tagName === 'LEGEND').textContent, 'Düzen');
+    const help = walk(layout).find((el) => el.tagName === 'P');
+    assert.match(help.textContent, /^Düzen: Liste/);
+    assert.equal(layout.getAttribute('aria-describedby'), help.getAttribute('id'));
+    const kids = walk(walk(handle.el).find((el) => el.getAttribute('data-tab') === 'general' && el.getAttribute('role') === 'tabpanel'));
+    assert.ok(kids.indexOf(layout) > -1 && kids.indexOf(layout) < kids.indexOf(gauge), 'the layout comes before the gauge it governs');
+  });
+
+  test('a pick tells the app; pending and revert are on the group', () => {
+    const { handle, layout, radios, picked } = mountLooks();
+    handle.render(state({ layout: 'list' }), []);
+    assert.deepEqual(radios(layout).map((r) => r.checked), [true, false, false]);
+    radios(layout)[2].checked = true;
+    radios(layout)[2].dispatch('change');
+    assert.deepEqual(picked.layout, ['tiles']);
+    handle.render(state({ layout: 'tiles', layoutPending: true }), []);
+    assert.deepEqual(radios(layout).map((r) => r.checked), [false, false, true]);
+    assert.equal(layout.getAttribute('aria-busy'), 'true');
+    handle.render(state({ layout: 'list', layoutReverted: true }), []);
+    assert.deepEqual(radios(layout).map((r) => r.checked), [true, false, false]);
+    assert.equal(layout.getAttribute('data-revert'), 'true');
+  });
+
+  test('outside the list the gauge says it applies to the list only, dimmed but still operable', () => {
+    const { handle, gauge, radios } = mountLooks();
+    const help = walk(gauge).find((el) => el.tagName === 'P');
+    handle.render(state({ layout: 'list', gauge: 'bar' }), []);
+    assert.equal(gauge.getAttribute('data-inactive'), null);
+    assert.match(help.textContent, /dış halka 5 saatlik, iç halka haftalık/);
+    for (const layout of ['focus', 'tiles']) {
+      handle.render(state({ layout, gauge: 'bar' }), []);
+      assert.equal(gauge.getAttribute('data-inactive'), 'true');
+      assert.match(help.textContent, /yalnızca Liste düzeninde geçerli/);
+      assert.ok(radios(gauge).every((r) => r.disabled !== true), 'still operable');
+    }
+  });
+
+  test('"Şerit stili: Sade / Halkalı / Dolgulu" sits under the tray / strip choice and shows only with the strip', () => {
+    const { handle, strip, radios, labels, picked } = mountLooks();
+    assert.deepEqual(radios(strip).map((r) => r.getAttribute('value')), ['plain', 'rings', 'fill']);
+    assert.deepEqual(labels(strip), ['Sade', 'Halkalı', 'Dolgulu']);
+    assert.equal(walk(strip).find((el) => el.tagName === 'LEGEND').textContent, 'Şerit stili');
+    const kids = walk(handle.el);
+    const trayView = kids.find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--tray-view'));
+    assert.equal(kids.indexOf(strip), kids.indexOf(trayView) + walk(trayView).length, 'right after the tray / strip group');
+    handle.render(state({ trayView: 'tray' }), []);
+    assert.equal(strip.hidden, true);
+    handle.render(state({ trayView: 'strip', stripStyle: 'fill' }), []);
+    assert.equal(strip.hidden, false);
+    assert.deepEqual(radios(strip).map((r) => r.checked), [false, false, true]);
+    radios(strip)[1].checked = true;
+    radios(strip)[1].dispatch('change');
+    assert.deepEqual(picked.strip, ['rings']);
+    handle.render(state({ trayView: 'strip', stripStyle: 'rings', stripStylePending: true }), []);
+    assert.equal(strip.getAttribute('data-pending'), 'true');
   });
 });

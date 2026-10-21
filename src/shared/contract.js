@@ -43,6 +43,8 @@ const IPC = {
   SET_GAUGE: 'prefs:set-gauge',
   SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
   PANEL_SIZE: 'panel:size',
+  SET_LAYOUT: 'prefs:set-layout',
+  SET_STRIP_STYLE: 'prefs:set-strip-style',
 };
 
 /**

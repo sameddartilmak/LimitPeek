@@ -1295,9 +1295,9 @@ export const IPC = {
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   /**
    * renderer -> main invoke(gauge: Gauge). Persists how the panel draws each
-   * tool's two windows ('bar' | 'ring'), hands it to the taskbar strip (mini
-   * rings in its tiles), then pushes PREFERENCES. Anything but the two
-   * literals is refused.
+   * tool's two windows in the list layout ('bar' | 'ring'), then pushes
+   * PREFERENCES. Panel only: nothing is applied in main (the strip has its own
+   * style, SET_STRIP_STYLE). Anything but the two literals is refused.
    * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
    */
   SET_GAUGE: 'prefs:set-gauge',
@@ -1316,6 +1316,22 @@ export const IPC = {
    * it. Anything that is not a plausible height changes nothing.
    */
   PANEL_SIZE: 'panel:size',
+  /**
+   * renderer -> main invoke(layout: Layout). Persists how the panel lays out
+   * the tools ('list' | 'focus' | 'tiles'), then pushes PREFERENCES. Panel
+   * only: nothing is applied in main. Anything but the three literals is
+   * refused.
+   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
+   */
+  SET_LAYOUT: 'prefs:set-layout',
+  /**
+   * renderer -> main invoke(style: StripStyle). Persists how the taskbar strip
+   * draws its tiles ('plain' | 'rings' | 'fill'), hands it to the strip (which
+   * re-sends its tiles to the same window, no rebuild), then pushes
+   * PREFERENCES. Anything but the three literals is refused.
+   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
+   */
+  SET_STRIP_STYLE: 'prefs:set-strip-style',
 } as const;
 
 /**
@@ -1326,7 +1342,7 @@ export const IPC = {
 export const IPC_STRIP = {
   /**
    * main -> strip page: the tiles to draw, dark or light ink for the taskbar
-   * under them, and the panel's gauge ('bar' | 'ring': bars or mini rings).
+   * under them, and the strip style ('plain' | 'rings' | 'fill').
    */
   DATA: 'strip:data',
   /** strip page -> main send(): a left click; opens the panel like the tray. */
@@ -1358,10 +1374,10 @@ export type LanguageChoice = 'tr' | 'en' | 'zh' | 'system';
 export type TrayView = 'tray' | 'strip';
 
 /**
- * How the panel draws a tool's two usage windows. 'bar' (the default) is two
- * bars side by side; 'ring' is two concentric activity rings, five-hour
- * outside and weekly inside. The panel and the taskbar strip's tiles follow
- * it; the tray icon does not.
+ * How the panel draws a tool's two usage windows in the list layout. 'bar'
+ * (the default) is two bars side by side; 'ring' is two concentric activity
+ * rings, five-hour outside and weekly inside. The other layouts always draw
+ * rings; the tray icon and the taskbar strip do not follow it.
  */
 export type Gauge = 'bar' | 'ring';
 
@@ -1381,6 +1397,23 @@ export type PanelMaterial = 'acrylic' | 'none';
  * shadow and tail inside it.
  */
 export type PanelFrame = 'fitted' | 'canvas';
+
+/**
+ * How the panel lays out the tools. 'list' (the default) is one card per
+ * tool; 'focus' ("Öne çıkan") puts the tool closest to its limit on top as a
+ * large double ring with a compact row per other tool; 'tiles'
+ * ("Kutucuklar") is a two-column grid of ring tiles with quick tiles under
+ * it. All three follow the same stored order and draw the same row states.
+ */
+export type Layout = 'list' | 'focus' | 'tiles';
+
+/**
+ * How the taskbar strip draws a tile. 'plain' (the default) is the mini bars;
+ * 'rings' ("Halkalı") a thick double ring and a large coloured figure;
+ * 'fill' ("Dolgulu") the tile's own ground filled to the figure, with the
+ * weekly figure in a chip.
+ */
+export type StripStyle = 'plain' | 'rings' | 'fill';
 
 export interface Preferences {
   theme: ThemeChoice;
@@ -1474,6 +1507,18 @@ export interface Preferences {
    * shape every earlier version had.
    */
   frame: PanelFrame;
+  /**
+   * Settings → Genel → Görünüm → Düzen. Anything that is not a Layout is
+   * 'list'. Read in frame one, like the theme: a layout applied after first
+   * paint is a visible flash of the list turning into tiles.
+   */
+  layout: Layout;
+  /**
+   * Settings → Genel → Görünüm → Şerit stili. Anything that is not a
+   * StripStyle is 'plain'. The panel only shows and stores it; the strip
+   * draws it.
+   */
+  stripStyle: StripStyle;
 }
 
 /**
@@ -1590,6 +1635,10 @@ export interface UsageNotchApi {
   setGauge(gauge: Gauge): Promise<{ ok: boolean }>;
   /** Persist "Saydamlığı azalt". See IPC.SET_REDUCE_TRANSPARENCY. */
   setReduceTransparency(reduce: boolean): Promise<{ ok: boolean }>;
+  /** Persist the panel's layout. See IPC.SET_LAYOUT. */
+  setLayout(layout: Layout): Promise<{ ok: boolean }>;
+  /** Persist the taskbar strip's tile style. See IPC.SET_STRIP_STYLE. */
+  setStripStyle(style: StripStyle): Promise<{ ok: boolean }>;
   /**
    * Persist the plan the user says they are on for ONE tool, or clear it. See
    * IPC.SET_PLAN_LABEL and `ProviderSnapshot.planLabel`.

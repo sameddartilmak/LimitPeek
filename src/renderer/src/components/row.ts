@@ -88,6 +88,20 @@ export interface RowContext {
   isExpanded?(providerId: string): boolean;
   /** The user pressed this card's "Ayrıntılar". The panel keeps one open. */
   onToggleExpand?(providerId: string): void;
+  /**
+   * Can this card be dragged and moved with Alt+Arrow? Optional: absent
+   * means yes. False in "Öne çıkan" and "Kutucuklar", which follow the stored
+   * order but only the list rearranges it: the mark stays as the tool's
+   * logo, and stops being a control.
+   */
+  canReorder?(providerId: string): boolean;
+  /**
+   * Does a click anywhere on this card open its details? Optional: absent
+   * means no (the list, where "Ayrıntılar" is its own button). True for a
+   * closed tile or focus row, where the whole card is the way in; the
+   * "Ayrıntılar" button stays the keyboard's way in (Enter / Space).
+   */
+  opensOnCard?(providerId: string): boolean;
   /** Snapshot.generatedAt, used for the "as of" line on stale rows. */
   generatedAt: string | null;
   /**
@@ -785,6 +799,15 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     el('span', { class: 'row__more-chev', 'aria-hidden': 'true' }, chevron()),
   ) as HTMLButtonElement;
   on(moreButton, 'click', () => ctx.onToggleExpand?.(current.id));
+  // A closed tile or focus row opens on a click anywhere on it, except on a
+  // control of its own ("Bağla", "Yeniden dene"), which keeps its action, and
+  // inside the setup question drawn in it (panel.ts placeConsent).
+  on(root, 'click', (event: MouseEvent) => {
+    if (!lastCtx.opensOnCard?.(current.id) || moreButton.hidden) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest('button, a, input, select, textarea, [role="button"], .consent')) return;
+    lastCtx.onToggleExpand?.(current.id);
+  });
 
   const detailMeta = el('div', { class: 'row__detail-tokens' });
   // Created once and re-appended, so their own disclosures stay open across
@@ -880,8 +903,13 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
 
     // --- the grip -------------------------------------------------------
     const tray = context.isTrayRow(p.id);
-    setAttr(refs.grip, 'data-tray', tray ? 'true' : null);
+    // Outside the list the mark is the tool's logo and nothing else: not a
+    // tab stop, not announced as a drag handle, no "drag to move" tooltip.
+    const movable = context.canReorder?.(p.id) ?? true;
+    setAttr(refs.grip, 'data-tray', tray && movable ? 'true' : null);
     setAttr(refs.grip, 'aria-label', t('row.gripLabel', { name: p.displayName }));
+    setAttr(refs.grip, 'aria-hidden', movable ? null : 'true');
+    setAttr(refs.grip, 'aria-describedby', movable ? REORDER_HELP_ID : null);
     // The tray consequence is stated on the control that causes it, honestly:
     // a provider with no five-hour window drives an empty ring, not a donut.
     const title = t('row.gripTitle', { name: p.displayName });
@@ -890,8 +918,8 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
         ? t('row.gripTray')
         : t('row.gripTrayNoData')
       : '';
-    setAttr(refs.grip, 'title', trayNote ? `${title} ${trayNote}` : title);
-    refs.grip.disabled = p.status === 'loading';
+    setAttr(refs.grip, 'title', movable ? (trayNote ? `${title} ${trayNote}` : title) : null);
+    refs.grip.disabled = p.status === 'loading' || !movable;
     context.attachGrip(refs.grip, p.id, p.displayName);
 
     // --- "Ayrıntılar" ----------------------------------------------------
@@ -909,6 +937,7 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     }
     detail.hidden = !expanded;
     setAttr(root, 'data-expanded', expanded ? 'true' : null);
+    setAttr(root, 'data-opens', hasDetail && (context.opensOnCard?.(p.id) ?? false) ? 'true' : null);
   }
 
   function tick(atNow: number): void {

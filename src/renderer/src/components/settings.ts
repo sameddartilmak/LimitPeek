@@ -47,9 +47,11 @@
 import type {
   Gauge,
   LanguageChoice,
+  Layout,
   PeriodModelCost,
   PeriodUsage,
   ProviderSnapshot,
+  StripStyle,
   ThemeChoice,
   TrayView,
   UsageHistory,
@@ -84,6 +86,10 @@ const TRAY_VIEW_TITLE_ID = 'settings-tray-view-title';
 const TRAY_VIEW_HELP_ID = 'settings-tray-view-help';
 const GAUGE_TITLE_ID = 'settings-gauge-title';
 const GAUGE_HELP_ID = 'settings-gauge-help';
+const LAYOUT_TITLE_ID = 'settings-layout-title';
+const LAYOUT_HELP_ID = 'settings-layout-help';
+const STRIP_STYLE_TITLE_ID = 'settings-strip-style-title';
+const STRIP_STYLE_HELP_ID = 'settings-strip-style-help';
 const GLASS_NAME_ID = 'settings-glass-name';
 const GLASS_HELP_ID = 'settings-glass-help';
 const AUTOSTART_NAME_ID = 'settings-autostart-name';
@@ -117,6 +123,10 @@ export interface SettingsContext {
   onGauge(gauge: Gauge): void;
   /** The user flipped "Saydamlığı azalt". Optimistic; the app owns the revert. */
   onReduceTransparency(reduce: boolean): void;
+  /** The user picked list, focus or tiles. Optimistic; the app owns the revert. */
+  onLayout(layout: Layout): void;
+  /** The user picked the strip's tile style. Optimistic; the app owns the revert. */
+  onStripStyle(style: StripStyle): void;
   /** Leave settings and go back to the usage list. */
   onBack(): void;
   /** The user picked a tab. The store keeps it across hide and rebuild. */
@@ -843,9 +853,149 @@ function createGaugeControl(ctx: SettingsContext): GaugeHandleLocal {
     setAttr(root, 'data-pending', state.gaugePending ? 'true' : null);
     setAttr(root, 'data-revert', state.gaugeReverted ? 'true' : null);
     setAttr(root, 'aria-busy', state.gaugePending ? 'true' : null);
+    // "Öne çıkan" and "Kutucuklar" are ring layouts: the choice is kept (and
+    // still operable, for the day the list comes back) but dimmed, and the
+    // line under it says where it applies instead of which ring is which.
+    const listOnly = state.layout !== 'list';
+    setAttr(root, 'data-inactive', listOnly ? 'true' : null);
+    setText(help, t(listOnly ? 'settings.gauge.helpRingsOnly' : 'settings.gauge.help'));
   }
 
   return { el: root, update };
+}
+
+/**
+ * One segmented choice under "Görünüm", the theme's native-radio fieldset
+ * and CSS: a hidden legend for the group name, the options, the help line
+ * as the group's footer, and the pending / revert attributes on the group.
+ * Shared by "Düzen" and "Şerit stili", which differ only in their values.
+ */
+interface ChoiceHandleLocal<V extends string> {
+  el: HTMLElement;
+  inputs: Map<V, HTMLInputElement>;
+  help: HTMLElement;
+  paint(value: V, pending: boolean, reverted: boolean): void;
+}
+
+function createChoiceGroup<V extends string>(opts: {
+  name: string;
+  className: string;
+  titleId: string;
+  helpId: string;
+  legend: MessageKey;
+  help: MessageKey;
+  choices: ReadonlyArray<{ v: V; key: MessageKey }>;
+  onPick(value: V): void;
+}): ChoiceHandleLocal<V> {
+  const inputs = new Map<V, HTMLInputElement>();
+  const options = el('div', { class: 'theme__opts' });
+  for (const choice of opts.choices) {
+    const id = `${opts.name}-${choice.v}`;
+    const input = el('input', {
+      type: 'radio',
+      name: `usage-notch-${opts.name}`,
+      id,
+      value: choice.v,
+      class: 'theme__radio',
+    }) as HTMLInputElement;
+    const label = el('label', { class: 'theme__opt', for: id }, t(choice.key));
+    on(input, 'change', () => {
+      if (input.checked) opts.onPick(choice.v);
+    });
+    inputs.set(choice.v, input);
+    options.appendChild(input);
+    options.appendChild(label);
+  }
+  const help = el('p', { class: 'theme__help', id: opts.helpId }, t(opts.help));
+  const root = el(
+    'fieldset',
+    { class: `theme ${opts.className}`, 'aria-describedby': opts.helpId },
+    el('legend', { class: 'u-sr', id: opts.titleId }, t(opts.legend)),
+    help,
+    options,
+  );
+  function paint(value: V, pending: boolean, reverted: boolean): void {
+    for (const [choice, input] of inputs) {
+      const on_ = value === choice;
+      if (input.checked !== on_) input.checked = on_;
+    }
+    setAttr(root, 'data-pending', pending ? 'true' : null);
+    setAttr(root, 'data-revert', reverted ? 'true' : null);
+    setAttr(root, 'aria-busy', pending ? 'true' : null);
+  }
+  return { el: root, inputs, help, paint };
+}
+
+/**
+ * Görünüm → "Düzen": "Liste" (the default, one card per tool), "Öne çıkan"
+ * (the tool closest to its limit as a large double ring on top, a compact
+ * row per other tool) or "Kutucuklar" (a two-column grid of ring tiles with
+ * quick tiles under it). Before "Gösterge", which applies to the list only
+ * and says so while another layout is chosen.
+ */
+interface LayoutHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+}
+
+function createLayoutControl(ctx: SettingsContext): LayoutHandleLocal {
+  const group = createChoiceGroup<Layout>({
+    name: 'layout',
+    className: 'theme--layout',
+    titleId: LAYOUT_TITLE_ID,
+    helpId: LAYOUT_HELP_ID,
+    legend: 'settings.layout.legend',
+    help: 'settings.layout.help',
+    choices: [
+      { v: 'list', key: 'settings.layout.list' },
+      { v: 'focus', key: 'settings.layout.focus' },
+      { v: 'tiles', key: 'settings.layout.tiles' },
+    ],
+    onPick: (layout) => ctx.onLayout(layout),
+  });
+  return {
+    el: group.el,
+    update(state: PanelState): void {
+      group.paint(state.layout, state.layoutPending, state.layoutReverted);
+    },
+  };
+}
+
+/**
+ * Görünüm → "Şerit stili": "Sade" (the strip's bars, the default),
+ * "Halkalı" (a thick double ring and a large coloured figure) or "Dolgulu"
+ * (the tile filled to the figure, the weekly figure in a chip). Directly
+ * under the tray / strip choice it belongs to, and shown only while the
+ * strip is the chosen view: a style for something that is not on screen is
+ * a setting with nothing to look at.
+ */
+interface StripStyleHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+}
+
+function createStripStyleControl(ctx: SettingsContext): StripStyleHandleLocal {
+  const group = createChoiceGroup<StripStyle>({
+    name: 'strip-style',
+    className: 'theme--strip-style',
+    titleId: STRIP_STYLE_TITLE_ID,
+    helpId: STRIP_STYLE_HELP_ID,
+    legend: 'settings.stripStyle.legend',
+    help: 'settings.stripStyle.help',
+    choices: [
+      { v: 'plain', key: 'settings.stripStyle.plain' },
+      { v: 'rings', key: 'settings.stripStyle.rings' },
+      { v: 'fill', key: 'settings.stripStyle.fill' },
+    ],
+    onPick: (style) => ctx.onStripStyle(style),
+  });
+  return {
+    el: group.el,
+    update(state: PanelState): void {
+      group.el.hidden = state.trayView !== 'strip';
+      group.paint(state.stripStyle, state.stripStylePending, state.stripStyleReverted);
+    },
+  };
 }
 
 /**
@@ -1826,6 +1976,8 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   const theme = createThemeControl(ctx);
   const languageControl = createLanguageControl(ctx);
   const trayView = createTrayViewControl(ctx);
+  const stripStyle = createStripStyleControl(ctx);
+  const layout = createLayoutControl(ctx);
   const gauge = createGaugeControl(ctx);
   const glass = createGlassControl(ctx);
   const autostart = createAutostartControl(ctx);
@@ -1847,6 +1999,8 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
           el('h3', { class: 'settings__heading' }, t('settings.theme.legend')),
           theme.el,
           trayView.el,
+          stripStyle.el,
+          layout.el,
           gauge.el,
           glass.el,
           el('h3', { class: 'settings__heading' }, t('settings.language.legend')),
@@ -1934,6 +2088,8 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     theme.update(state);
     languageControl.update(state);
     trayView.update(state);
+    stripStyle.update(state);
+    layout.update(state);
     gauge.update(state);
     glass.update(state);
     autostart.update(state);
