@@ -2,6 +2,7 @@
 const path = require('node:path');
 const { IPC_STRIP } = require('../shared/contract');
 const { stripTiles, groundFor } = require('../core/strip-tiles');
+const { sanitizeStripStyle } = require('../core/strip-style');
 const defaultWin32 = require('./win32');
 const { IconProbe } = require('./taskbar-icons');
 
@@ -247,6 +248,8 @@ class TaskbarStrip {
 
     this._colour = null;
     this._candidate = null;
+    /** Görünüm → Şerit stili: 'plain' bars, 'rings' or 'fill' (strip.js). */
+    this._style = 'plain';
   }
 
   /** 'off' | 'unavailable' | 'waiting' | 'hidden' | 'no-room' | 'covered' | 'shown' */
@@ -308,6 +311,19 @@ class TaskbarStrip {
   update(snapshot) {
     this._snapshot = snapshot || null;
     if (this._wanted && this._api) this._sync('update');
+  }
+
+  /**
+   * Görünüm → Şerit stili changed (the SET_STRIP_STYLE handler applies it
+   * here, and index.js passes the stored value at start). Re-sent, not
+   * rebuilt: the same window and the same display layer redraw their tiles in
+   * the next frame, so the strip never hides or blinks on the change.
+   */
+  setStyle(style) {
+    const next = sanitizeStripStyle(style);
+    if (next === this._style) return;
+    this._style = next;
+    if (this._wanted && this._api) this._sync('style');
   }
 
   /** Windows switched light/dark: read the colour afresh, no debounce. */
@@ -629,7 +645,7 @@ class TaskbarStrip {
       this._target = { left: x, top: y, right: x + place.width, bottom: y + place.height };
     }
 
-    const base = { ground, tileWidth: TILE_WIDTH, tiles: tiles.slice(0, place.count) };
+    const base = { ground, style: this._style, tileWidth: TILE_WIDTH, tiles: tiles.slice(0, place.count) };
     const display = this._display;
     if (display && !display.failed()) {
       // The same tiles, drawn inside the taskbar at the same place.

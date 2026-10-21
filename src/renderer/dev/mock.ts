@@ -402,6 +402,7 @@ export type ScenarioId =
   | 'ilk-calistirma'
   | 'yukleniyor'
   | 'tahmini'
+  | 'halka-durumlari'
   | 'bos'
   | 'hicbiri-ekli'
   | 'kopuk';
@@ -548,6 +549,44 @@ export const SCENARIOS: readonly Scenario[] = [
     }),
   },
   {
+    // The ring gauge's harder states side by side (Görünüm → Gösterge →
+    // Halka): one window with no figure, an estimate, and an estimate that is
+    // also out of date. Bars draw them too; the rings are what this is for.
+    id: 'halka-durumlari',
+    label: 'Halka durumları',
+    bridgeAvailable: true,
+    snapshot: () => ({
+      generatedAt: iso(-8_000),
+      pendingUsage: [],
+      providers: [
+        {
+          ...claudeOk(38, 0),
+          id: 'antigravity',
+          displayName: 'Antigravity',
+          accent: '#B892E8',
+          planLabel: null,
+          sevenDay: { usedPercentage: null, certainty: 'unknown', resetsAt: null, absence: 'not-supplied' },
+          byModel: [],
+          weeklyCost: null,
+        },
+        {
+          ...claudeOk(),
+          fiveHour: estimated(62, 54, 71, FIVE_H_RESET()),
+          sevenDay: estimated(41, 36, 48, SEVEN_D_RESET()),
+        },
+        {
+          ...claudeStaleCapture(),
+          id: 'codex',
+          displayName: 'Codex CLI',
+          accent: '#7FB3D5',
+          planLabel: 'Plus',
+          fiveHour: { ...estimated(77, 70, 84, FIVE_H_RESET()), capturedAt: iso(-39 * 60_000) },
+          sevenDay: { ...estimated(52, 47, 58, SEVEN_D_RESET()), capturedAt: iso(-39 * 60_000) },
+        },
+      ],
+    }),
+  },
+  {
     id: 'bayat-olcum',
     label: 'Bayat ölçüm',
     bridgeAvailable: true,
@@ -688,6 +727,7 @@ export function anchorFor(
     anchorSource,
     display: { id: 1, scaleFactor, bounds, workArea },
     window: win,
+    maxHeight: win.height,
     edge,
     mode,
   };

@@ -47,9 +47,11 @@
 import type {
   Gauge,
   LanguageChoice,
+  Layout,
   PeriodModelCost,
   PeriodUsage,
   ProviderSnapshot,
+  StripStyle,
   ThemeChoice,
   TrayView,
   UsageHistory,
@@ -84,6 +86,12 @@ const TRAY_VIEW_TITLE_ID = 'settings-tray-view-title';
 const TRAY_VIEW_HELP_ID = 'settings-tray-view-help';
 const GAUGE_TITLE_ID = 'settings-gauge-title';
 const GAUGE_HELP_ID = 'settings-gauge-help';
+const LAYOUT_TITLE_ID = 'settings-layout-title';
+const LAYOUT_HELP_ID = 'settings-layout-help';
+const STRIP_STYLE_TITLE_ID = 'settings-strip-style-title';
+const STRIP_STYLE_HELP_ID = 'settings-strip-style-help';
+const GLASS_NAME_ID = 'settings-glass-name';
+const GLASS_HELP_ID = 'settings-glass-help';
 const AUTOSTART_NAME_ID = 'settings-autostart-name';
 const AUTOSTART_HELP_ID = 'settings-autostart-help';
 
@@ -113,6 +121,12 @@ export interface SettingsContext {
   onTrayView(view: TrayView): void;
   /** The user picked bars or rings. Optimistic; the app owns the revert. */
   onGauge(gauge: Gauge): void;
+  /** The user flipped "Saydamlığı azalt". Optimistic; the app owns the revert. */
+  onReduceTransparency(reduce: boolean): void;
+  /** The user picked list, focus or tiles. Optimistic; the app owns the revert. */
+  onLayout(layout: Layout): void;
+  /** The user picked the strip's tile style. Optimistic; the app owns the revert. */
+  onStripStyle(style: StripStyle): void;
   /** Leave settings and go back to the usage list. */
   onBack(): void;
   /** The user picked a tab. The store keeps it across hide and rebuild. */
@@ -141,6 +155,12 @@ export interface SettingsContext {
 
 export interface SettingsHandle {
   el: HTMLElement;
+  /**
+   * The view's title row: the back button and "Ayarlar". Not inside `el`: the
+   * panel mounts it in the header, which shows it in place of the brand while
+   * the view is open (header.ts), so the view has ONE top row.
+   */
+  bar: HTMLElement;
   render(state: PanelState, providers: readonly ProviderSnapshot[]): void;
   /** Focus the way out. It is the first thing in the view, so tab order runs
    *  forwards from it into the list. */
@@ -833,6 +853,196 @@ function createGaugeControl(ctx: SettingsContext): GaugeHandleLocal {
     setAttr(root, 'data-pending', state.gaugePending ? 'true' : null);
     setAttr(root, 'data-revert', state.gaugeReverted ? 'true' : null);
     setAttr(root, 'aria-busy', state.gaugePending ? 'true' : null);
+    // "Öne çıkan" and "Kutucuklar" are ring layouts: the choice is kept (and
+    // still operable, for the day the list comes back) but dimmed, and the
+    // line under it says where it applies instead of which ring is which.
+    const listOnly = state.layout !== 'list';
+    setAttr(root, 'data-inactive', listOnly ? 'true' : null);
+    setText(help, t(listOnly ? 'settings.gauge.helpRingsOnly' : 'settings.gauge.help'));
+  }
+
+  return { el: root, update };
+}
+
+/**
+ * One segmented choice under "Görünüm", the theme's native-radio fieldset
+ * and CSS: a hidden legend for the group name, the options, the help line
+ * as the group's footer, and the pending / revert attributes on the group.
+ * Shared by "Düzen" and "Şerit stili", which differ only in their values.
+ */
+interface ChoiceHandleLocal<V extends string> {
+  el: HTMLElement;
+  inputs: Map<V, HTMLInputElement>;
+  help: HTMLElement;
+  paint(value: V, pending: boolean, reverted: boolean): void;
+}
+
+function createChoiceGroup<V extends string>(opts: {
+  name: string;
+  className: string;
+  titleId: string;
+  helpId: string;
+  legend: MessageKey;
+  help: MessageKey;
+  choices: ReadonlyArray<{ v: V; key: MessageKey }>;
+  onPick(value: V): void;
+}): ChoiceHandleLocal<V> {
+  const inputs = new Map<V, HTMLInputElement>();
+  const options = el('div', { class: 'theme__opts' });
+  for (const choice of opts.choices) {
+    const id = `${opts.name}-${choice.v}`;
+    const input = el('input', {
+      type: 'radio',
+      name: `usage-notch-${opts.name}`,
+      id,
+      value: choice.v,
+      class: 'theme__radio',
+    }) as HTMLInputElement;
+    const label = el('label', { class: 'theme__opt', for: id }, t(choice.key));
+    on(input, 'change', () => {
+      if (input.checked) opts.onPick(choice.v);
+    });
+    inputs.set(choice.v, input);
+    options.appendChild(input);
+    options.appendChild(label);
+  }
+  const help = el('p', { class: 'theme__help', id: opts.helpId }, t(opts.help));
+  const root = el(
+    'fieldset',
+    { class: `theme ${opts.className}`, 'aria-describedby': opts.helpId },
+    el('legend', { class: 'u-sr', id: opts.titleId }, t(opts.legend)),
+    help,
+    options,
+  );
+  function paint(value: V, pending: boolean, reverted: boolean): void {
+    for (const [choice, input] of inputs) {
+      const on_ = value === choice;
+      if (input.checked !== on_) input.checked = on_;
+    }
+    setAttr(root, 'data-pending', pending ? 'true' : null);
+    setAttr(root, 'data-revert', reverted ? 'true' : null);
+    setAttr(root, 'aria-busy', pending ? 'true' : null);
+  }
+  return { el: root, inputs, help, paint };
+}
+
+/**
+ * Görünüm → "Düzen": "Liste" (the default, one card per tool), "Öne çıkan"
+ * (the tool closest to its limit as a large double ring on top, a compact
+ * row per other tool) or "Kutucuklar" (a two-column grid of ring tiles with
+ * quick tiles under it). Before "Gösterge", which applies to the list only
+ * and says so while another layout is chosen.
+ */
+interface LayoutHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+}
+
+function createLayoutControl(ctx: SettingsContext): LayoutHandleLocal {
+  const group = createChoiceGroup<Layout>({
+    name: 'layout',
+    className: 'theme--layout',
+    titleId: LAYOUT_TITLE_ID,
+    helpId: LAYOUT_HELP_ID,
+    legend: 'settings.layout.legend',
+    help: 'settings.layout.help',
+    choices: [
+      { v: 'list', key: 'settings.layout.list' },
+      { v: 'focus', key: 'settings.layout.focus' },
+      { v: 'tiles', key: 'settings.layout.tiles' },
+    ],
+    onPick: (layout) => ctx.onLayout(layout),
+  });
+  return {
+    el: group.el,
+    update(state: PanelState): void {
+      group.paint(state.layout, state.layoutPending, state.layoutReverted);
+    },
+  };
+}
+
+/**
+ * Görünüm → "Şerit stili": "Sade" (the strip's bars, the default),
+ * "Halkalı" (a thick double ring and a large coloured figure) or "Dolgulu"
+ * (the tile filled to the figure, the weekly figure in a chip). Directly
+ * under the tray / strip choice it belongs to, and shown only while the
+ * strip is the chosen view: a style for something that is not on screen is
+ * a setting with nothing to look at.
+ */
+interface StripStyleHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+}
+
+function createStripStyleControl(ctx: SettingsContext): StripStyleHandleLocal {
+  const group = createChoiceGroup<StripStyle>({
+    name: 'strip-style',
+    className: 'theme--strip-style',
+    titleId: STRIP_STYLE_TITLE_ID,
+    helpId: STRIP_STYLE_HELP_ID,
+    legend: 'settings.stripStyle.legend',
+    help: 'settings.stripStyle.help',
+    choices: [
+      { v: 'plain', key: 'settings.stripStyle.plain' },
+      { v: 'rings', key: 'settings.stripStyle.rings' },
+      { v: 'fill', key: 'settings.stripStyle.fill' },
+    ],
+    onPick: (style) => ctx.onStripStyle(style),
+  });
+  return {
+    el: group.el,
+    update(state: PanelState): void {
+      group.el.hidden = state.trayView !== 'strip';
+      group.paint(state.stripStyle, state.stripStylePending, state.stripStyleReverted);
+    },
+  };
+}
+
+/**
+ * Görünüm, last part: "Saydamlığı azalt", the panel's glass (the header and
+ * the tab band) drawn opaque. A switch row like "Windows açılışında başlat",
+ * because it is an on/off choice and not one of several looks. While Windows
+ * itself asks for less transparency (or high contrast is on) the glass is
+ * off whatever the switch says, and the line under it says so instead of the
+ * usual help: a switch that seems to do nothing must say why.
+ */
+interface GlassHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+}
+
+function createGlassControl(ctx: SettingsContext): GlassHandleLocal {
+  const name = el('span', { class: 'settings__name', id: GLASS_NAME_ID }, t('settings.glass.label'));
+  const hint = el('span', { class: 'settings__meta', id: GLASS_HELP_ID }, t('settings.glass.help'));
+  const control = el('button', {
+    type: 'button',
+    class: 'switch',
+    role: 'switch',
+    'aria-checked': 'false',
+    'aria-labelledby': GLASS_NAME_ID,
+    'aria-describedby': GLASS_HELP_ID,
+  }) as HTMLButtonElement;
+  control.appendChild(el('span', { class: 'switch__track', 'aria-hidden': 'true' }));
+
+  const root = el(
+    'div',
+    { class: 'settings__item settings__item--autostart settings__item--glass' },
+    el('span', { class: 'settings__text' }, name, hint),
+    control,
+  );
+
+  on(control, 'click', () => {
+    // The rendered state, not a captured one, as the autostart switch does.
+    ctx.onReduceTransparency(control.getAttribute('aria-checked') !== 'true');
+  });
+
+  function update(state: PanelState): void {
+    setText(hint, t(state.systemReducedTransparency ? 'settings.glass.bySystem' : 'settings.glass.help'));
+    setAttr(control, 'aria-checked', state.reduceTransparency ? 'true' : 'false');
+    setAttr(root, 'data-enabled', state.reduceTransparency ? 'true' : 'false');
+    setAttr(control, 'aria-busy', state.reduceTransparencyPending ? 'true' : null);
+    setAttr(root, 'data-pending', state.reduceTransparencyPending ? 'true' : null);
+    setAttr(root, 'data-revert', state.reduceTransparencyReverted ? 'true' : null);
   }
 
   return { el: root, update };
@@ -1766,7 +1976,10 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   const theme = createThemeControl(ctx);
   const languageControl = createLanguageControl(ctx);
   const trayView = createTrayViewControl(ctx);
+  const stripStyle = createStripStyleControl(ctx);
+  const layout = createLayoutControl(ctx);
   const gauge = createGaugeControl(ctx);
+  const glass = createGlassControl(ctx);
   const autostart = createAutostartControl(ctx);
   // The first-run introduction, on request: it runs once, so this is the way
   // back to it (and how the owner can look at it again).
@@ -1786,7 +1999,10 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
           el('h3', { class: 'settings__heading' }, t('settings.theme.legend')),
           theme.el,
           trayView.el,
+          stripStyle.el,
+          layout.el,
           gauge.el,
+          glass.el,
           el('h3', { class: 'settings__heading' }, t('settings.language.legend')),
           languageControl.el,
           autostart.el,
@@ -1802,6 +2018,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   );
   tabs.select(current);
 
+  const top = el('div', { class: 'settings__top' }, tabs.list);
   const root = el(
     'section',
     {
@@ -1810,10 +2027,18 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
       role: 'group',
       'aria-labelledby': SETTINGS_TITLE_ID,
     },
-    el('div', { class: 'settings__top' }, bar, tabs.list),
+    top,
     ...tabs.panels,
   );
   root.hidden = true;
+
+  // While the open page is scrolled under the glass tab band, the band draws
+  // its edge and shadow (panel.css), as the header does over the list.
+  function syncUnder(): void {
+    const open = tabs.panels.find((p) => !p.hidden);
+    setAttr(top, 'data-under', open && open.scrollTop > 0 ? 'true' : null);
+  }
+  for (const page of tabs.panels) page.addEventListener('scroll', syncUnder, { passive: true });
 
   /**
    * Reconciled by id in the order given, exactly like the main list: the
@@ -1856,13 +2081,17 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
       current = state.settingsTab;
       tabs.select(current);
     }
+    syncUnder();
     syncItems(state, providers);
     // Painted regardless of the tools list: a machine with no recognised tools
     // must still be able to pick a theme and see its history.
     theme.update(state);
     languageControl.update(state);
     trayView.update(state);
+    stripStyle.update(state);
+    layout.update(state);
     gauge.update(state);
+    glass.update(state);
     autostart.update(state);
     // The FULL snapshot list, not the added subset: a model row names its tool
     // even when that tool's card was removed from the main panel.
@@ -1893,6 +2122,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
 
   return {
     el: root,
+    bar,
     render,
     focusFirst(): void {
       back.focus({ preventScroll: true });

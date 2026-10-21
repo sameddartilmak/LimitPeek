@@ -1295,11 +1295,43 @@ export const IPC = {
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   /**
    * renderer -> main invoke(gauge: Gauge). Persists how the panel draws each
-   * tool's two windows ('bar' | 'ring'), then pushes PREFERENCES. Panel only:
-   * nothing is applied in main. Anything but the two literals is refused.
+   * tool's two windows in the list layout ('bar' | 'ring'), then pushes
+   * PREFERENCES. Panel only: nothing is applied in main (the strip has its own
+   * style, SET_STRIP_STYLE). Anything but the two literals is refused.
    * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
    */
   SET_GAUGE: 'prefs:set-gauge',
+  /**
+   * renderer -> main invoke(reduce: boolean). Persists "Saydamlığı azalt",
+   * the panel's glass drawn opaque, then pushes PREFERENCES. Panel only:
+   * nothing is applied in main. Anything but a real boolean is refused.
+   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
+   */
+  SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
+  /**
+   * renderer -> main send(height: number). The panel's own height in CSS px,
+   * whenever it changes. A 'fitted' window (`Preferences.frame`) IS the panel,
+   * so main sizes the window to it — keeping the side nearest the taskbar
+   * where it is — up to `AnchorPayload.maxHeight`. A 'canvas' window ignores
+   * it. Anything that is not a plausible height changes nothing.
+   */
+  PANEL_SIZE: 'panel:size',
+  /**
+   * renderer -> main invoke(layout: Layout). Persists how the panel lays out
+   * the tools ('list' | 'focus' | 'tiles'), then pushes PREFERENCES. Panel
+   * only: nothing is applied in main. Anything but the three literals is
+   * refused.
+   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
+   */
+  SET_LAYOUT: 'prefs:set-layout',
+  /**
+   * renderer -> main invoke(style: StripStyle). Persists how the taskbar strip
+   * draws its tiles ('plain' | 'rings' | 'fill'), hands it to the strip (which
+   * re-sends its tiles to the same window, no rebuild), then pushes
+   * PREFERENCES. Anything but the three literals is refused.
+   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
+   */
+  SET_STRIP_STYLE: 'prefs:set-strip-style',
 } as const;
 
 /**
@@ -1308,7 +1340,10 @@ export const IPC = {
  * exposing only these three; the panel's preload carries none of them.
  */
 export const IPC_STRIP = {
-  /** main -> strip page: the tiles to draw, and dark or light ink for the taskbar under them. */
+  /**
+   * main -> strip page: the tiles to draw, dark or light ink for the taskbar
+   * under them, and the strip style ('plain' | 'rings' | 'fill').
+   */
   DATA: 'strip:data',
   /** strip page -> main send(): a left click; opens the panel like the tray. */
   OPEN: 'strip:open',
@@ -1339,12 +1374,46 @@ export type LanguageChoice = 'tr' | 'en' | 'zh' | 'system';
 export type TrayView = 'tray' | 'strip';
 
 /**
- * How the panel draws a tool's two usage windows. 'bar' (the default) is two
- * bars side by side; 'ring' is two concentric activity rings, five-hour
- * outside and weekly inside. Panel only; the tray icon and the strip are not
- * affected.
+ * How the panel draws a tool's two usage windows in the list layout. 'bar'
+ * (the default) is two bars side by side; 'ring' is two concentric activity
+ * rings, five-hour outside and weekly inside. The other layouts always draw
+ * rings; the tray icon and the taskbar strip do not follow it.
  */
 export type Gauge = 'bar' | 'ring';
+
+/**
+ * What is behind the panel (src/core/panel-material.js). 'acrylic': the real
+ * Windows 11 acrylic, live behind a transparent page, so the panel draws a
+ * translucent base and translucent cards over it. 'none': nothing; the panel
+ * draws its opaque base.
+ */
+export type PanelMaterial = 'acrylic' | 'none';
+
+/**
+ * The shape of the panel's window. 'fitted' (Windows 11): the window IS the
+ * panel; Windows draws its corners and shadow, the page fills it, there is no
+ * tail, and main sizes it to the panel (IPC.PANEL_SIZE). 'canvas': a
+ * transparent frame larger than the panel, which draws its own corners,
+ * shadow and tail inside it.
+ */
+export type PanelFrame = 'fitted' | 'canvas';
+
+/**
+ * How the panel lays out the tools. 'list' (the default) is one card per
+ * tool; 'focus' ("Öne çıkan") puts the tool closest to its limit on top as a
+ * large double ring with a compact row per other tool; 'tiles'
+ * ("Kutucuklar") is a two-column grid of ring tiles with quick tiles under
+ * it. All three follow the same stored order and draw the same row states.
+ */
+export type Layout = 'list' | 'focus' | 'tiles';
+
+/**
+ * How the taskbar strip draws a tile. 'plain' (the default) is the mini bars;
+ * 'rings' ("Halkalı") a thick double ring and a large coloured figure;
+ * 'fill' ("Dolgulu") the tile's own ground filled to the figure, with the
+ * weekly figure in a chip.
+ */
+export type StripStyle = 'plain' | 'rings' | 'fill';
 
 export interface Preferences {
   theme: ThemeChoice;
@@ -1410,6 +1479,46 @@ export interface Preferences {
    * paint is a visible flash of bars turning into rings.
    */
   gauge: Gauge;
+  /**
+   * Settings → Genel → Görünüm → "Saydamlığı azalt": the panel's glass (the
+   * header, the settings tab band) drawn opaque. Only a real `true` is on.
+   * Read in frame one, like the theme.
+   */
+  reduceTransparency: boolean;
+  /**
+   * Windows itself asks for less transparency: "Saydamlık efektleri" is off,
+   * or high contrast is on (nativeTheme.prefersReducedTransparency /
+   * inForcedColorsMode, re-read on nativeTheme 'updated'). The glass goes
+   * opaque whatever `reduceTransparency` says, and the settings screen says
+   * why. Anything that is not `true` reaches the renderer as `false`.
+   */
+  systemReducedTransparency: boolean;
+  /**
+   * What is behind the panel RIGHT NOW. Main decides it — the OS build, the
+   * window, "Saydamlığı azalt" and Windows' own requests — and pushes it on
+   * every change; the renderer paints `html[data-material]` from it in frame
+   * one, like the theme. Anything that is not 'acrylic' is 'none', the opaque
+   * look that is right over any window.
+   */
+  material: PanelMaterial;
+  /**
+   * The window's shape, fixed for the life of the process. Read in frame one
+   * (`html[data-frame]`). Anything that is not 'fitted' is 'canvas', the
+   * shape every earlier version had.
+   */
+  frame: PanelFrame;
+  /**
+   * Settings → Genel → Görünüm → Düzen. Anything that is not a Layout is
+   * 'list'. Read in frame one, like the theme: a layout applied after first
+   * paint is a visible flash of the list turning into tiles.
+   */
+  layout: Layout;
+  /**
+   * Settings → Genel → Görünüm → Şerit stili. Anything that is not a
+   * StripStyle is 'plain'. The panel only shows and stores it; the strip
+   * draws it.
+   */
+  stripStyle: StripStyle;
 }
 
 /**
@@ -1442,6 +1551,13 @@ export interface AnchorPayload {
     workArea: { x: number; y: number; width: number; height: number };
   };
   window: { x: number; y: number; width: number; height: number };
+  /**
+   * The tallest the panel may be drawn, DIP. A 'canvas' window's own height;
+   * for a 'fitted' one, the most main will grow the window to on this work
+   * area. The list scrolls past it. A payload without it is read as
+   * `window.height`.
+   */
+  maxHeight: number;
   /** Which screen edge the taskbar sits on. */
   edge: 'bottom' | 'top' | 'left' | 'right';
   /**
@@ -1517,6 +1633,12 @@ export interface UsageNotchApi {
   setTrayView(view: TrayView): Promise<{ ok: boolean }>;
   /** Persist bars or rings for the panel's windows. See IPC.SET_GAUGE. */
   setGauge(gauge: Gauge): Promise<{ ok: boolean }>;
+  /** Persist "Saydamlığı azalt". See IPC.SET_REDUCE_TRANSPARENCY. */
+  setReduceTransparency(reduce: boolean): Promise<{ ok: boolean }>;
+  /** Persist the panel's layout. See IPC.SET_LAYOUT. */
+  setLayout(layout: Layout): Promise<{ ok: boolean }>;
+  /** Persist the taskbar strip's tile style. See IPC.SET_STRIP_STYLE. */
+  setStripStyle(style: StripStyle): Promise<{ ok: boolean }>;
   /**
    * Persist the plan the user says they are on for ONE tool, or clear it. See
    * IPC.SET_PLAN_LABEL and `ProviderSnapshot.planLabel`.
@@ -1543,6 +1665,8 @@ export interface UsageNotchApi {
   pin(): void;
   /** The pointer is over the painted panel (true) or not. See IPC.PANEL_HIT. */
   setPointerOverPanel(over: boolean): void;
+  /** The panel's own height in CSS px. Fire-and-forget. See IPC.PANEL_SIZE. */
+  setPanelHeight(height: number): void;
 }
 
 declare global {

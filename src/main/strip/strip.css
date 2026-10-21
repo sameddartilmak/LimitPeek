@@ -14,21 +14,55 @@ html, body {
   user-select: none;
   cursor: default;
 }
+/* THE PANEL'S NEUTRALS (2026-10-21). The greys were a teal-tinted set from
+ * the graphite palette (#A9B4B1 / #4F5B58 labels, #EDF2F0 / #171D1C figures)
+ * while the panel moved to Apple's neutral greys; side by side, the strip read
+ * as another app's. They are now the panel's family: the grey fills are
+ * tertiarySystemFill's rgba(118, 118, 128), the figures the panel's primary
+ * ink, the labels a step of the same neutral scale chosen to keep 4.5:1 on the
+ * tile at rest AND lit. Measured on a #202020 / #F3F3F3 taskbar:
+ *
+ *                       dark: ground / tile / lit     light: ground / tile / lit
+ *   label   #AEAEB2  7.37 / 6.13 / 5.45    #5F5F64  5.72 / 5.00 / 4.55
+ *   figure  #F5F5F7 14.96 / 12.46 / 11.06  #1D1D1F 15.17 / 13.25 / 12.06
+ *
+ * (graphite: label 7.64 / 6.46 / 5.25 dark, 6.37 / 5.77 / 5.21 light.) The
+ * bar and ring fills are still the tray donut's ramp, sent by main. */
 body {
   font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   /* Dark ground; [data-ground="light"] below. */
-  --tile: rgba(255, 255, 255, 0.06);
-  --tile-hover: rgba(255, 255, 255, 0.11);
-  --label: #A9B4B1;
-  --track: rgba(255, 255, 255, 0.14);
-  --figure: #EDF2F0;
+  --tile: rgba(118, 118, 128, 0.16);
+  --tile-hover: rgba(118, 118, 128, 0.26);
+  --label: #AEAEB2;
+  --track: rgba(120, 120, 128, 0.36);
+  --figure: #F5F5F7;
+  /* Görünüm → Şerit stili (below). The state steps as TEXT: the ramp's own
+   * colours, except where one falls short of 4.5:1 on the lit tile, which
+   * takes the same hue a step lighter (spent #FF453A -> #FF776F). */
+  --ink-calm: #30D158;
+  --ink-watch: #FFD60A;
+  --ink-ember: #FF9F0A;
+  --ink-spent: #FF776F;
+  /* "Dolgulu": the fill's alpha over the tile, the words on it, the chip. */
+  --fill-alpha: 0.28;
+  --fill-figure: #F5F5F7;
+  --fill-label: #EBEBF0;
+  --chip: #1C1C1E;
 }
 body[data-ground="light"] {
-  --tile: rgba(0, 0, 0, 0.045);
-  --tile-hover: rgba(0, 0, 0, 0.09);
-  --label: #4F5B58;
-  --track: rgba(0, 0, 0, 0.14);
-  --figure: #171D1C;
+  --tile: rgba(118, 118, 128, 0.12);
+  --tile-hover: rgba(118, 118, 128, 0.2);
+  --label: #5F5F64;
+  --track: rgba(120, 120, 128, 0.28);
+  --figure: #1D1D1F;
+  /* The light ramp a step darker where the lit tile needs it. */
+  --ink-calm: #1B6C2F;
+  --ink-watch: #8E4F00;
+  --ink-ember: #B22D00;
+  --ink-spent: #B90010;
+  --fill-figure: #1D1D1F;
+  --fill-label: #3A3A3C;
+  --chip: #FFFFFF;
 }
 .strip {
   display: flex;
@@ -42,10 +76,12 @@ body[data-ground="light"] {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   margin: 0 2px;
-  padding: 0 7px 0 6px;
-  border-radius: 6px;
+  /* The panel's control corner (8px) and an even 8px inset, as a card's
+   * content sits in its card. */
+  padding: 0 8px;
+  border-radius: 8px;
   background: var(--tile);
 }
 .tile:hover, .tile--hover { background: var(--tile-hover); }
@@ -85,7 +121,9 @@ body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
   min-width: 18px;
   font-size: 10px;
   line-height: 12px;
-  font-weight: 600;
+  /* The panel's hierarchy: window names medium in the secondary grey, the
+   * figure semibold in the primary ink, the time left regular. */
+  font-weight: 500;
   color: var(--label);
   white-space: nowrap;
 }
@@ -107,8 +145,98 @@ body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
   white-space: nowrap;
 }
 .tile__pct { width: 26px; text-align: right; color: var(--figure); }
-.tile__left { width: 50px; color: var(--label); }
+.tile__left { width: 50px; font-weight: 400; color: var(--label); }
 .tile__fill {
   height: 100%;
   border-radius: 2px;
+}
+
+/* ------------------------------------------------ Görünüm → Şerit stili */
+/* strip.js draws one of three looks into the SAME 180px tile; 'plain' is the
+ * rows above. The coloured words never take the ramp the rings and the fill
+ * are painted in: they take --ink-<state>, chosen per ground so every word on
+ * a tile keeps 4.5:1 at rest and lit. Measured on a #202020 / #F3F3F3
+ * taskbar (ground / tile / lit; test/strip-styles.test.js recomputes these
+ * from this file):
+ *
+ *   "Halkalı" figure   dark                      light
+ *     calm   #30D158 / #1B6C2F    8.06 / 6.71 / 5.96    5.85 / 5.11 / 4.65
+ *     watch  #FFD60A / #8E4F00   11.54 / 9.61 / 8.53    5.79 / 5.06 / 4.60
+ *     ember  #FF9F0A / #B22D00    7.93 / 6.60 / 5.86    5.79 / 5.06 / 4.60
+ *     spent  #FF776F / #B90010    6.30 / 5.25 / 4.66    6.16 / 5.38 / 4.90
+ *
+ * "Dolgulu": the words sit on the fill at its worst (every step's colour at
+ * 28% over the lit tile): the figure 5.54 dark / 7.26 light, the time left
+ * (--fill-label) 5.07 / 4.90. The weekly chip is opaque, so its figure is
+ * measured on the chip alone: 6.58 or better dark, 6.42 or better light. */
+
+/* "Halkalı": logo, a thick double ring, the lead figure large and coloured,
+ * its time left under it. */
+.tile__rings {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  overflow: visible;
+}
+.tile__track { stroke: var(--track); }
+.tile__lead {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.tile__big {
+  font-size: 15px;
+  line-height: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--figure);
+  white-space: nowrap;
+}
+.tile__sub {
+  font-size: 10.5px;
+  line-height: 13px;
+  font-weight: 600;
+  color: var(--label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile__big[data-state="calm"],  .tile__chip[data-state="calm"]  { color: var(--ink-calm); }
+.tile__big[data-state="watch"], .tile__chip[data-state="watch"] { color: var(--ink-watch); }
+.tile__big[data-state="ember"], .tile__chip[data-state="ember"] { color: var(--ink-ember); }
+.tile__big[data-state="spent"], .tile__chip[data-state="spent"] { color: var(--ink-spent); }
+
+/* "Dolgulu": the tile's own ground is the bar. The fill runs under the words
+ * from the left edge, clipped to the tile's corner; the figure and the time
+ * left are the neutral inks for the fill, the weekly figure a chip. */
+body[data-style="fill"] .tile {
+  position: relative;
+  overflow: hidden;
+}
+.tile__ground {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  opacity: var(--fill-alpha);
+  pointer-events: none;
+}
+body[data-style="fill"] .tile__logo,
+body[data-style="fill"] .tile__lead,
+.tile__chip { position: relative; }
+body[data-style="fill"] .tile__big { color: var(--fill-figure); }
+body[data-style="fill"] .tile__sub { color: var(--fill-label); }
+.tile__chip {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--chip);
+  font-size: 11px;
+  line-height: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--figure);
+  white-space: nowrap;
 }

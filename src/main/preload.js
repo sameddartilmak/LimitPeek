@@ -35,6 +35,10 @@ const CH = {
   PANEL_HIT: 'panel:hit',
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   SET_GAUGE: 'prefs:set-gauge',
+  SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
+  PANEL_SIZE: 'panel:size',
+  SET_LAYOUT: 'prefs:set-layout',
+  SET_STRIP_STYLE: 'prefs:set-strip-style',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -235,6 +239,36 @@ contextBridge.exposeInMainWorld('usageNotch', {
   setGauge: (gauge) => ipcRenderer.invoke(CH.SET_GAUGE, String(gauge)),
 
   /**
+   * Persists "Saydamlığı azalt": the panel's glass drawn opaque. Passed as
+   * the boolean it is (`=== true`, never truthiness); main checks it is a real
+   * boolean. `{ok:false}` means nothing changed anywhere.
+   *
+   * @param {boolean} reduce
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setReduceTransparency: (reduce) => ipcRenderer.invoke(CH.SET_REDUCE_TRANSPARENCY, reduce === true),
+
+  /**
+   * Persists how the panel lays out the tools: 'list', 'focus' or 'tiles'.
+   * Coerced to a string for convenience only; main checks it against the
+   * three literals. `{ok:false}` means nothing changed anywhere.
+   *
+   * @param {'list'|'focus'|'tiles'} layout
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setLayout: (layout) => ipcRenderer.invoke(CH.SET_LAYOUT, String(layout)),
+
+  /**
+   * Persists how the taskbar strip draws its tiles: 'plain', 'rings' or
+   * 'fill'. Coerced to a string for convenience only; main checks it against
+   * the three literals. `{ok:false}` means nothing changed anywhere.
+   *
+   * @param {'plain'|'rings'|'fill'} style
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setStripStyle: (style) => ipcRenderer.invoke(CH.SET_STRIP_STYLE, String(style)),
+
+  /**
    * Persists the plan the user says they are on for ONE tool, or clears it.
    *
    * The control is an `<input list>` with a per-tool `datalist`, so this carries
@@ -263,4 +297,9 @@ contextBridge.exposeInMainWorld('usageNotch', {
   // Only a literal true takes the mouse back; anything else leaves the
   // transparent window click-through, the safe state for other apps.
   setPointerOverPanel: (over) => ipcRenderer.send(CH.PANEL_HIT, over === true),
+  // A finite number or nothing: main checks it is a plausible height before a
+  // fitted window takes it (PanelWindow.setContentHeight).
+  setPanelHeight: (height) => {
+    if (typeof height === 'number' && Number.isFinite(height)) ipcRenderer.send(CH.PANEL_SIZE, height);
+  },
 });

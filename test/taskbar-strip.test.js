@@ -453,6 +453,66 @@ const target = (count = 2) => {
   return [777, BAR.left + p.x, BAR.top + p.y, p.width, p.height];
 };
 
+test.describe('the strip style: plain, rings or fill (Görünüm → Şerit stili)', () => {
+  const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+  test('a change is re-sent to the SAME window, which stays shown and placed; nothing is rebuilt', () => {
+    const r = shownRig();
+    const w = FakeWindow.all[0];
+    const placed = r.w32.state.placed.length;
+    for (const style of ['rings', 'fill', 'plain']) {
+      r.strip.setStyle(style);
+      assert.equal(lastData(w).style, style);
+      assert.deepEqual(lastData(w).tiles.map((t) => t.id), ['claude', 'codex'], 'the same tiles');
+    }
+    assert.equal(FakeWindow.all.length, 1, 'no new window');
+    assert.equal(w.destroyed, false);
+    assert.equal(w.hidden, 0, 'the strip must not blink on the change');
+    assert.equal(r.w32.state.placed.length, placed, 'not even moved');
+    assert.equal(r.strip.status(), 'shown');
+  });
+
+  test('the same value, or anything but the three literals, sends nothing new', () => {
+    const r = shownRig();
+    const w = FakeWindow.all[0];
+    const sent = w.webContents.sent.length;
+    r.strip.setStyle('plain');
+    r.strip.setStyle('Rings');
+    r.strip.setStyle(null);
+    assert.equal(w.webContents.sent.length, sent);
+    r.strip.setStyle('rings');
+    r.strip.setStyle(42);
+    assert.equal(lastData(w).style, 'plain', 'an unknown value is the plain bars');
+  });
+
+  test('set before the strip is enabled, the first frame already has it', () => {
+    const r = rig();
+    r.strip.setStyle('fill');
+    assert.equal(FakeWindow.all.length, 0, 'nothing is built for a strip that is off');
+    r.strip.enable();
+    r.strip.update(SNAP);
+    FakeWindow.all[0].finishLoad();
+    assert.equal(lastData(FakeWindow.all[0]).style, 'fill');
+  });
+
+  test('index.js passes the stored style before enabling, and SET_STRIP_STYLE hands a change to the strip', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'index.js'), 'utf8');
+    const at = src.indexOf('strip.setStyle(settings.stripStyle);');
+    assert.notEqual(at, -1);
+    assert.ok(at < src.indexOf('applyTrayView(settings.trayView);'), 'set before the strip is first enabled');
+    assert.match(src.replace(/\s+/g, ' '), /apply: \(style\) => \{ if \(strip\) strip\.setStyle\(style\); \},/);
+    // The panel's gauge no longer reaches the strip.
+    assert.doesNotMatch(src, /setGauge/);
+    assert.doesNotMatch(read('src/main/taskbar-strip.js'), /gauge/i);
+  });
+
+  test('the page reads the style, never the gauge', () => {
+    const js = read('src/main/strip/strip.js');
+    assert.doesNotMatch(js, /data\.gauge/);
+    assert.match(js, /data\.style/);
+    assert.doesNotMatch(read('src/main/strip/strip.css'), /data-gauge/);
+  });
+});
+
 test.describe('enable and disable', () => {
   test('off by default; enable starts the button probe, a poll and a guard, and builds the window once there is something to show', () => {
     const r = rig();
@@ -501,7 +561,8 @@ test.describe('enable and disable', () => {
     assert.equal(w.shown, 1);
     const data = lastData(w);
     assert.equal(data.ground, 'dark');
-    assert.deepEqual(Object.keys(data).sort(), ['ground', 'layer', 'tileWidth', 'tiles']);
+    assert.deepEqual(Object.keys(data).sort(), ['ground', 'layer', 'style', 'tileWidth', 'tiles']);
+    assert.equal(data.style, 'plain', 'the plain bars until the user picks a style');
     assert.equal(data.layer, 'full', 'no display layer: this window draws the tiles itself');
     assert.equal(data.tileWidth, TILE_WIDTH);
     assert.deepEqual(data.tiles.map((t) => t.id), ['claude', 'codex']);
@@ -773,7 +834,8 @@ test.describe('when it cannot be shown', () => {
     assert.equal(code.includes('GWLP_HWNDPARENT'), false);
     assert.equal((code.match(/HWND_TOPMOST, 0, 0, 0, 0, RAISE_FLAGS/g) || []).length, 2, 'attach and raise, nowhere else');
     assert.match(code, /SetWindowPos\(hwnd, 0, Math\.round\(x\),[\s\S]{0,90}?MOVE_FLAGS\)/);
-    assert.deepEqual([...code.matchAll(/koffi\.load\('([^']+)'\)/g)].map((m) => m[1]), ['user32.dll', 'gdi32.dll']);
+    // dwmapi.dll: the panel window's two attributes (loadDwm), bound apart from the strip's.
+    assert.deepEqual([...code.matchAll(/koffi\.load\('([^']+)'\)/g)].map((m) => m[1]), ['user32.dll', 'gdi32.dll', 'dwmapi.dll']);
   });
 
   test('handleOf reads the HWND buffer without koffi, and a bad window is 0', () => {
@@ -920,6 +982,49 @@ test.describe('the strip page', () => {
     const js = read('src/main/strip/strip.js');
     assert.equal(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/.test(js), false);
     assert.deepEqual([...new Set([...js.matchAll(/api\.([a-zA-Z]+)\(/g)].map((m) => m[1]))].sort(), ['hover', 'menu', 'onData', 'open']);
+  });
+
+  test('the panel\'s neutral greys, and 4.5:1 for every word on the tile at rest and lit, on both taskbars', () => {
+    const css = read('src/main/strip/strip.css').replace(/\r/g, '');
+    const block = (sel) => {
+      // At the start of a line: `html, body {` is not the palette.
+      const at = css.indexOf(`\n${sel} {`);
+      assert.notEqual(at, -1, sel);
+      return css.slice(at, css.indexOf('}', at));
+    };
+    const varOf = (body, name) => {
+      const m = new RegExp(`--${name}: ([^;]+);`).exec(body);
+      assert.ok(m, name);
+      return m[1].trim();
+    };
+    const lum = (hex) => {
+      const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+        .map((x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    };
+    const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    const over = (rgba, ground) => {
+      const [r, g, b, a] = rgba.match(/[\d.]+/g).map(Number);
+      return '#' + [r, g, b].map((v, i) => Math.round(v * a + parseInt(ground.slice(1 + 2 * i, 3 + 2 * i), 16) * (1 - a))
+        .toString(16).padStart(2, '0')).join('');
+    };
+    for (const [sel, ground] of [['body', '#202020'], ['body[data-ground="light"]', '#F3F3F3']]) {
+      const b = block(sel);
+      // No teal cast: every grey is a neutral (R = G, B within the Apple tint).
+      for (const name of ['label', 'figure']) {
+        const hex = varOf(b, name);
+        assert.match(hex, /^#[0-9A-F]{6}$/);
+        assert.equal(hex.slice(1, 3), hex.slice(3, 5), `${sel} --${name} ${hex} is tinted`);
+      }
+      assert.match(varOf(b, 'tile'), /^rgba\(118, 118, 128, /);
+      for (const ground2 of [ground, over(varOf(b, 'tile'), ground), over(varOf(b, 'tile-hover'), ground)]) {
+        for (const name of ['label', 'figure']) {
+          const r = ratio(varOf(b, name), ground2);
+          assert.ok(r >= 4.5, `${sel} --${name} on ${ground2}: ${r.toFixed(2)}`);
+        }
+      }
+    }
+    assert.doesNotMatch(css, /:\s*(#A9B4B1|#4F5B58|#EDF2F0|#171D1C)/, 'a graphite grey is back');
   });
 
   test('every logo the page names exists, under the renderer\'s own file names', () => {

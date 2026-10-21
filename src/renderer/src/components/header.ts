@@ -78,6 +78,11 @@ export interface HeaderHandle {
   tick(state: PanelState, now: number): void;
   pinButton: HTMLButtonElement;
   settingsButton: HTMLButtonElement;
+  /**
+   * Where the settings view's own title row (back + "Ayarlar") lives. Shown
+   * in place of the brand while the view is open; see SETTINGS IN THE HEADER.
+   */
+  mountSettingsBar(bar: HTMLElement): void;
 }
 
 /**
@@ -261,15 +266,27 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
   // name is not translated (it is a product name), and the tile is decorative
   // — the h1's accessible name is the words alone. Painted from CSS (panel.css
   // .hdr__logo) like the provider marks, so no markup is built from an asset.
+  const title = el(
+    'h1',
+    { class: 'hdr__title' },
+    el('span', { class: 'hdr__logo', 'aria-hidden': 'true' }),
+    'LimitPeek',
+  );
+  // SETTINGS IN THE HEADER (design report 2026-10-21). The settings view used
+  // to add a second top row under this one — back, "Ayarlar" — while this row
+  // kept the brand AND the settings button that had just opened the view, so
+  // two controls a few pixels apart both meant "leave settings". Now the view
+  // has ONE top row: while it is open the brand gives way to its back button
+  // and title (mounted here by panel.ts) and the settings button is hidden,
+  // leaving the freshness marker, the pin and the close. Tab order is then
+  // back, pin, close, the tabs: the way out first, as before.
+  const lead = el('div', { class: 'hdr__lead' });
+  lead.hidden = true;
   const top = el(
     'div',
     { class: 'hdr__top' },
-    el(
-      'h1',
-      { class: 'hdr__title' },
-      el('span', { class: 'hdr__logo', 'aria-hidden': 'true' }),
-      'LimitPeek',
-    ),
+    title,
+    lead,
     el('span', { class: 'hdr__spacer' }),
     fresh,
     el('div', { class: 'hdr__actions' }, settingsButton, pinButton, closeButton),
@@ -320,6 +337,11 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
     setAttr(pin.body, 'transform', state.pinned ? null : 'rotate(38 8 9)');
 
     const inSettings = state.view === 'settings';
+    title.hidden = inSettings;
+    lead.hidden = !inSettings;
+    // Hidden rather than removed: it keeps its handle, its aria-controls and
+    // its place, and it is where focus returns when the view closes.
+    settingsButton.hidden = inSettings;
     setAttr(settingsButton, 'aria-expanded', inSettings ? 'true' : 'false');
     setAttr(settingsButton, 'aria-label', inSettings ? t('header.settingsClose') : t('header.settings'));
     setAttr(
@@ -335,5 +357,8 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
     tick: paint,
     pinButton,
     settingsButton,
+    mountSettingsBar(bar: HTMLElement): void {
+      if (bar.parentElement !== lead) lead.appendChild(bar);
+    },
   };
 }

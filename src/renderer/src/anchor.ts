@@ -155,6 +155,38 @@ export function placePanel(
 }
 
 /**
+ * The tallest a fitted panel is before main has said so in an anchor
+ * (`AnchorPayload.maxHeight`). Mirrors FITTED_MAX_HEIGHT in
+ * src/main/panel-window.js; the first open's anchor corrects it on a smaller
+ * work area.
+ */
+export const FITTED_MAX_HEIGHT = 680;
+
+/**
+ * A 'fitted' window (Preferences.frame) IS the panel: the panel fills it from
+ * the edge nearest the taskbar, so a height change that reaches the window a
+ * frame late shows on the far side, and there is no tail to aim. `tailSide`
+ * still names the taskbar's side, which is where the entrance slides in from.
+ */
+export function fittedPlacement(anchor: AnchorPayload | null): PanelPlacement {
+  const edge = anchor ? anchor.edge : 'bottom';
+  const vertical = edge === 'bottom' || edge === 'top';
+  return {
+    left: 0,
+    top: edge === 'bottom' ? null : 0,
+    bottom: edge === 'bottom' ? 0 : null,
+    tailOffset: 0,
+    tailSide: edge,
+    origin: edge === 'top' ? '50% 0%' : edge === 'left' ? '0% 50%' : edge === 'right' ? '100% 50%' : '50% 100%',
+    axis: vertical ? 'vertical' : 'horizontal',
+    mode: anchor ? anchor.mode : 'hover',
+    anchorSource: anchor ? anchor.anchorSource : 'cursor',
+    tailClamped: false,
+    overflows: false,
+  };
+}
+
+/**
  * Fallback used before the first anchor arrives, and in the dev harness where
  * there is no tray. Bottom-centred, which is what a bottom taskbar gives.
  */

@@ -1,0 +1,96 @@
+/* Görünüm → Düzen: what the three layouts share. The list itself is panel.css
+ * and row.css, unchanged; "Öne çıkan" is layout-focus.css and "Kutucuklar"
+ * layout-tiles.css. app.ts writes `html[data-layout]` before first paint,
+ * and html[data-gauge] is then "ring" in both (app.ts paintGauge), so every
+ * ring rule in row.css (the fade, the hatch, the dim glyph, the skeleton,
+ * high contrast, reduced motion) already holds; these files only re-lay the
+ * same elements and resize the rings.
+ *
+ * Every card is still a .row on the card surface (--ink-800 in row.css), so
+ * a window material that restyles the cards restyles the tiles and the hero
+ * with them. */
+
+/* ------------------------------------------------- Settings → Görünüm */
+/* "Gösterge" outside the list: the choice is kept for the day the list comes
+ * back, so it stays operable, but it steps back and its line says where it
+ * applies (settings.ts). */
+.theme[data-inactive="true"] .theme__opts { opacity: .55; }
+
+/* ------------------------------------------- closed cards outside the list */
+/* The whole card opens its details (row.ts, data-opens). "Ayrıntılar" stays
+ * in the DOM as the keyboard's way in, Enter or Space, but is not drawn: the
+ * card draws its focus ring instead, so the ring outlines what opens. */
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .row:not([data-expanded]) > .row__more {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  min-height: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .row[data-opens="true"] { cursor: pointer; }
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .row[data-opens="true"]:hover {
+  box-shadow: inset 0 0 0 1px var(--fill);
+}
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .row:not([data-expanded]):has(> .row__more:focus-visible) {
+  outline: 2px solid var(--tint);
+  outline-offset: 2px;
+}
+/* The details themselves never open inside a closed card. */
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .row:not([data-expanded]) > .row__detail { display: none !important; }
+/* The mark is the tool's logo here, not a drag handle (row.ts canReorder):
+ * no grab cursor, no dots on hover. */
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .grip { cursor: inherit; }
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .grip:hover:not([disabled]) .mark,
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .grip[disabled] .mark { opacity: 1; }
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .grip[disabled] .grip__dots { display: none; }
+:is(html[data-layout="focus"], html[data-layout="tiles"]) [data-connected="false"] .grip[disabled] .mark { opacity: .6; }
+
+/* ------------------------------------------------ details, as a sheet */
+/* Outside the list a tool's details are its full card, alone: the other
+ * tools step out of the list and "‹ Tüm araçlar" (layouts.ts) sits above
+ * it. The card is drawn exactly as a list card in rings, details open. */
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .rows[data-sheet="true"] {
+  display: flex;
+  flex-direction: column;
+}
+:is(html[data-layout="focus"], html[data-layout="tiles"]) .rows[data-sheet="true"] > .row:not([data-expanded]) { display: none; }
+
+.sheet-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+  margin: var(--s-1) var(--s-3) 0;
+  padding: 0 var(--s-2) 0 2px;
+  border: 0;
+  border-radius: var(--radius-ctl);
+  background: transparent;
+  color: var(--tint-text);
+  font: inherit;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-hover) linear;
+}
+.sheet-back:hover { background: var(--fill-2); }
+.sheet-back svg { width: 16px; height: 16px; display: block; }
+.sheet-back[hidden] { display: none; }
+
+/* The footer steps aside for the quick tiles (layout-tiles.css). */
+.panel .foot[hidden] { display: none; }
+
+/* --------------------------------------------------------- high contrast */
+@media (forced-colors: active) {
+  :is(html[data-layout="focus"], html[data-layout="tiles"]) .row:not([data-expanded]):has(> .row__more:focus-visible) {
+    outline-color: Highlight;
+  }
+  :is(html[data-layout="focus"], html[data-layout="tiles"]) .row[data-opens="true"]:hover {
+    box-shadow: none;
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+  .sheet-back { color: LinkText; }
+}

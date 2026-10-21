@@ -11,9 +11,10 @@ const { isGauge } = require('../core/gauge');
  * object and one file. The value is checked against the two literals, never
  * coerced: anything else is a bug or a hostile message.
  *
- * Nothing is applied in main: the gauge is drawn by the renderer alone (the
- * tray donut and the strip do not change), so after the write there is only
- * the PREFERENCES push, which other listeners and a later reload read.
+ * Nothing is applied in main: the gauge is drawn by the renderer alone, and
+ * only in the list layout (the tray donut does not change, and the taskbar
+ * strip has its own style, SET_STRIP_STYLE), so after the write there is
+ * only the PREFERENCES push, which other listeners and a later reload read.
  *
  * `{ok:false}` means the value changed NOWHERE and the renderer must revert.
  *

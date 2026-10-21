@@ -9,10 +9,14 @@
 import type {
   Gauge,
   LanguageChoice,
+  PanelFrame,
+  PanelMaterial,
+  Layout,
   Preferences,
   ProviderSnapshot,
   SetupAction,
   Snapshot,
+  StripStyle,
   ThemeChoice,
   TrayView,
 } from '../../shared/contract.js';
@@ -74,9 +78,54 @@ function applyLocale(prefs: Preferences | null): void {
  * Görünüm → Gösterge on the document: row.css draws the activity rings under
  * `html[data-gauge="ring"]` and the bars otherwise. Written in frame one, like
  * the theme, or a ring user sees bars turn into rings on every launch.
+ *
+ * The attribute is the gauge DRAWN, not only the one chosen: the user's own
+ * in the list layout, and always the rings in "Öne çıkan" and "Kutucuklar",
+ * which are ring layouts by nature (layout-focus.css, layout-tiles.css). So
+ * every ring cue row.css already has (the estimate's fade, the stale hatch,
+ * the missing-window glyph, the ring skeleton, high contrast, reduced motion)
+ * holds in those layouts too, with no second copy of it.
  */
 function paintGauge(gauge: Gauge): void {
-  document.documentElement.dataset.gauge = gauge;
+  const root = document.documentElement;
+  const layout = root.dataset.layout;
+  root.dataset.gauge = layout === 'focus' || layout === 'tiles' ? 'ring' : gauge;
+}
+
+/**
+ * Görünüm → Düzen on the document: `html[data-layout]` selects the list, the
+ * focus or the tiles styles, and panel.ts builds the matching structure.
+ * Written in frame one, before the panel exists, so a tiles user never sees
+ * the list for one frame. The gauge is repainted with it (see paintGauge).
+ */
+function paintLayout(layout: Layout, gauge: Gauge): void {
+  document.documentElement.dataset.layout = layout;
+  paintGauge(gauge);
+}
+
+/**
+ * Görünüm → "Saydamlığı azalt" on the document: tokens.css turns every glass
+ * surface opaque under `html[data-reduce-transparency]`. Set when the user
+ * asked OR Windows did (reduced transparency, high contrast; the CSS media
+ * features say the same live, this covers what main measured). Frame one,
+ * like the gauge, or the glass flashes before it goes opaque.
+ */
+function paintGlass(reduce: boolean, system: boolean): void {
+  if (reduce || system) document.documentElement.dataset.reduceTransparency = 'true';
+  else delete document.documentElement.dataset.reduceTransparency;
+}
+
+/**
+ * What main has behind the panel, and the window's shape, on the document:
+ * tokens.css draws the translucent base and cards under
+ * `html[data-material="acrylic"]`, panel.css fills a `data-frame="fitted"`
+ * window with the panel. Frame one, like the gauge: a translucent panel
+ * painted before main's answer would show the desktop through an opaque
+ * window as black, and an opaque one over live acrylic would hide it.
+ */
+function paintMaterial(material: PanelMaterial, frame: PanelFrame): void {
+  document.documentElement.dataset.material = material;
+  document.documentElement.dataset.frame = frame;
 }
 
 export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
@@ -93,7 +142,9 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const initialPrefs = bridge.initialPreferences();
   applyLocale(initialPrefs);
   const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
-  paintGauge(initialPrefs?.gauge ?? 'bar');
+  paintLayout(initialPrefs?.layout ?? 'list', initialPrefs?.gauge ?? 'bar');
+  paintGlass(initialPrefs?.reduceTransparency === true, initialPrefs?.systemReducedTransparency === true);
+  paintMaterial(initialPrefs?.material ?? 'none', initialPrefs?.frame ?? 'canvas');
   store.set({
     theme: theme.choice(),
     language: initialPrefs?.language ?? 'system',
@@ -105,6 +156,12 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     stripAvailable: initialPrefs?.stripAvailable ?? true,
     stripNoRoom: initialPrefs?.stripNoRoom ?? false,
     gauge: initialPrefs?.gauge ?? 'bar',
+    reduceTransparency: initialPrefs?.reduceTransparency === true,
+    systemReducedTransparency: initialPrefs?.systemReducedTransparency === true,
+    material: initialPrefs?.material ?? 'none',
+    frame: initialPrefs?.frame ?? 'canvas',
+    layout: initialPrefs?.layout ?? 'list',
+    stripStyle: initialPrefs?.stripStyle ?? 'plain',
   });
   disposers.push(() => theme.destroy());
   // 400 ms on hover, at once on keyboard focus (tooltip.ts).
@@ -151,10 +208,13 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onOpenSettings: (tab) => openSettings(tab),
     onSettingsTab: (tab) => store.set({ settingsTab: tab }),
     // One card's details at a time: opening another closes the first, and
-    // pressing the open one closes it.
+    // pressing the open one closes it. In "Öne çıkan" and "Kutucuklar" the
+    // open card is a sheet over the others (panel.ts), and closing it puts
+    // focus back on the tool it was opened from.
     onToggleExpand: (id) => {
       const open = store.get().expandedProviderId;
       store.set({ expandedProviderId: open === id ? null : id });
+      if (open === id) panel.focusTool(id);
     },
     onCoachConnect: (id) => beginSetup(id, 'coach'),
     onCoachDismiss: () => void dismissCoach(),
@@ -166,10 +226,14 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onAutostartChange: (enabled) => void applyAutostart(enabled),
     onTrayViewChange: (view) => void applyTrayView(view),
     onGaugeChange: (gauge) => void applyGauge(gauge),
+    onReduceTransparencyChange: (reduce) => void applyReduceTransparency(reduce),
+    onLayoutChange: (layout) => void applyLayout(layout),
+    onStripStyleChange: (style) => void applyStripStyle(style),
     coachDismissed: false,
     onReorder: (ids) => void applyOrder(ids),
     onKeepAlive: () => bridge.panelOpened(),
     onPointerOverPanel: (over) => bridge.setPointerOverPanel(over),
+    onPanelHeight: (height) => bridge.setPanelHeight(height),
     // The user read it and is done with it. Only ever reaches a notice the
     // STORE owns: the offline banner is a live condition, not an outcome, and
     // the panel does not offer a control that would clear it (panel.ts).
@@ -594,6 +658,15 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     acceptAutostart(prefs);
     acceptTrayView(prefs);
     acceptGauge(prefs);
+    acceptReduceTransparency(prefs);
+    // Not the user's to revert: main states what the window IS, so the
+    // document follows at once, request in flight or not.
+    if (prefs.material !== store.get().material || prefs.frame !== store.get().frame) {
+      paintMaterial(prefs.material, prefs.frame);
+      store.set({ material: prefs.material, frame: prefs.frame });
+    }
+    acceptLayout(prefs);
+    acceptStripStyle(prefs);
     // Main's persisted answer. Only ever moves the card SHUT from here: a push
     // that crossed a "Şimdi değil" in flight must not re-open it under the user.
     if (prefs.setupCoachDismissed && !store.get().setupCoachDismissed) {
@@ -753,6 +826,147 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     if (prefs.gauge === store.get().gauge) return;
     paintGauge(prefs.gauge);
     store.set({ gauge: prefs.gauge });
+  }
+
+  // --- Görünüm: list, focus or tiles ----------------------------------------
+
+  /** The newest layout asked of main. Same shape as gaugeRequest. */
+  let layoutRequest: { layout: Layout; at: number } | null = null;
+  /** Same role as `confirmedGauge`: what main is known to hold. */
+  let confirmedLayout: Layout = store.get().layout;
+
+  /**
+   * Optimistic, then reconciled, exactly like applyGauge: the panel changes
+   * layout on the gesture and main is asked afterwards. `{ok:false}` puts the
+   * OLD layout back on the document as well as in the radio group. An open
+   * "Ayrıntılar" is closed first: in the list it is a card that grew, in the
+   * other two a sheet, and carrying one into the other would open the wrong
+   * shape under the user.
+   */
+  async function applyLayout(next: Layout): Promise<void> {
+    if (next === store.get().layout) return;
+
+    const request = { layout: next, at: Date.now() };
+    layoutRequest = request;
+    paintLayout(next, store.get().gauge);
+    store.set({ layout: next, layoutPending: true, layoutReverted: false, notice: null, expandedProviderId: null });
+
+    const ok = await bridge.setLayout(next);
+    if (ok) confirmedLayout = next;
+
+    if (layoutRequest !== request) return;
+    layoutRequest = null;
+    store.set({ layoutPending: false });
+    if (ok) return;
+
+    paintLayout(confirmedLayout, store.get().gauge);
+    store.set({ layout: confirmedLayout, layoutReverted: true, expandedProviderId: null });
+    say(t('app.layoutNotSaved'), 'error');
+    window.setTimeout(() => {
+      if (store.get().layoutReverted) store.set({ layoutReverted: false });
+    }, 1_600);
+  }
+
+  /** Main's value, pushed. Adopted unless a pick is still in flight. */
+  function acceptLayout(prefs: Preferences): void {
+    confirmedLayout = prefs.layout;
+    if (layoutRequest !== null) return;
+    if (prefs.layout === store.get().layout) return;
+    paintLayout(prefs.layout, store.get().gauge);
+    store.set({ layout: prefs.layout, expandedProviderId: null });
+  }
+
+  // --- Görünüm: the taskbar strip's style -----------------------------------
+
+  /** The newest strip style asked of main. Same shape as trayViewRequest. */
+  let stripStyleRequest: { style: StripStyle; at: number } | null = null;
+  /** Same role as `confirmedTrayView`: what main is known to hold. */
+  let confirmedStripStyle: StripStyle = store.get().stripStyle;
+
+  /**
+   * Optimistic, then reconciled, exactly like applyTrayView: the radio moves
+   * on the gesture, main stores it and redraws the strip. Nothing on the
+   * document changes here; the strip is main's window.
+   */
+  async function applyStripStyle(next: StripStyle): Promise<void> {
+    if (next === store.get().stripStyle) return;
+
+    const request = { style: next, at: Date.now() };
+    stripStyleRequest = request;
+    store.set({ stripStyle: next, stripStylePending: true, stripStyleReverted: false, notice: null });
+
+    const ok = await bridge.setStripStyle(next);
+    if (ok) confirmedStripStyle = next;
+
+    if (stripStyleRequest !== request) return;
+    stripStyleRequest = null;
+    store.set({ stripStylePending: false });
+    if (ok) return;
+
+    store.set({ stripStyle: confirmedStripStyle, stripStyleReverted: true });
+    say(t('app.stripStyleNotSaved'), 'error');
+    window.setTimeout(() => {
+      if (store.get().stripStyleReverted) store.set({ stripStyleReverted: false });
+    }, 1_600);
+  }
+
+  /** Main's value, pushed. Adopted unless a pick is still in flight. */
+  function acceptStripStyle(prefs: Preferences): void {
+    confirmedStripStyle = prefs.stripStyle;
+    if (stripStyleRequest !== null) return;
+    if (prefs.stripStyle !== store.get().stripStyle) store.set({ stripStyle: prefs.stripStyle });
+  }
+
+  // --- Görünüm: "Saydamlığı azalt" -----------------------------------------
+
+  /** The newest value asked of main. Same shape as gaugeRequest. */
+  let glassRequest: { reduce: boolean; at: number } | null = null;
+  /** Same role as `confirmedGauge`: what main is known to hold. */
+  let confirmedReduce: boolean = store.get().reduceTransparency;
+
+  /**
+   * Optimistic, then reconciled, exactly like applyGauge: the glass goes
+   * opaque (or comes back) on the gesture and main is asked afterwards.
+   * `{ok:false}` puts the old value back on the document as well as on the
+   * switch, so the screen never shows a choice that will not survive a
+   * restart.
+   */
+  async function applyReduceTransparency(next: boolean): Promise<void> {
+    if (next === store.get().reduceTransparency) return;
+
+    const request = { reduce: next, at: Date.now() };
+    glassRequest = request;
+    paintGlass(next, store.get().systemReducedTransparency);
+    store.set({ reduceTransparency: next, reduceTransparencyPending: true, reduceTransparencyReverted: false, notice: null });
+
+    const ok = await bridge.setReduceTransparency(next);
+    if (ok) confirmedReduce = next;
+
+    if (glassRequest !== request) return;
+    glassRequest = null;
+    store.set({ reduceTransparencyPending: false });
+    if (ok) return;
+
+    paintGlass(confirmedReduce, store.get().systemReducedTransparency);
+    store.set({ reduceTransparency: confirmedReduce, reduceTransparencyReverted: true });
+    say(t('app.reduceTransparencyNotSaved'), 'error');
+    window.setTimeout(() => {
+      if (store.get().reduceTransparencyReverted) store.set({ reduceTransparencyReverted: false });
+    }, 1_600);
+  }
+
+  /**
+   * Main's values, pushed. Windows' half is adopted at once (it is not the
+   * user's to revert); the user's half unless a flip is still in flight.
+   */
+  function acceptReduceTransparency(prefs: Preferences): void {
+    confirmedReduce = prefs.reduceTransparency;
+    const system = prefs.systemReducedTransparency;
+    const reduce = glassRequest !== null ? store.get().reduceTransparency : prefs.reduceTransparency;
+    const current = store.get();
+    if (reduce === current.reduceTransparency && system === current.systemReducedTransparency) return;
+    paintGlass(reduce, system);
+    store.set({ reduceTransparency: reduce, systemReducedTransparency: system });
   }
 
   // --- language -----------------------------------------------------------
@@ -948,6 +1162,15 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     if (store.get().view === 'settings') {
       store.set({ view: 'main', revertedId: null });
       panel.focusView('main');
+      return;
+    }
+    // Then a tool's details, where they are a sheet over the other tools
+    // ("Öne çıkan", "Kutucuklar"): Esc is the way back to them, as in
+    // settings. In the list the details are part of a card and Esc closes
+    // the panel as it always did.
+    const state = store.get();
+    if (state.layout !== 'list' && state.expandedProviderId !== null) {
+      ctx.onToggleExpand(state.expandedProviderId);
       return;
     }
     requestClose();

@@ -4,6 +4,8 @@ const path = require('node:path');
 const { BrowserWindow, screen, app } = require('electron');
 const { IPC } = require('../shared/contract');
 const log = require('../core/log');
+const { PANEL_BASE, PANEL_EDGE } = require('../core/panel-material');
+const { handleOf } = require('./win32');
 
 /**
  * The panel window.
@@ -14,6 +16,37 @@ const log = require('../core/log');
  * tray icon. It is also never animated by moving the OS window — the renderer
  * animates its own content inside a fixed frame, which stays smooth because it
  * is a compositor job rather than a stream of SetWindowPos calls.
+ *
+ * TWO SHAPES OF WINDOW (concept "A · Gerçek Windows camı", 2026-10-21)
+ * --------------------------------------------------------------------
+ *   'canvas'  a TRANSPARENT frame larger than the panel. The renderer draws
+ *             the panel inside it with its own corners, shadow and the tail
+ *             that points at the tray icon; the empty margin is click-through
+ *             (setPointerOverPanel). Windows 10, and every earlier version.
+ *   'fitted'  the window IS the panel: opaque to Windows, so DWM rounds its
+ *             corners, draws its shadow and — when the material is 'acrylic'
+ *             — the real flyout acrylic behind it, with the page transparent
+ *             on top. Windows 11 (src/core/panel-material.js).
+ *
+ * Why fitted and not acrylic behind the canvas, measured in Electron 44.2 on
+ * Windows 11 26200 (scratch spike, 2026-10-21): `backgroundMaterial: 'acrylic'`
+ * on a TRANSPARENT window does draw acrylic, but across the whole window rect
+ * — margins included — with square corners and no shadow, because Electron
+ * turns DWM's rounding off for transparent windows; asking DWM for the
+ * rounding by hand on that window turned the backdrop flat grey instead. On
+ * an opaque frameless window the same option gives acrylic, Windows' 8px
+ * corners and its shadow, and it stays acrylic while the window is NOT active
+ * — which the tray open needs, because it never takes focus. That window also
+ * had Windows' invisible resize borders, 8 physical px left, right and below,
+ * that answered hit tests for the panel; so the thick frame is off and the
+ * corners and the shadow are asked of DWM directly (win32 setFlyoutShape).
+ * Measured after: WindowFromPoint 3px outside any edge is the window behind.
+ *
+ * A fitted window grows and shrinks with the panel: the renderer reports the
+ * panel's height (IPC.PANEL_SIZE, `setContentHeight`) and the window follows,
+ * keeping the edge nearest the taskbar where it is. It is still created once,
+ * composited once and parked off-screen between opens; only its size moves,
+ * and only when the content does.
  */
 /**
  * The window's size where the work area allows it (UI plan 2026-09-29: a 400px
@@ -26,6 +59,18 @@ const PANEL_HEIGHT = 720;
 const EDGE_MARGIN = 8;
 /** Size of the stand-in rect used when the real tray rect is unavailable. */
 const SYNTHETIC_TRAY_SIZE = 16;
+/**
+ * The fitted window (see the header). 400 wide, the canvas panel's width; at
+ * most 680 tall, the tallest panel the 720 canvas held; 12 from the taskbar
+ * and the work-area edges, where Windows 11 puts its own flyouts. The start
+ * height only lasts until the renderer's first report.
+ */
+const FITTED_WIDTH = 400;
+const FITTED_MAX_HEIGHT = 680;
+const FITTED_GAP = 12;
+const FITTED_START_HEIGHT = 420;
+/** A report below this is not a panel (the header alone is 60). */
+const FITTED_MIN_HEIGHT = 64;
 /**
  * How long an UNPINNED panel survives after the pointer leaves it. Unchanged
  * from the old tray-mouse-leave grace period, which was measured against a
@@ -163,6 +208,26 @@ class PanelWindow {
     // Overridable only so `scripts/smoke-ipc.js` can drive the preload surface
     // against a page this lane owns. Production always resolves it.
     this.entry = options.entry || null;
+    /** 'canvas' unless the caller measured the OS for 'fitted' (see the header). */
+    this.frame = options.frame === 'fitted' ? 'fitted' : 'canvas';
+    const look = options.look || {};
+    /** What the caller asked for; `_material` is what is actually live. */
+    this._wantAcrylic = look.acrylic === true;
+    this._dark = look.dark !== false;
+    this._material = 'none';
+    /** Set when Electron refused the acrylic once; the panel stays opaque after. */
+    this._acrylicBroken = false;
+    /** win32.loadDwm, injected so a test never loads koffi. */
+    this._dwm = typeof options.dwm === 'function' ? options.dwm : null;
+    /** The panel's own height, as the renderer last reported it (fitted only). */
+    this._fitHeight = FITTED_START_HEIGHT;
+    /**
+     * Where the fitted window was last placed from: the anchor point, the
+     * taskbar edge, the work area and the tray rect. A content resize
+     * re-places from THIS, never from a fresh anchor — a cursor fallback
+     * re-read mid-open would move the panel to wherever the mouse is.
+     */
+    this._place = null;
     this.win = null;
     this.pinned = false;
     this._hideTimer = null;
@@ -220,23 +285,35 @@ class PanelWindow {
   create() {
     if (this.win) return this.win;
     const entry = this.entry || resolveRendererEntry();
+    const fitted = this.frame === 'fitted';
+    const acrylic = fitted && this._wantAcrylic;
+    const size = fitted
+      ? { width: FITTED_WIDTH, height: this._fitHeight }
+      : { width: this.width, height: this.height };
 
     this.win = new BrowserWindow({
-      width: this.width,
-      height: this.height,
+      width: size.width,
+      height: size.height,
       show: false,
       frame: false,
-      transparent: true,
+      // Fitted: opaque to Windows, so DWM rounds, shadows and backdrops it;
+      // the page stays transparent over the acrylic (header comment).
+      transparent: !fitted,
       resizable: false,
       movable: false,
       minimizable: false,
       maximizable: false,
       fullscreenable: false,
       skipTaskbar: true,
-      hasShadow: false,
+      // The fitted window's shadow is Windows' own; the canvas draws its own.
+      hasShadow: fitted,
       alwaysOnTop: true,
       acceptFirstMouse: true,
-      backgroundColor: '#00000000',
+      backgroundColor: fitted && !acrylic ? this._base() : '#00000000',
+      // No thick frame: with one, Windows adds invisible resize borders that
+      // take clicks beside the panel (win32.js, setFlyoutShape gives the
+      // corners and the shadow back).
+      ...(fitted ? { backgroundMaterial: acrylic ? 'acrylic' : 'none', thickFrame: false } : {}),
       title: 'LimitPeek',
       icon: path.join(__dirname, '..', '..', 'assets', 'app-icon.png'),
       webPreferences: {
@@ -262,14 +339,17 @@ class PanelWindow {
     this.win.setAlwaysOnTop(true, 'pop-up-menu');
     this.win.setVisibleOnAllWorkspaces(true);
     this.win.setMenu(null);
+    this._material = acrylic ? 'acrylic' : 'none';
+    if (fitted) this._applyDwm();
 
-    // The frame is larger than the panel and transparent around it, and a
+    // The canvas is larger than the panel and transparent around it, and a
     // transparent window still takes every click on its rectangle. So it
     // starts click-through, with mouse MOVES forwarded so the renderer can
     // still see the pointer arrive; the renderer reports when the pointer is
     // over the painted panel and only then is the mouse taken back
     // (setPointerOverPanel, IPC.PANEL_HIT). Owner, 2026-10-01: the space
-    // beside and above the panel blocked clicks on the apps behind it.
+    // beside and above the panel blocked clicks on the apps behind it. A
+    // fitted window has no such space and simply takes the mouse.
     this._clickThrough = null;
     this.setPointerOverPanel(false);
 
@@ -313,7 +393,7 @@ class PanelWindow {
     // flash the empty frame at the top-left corner. `showInactive()` is
     // SW_SHOWNOACTIVATE: it does not take focus, so priming the window at launch
     // cannot yank the keyboard away from whatever the user is doing.
-    this.win.setBounds({ x: OFFSCREEN.x, y: OFFSCREEN.y, width: this.width, height: this.height });
+    this.win.setBounds({ x: OFFSCREEN.x, y: OFFSCREEN.y, ...size });
     this.win.showInactive();
 
     return this.win;
@@ -372,28 +452,13 @@ class PanelWindow {
     const work = display.workArea;
     const edge = taskbarEdge(display, anchorPoint);
 
-    // Clamped on BOTH axes in every branch. Without this the panel hangs off
-    // the screen at a taskbar corner, where centring on the icon puts half of
-    // it past the edge — and the renderer's tail-clamp has nothing to clamp
-    // against.
-    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-    const { width, height } = fitTo(this.width, this.height, work);
-    const minX = work.x + EDGE_MARGIN;
-    const maxX = work.x + work.width - width - EDGE_MARGIN;
-    const minY = work.y + EDGE_MARGIN;
-    const maxY = work.y + work.height - height - EDGE_MARGIN;
-
-    let x;
-    let y;
-    if (edge === 'left' || edge === 'right') {
-      x = clamp(edge === 'left' ? minX : maxX, minX, maxX);
-      y = clamp(Math.round(anchorPoint.y - height / 2), minY, maxY);
-    } else {
-      x = clamp(Math.round(anchorPoint.x - width / 2), minX, maxX);
-      y = clamp(edge === 'top' ? minY : maxY, minY, maxY);
-    }
-
-    this._placeAcrossDpi({ x: Math.round(x), y: Math.round(y), width, height });
+    // Clamped on BOTH axes in every branch (placeNear) — and the renderer's
+    // tail-clamp has nothing to clamp against otherwise.
+    const fitted = this.frame === 'fitted';
+    const size = fitted ? this._fittedSize(work) : fitTo(this.width, this.height, work);
+    this._placeAcrossDpi(placeNear(anchorPoint, edge, work, size, fitted ? FITTED_GAP : EDGE_MARGIN));
+    // The fitted window follows its content from here (setContentHeight).
+    this._place = fitted ? { anchorPoint, edge, work, tray } : null;
 
     // Report what the OS actually gave us, not what we asked for. On a
     // fractional scale factor Chromium rounds the size through physical
@@ -411,18 +476,122 @@ class PanelWindow {
         workArea: work,
       },
       window: bounds,
+      // The tallest the renderer may draw the panel: the canvas itself, or the
+      // most a fitted window will grow to on this work area.
+      maxHeight: fitted ? fitTo(FITTED_WIDTH, FITTED_MAX_HEIGHT, work, FITTED_GAP).height : bounds.height,
       edge,
     };
+  }
+
+  /** The fitted window's size for a work area: the panel's, within the limits. */
+  _fittedSize(work) {
+    return fitTo(FITTED_WIDTH, Math.min(this._fitHeight, FITTED_MAX_HEIGHT), work, FITTED_GAP);
+  }
+
+  /**
+   * The renderer measured the panel (IPC.PANEL_SIZE). A fitted window takes
+   * that height at once while it is open — keeping the side nearest the
+   * taskbar where it is, so the panel grows away from it — and remembers it
+   * for the next open otherwise. A canvas window has a fixed size and ignores
+   * it. Untrusted input, so anything that is not a plausible height changes
+   * nothing.
+   *
+   * @returns {boolean} true when the height was taken
+   */
+  setContentHeight(height) {
+    if (this.frame !== 'fitted') return false;
+    const h = typeof height === 'number' ? Math.round(height) : NaN;
+    if (!Number.isFinite(h) || h < FITTED_MIN_HEIGHT || h > 4 * FITTED_MAX_HEIGHT) return false;
+    if (h === this._fitHeight) return false;
+    this._fitHeight = h;
+    if (!this._open || !this._place || !this.win || this.win.isDestroyed()) return true;
+    const { anchorPoint, edge, work, tray } = this._place;
+    const size = this._fittedSize(work);
+    this._placeAcrossDpi(placeNear(anchorPoint, edge, work, size, FITTED_GAP));
+    // A panel still in transit keeps a corridor that matches its new size.
+    if (this._transitBox) this._transitBox = this._corridorFrom({ tray });
+    log.trace('panel.fit', { height: size.height });
+    return true;
+  }
+
+  /**
+   * The window's material, live: real acrylic behind a fitted panel, or the
+   * opaque base. `acrylic` is the caller's verdict (src/core/panel-material.js:
+   * the OS can, and nobody asked for less transparency); `dark` is the panel's
+   * resolved theme, which tints both the acrylic and the base. Safe to call
+   * again with the same look — index.js does after every nativeTheme change,
+   * because Electron rewrites the dark-mode attribute then.
+   *
+   * A canvas window is always 'none': its backdrop would fill the margins.
+   *
+   * @param {{acrylic?: boolean, dark?: boolean}} look
+   * @returns {'acrylic'|'none'} the material now live
+   */
+  setLook(look = {}) {
+    this._wantAcrylic = look.acrylic === true;
+    this._dark = look.dark !== false;
+    if (this.frame !== 'fitted' || !this.win || this.win.isDestroyed()) return this.material();
+    const next = this._wantAcrylic && !this._acrylicBroken ? 'acrylic' : 'none';
+    if (next !== this._material) {
+      try {
+        this.win.setBackgroundMaterial(next);
+        this._material = next;
+      } catch (err) {
+        // Not expected on a Windows that passed the build check. Once refused,
+        // never asked again: the opaque base is the look that cannot fail.
+        log.warn(`panel material ${next} refused: code=${(err && err.code) || 'UNKNOWN'}`);
+        this._acrylicBroken = true;
+        this._material = 'none';
+        try { this.win.setBackgroundMaterial('none'); } catch { /* the base colour below covers it */ }
+      }
+      log.trace('panel.material', { material: this._material });
+    }
+    // Transparent over the acrylic; the base itself when there is none, so a
+    // frame that paints before the page (a resize, a revived renderer) shows
+    // the panel's colour and never black or white.
+    this.win.setBackgroundColor(this._material === 'acrylic' ? '#00000000' : this._base());
+    this._applyDwm();
+    return this._material;
+  }
+
+  /** 'acrylic' while the real backdrop is live behind the panel, else 'none'. */
+  material() {
+    if (this.frame !== 'fitted' || !this.win || this.win.isDestroyed()) return 'none';
+    return this._material;
+  }
+
+  _base() {
+    return PANEL_BASE[this._dark ? 'dark' : 'light'];
+  }
+
+  /**
+   * Windows' half of the look (win32.loadDwm): the rounded corners and the
+   * shadow, light or dark acrylic to match the PANEL's theme, and a neutral
+   * hairline instead of the accent colour. Best effort; without it the panel
+   * is square and shadowless, and still acrylic.
+   */
+  _applyDwm() {
+    const dwm = this._dwm ? this._dwm() : null;
+    if (!dwm || !this.win || this.win.isDestroyed()) return;
+    const hwnd = handleOf(this.win);
+    if (!hwnd) return;
+    dwm.setFlyoutShape(hwnd);
+    dwm.setDarkMode(hwnd, this._dark);
+    dwm.setBorderColour(hwnd, PANEL_EDGE[this._dark ? 'dark' : 'light']);
   }
 
   /**
    * Over the painted panel: the window takes the mouse. Anywhere else in its
    * transparent frame: clicks go through to whatever is behind it, and moves
    * are still forwarded so the renderer sees the pointer come back.
+   *
+   * A fitted window is nothing BUT panel, so it always takes the mouse: the
+   * renderer still reports, and the report changes nothing. Click-through
+   * there would hand a click on the panel to the window behind it.
    */
   setPointerOverPanel(over) {
     if (!this.win || this.win.isDestroyed()) return;
-    const through = over !== true;
+    const through = this.frame === 'canvas' && over !== true;
     if (this._clickThrough === through) return;
     this._clickThrough = through;
     this.win.setIgnoreMouseEvents(through, { forward: true });
@@ -563,7 +732,10 @@ class PanelWindow {
   _conceal() {
     this._open = false;
     if (!this.win || this.win.isDestroyed()) return;
-    this.win.setBounds({ x: OFFSCREEN.x, y: OFFSCREEN.y, width: this.width, height: this.height });
+    // Parked at its current size: a fitted window keeps the panel's height
+    // for the next open, a canvas window has only the one.
+    const { width, height } = this.frame === 'fitted' ? this.win.getBounds() : this;
+    this.win.setBounds({ x: OFFSCREEN.x, y: OFFSCREEN.y, width, height });
     log.trace('panel.conceal', { via: 'offscreen' });
     // The pointer is not over a panel that is off-screen; the next reveal
     // starts click-through until the pointer reaches the panel again.
@@ -1017,11 +1189,37 @@ function pointInRect(point, rect) {
  * work area minus the edge margin on both sides. A laptop at 150% scaling can
  * have a work area only ~680 DIP tall, where a fixed 720 would hang off it.
  */
-function fitTo(width, height, work) {
+function fitTo(width, height, work, margin = EDGE_MARGIN) {
   return {
-    width: Math.max(1, Math.min(width, Math.round(work.width - 2 * EDGE_MARGIN))),
-    height: Math.max(1, Math.min(height, Math.round(work.height - 2 * EDGE_MARGIN))),
+    width: Math.max(1, Math.min(width, Math.round(work.width - 2 * margin))),
+    height: Math.max(1, Math.min(height, Math.round(work.height - 2 * margin))),
   };
+}
+
+/**
+ * The window rect for a size, next to the anchor on the taskbar's edge, kept
+ * `margin` inside the work area on BOTH axes. Without the clamp the panel hangs
+ * off the screen at a taskbar corner, where centring on the icon puts half of
+ * it past the edge. A bottom (or top) taskbar holds the window's bottom (or
+ * top) edge and centres it on the icon across; a side taskbar holds that side
+ * and centres it on the icon down.
+ */
+function placeNear(anchorPoint, edge, work, { width, height }, margin = EDGE_MARGIN) {
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const minX = work.x + margin;
+  const maxX = work.x + work.width - width - margin;
+  const minY = work.y + margin;
+  const maxY = work.y + work.height - height - margin;
+  let x;
+  let y;
+  if (edge === 'left' || edge === 'right') {
+    x = clamp(edge === 'left' ? minX : maxX, minX, maxX);
+    y = clamp(Math.round(anchorPoint.y - height / 2), minY, maxY);
+  } else {
+    x = clamp(Math.round(anchorPoint.x - width / 2), minX, maxX);
+    y = clamp(edge === 'top' ? minY : maxY, minY, maxY);
+  }
+  return { x: Math.round(x), y: Math.round(y), width, height };
 }
 
 function isPlausibleDipRect(rect) {
@@ -1067,7 +1265,12 @@ module.exports = {
   PanelWindow,
   PANEL_WIDTH,
   PANEL_HEIGHT,
+  FITTED_WIDTH,
+  FITTED_MAX_HEIGHT,
+  FITTED_GAP,
+  FITTED_MIN_HEIGHT,
   fitTo,
+  placeNear,
   LEAVE_GRACE_MS,
   POINTER_POLL_MS,
   TRANSIT_MARGIN_PX,

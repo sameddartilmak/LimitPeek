@@ -17,8 +17,10 @@ import type {
   AnchorPayload,
   Gauge,
   LanguageChoice,
+  Layout,
   Preferences,
   Snapshot,
+  StripStyle,
   ThemeChoice,
   TrayView,
   UsageNotchApi,
@@ -115,12 +117,29 @@ export interface Bridge {
    * all-or-nothing promise: `false` means main wrote NOTHING.
    */
   setGauge(gauge: Gauge): Promise<boolean>;
+  /**
+   * Persist Görünüm → "Saydamlığı azalt" (IPC.SET_REDUCE_TRANSPARENCY). Same
+   * all-or-nothing promise: `false` means main wrote NOTHING.
+   */
+  setReduceTransparency(reduce: boolean): Promise<boolean>;
+  /**
+   * Persist Görünüm → Düzen, list, focus or tiles (IPC.SET_LAYOUT). Same
+   * all-or-nothing promise: `false` means main wrote NOTHING.
+   */
+  setLayout(layout: Layout): Promise<boolean>;
+  /**
+   * Persist Görünüm → Şerit stili (IPC.SET_STRIP_STYLE). Same all-or-nothing
+   * promise: `false` means main wrote NOTHING.
+   */
+  setStripStyle(style: StripStyle): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
   pin(): void;
   /** The pointer is over the painted panel (IPC.PANEL_HIT). Fire-and-forget. */
   setPointerOverPanel(over: boolean): void;
+  /** The panel's own height in CSS px (IPC.PANEL_SIZE). Fire-and-forget. */
+  setPanelHeight(height: number): void;
 }
 
 function getApi(): UsageNotchApi | null {
@@ -154,9 +173,13 @@ function nullBridge(): Bridge {
     setSetupCoachDismissed: async () => false,
     setTrayView: async () => false,
     setGauge: async () => false,
+    setReduceTransparency: async () => false,
+    setLayout: async () => false,
+    setStripStyle: async () => false,
     close: () => {},
     pin: () => {},
     setPointerOverPanel: () => {},
+    setPanelHeight: () => {},
   };
 }
 
@@ -436,6 +459,48 @@ export function createBridge(): Bridge {
       }
     },
 
+    /** Mirrors setGauge: any failure is a real instruction to revert. */
+    async setReduceTransparency(reduce: boolean): Promise<boolean> {
+      if (typeof api.setReduceTransparency !== 'function') {
+        missing('setReduceTransparency');
+        return false;
+      }
+      try {
+        const result = await api.setReduceTransparency(reduce);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** Mirrors setGauge: any failure is a real instruction to revert. */
+    async setLayout(layout: Layout): Promise<boolean> {
+      if (typeof api.setLayout !== 'function') {
+        missing('setLayout');
+        return false;
+      }
+      try {
+        const result = await api.setLayout(layout);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** Mirrors setGauge: any failure is a real instruction to revert. */
+    async setStripStyle(style: StripStyle): Promise<boolean> {
+      if (typeof api.setStripStyle !== 'function') {
+        missing('setStripStyle');
+        return false;
+      }
+      try {
+        const result = await api.setStripStyle(style);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
     async setSetupCoachDismissed(dismissed: boolean): Promise<boolean> {
       if (typeof api.setSetupCoachDismissed !== 'function') {
         missing('setSetupCoachDismissed');
@@ -470,6 +535,17 @@ export function createBridge(): Bridge {
       if (typeof api.setPointerOverPanel !== 'function') return;
       try {
         api.setPointerOverPanel(over === true);
+      } catch {
+        /* ignore */
+      }
+    },
+
+    setPanelHeight(height: number): void {
+      // An older preload without it: the window keeps the size it has.
+      if (typeof api.setPanelHeight !== 'function') return;
+      if (!Number.isFinite(height)) return;
+      try {
+        api.setPanelHeight(height);
       } catch {
         /* ignore */
       }
