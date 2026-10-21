@@ -230,6 +230,119 @@ html[data-layout="tiles"] .row[data-status="loading"] .meter .win + .win .sk--fo
 html[data-layout="tiles"] .row[data-status="loading"] .meter .sk--label,
 html[data-layout="tiles"] .row[data-status="loading"] .meter .sk--foot { margin-top: 6px; }
 
+/* --- in bars (Gösterge → Çubuk) ------------------------------------------ */
+/* The same tile with the user's bars instead of the rings. The bars are
+ * row.css's own (.rail: the track, the fill, the tick, the estimate's fray,
+ * the stale hatch, the error's drain, high contrast); this only places and
+ * sizes them, under the same header:
+ *
+ *     [logo] Claude Code  Max 20x
+ *     %62                           the five-hour figure, large
+ *     [===============.........]    an 8px bar
+ *     5 saatlik · 2 sa 13 dk kaldı
+ *     Haftalık %41
+ *     [==========..............]    a 6px bar
+ *     3 gün 4 sa kaldı
+ *
+ * A tool with one window leads with it; a window with no figure keeps its
+ * words in the figure's place and draws no bar. */
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter,
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter:has(.rail) {
+  grid-template-rows: none;
+  grid-template-areas:
+    "p5 p5"
+    "b5 b5"
+    "l5 r5"
+    "as as"
+    "l7 p7"
+    "b7 b7"
+    "r7 r7";
+}
+/* No groove to draw for a window with no figure: its words say it. */
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter::before,
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter::after { display: none; }
+
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .win--5h,
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d {
+  --a-pct: p5;
+  --a-bar: b5;
+}
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d { --a-bar: b7; }
+
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .rail,
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .sk--rail {
+  grid-area: var(--a-bar, b7);
+  justify-self: stretch;
+  align-self: center;
+  width: auto;
+  margin: 5px 0 4px;
+}
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .win--5h .rail,
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d .rail {
+  height: 8px;
+  margin: 7px 0 6px;
+  border-radius: 4px;
+}
+
+/* The lead figure over its bar; the second one small, beside its name. */
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .win--5h .win__pct,
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d .win__pct {
+  justify-self: start;
+  align-self: end;
+  margin-top: 2px;
+  font-size: 30px;
+}
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .win--5h .win__pct.win__pct--none,
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d .win__pct.win__pct--none {
+  max-width: none;
+  margin-bottom: 4px;
+  font-size: var(--fs-body);
+  text-align: left;
+}
+/* The ring glyph's room is not needed: no indent, and the dot after the name
+ * gets the space the glyph's gap gave it. */
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .win--5h:has(.win__reset:not([hidden])) .win__label::after,
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .win--7d:has(.win__reset:not([hidden])) .win__label::after { margin-left: 4px; }
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d .win__reset { margin-left: 0; }
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d .win__label,
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d .win__pct { margin-top: 6px; }
+/* "itibarıyla" on its own line: no separator in front of it. */
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .meter .win__asof::before { content: none; }
+
+/* A tool with no quota: its main measure where the figure and bar are. */
+html[data-layout="tiles"][data-gauge="bar"] .row:not([data-expanded]) .row__primary { min-height: 84px; }
+
+/* Loading: the bars' tracks where the bars will be. */
+html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .sk--rail {
+  -webkit-mask: none;
+  mask: none;
+  height: var(--rail-h);
+  border-radius: var(--radius-rail);
+}
+html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .win:first-child .sk--rail {
+  grid-area: b5;
+  height: 8px;
+  margin: 7px 0 6px;
+  border-radius: 4px;
+}
+html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .win + .win .sk--rail { grid-area: b7; }
+html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .win:first-child .sk--pct {
+  grid-area: p5;
+  justify-self: start;
+  align-self: end;
+  width: 58px;
+  height: 26px;
+  margin-top: 4px;
+}
+html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .win + .win .sk--foot { display: block; grid-area: r7; }
+/* The blocks on the text lines' heights, so nothing jumps when the figures
+ * land. */
+html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .sk--label,
+html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .sk--foot { margin: 3px 0; }
+html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .win + .win .sk--label,
+html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .win + .win .sk--pct { margin-top: 9px; }
+html[data-layout="tiles"][data-gauge="bar"] .row[data-status="loading"] .meter .sk--label { width: 60px; }
+
 /* ------------------------------------------------------------ quick tiles */
 /* Tema, Şerit, Ayarlar and Yenile (layouts.ts), in the footer's place: the
  * same two columns as the tiles, on the same card surface, half as tall. An

@@ -714,17 +714,19 @@ test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', 
     assert.equal(layout.getAttribute('data-revert'), 'true');
   });
 
-  test('the gauge shows only with the list, the one layout it applies to, and keeps its choice', () => {
-    const { handle, gauge, radios } = mountLooks();
-    handle.render(state({ layout: 'list', gauge: 'bar' }), []);
-    assert.equal(gauge.hidden, false);
-    for (const layout of ['focus', 'tiles']) {
-      handle.render(state({ layout, gauge: 'bar' }), []);
-      assert.equal(gauge.hidden, true);
-      assert.deepEqual(radios(gauge).map((r) => r.checked), [true, false], 'the stored choice stays');
+  test('the gauge shows in every layout, right under "Düzen", with its choice and its ring help line', () => {
+    const { handle, layout, gauge, radios } = mountLooks();
+    assert.equal(layout.parentNode, gauge.parentNode);
+    const siblings = layout.parentNode.childNodes;
+    assert.equal(siblings.indexOf(gauge), siblings.indexOf(layout) + 1, '"Gösterge" is not right under "Düzen"');
+    for (const l of ['list', 'focus', 'tiles']) {
+      for (const g of ['bar', 'ring']) {
+        handle.render(state({ layout: l, gauge: g }), []);
+        assert.equal(gauge.hidden, false, `${l} / ${g}`);
+        assert.deepEqual(radios(gauge).map((r) => r.checked), [g === 'bar', g === 'ring'], `${l} / ${g}`);
+        assert.equal(walk(gauge).find((el) => el.tagName === 'P').textContent, 'Halkada dış halka 5 saatlik, iç halka haftalık kullanım.');
+      }
     }
-    handle.render(state({ layout: 'list', gauge: 'bar' }), []);
-    assert.equal(gauge.hidden, false);
   });
 
   test('"Şerit stili: Sade / Halkalı / Dolgulu" sits under the tray / strip choice and shows only with the strip', () => {

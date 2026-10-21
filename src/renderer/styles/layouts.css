@@ -1,20 +1,15 @@
 /* Görünüm → Düzen: what the three layouts share. The list itself is panel.css
  * and row.css, unchanged; "Öne çıkan" is layout-focus.css and "Kutucuklar"
- * layout-tiles.css. app.ts writes `html[data-layout]` before first paint,
- * and html[data-gauge] is then "ring" in both (app.ts paintGauge), so every
- * ring rule in row.css (the fade, the hatch, the dim glyph, the skeleton,
- * high contrast, reduced motion) already holds; these files only re-lay the
- * same elements and resize the rings.
+ * layout-tiles.css. app.ts writes `html[data-layout]` and the user's
+ * `html[data-gauge]` before first paint, and each file has a variant per
+ * gauge: the rings, and the bars (`[data-gauge="bar"]`). Either way every
+ * cue in row.css (the estimate's fray or fade, the stale hatch, the error's
+ * drain, the skeleton, high contrast, reduced motion) already holds; these
+ * files only re-lay the same elements and resize the rings and the bars.
  *
  * Every card is still a .row on the card surface (--ink-800 in row.css), so
  * a window material that restyles the cards restyles the tiles and the hero
  * with them. */
-
-/* ------------------------------------------------- Settings → Görünüm */
-/* "Gösterge" outside the list: the choice is kept for the day the list comes
- * back, so it stays operable, but it steps back and its line says where it
- * applies (settings.ts). */
-.theme[data-inactive="true"] .theme__opts { opacity: .55; }
 
 /* ------------------------------------------- closed cards outside the list */
 /* The whole card opens its details (row.ts, data-opens). "Ayrıntılar" stays
@@ -51,7 +46,8 @@
 /* ------------------------------------------------ details, as a sheet */
 /* Outside the list a tool's details are its full card, alone: the other
  * tools step out of the list and "‹ Tüm araçlar" (layouts.ts) sits above
- * it. The card is drawn exactly as a list card in rings, details open. */
+ * it. The card is drawn exactly as a list card in the user's gauge, details
+ * open. */
 :is(html[data-layout="focus"], html[data-layout="tiles"]) .rows[data-sheet="true"] {
   display: flex;
   flex-direction: column;

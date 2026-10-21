@@ -798,10 +798,11 @@ function createTrayViewControl(ctx: SettingsContext): TrayViewHandleLocal {
 /**
  * Görünüm, third part: "Gösterge", how the panel draws each tool's two
  * windows. "Çubuk" (the default, two bars side by side) or "Halka" (two
- * concentric activity rings, row.css). The theme's native-radio fieldset and
- * CSS again, under the same "Görünüm" heading, after the theme and the tray
- * view. The help line says which ring is which, because that is the one thing
- * about the rings a user cannot read off the picture the first time.
+ * concentric activity rings, row.css), in every layout. The theme's
+ * native-radio fieldset and CSS again, under the same "Görünüm" heading,
+ * right under "Düzen". The help line says which ring is which, because that
+ * is the one thing about the rings a user cannot read off the picture the
+ * first time.
  */
 interface GaugeHandleLocal {
   el: HTMLElement;
@@ -853,10 +854,6 @@ function createGaugeControl(ctx: SettingsContext): GaugeHandleLocal {
     setAttr(root, 'data-pending', state.gaugePending ? 'true' : null);
     setAttr(root, 'data-revert', state.gaugeReverted ? 'true' : null);
     setAttr(root, 'aria-busy', state.gaugePending ? 'true' : null);
-    // "Öne çıkan" and "Kutucuklar" are ring layouts: the choice only means
-    // something in the list, so it is shown only there, right under "Düzen".
-    // The stored choice is kept for the day the list comes back.
-    root.hidden = state.layout !== 'list';
   }
 
   return { el: root, update };
@@ -926,10 +923,9 @@ function createChoiceGroup<V extends string>(opts: {
 
 /**
  * Görünüm → "Düzen": "Liste" (the default, one card per tool), "Öne çıkan"
- * (the tool closest to its limit as a large double ring on top, a compact
- * row per other tool) or "Kutucuklar" (a two-column grid of ring tiles with
- * quick tiles under it). Before "Gösterge", which applies to the list only
- * and says so while another layout is chosen.
+ * (the tool closest to its limit, large, on top, a compact row per other
+ * tool) or "Kutucuklar" (a two-column grid of tiles with quick tiles under
+ * it). Right before "Gösterge", whose bars or rings every layout draws.
  */
 interface LayoutHandleLocal {
   el: HTMLElement;

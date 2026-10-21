@@ -151,8 +151,9 @@ test.describe('the renderer', () => {
 
   test('app.ts writes html[data-gauge] in frame one, before the store or the panel exist', () => {
     const app = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'src', 'app.ts'), 'utf8');
-    // The gauge DRAWN: the user's in the list, the rings in focus and tiles.
-    assert.match(app, /root\.dataset\.gauge = layout === 'focus' \|\| layout === 'tiles' \? 'ring' : gauge;/);
+    // The user's own, in every layout: nothing forces the rings any more.
+    assert.match(app, /document\.documentElement\.dataset\.gauge = gauge;/);
+    assert.doesNotMatch(app, /dataset\.gauge = [^;]*'ring'/, 'a layout forces a gauge');
     const first = app.indexOf("paintLayout(initialPrefs?.layout ?? 'list', initialPrefs?.gauge ?? 'bar');");
     assert.notEqual(first, -1, 'the frame-one paint is missing');
     assert.ok(first < app.search(/store\.set\(\{\s+theme: theme\.choice\(\)/), 'painted before the first store write');

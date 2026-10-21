@@ -79,24 +79,21 @@ function applyLocale(prefs: Preferences | null): void {
  * `html[data-gauge="ring"]` and the bars otherwise. Written in frame one, like
  * the theme, or a ring user sees bars turn into rings on every launch.
  *
- * The attribute is the gauge DRAWN, not only the one chosen: the user's own
- * in the list layout, and always the rings in "Öne çıkan" and "Kutucuklar",
- * which are ring layouts by nature (layout-focus.css, layout-tiles.css). So
- * every ring cue row.css already has (the estimate's fade, the stale hatch,
- * the missing-window glyph, the ring skeleton, high contrast, reduced motion)
- * holds in those layouts too, with no second copy of it.
+ * The user's choice in every layout: "Öne çıkan" and "Kutucuklar" draw the
+ * bars or the rings as the list does (layout-focus.css, layout-tiles.css,
+ * each with a bar and a ring variant). Either way the cues stay row.css's
+ * own (the estimate's fray or fade, the stale hatch, the skeleton, high
+ * contrast, reduced motion), with no second copy of them.
  */
 function paintGauge(gauge: Gauge): void {
-  const root = document.documentElement;
-  const layout = root.dataset.layout;
-  root.dataset.gauge = layout === 'focus' || layout === 'tiles' ? 'ring' : gauge;
+  document.documentElement.dataset.gauge = gauge;
 }
 
 /**
  * Görünüm → Düzen on the document: `html[data-layout]` selects the list, the
  * focus or the tiles styles, and panel.ts builds the matching structure.
  * Written in frame one, before the panel exists, so a tiles user never sees
- * the list for one frame. The gauge is repainted with it (see paintGauge).
+ * the list for one frame. The gauge is written with it, in the same frame.
  */
 function paintLayout(layout: Layout, gauge: Gauge): void {
   document.documentElement.dataset.layout = layout;
