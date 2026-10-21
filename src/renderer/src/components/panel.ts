@@ -305,6 +305,15 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     settings.el,
   );
   listBand.style.setProperty('--band-delay', '40ms');
+  // While a card is scrolled up under the glass header, the header draws its
+  // edge and its shadow; at rest it is the plain base. Written only on change.
+  let underHeader = false;
+  listBand.addEventListener('scroll', () => {
+    const under = listBand.scrollTop > 0;
+    if (under === underHeader) return;
+    underHeader = under;
+    setAttr(header.el, 'data-under', under ? 'true' : null);
+  }, { passive: true });
 
   // --- toasts -------------------------------------------------------------
   // The outcome of something the user just did. `role="status"` on the text
@@ -431,6 +440,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
   });
 
   let lastPlacementKey = '';
+  let lastHeaderHeight = 0;
   let lastConsentKey: string | null = null;
   /** Newest state, so a drag ending can re-render without the app pushing. */
   let lastState: PanelState | null = null;
@@ -536,9 +546,16 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     const canvasHeight = state.anchor
       ? state.anchor.window.height
       : document.documentElement.clientHeight;
-    const chrome = header.el.offsetHeight + footBand.offsetHeight + (strip.hidden ? 0 : strip.offsetHeight);
+    const headerHeight = header.el.offsetHeight;
+    const chrome = headerHeight + footBand.offsetHeight + (strip.hidden ? 0 : strip.offsetHeight);
     const budget = canvasHeight - chrome - 2 * 12 - 8 - 2;
     listBand.style.setProperty('--list-max', `${Math.max(120, budget)}px`);
+    // The list runs on under the glass header by exactly this much and is
+    // padded back by the same (panel.css), so the panel's height is unchanged.
+    if (headerHeight > 0 && headerHeight !== lastHeaderHeight) {
+      lastHeaderHeight = headerHeight;
+      root.style.setProperty('--hdr-h', `${headerHeight}px`);
+    }
 
     const size = { width: root.offsetWidth || 400, height: root.offsetHeight || 0 };
     const placement = state.anchor

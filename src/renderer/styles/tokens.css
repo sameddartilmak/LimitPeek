@@ -188,6 +188,34 @@
   /* The switch when off. */
   --switch-off: rgba(120, 120, 128, .36);
 
+  /* --- glass: the CONTROL layer only (design report 2026-10-21) --------
+   * The header, the settings tab band and nothing else: a semi-opaque sheet
+   * of the panel base that blurs the cards scrolling under it, a hairline of
+   * light along its lower edge and one soft shadow, both shown only while
+   * something is actually under it (data-under, panel.ts). Cards, long text
+   * and charts stay opaque: glass is for the things you steer with, never for
+   * the figures you read.
+   *
+   * In-app only. CSS cannot blur the desktop behind a transparent Electron
+   * window, and this does not pretend to.
+   *
+   * 66% of the base (70% in light) lets a card under it be SEEN, as a soft
+   * wash of its colours, without the header's own words losing anything that
+   * matters: the 16px blur spreads the card's text to a haze before the third
+   * of it that shows through is mixed in. Measured over a card (#2C2C2E /
+   * #FFFFFF under it): the title's primary ink is 14.8:1 dark and 15.6:1
+   * light, against 15.6 and 15.1 on the bare base. */
+  --glass: rgba(28, 28, 30, .66);
+  --glass-filter: blur(16px) saturate(170%);
+  --glass-edge: rgba(255, 255, 255, .07);
+  --glass-shadow: 0 6px 14px -10px rgba(0, 0, 0, .7);
+  /* The header's grouped icon control: a fill on the glass, not a second
+   * pane of it. Glass on glass is the stacking the report rules out, so the
+   * group has its own hairline and shadow and NO blur of its own. */
+  --glass-ctl: rgba(118, 118, 128, .18);
+  --glass-ctl-edge: rgba(255, 255, 255, .08);
+  --glass-ctl-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+
   /* --- provider accent, per theme --------------------------------------
    * `ProviderSnapshot.accent` is one fixed brand hex chosen against a dark
    * ground, and four of the five fail the 3:1 non-text threshold on a light
@@ -366,6 +394,15 @@
   --seg-on: #FFFFFF;
   --switch-off: rgba(120, 120, 128, .2);
 
+  /* Light glass: the grouped grey at 70%, a dark hairline (a white one
+   * vanishes on white cards), a shorter and fainter shadow. */
+  --glass: rgba(242, 242, 247, .7);
+  --glass-edge: rgba(0, 0, 0, .06);
+  --glass-shadow: 0 6px 14px -10px rgba(0, 0, 0, .22);
+  --glass-ctl: rgba(255, 255, 255, .7);
+  --glass-ctl-edge: rgba(0, 0, 0, .06);
+  --glass-ctl-shadow: 0 1px 2px rgba(0, 0, 0, .08);
+
   /* 66% of the brand hue over black. Chosen by the WORST case, which is
    * antigravity's #E8B84B: at 66% it reaches 3.26:1 against its own tile,
    * where the untouched hex is 1.47:1. The others land between 4.7 and 6.1.
@@ -373,6 +410,23 @@
    * row surface. */
   --accent-shade: 66%;
   --accent-tint: 22%;
+}
+
+/* ------------------------------------------------------------ no glass */
+/* Every glass surface turns OPAQUE, keeping its place, its edge and its
+ * shadow, when Windows asks for less transparency (Settings → Kişiselleştirme
+ * → Renkler → Saydamlık efektleri) or for high contrast. Both reach Chromium
+ * as media features, so this needs nothing from main and follows a change
+ * live. The panel's own "Saydamlığı azalt" adds the same through
+ * `html[data-reduce-transparency]` (app.ts). Re-pointing the tokens rather
+ * than overriding components keeps it one rule wide, in both themes. */
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  :root,
+  :root[data-theme="light"] {
+    --glass: var(--ink-900);
+    --glass-filter: none;
+    --glass-ctl: var(--ink-850);
+  }
 }
 
 /* THE TRAY ICON IS A SECOND CONSUMER OF THIS FILE

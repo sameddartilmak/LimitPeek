@@ -57,6 +57,16 @@ const DRAG_THRESHOLD = 4;
 /** Auto-scroll band at each end of the scroller, and step per frame. */
 const EDGE = 26;
 const EDGE_STEP = 8;
+
+/** The part of the scroller's top covered by something drawn over it, in px. */
+function scrollInsetTop(scroller: HTMLElement): number {
+  try {
+    const value = parseFloat(getComputedStyle(scroller).scrollPaddingTop);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
 /**
  * How often a live drag re-asserts "the pointer is still here". Matches the
  * panel's own pointer-traffic throttle: this is an IPC send, and the rAF loop
@@ -364,9 +374,12 @@ export function createReorder(host: ReorderHost): ReorderHandle {
     const scroller = host.scroller;
     const rect = scroller.getBoundingClientRect();
     const overflow = scroller.scrollHeight - scroller.clientHeight;
+    // The list runs on under the glass header (panel.css), so its visible top
+    // is its box's top plus that inset, which it states as scroll-padding.
+    const top = rect.top + scrollInsetTop(scroller);
     let step = 0;
     if (overflow > 1) {
-      if (s.lastClientY < rect.top + EDGE && scroller.scrollTop > 0) step = -EDGE_STEP;
+      if (s.lastClientY < top + EDGE && scroller.scrollTop > 0) step = -EDGE_STEP;
       else if (s.lastClientY > rect.bottom - EDGE && scroller.scrollTop < overflow) {
         step = EDGE_STEP;
       }

@@ -166,7 +166,30 @@
 
 /* ---------------------------------------------------------------- header */
 
-.hdr { padding: var(--s-4) var(--s-3) var(--s-3) var(--s-4); }
+/* GLASS, AND THE LIST UNDER IT (design report 2026-10-21). The header is the
+ * panel's control layer, so it is the one surface here drawn in the glass
+ * material (tokens.css): the list band is pulled up beneath it by exactly its
+ * height (`--hdr-h`, written by panel.ts from the measured header) and padded
+ * back down by the same amount, so nothing moves and the panel is exactly as
+ * tall as before — but a card scrolled up passes UNDER the header and shows
+ * through it, blurred, instead of being cut off at a line.
+ *
+ * The edge highlight and the shadow appear only while something is under it
+ * (`data-under`, set from the list's scroll position): at rest the header is
+ * the panel base and draws no line, as before. 14 + 36 + 10 keeps the header
+ * the 60px it was with the grouped controls' 36px capsule. */
+.hdr {
+  position: relative;
+  z-index: 2;
+  padding: 14px var(--s-3) 10px var(--s-4);
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  transition: box-shadow var(--dur-hover) linear;
+}
+.hdr[data-under="true"] {
+  box-shadow: 0 .5px 0 var(--glass-edge), var(--glass-shadow);
+}
 
 /* Centred, not baseline-aligned: the row carries a 24px tile, a 13px name, an
  * 18px freshness marker and 24px buttons, and centring is the one alignment
@@ -209,7 +232,19 @@
 
 .hdr__spacer { flex: 1 1 auto; }
 
-.hdr__actions { display: flex; align-items: center; gap: var(--s-1); }
+/* Settings, pin and close as ONE grouped control: a capsule with a hairline
+ * of light at its rim and one small shadow, the buttons sitting in it edge to
+ * edge. A fill on the header's glass, never a second pane of glass (no blur
+ * of its own). The buttons keep their 32px targets and their own states. */
+.hdr__actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--glass-ctl);
+  box-shadow: inset 0 0 0 .5px var(--glass-ctl-edge), var(--glass-ctl-shadow);
+}
 
 /* 32px: a comfortable target for a pointer and a touch screen alike (UI plan
  * 2026-09-29); the glyph stays 16px. */
@@ -368,13 +403,33 @@
   max-height: var(--list-max, none);
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--ink-600) transparent;
 }
+/* Under the header (see the note above .hdr). Only while the offline strip is
+ * hidden: when it shows, it sits between the two and the list starts below it
+ * as before. scroll-padding keeps a focused card, or one opened with
+ * "Ayrıntılar", from being scrolled to a place behind the header. */
+.panel .strip[hidden] + .panel__band--list {
+  margin-top: calc(-1 * var(--hdr-h, 60px));
+  padding-top: var(--hdr-h, 60px);
+  max-height: calc(var(--list-max, 100vh) + var(--hdr-h, 60px));
+  scroll-padding-top: var(--hdr-h, 60px);
+}
+/* The scroller now starts under the header, so its track is inset by the
+ * header's height: the thumb never hides behind the glass. That margin is
+ * only honoured by the ::-webkit-scrollbar parts, which Chromium ignores as
+ * soon as scrollbar-width or scrollbar-color is set, so this list uses the
+ * parts alone (same 8px, same ink, no arrow buttons). */
 .panel__band--list::-webkit-scrollbar { width: 8px; }
+.panel__band--list::-webkit-scrollbar-track {
+  background: transparent;
+  margin-top: var(--hdr-h, 60px);
+  margin-bottom: 4px;
+}
 .panel__band--list::-webkit-scrollbar-thumb {
   background: var(--ink-600);
+  border: 2px solid transparent;
   border-radius: 4px;
+  background-clip: padding-box;
 }
 
 /* ------------------------------------------------------------ status strip */
@@ -821,6 +876,11 @@
  * popover uses to switch between views of one thing. A recessed track, the
  * selected segment raised on it (fill + shadow + weight, so it survives
  * greyscale). Semantics unchanged: still role=tablist / role=tab. */
+/* Glass trial (2026-10-21): the group is the control layer's material, as
+ * the header's icon group is — a translucent capsule with a hairline rim and
+ * one soft shadow, no blur of its own — and the selected segment stays the
+ * raised fill on it. Selection is still carried by fill, weight and shadow
+ * together, never by colour alone. */
 .tabs {
   display: flex;
   gap: 2px;
@@ -828,7 +888,8 @@
   padding: 2px;
   border: 0;
   border-radius: 9px;
-  background: var(--fill);
+  background: var(--glass-ctl);
+  box-shadow: inset 0 0 0 .5px var(--glass-ctl-edge), var(--glass-ctl-shadow);
 }
 .tabs__tab {
   position: relative;
