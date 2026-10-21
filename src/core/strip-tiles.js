@@ -71,6 +71,10 @@ function rowFor(kind, pct, ground, win, now) {
     // a strip than "41sa 18dk" (owner, 2026-10-20).
     left: tight(remainingDuration(win, now, 24)),
     colour: rampFor(ground)[state],
+    // The step itself, for the words that take a state colour ("Halkalı",
+    // the "Dolgulu" chip): strip.css gives each step a TEXT tone with 4.5:1
+    // on the tile, which the ramp's own fill colours do not all have.
+    state,
     text: t(kind === 'fiveHour' ? 'strip.tip.fiveHour' : 'strip.tip.weekly', { percent: formatPercent(pct) }),
   };
 }
@@ -79,7 +83,7 @@ function rowFor(kind, pct, ground, win, now) {
  * @param {object} snapshot
  * @param {number} now
  * @param {'dark'|'light'} ground
- * @returns {Array<{id:string, title:string, rows:Array<{kind:string,label:string,percent:number,percentText:string,left:string|null,colour:string}>}>}
+ * @returns {Array<{id:string, title:string, rows:Array<{kind:string,label:string,percent:number,percentText:string,left:string|null,colour:string,state:string}>}>}
  */
 function stripTiles(snapshot, now = Date.now(), ground = 'dark') {
   const providers = snapshot && Array.isArray(snapshot.providers) ? snapshot.providers : [];
@@ -99,7 +103,7 @@ function stripTiles(snapshot, now = Date.now(), ground = 'dark') {
     out.push({
       id: provider.id,
       title: `${name} — ${rows.map((r) => r.text).join(' · ')}`,
-      rows: rows.map(({ kind, label, percent, percentText, left, colour }) => ({ kind, label, percent, percentText, left, colour })),
+      rows: rows.map(({ kind, label, percent, percentText, left, colour, state }) => ({ kind, label, percent, percentText, left, colour, state })),
     });
     if (out.length >= MAX_TILES) break;
   }

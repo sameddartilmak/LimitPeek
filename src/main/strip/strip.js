@@ -14,12 +14,19 @@
  *   'display'  rendered offscreen and shown inside the taskbar
  *              (taskbar-display.js), at `data.scale`, with the hovered tile lit.
  *
- * Two looks (data.style, Görünüm → Şerit stili):
+ * Three looks (data.style, Görünüm → Şerit stili):
  *   'plain' per row: label, a mini bar, the figure, the time left (default);
- *   'rings' two small concentric rings after the logo — five-hour outside,
- *           weekly inside, the bar's ramp colour and track — and per row the
- *           figure and the time left, in the same order (outer ring first).
- *           SVG, so the rings stay crisp at the taskbar's zoom.
+ *   'rings' "Halkalı": a thick double ring after the logo (five-hour outside,
+ *           weekly inside, the bar's ramp colour on the bar's track), then the
+ *           lead row's figure large in its state colour and its time left;
+ *   'fill'  "Dolgulu": the tile's own ground filled to the lead row's figure
+ *           in its ramp colour, that figure and its time left on top, and the
+ *           weekly figure in a small chip at the right.
+ * The lead row is the tile's first: the five-hour window, or the weekly one
+ * for a tool that publishes only that (its label then opens the time left,
+ * so a bare figure is never read as the five-hour one). The rings are SVG,
+ * so they stay crisp at the taskbar's zoom; the coloured words take the
+ * text step of their state (strip.css), never the ramp the fills use.
  */
 (function () {
   var api = window.usageNotchStrip;
@@ -27,14 +34,17 @@
   var LOGOS = { claude: 1, codex: 1, antigravity: 1, kimi: 1, qwen: 1, grok: 1 };
   var HEX = /^#[0-9A-Fa-f]{6}$/;
   var SVG = 'http://www.w3.org/2000/svg';
+  var STATES = { calm: 1, watch: 1, ember: 1, spent: 1 };
   /**
-   * The rings' geometry in CSS px (the page is zoomed to the taskbar scale):
-   * a 28px box, 4px strokes, the inner ring 1.5px clear of the outer one.
-   * pathLength 100 lets the sweep be the rounded figure itself.
+   * "Halkalı" in CSS px (the page is zoomed to the taskbar scale): a 32px
+   * box, 5px strokes, the inner ring 2px clear of the outer one. A tile with
+   * one window draws that one ring at the outer size. pathLength 100 lets the
+   * sweep be the rounded figure itself.
    */
-  var RING_BOX = 28;
-  var RINGS = { fiveHour: 12, sevenDay: 6.5 };
-  var RING_W = 4;
+  var RING_BOX = 32;
+  var RING_W = 5;
+  var RING_OUTER = 13.5;
+  var RING_INNER = 6.5;
 
   function text(value, max) {
     return typeof value === 'string' ? value.slice(0, max) : '';
@@ -42,6 +52,18 @@
 
   function pctOf(r) {
     return typeof r.percent === 'number' && isFinite(r.percent) ? Math.max(0, Math.min(100, r.percent)) : 0;
+  }
+
+  function span(cls, value) {
+    var el = document.createElement('span');
+    el.className = cls;
+    if (value) el.textContent = value;
+    return el;
+  }
+
+  /** The state step main sent for this row, for the words' colour. */
+  function stateOf(r) {
+    return typeof r.state === 'string' && STATES[r.state] === 1 ? r.state : null;
   }
 
   function circle(radius, cls) {
@@ -62,9 +84,8 @@
     box.setAttribute('class', 'tile__rings');
     box.setAttribute('viewBox', '0 0 ' + RING_BOX + ' ' + RING_BOX);
     box.setAttribute('aria-hidden', 'true');
-    rows.forEach(function (r) {
-      var radius = RINGS[r.kind];
-      if (!radius) return;
+    rows.forEach(function (r, i) {
+      var radius = i === 0 ? RING_OUTER : RING_INNER;
       box.appendChild(circle(radius, 'tile__track'));
       var pct = pctOf(r);
       if (pct <= 0) return;
@@ -79,19 +100,28 @@
     return box;
   }
 
-  /** Ring look: the figure and the time left; the ring itself is the bar. */
-  function ringRow(r) {
-    var line = document.createElement('div');
-    line.className = 'tile__row';
-    var figure = document.createElement('span');
-    figure.className = 'tile__pct';
-    figure.textContent = text(r.percentText, 8);
-    var left = document.createElement('span');
-    left.className = 'tile__left';
-    left.textContent = text(r.left, 16);
-    line.appendChild(figure);
-    line.appendChild(left);
-    return line;
+  /**
+   * The lead row's words, for "Halkalı" and "Dolgulu": the figure large, the
+   * time left under it. A weekly lead names itself ("7g · 5gün 1sa").
+   */
+  function lead(r, colourFigure) {
+    var box = span('tile__lead');
+    var figure = span('tile__big', text(r.percentText, 8));
+    var state = stateOf(r);
+    if (colourFigure && state) figure.setAttribute('data-state', state);
+    var left = text(r.left, 16);
+    var label = r.kind === 'sevenDay' ? text(r.label, 6) : '';
+    box.appendChild(figure);
+    box.appendChild(span('tile__sub', label && left ? label + ' · ' + left : label || left));
+    return box;
+  }
+
+  /** "Dolgulu": the weekly figure in a chip, in its state colour. */
+  function chip(r) {
+    var el = span('tile__chip', text(r.percentText, 8));
+    var state = stateOf(r);
+    if (state) el.setAttribute('data-state', state);
+    return el;
   }
 
   function row(r) {
@@ -125,7 +155,7 @@
 
   var hovered = -1;
 
-  function tile(t, width, index, lit, ring) {
+  function tile(t, width, index, lit, style) {
     var el = document.createElement('div');
     el.className = lit ? 'tile tile--hover' : 'tile';
     el.addEventListener('mouseenter', function () { report(index); });
@@ -135,17 +165,30 @@
     var logo = document.createElement('span');
     logo.className = 'tile__logo';
     if (LOGOS[t.id] === 1) logo.setAttribute('data-logo', t.id);
-    var rows = document.createElement('div');
-    rows.className = 'tile__rows';
     var list = (Array.isArray(t.rows) ? t.rows.slice(0, 2) : []).filter(function (r) {
       return r && typeof r === 'object';
     });
-    list.forEach(function (r) {
-      rows.appendChild(ring ? ringRow(r) : row(r));
-    });
+    if (style === 'fill' && list.length > 0) {
+      // The ground itself is the bar: filled to the lead figure, in its ramp
+      // colour at the alpha strip.css names, under everything else.
+      var ground = span('tile__ground');
+      ground.style.width = pctOf(list[0]) + '%';
+      if (HEX.test(list[0].colour)) ground.style.background = list[0].colour;
+      el.appendChild(ground);
+    }
     el.appendChild(logo);
-    if (ring) el.appendChild(rings(list));
-    el.appendChild(rows);
+    if (style === 'rings' && list.length > 0) {
+      el.appendChild(rings(list));
+      el.appendChild(lead(list[0], true));
+    } else if (style === 'fill' && list.length > 0) {
+      el.appendChild(lead(list[0], false));
+      if (list[1]) el.appendChild(chip(list[1]));
+    } else {
+      var rows = document.createElement('div');
+      rows.className = 'tile__rows';
+      list.forEach(function (r) { rows.appendChild(row(r)); });
+      el.appendChild(rows);
+    }
     return el;
   }
 
@@ -164,13 +207,13 @@
     document.documentElement.style.zoom = String(scale);
     var lit = layer === 'display' && Number.isInteger(data.hover) ? data.hover : -1;
     document.body.setAttribute('data-ground', data.ground === 'light' ? 'light' : 'dark');
-    var ring = data.style === 'rings';
-    document.body.setAttribute('data-style', ring ? 'rings' : 'plain');
+    var style = data.style === 'rings' || data.style === 'fill' ? data.style : 'plain';
+    document.body.setAttribute('data-style', style);
     var width = typeof data.tileWidth === 'number' && data.tileWidth > 20 && data.tileWidth < 400 ? data.tileWidth : 180;
     var tiles = Array.isArray(data.tiles) ? data.tiles.slice(0, 8) : [];
     while (root.firstChild) root.removeChild(root.firstChild);
     tiles.forEach(function (t, i) {
-      if (t && typeof t === 'object') root.appendChild(tile(t, width, i, i === lit, ring));
+      if (t && typeof t === 'object') root.appendChild(tile(t, width, i, i === lit, style));
     });
   }
 
