@@ -53,6 +53,30 @@ test('the meters opt out of the forcing and draw the reading in Highlight on an 
   assert.match(block, /\.row \{ border: 1px solid CanvasText; \}/);
 });
 
+test('the layouts\' bars are row.css\'s meters: no layout rule paints a bar, so its high-contrast pass holds', () => {
+  // "Öne çıkan" and "Kutucuklar" in bars only place and size the .rail; a
+  // colour set there would outrank row.css's forced-colors rules (a media
+  // query adds no specificity) and put the ramp back on an outlined track.
+  for (const file of ['layouts.css', 'layout-focus.css', 'layout-tiles.css']) {
+    const text = css(file).replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      // Split the list at top-level commas only, not inside :has(a, b).
+      const selectors = [];
+      let depth = 0;
+      let cur = '';
+      for (const ch of m[1]) {
+        if (ch === '(') depth += 1;
+        if (ch === ')') depth -= 1;
+        if (ch === ',' && depth === 0) { selectors.push(cur.trim()); cur = ''; } else cur += ch;
+      }
+      selectors.push(cur.trim());
+      const paintsMeter = selectors.some((s) => /\.(rail|sk)\b|\.rail__/.test(s.split(/\s+/).pop()));
+      if (!paintsMeter) continue;
+      assert.doesNotMatch(m[2], /\b(background(-color|-image)?|box-shadow|color|opacity|forced-color-adjust)\s*:/, `${file}: ${selectors[0]}`);
+    }
+  }
+});
+
 test('a selected segment and an "on" switch keep their fill, in Highlight', () => {
   const block = forcedBlock(css('panel.css'));
   assert.match(block, /\.tabs__tab\[aria-selected="true"\],\s*\.theme__radio:checked \+ \.theme__opt,\s*\.seg__radio:checked \+ \.seg__opt \{\s*forced-color-adjust: none;\s*background: Highlight;\s*color: HighlightText;/);

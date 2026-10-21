@@ -236,6 +236,109 @@ test.describe('the same cards in every layout', () => {
   });
 });
 
+// ------------------------------------------------- both gauges in both layouts
+
+test.describe('"Çubuk" and "Halka" in "Öne çıkan" and "Kutucuklar"', () => {
+  // Every state at once: an estimate that is also stale, a window with no
+  // figure, a tool with one window, an error (the hero: the highest figure),
+  // a tool that is not connected, and one still loading.
+  const STATES = () => ({
+    generatedAt: new Date().toISOString(),
+    providers: [
+      provider('claude', 'Claude Code', win(62, 2, { certainty: 'estimated', capturedAt: later(-0.5) }), win(41, 50, { capturedAt: later(-0.5) }), { status: 'stale', planLabel: 'Max 20x' }),
+      provider('codex', 'Codex', win(30, 4), { usedPercentage: null, certainty: 'unknown', resetsAt: null, absence: 'not-supplied' }),
+      provider('antigravity', 'Antigravity', null, win(23, 120)),
+      provider('grok', 'Grok Build', win(70, 1), win(50, 20), { status: 'error', errorCode: 'parse-failed' }),
+      provider('kimi', 'Kimi Code', null, null, {
+        status: 'passive', connected: false, setupAction: { kind: 'enable', label: 'Ekle', detail: 'Bu makinede bulunamadı.' },
+      }),
+      provider('qwen', 'Qwen Code', null, null, { status: 'loading' }),
+    ],
+  });
+  /** The structure a screen reader and the keyboard walk: tags, classes, roles, aria names. */
+  const shape = (root) => walk(root).map((n) => [
+    n.tagName, n.getAttribute('class') || '', n.getAttribute('role') || '', n.getAttribute('tabindex') || '',
+    ...['aria-label', 'aria-hidden', 'aria-valuenow'].map((a) => (n.getAttribute(a) === null ? '-' : '+')),
+  ].join(' '));
+
+  for (const layout of ['focus', 'tiles']) {
+    test(`${layout}: the same cards in bars and in rings, every state with its words and its meters`, async () => {
+      const shapes = {};
+      for (const gauge of ['bar', 'ring']) {
+        const app = mount({ layout, gauge }, STATES());
+        try {
+          await tick();
+          assert.equal(document.documentElement.dataset.gauge, gauge, `${layout} draws the user's ${gauge}`);
+          const meters = app.all((n) => n.getAttribute('role') === 'meter');
+          assert.equal(meters.length, 6, `${gauge}: claude 2, codex 1, antigravity 1, grok 2`);
+          for (const m of meters) {
+            assert.match(m.getAttribute('aria-valuenow'), /^\d+$/);
+            assert.ok(m.getAttribute('aria-valuetext').includes(m.getAttribute('aria-valuenow')));
+          }
+          // The erroring tool keeps its figures and its retry; in "Öne çıkan"
+          // it is the hero, the highest figure.
+          const hero = app.row('grok');
+          if (layout === 'focus') assert.equal(app.rows()[0], hero);
+          assert.equal(hero.getAttribute('data-hero'), layout === 'focus' ? 'true' : null);
+          assert.ok(walk(hero).some((n) => cls(n).includes('row__err')), 'the error');
+          assert.ok(walk(hero).some((n) => n.tagName === 'BUTTON' && n.textContent === i18n.t('row.retry')), 'its retry');
+          // Estimated and stale, both said.
+          const claude = app.row('claude');
+          assert.ok(walk(claude).some((n) => cls(n).includes('win__pct') && n.textContent.startsWith('≈')), 'the estimate sign');
+          assert.ok(walk(claude).some((n) => cls(n).includes('win__asof') && !n.hidden), 'the "itibarıyla" line');
+          assert.ok(walk(claude).some((n) => cls(n).includes('row__chip--stale')), 'the stale chip');
+          // A window with no figure: its words, no bar, its own sentence.
+          const none = walk(app.row('codex')).filter((n) => cls(n).includes('win--7d'));
+          assert.equal(none.length, 1);
+          assert.equal(walk(none[0]).find((n) => cls(n).includes('win__pct--none')).textContent, i18n.t('absence.notReported'));
+          assert.equal(walk(none[0]).some((n) => cls(n).includes('rail')), false, 'a bar for a window with no figure');
+          assert.equal(none[0].getAttribute('role'), 'group');
+          assert.ok(none[0].getAttribute('aria-label'));
+          // One window: one block.
+          assert.deepEqual(walk(app.row('antigravity')).filter((n) => /\bwin--/.test(n.getAttribute('class') || '')).map((n) => n.getAttribute('data-win')), ['7d']);
+          // Not connected: its action. Loading: two bar-or-ring placeholders.
+          assert.ok(walk(app.row('kimi')).some((n) => n.tagName === 'BUTTON' && n.textContent === 'Ekle'));
+          assert.equal(walk(app.row('qwen')).filter((n) => cls(n).includes('sk--rail')).length, 2);
+
+          // The details are still the sheet, in this gauge too.
+          const codex = app.row('codex');
+          codex.click();
+          await tick();
+          assert.equal(codex.getAttribute('data-expanded'), 'true');
+          assert.equal(app.list().getAttribute('data-sheet'), 'true');
+          assert.ok(walk(codex).some((n) => n.getAttribute('role') === 'meter'), 'the open card keeps its meter');
+          app.find((n) => cls(n).includes('sheet-back')).click();
+          await tick();
+          assert.equal(app.list().getAttribute('data-sheet'), null);
+          shapes[gauge] = shape(app.list());
+        } finally {
+          app.handle.destroy();
+        }
+      }
+      // The gauge is drawing only: the same DOM, so the same reading and
+      // focus order, whichever is chosen.
+      assert.deepEqual(shapes.bar, shapes.ring);
+    });
+  }
+
+  test('the first scan: the skeleton cards, in either gauge', async () => {
+    for (const layout of ['focus', 'tiles']) {
+      for (const gauge of ['bar', 'ring']) {
+        const app = mount({ layout, gauge }, null);
+        try {
+          await tick();
+          const busy = app.find((n) => n.tagName === 'UL' && n.getAttribute('aria-busy') === 'true');
+          assert.ok(busy, `${layout} / ${gauge}: no skeleton list`);
+          assert.ok(walk(busy).filter((n) => cls(n).includes('sk--rail')).length >= 2);
+          assert.equal(document.documentElement.dataset.gauge, gauge);
+        } finally {
+          app.handle.destroy();
+        }
+      }
+    }
+  });
+});
+
 // ---------------------------------------------------------- the grip, the click
 
 test.describe('outside the list', () => {
@@ -511,5 +614,42 @@ test.describe('the stylesheets', () => {
     const tiles = read('src/renderer/styles/layout-tiles.css');
     assert.match(tiles, /@media \(prefers-reduced-motion: reduce\) \{\s*\.quick\[data-busy="true"\] \.quick__icon svg \{ animation: none; \}/);
     for (const f of FILES) assert.doesNotMatch(read(`src/renderer/styles/${f}`), /animation: ring-sweep|transition: --ring-f/, `${f} re-times the rings`);
+  });
+
+  test('the bars: a variant per layout under [data-gauge="bar"], at the sizes the layouts promise', () => {
+    const focus = rules(read('src/renderer/styles/layout-focus.css'));
+    const tiles = rules(read('src/renderer/styles/layout-tiles.css'));
+    const body = (list, selector) => {
+      const found = list.find(([selectors]) => selectors.includes(selector));
+      assert.ok(found, `no rule for ${selector}`);
+      return found[1];
+    };
+    const F = 'html[data-layout="focus"][data-gauge="bar"]';
+    const T = 'html[data-layout="tiles"][data-gauge="bar"]';
+    // The hero: logo and name on top, the kicker, then the windows; no ring.
+    assert.match(body(focus, `${F} .row[data-hero="true"]:not([data-expanded])`), /grid-template-areas:\s*"logo who"\s*"kick kick"\s*"meter meter"/);
+    assert.match(body(focus, `${F} .row[data-hero="true"][data-lead="5h"]:not([data-expanded]) .meter .win--5h .rail`), /height: 10px;/);
+    assert.match(body(focus, `${F} .row[data-hero="true"][data-lead="7d"]:not([data-expanded]) .meter > .win--7d`), /order: -1;/, 'the lead window first');
+    assert.match(body(focus, `${F} .row[data-hero="true"]:not([data-expanded])::after`), /display: none;/, 'the empty groove');
+    // The compact rows: the logo in the ring's column, a short bar per window.
+    assert.match(body(focus, `${F} .row:not([data-hero]):not([data-expanded])`), /grid-template-columns: 32px minmax\(0, 1fr\) max-content max-content;/);
+    assert.match(body(focus, `${F} .row:not([data-hero]):not([data-expanded]) .meter .rail`), /min-width: 90px;/);
+    // The tiles: the five-hour figure large over its bar.
+    assert.match(body(tiles, `${T} .row:not([data-expanded]) .meter .win--5h .win__pct`), /font-size: 30px;/);
+    assert.match(body(tiles, `${T} .row:not([data-expanded]) .meter .win--5h .rail`), /height: 8px;/);
+    assert.match(body(tiles, `${T} .row:not([data-expanded]) .meter::before`), /display: none;/, 'the empty grooves');
+    // The skeletons are bars too.
+    for (const [list, P] of [[focus, F], [tiles, T]]) {
+      assert.match(body(list, `${P} .row[data-status="loading"] .meter .sk--rail`), /\bmask: none;/);
+    }
+  });
+
+  test('reduced motion and the bars: no bar rule animates anything; the fill keeps row.css\'s --dur-fill', () => {
+    for (const f of ['layout-focus.css', 'layout-tiles.css']) {
+      for (const [selectors, body] of rules(read(`src/renderer/styles/${f}`))) {
+        if (!selectors.some((s) => s.includes('[data-gauge="bar"]'))) continue;
+        assert.doesNotMatch(body, /\b(transition|animation)(-[a-z]+)?\s*:/, `${f}: ${selectors[0]} moves`);
+      }
+    }
   });
 });
