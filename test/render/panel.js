@@ -198,7 +198,9 @@ app.whenReady().then(async () => {
       const l2 = window.__lum(window.__rgb(b));
       return Math.round(((Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)) * 100) / 100;
     };
-    window.__tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    // From <body>, not <html>: the panel's ramp and greys are re-assigned on
+    // body (tokens.css), while :root keeps the tray icon's mirrored values.
+    window.__tok = (n) => getComputedStyle(document.body).getPropertyValue(n).trim();
     // Hue, in degrees. The ramp's meaning is carried by hue as well as by
     // luminance, and "redder than the step below it" is the property that keeps
     // the last two steps apart once both of them are bright.
@@ -1973,8 +1975,10 @@ app.whenReady().then(async () => {
     /uygulama/.test(pinOn.title || ''), pinOn.title);
   check('pinned and unpinned are different at a glance, not one shade apart',
     pinOn.bg !== pinOff.bg && pinOn.color !== pinOff.color, [pinOff.bg, pinOn.bg]);
-  check('pinned inverts to the brightest ink, so it survives greyscale',
-    pinOn.bg === 'rgb(237, 242, 240)', pinOn.bg);
+  // Apple HIG trial: pinned is a filled tint circle (dark --tint #0A84FF),
+  // a ground change rather than a shade, so it still survives greyscale.
+  check('pinned fills with the tint, so it survives greyscale',
+    pinOn.bg === 'rgb(10, 132, 255)', pinOn.bg);
   check('the pinned glyph stands upright', pinOn.tilt === null, pinOn.tilt);
   check('the footer states the pinned promise in words',
     /kal/.test(pinOn.foot || '') && pinOn.foot !== pinOff.foot, pinOn.foot);

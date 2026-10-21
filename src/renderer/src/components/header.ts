@@ -91,9 +91,9 @@ export interface HeaderHandle {
  */
 function pinIcon(): { root: SVGElement; body: SVGElement } {
   const body = svg('path', {
-    d: 'M6 1.5h4l-.5 4 2 2.5H4.5l2-2.5-.5-4Z M8 8v6.5',
+    d: 'M5.75 1.75h4.5 M6.6 1.75v3.4L4.6 8h6.8L9.4 5.15v-3.4 M8 8v6',
     stroke: 'currentColor',
-    'stroke-width': '1.3',
+    'stroke-width': '1.5',
     'stroke-linecap': 'round',
     'stroke-linejoin': 'round',
   });
@@ -116,20 +116,20 @@ function settingsIcon(): SVGElement {
     'svg',
     { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false' },
     svg('path', {
-      d: 'M2.6 5.2H4.9 M9.1 5.2H13.4 M2.6 10.8H7.9 M12.1 10.8H13.4',
+      d: 'M2.5 5H4.75 M9.25 5H13.5 M2.5 11H7.75 M12.25 11H13.5',
       stroke: 'currentColor',
-      'stroke-width': '1.3',
+      'stroke-width': '1.5',
       'stroke-linecap': 'round',
     }),
     svg('circle', {
-      cx: 7, cy: 5.2, r: 1.8,
+      cx: 7, cy: 5, r: 1.9,
       stroke: 'currentColor',
-      'stroke-width': '1.3',
+      'stroke-width': '1.5',
     }),
     svg('circle', {
-      cx: 10, cy: 10.8, r: 1.8,
+      cx: 10, cy: 11, r: 1.9,
       stroke: 'currentColor',
-      'stroke-width': '1.3',
+      'stroke-width': '1.5',
     }),
   );
 }
@@ -139,9 +139,9 @@ function closeIcon(): SVGElement {
     'svg',
     { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false' },
     svg('path', {
-      d: 'M4 4l8 8M12 4l-8 8',
+      d: 'M4.5 4.5l7 7M11.5 4.5l-7 7',
       stroke: 'currentColor',
-      'stroke-width': '1.4',
+      'stroke-width': '1.5',
       'stroke-linecap': 'round',
     }),
   );

@@ -5,10 +5,12 @@
  * and everything under it — the two windows, the error, "Ayrıntılar" and the
  * details — runs the card's full width. `.row__body` is `display: contents`,
  * so the builders' lines are laid straight onto this grid. */
+/* Apple HIG trial: the card is a raised FILL with a 12px corner (concentric
+ * with the sheet's 16px), no outline. Depth comes from the fill step alone. */
 .rows {
   display: flex;
   flex-direction: column;
-  gap: var(--s-2);
+  gap: 10px;
   padding: var(--s-1) var(--s-3) var(--s-3);
 }
 .row {
@@ -17,11 +19,11 @@
   grid-template-columns: var(--tile) minmax(0, 1fr);
   align-items: center;
   column-gap: var(--s-3);
-  row-gap: var(--s-2);
+  row-gap: var(--s-3);
   min-height: 44px;
-  padding: var(--s-3);
-  border: 1px solid var(--ink-700);
-  border-radius: 8px;
+  padding: 14px var(--s-4) var(--s-3);
+  border: 0;
+  border-radius: var(--radius-card);
   background: var(--ink-800);
 }
 .row > .grip { grid-column: 1; grid-row: 1; }
@@ -106,7 +108,7 @@
  * meter on the same row is the fourth. */
 .row[data-connected="true"] .grip {
   background: color-mix(in srgb, var(--accent, #666666) var(--accent-tint), var(--ink-800));
-  border-color: color-mix(in srgb, var(--accent, #666666) 40%, transparent);
+  border-color: transparent;
   color: var(--accent, var(--ink-200));
 }
 /* The brand hexes were chosen against a dark ground and four of the five are
@@ -141,8 +143,8 @@
 [data-connected="false"] .mark { filter: grayscale(1); opacity: .6; }
 
 .row[data-status="loading"] .grip {
-  background: var(--ink-800);
-  border-color: var(--ink-700);
+  background: var(--fill-2);
+  border-color: transparent;
 }
 
 /* The row whose 5-hour window main draws into the tray icon. A dot, not a
@@ -155,7 +157,7 @@
   width: 6px; height: 6px;
   border-radius: 50%;
   background: currentColor;
-  border: 1px solid var(--ink-900);
+  border: 1px solid var(--ink-800);
 }
 
 /* Grip affordance: six dots fade in over the mark when the pointer is ON THE
@@ -183,7 +185,7 @@
 .grip:hover:not([disabled]) .grip__dots { opacity: .9; }
 .grip:focus-visible .mark { opacity: .18; }
 .grip:focus-visible .grip__dots { opacity: .9; }
-.grip:hover:not([disabled]) { background: var(--ink-700); border-color: var(--ink-600); }
+.grip:hover:not([disabled]) { background: var(--fill); border-color: transparent; }
 
 /* ---------------------------------------------------------------- drag */
 
@@ -216,8 +218,10 @@
 }
 
 .row__name {
+  font-family: var(--font-display);
   font-size: var(--fs-name);
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--ink-100);
   white-space: nowrap;
   overflow: hidden;
@@ -238,10 +242,13 @@
   flex: 0 1 auto;
   max-width: 40%;
   font-size: var(--fs-micro);
+  font-weight: 500;
   color: var(--ink-400);
-  padding: 1px var(--s-1);
-  border: 1px solid var(--ink-700);
-  border-radius: 4px;
+  /* A filled capsule, not an outlined tag. */
+  padding: 1px 7px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -257,9 +264,10 @@
   font-size: var(--fs-micro);
   line-height: 1.3;
   color: var(--ink-400);
-  padding: 0 var(--s-1);
-  border: 1px dashed var(--ink-600);
-  border-radius: 4px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill-2);
   white-space: nowrap;
   cursor: help;
 }
@@ -344,22 +352,35 @@
   .meter { grid-template-columns: minmax(0, 1fr); }
 }
 
-.win { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* Apple HIG trial: the FIGURE is the hero of the card. The window's name
+ * sits above it in secondary ink and the figure takes the large Display cut,
+ * left-aligned like an Activity or Screen Time reading:
+ *
+ *     5 saatlik
+ *     %62
+ *     [==========..........]
+ *     2 sa 13 dk kaldı
+ *
+ * Layout only: the DOM order (label, gap, figure) is unchanged, so the
+ * label is still read first and nothing about the a11y tree moves. */
+.win { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 
 .win__head {
   display: flex;
-  align-items: baseline;
-  gap: var(--s-2);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   min-width: 0;
 }
-.win__gap { flex: 1 1 auto; }
+.win__gap { display: none; }
 
 .win__label {
   flex: 0 1 auto;
+  max-width: 100%;
   min-width: 0;
   font-size: var(--fs-meta);
   font-weight: 500;
-  color: var(--ink-300);
+  color: var(--ink-400);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -370,9 +391,11 @@
  * different answers and one colour cannot carry both. */
 .win__pct {
   flex: 0 0 auto;
+  font-family: var(--font-display);
   font-size: var(--fs-figure);
   font-weight: 600;
-  line-height: 1;
+  letter-spacing: -.02em;
+  line-height: 1.05;
   color: var(--state, var(--ink-100));
   font-variant-numeric: tabular-nums lining-nums;
 }
@@ -380,8 +403,11 @@
  * weight, and no bar underneath - but the window is still named, because an
  * omitted line reads as an absent feature. */
 .win__pct--none {
-  font-size: var(--fs-meta);
-  font-weight: 400;
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.6;
   color: var(--ink-400);
 }
 
@@ -397,7 +423,7 @@
 }
 .win__foot[hidden] { display: none !important; }
 .win__foot > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.win__reset { color: var(--ink-300); }
+.win__reset { color: var(--ink-400); }
 .win__reset[hidden] { display: none !important; }
 
 /* Per-window state ramp. Scoped to the block, so the weekly bar is never
@@ -575,8 +601,9 @@
   align-items: center;
   gap: var(--s-1);
   padding: 1px var(--s-2) 1px 6px;
-  border: 1px solid var(--ink-600);
+  border: 0;
   border-radius: 999px;
+  background: var(--fill);
   font-size: var(--fs-micro);
   line-height: 1.3;
   color: var(--ink-200);
@@ -628,14 +655,18 @@
   min-width: 0;
 }
 .row__primary-value {
+  font-family: var(--font-display);
   font-size: var(--fs-figure);
   font-weight: 600;
+  letter-spacing: -.02em;
   color: var(--ink-100);
 }
 .row__primary[data-kind="absent"] .row__primary-value,
 .row__primary[data-kind="none"] .row__primary-value,
 .row__primary[data-kind="uncounted"] .row__primary-value,
 .row__primary[data-kind="pending"] .row__primary-value {
+  font-family: var(--font);
+  letter-spacing: 0;
   font-size: var(--fs-meta);
   font-weight: 500;
   color: var(--ink-300);
@@ -650,25 +681,26 @@
   justify-self: start;
   display: inline-flex;
   align-items: center;
-  gap: var(--s-1);
+  gap: 2px;
   min-height: 28px;
   margin: calc(var(--s-1) * -1) calc(var(--s-2) * -1);
   padding: 0 var(--s-2);
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-ctl);
   background: transparent;
-  color: var(--ink-300);
+  /* A tinted text button: the HIG idiom for "there is more behind this". */
+  color: var(--tint-text);
   font: inherit;
-  font-size: var(--fs-meta);
+  font-size: var(--fs-body);
   font-weight: 500;
   cursor: pointer;
   transition: color var(--dur-hover) linear, background-color var(--dur-hover) linear;
 }
-.row__more:hover { color: var(--ink-100); background: var(--ink-700); }
+.row__more:hover { color: var(--tint-text); background: var(--fill-2); }
 .row__more[hidden] { display: none !important; }
-.row__more-chev { display: inline-flex; transition: transform var(--dur-disclosure) var(--ease-open); }
-.row__more-chev svg { width: 12px; height: 12px; display: block; }
-.row__more[aria-expanded="true"] { color: var(--ink-100); }
+.row__more-chev { display: inline-flex; transition: transform var(--dur-spring) var(--ease-spring); }
+.row__more-chev svg { width: 13px; height: 13px; display: block; }
+.row__more[aria-expanded="true"] { color: var(--tint-text); }
 .row__more[aria-expanded="true"] .row__more-chev { transform: rotate(90deg); }
 
 /* The details, in the plan's order: tokens, the model split, the per-model
@@ -680,11 +712,11 @@
   min-width: 0;
   padding-top: var(--s-3);
   border-top: 1px solid var(--ink-700);
-  animation: detail-in var(--dur-disclosure) var(--ease-open) both;
+  animation: detail-in var(--dur-spring) var(--ease-spring) both;
 }
 .row__detail[hidden] { display: none !important; }
 @keyframes detail-in {
-  from { opacity: 0; transform: translateY(-4px); }
+  from { opacity: 0; transform: translateY(-6px) scale(.985); }
   to { opacity: 1; transform: none; }
 }
 .row__detail-tokens { display: flex; flex-direction: column; gap: var(--s-2); min-width: 0; }
@@ -850,7 +882,7 @@
 .cost {
   margin-top: var(--s-1);
   padding-top: var(--s-1);
-  border-top: 1px dashed var(--ink-700);
+  border-top: 1px solid var(--ink-700);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -920,9 +952,9 @@
   display: flex;
   gap: 1px;
   height: 5px;
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
-  background: var(--ink-800);
+  background: var(--fill);
 }
 .cost__bar[hidden] { display: none !important; }
 /* Capped at --ink-300. The meter above is the row's instrument; a grey bar
@@ -1052,7 +1084,7 @@
 .quota {
   margin-top: var(--s-1);
   padding-top: var(--s-1);
-  border-top: 1px dashed var(--ink-700);
+  border-top: 1px solid var(--ink-700);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -1179,9 +1211,10 @@
  * it must not compete with the group figure above it. */
 .quota__sel {
   flex: 0 0 auto;
-  padding: 0 5px;
-  border: 1px solid var(--ink-600);
+  padding: 0 6px;
+  border: 0;
   border-radius: 999px;
+  background: var(--fill);
   font-size: var(--fs-nano, var(--fs-micro));
   font-weight: 500;
   color: var(--ink-300);
@@ -1199,3 +1232,132 @@
   color: var(--ink-500);
   font-variant-numeric: tabular-nums lining-nums;
 }
+
+/* --------------------------------------------- variant: activity rings */
+/* A TRIAL, behind `html[data-gauge="ring"]` (the dev harness sets it with
+ * ?gauge=ring; the app never does). The two windows of a tool become two
+ * concentric rings, Apple Watch style: five-hour outside, weekly inside, the
+ * figures and countdowns stacked to their right. The bars are untouched —
+ * this block only re-lays the SAME elements:
+ *
+ *   - .rail keeps role=meter and every aria value; it is drawn as an annulus
+ *     (a radial mask) positioned on the meter's left, one size per window;
+ *   - .rail__fill draws a conic sweep of --f turns instead of a scaleX;
+ *   - .rail__tick becomes the sweep's rounded end cap (an arm rotated by
+ *     --f), and .rail__fill::before the rounded start cap.
+ *
+ * CSS only, so it cannot animate the sweep (an unregistered --f does not
+ * interpolate); the ring snaps to a new value where the bar glides. */
+
+html[data-gauge="ring"] .meter:has(.rail) {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  row-gap: 10px;
+  min-height: 84px;
+  padding-left: 100px;
+}
+html[data-gauge="ring"] .meter:has(.rail) .win { position: static; gap: 2px; }
+/* Beside a ring the figure reads as a value on a line, not as the hero. */
+html[data-gauge="ring"] .meter:has(.rail) .win__head {
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+html[data-gauge="ring"] .meter:has(.rail) .win__gap { display: block; flex: 1 1 auto; }
+html[data-gauge="ring"] .meter:has(.rail) .win__pct { font-size: 20px; }
+html[data-gauge="ring"] .meter:has(.rail) .win__pct--none { font-size: var(--fs-body); }
+
+/* Which ring is which: a small legend glyph before each label — a hollow
+ * ring for the outer (five-hour) one, a dot for the inner (weekly) one. */
+html[data-gauge="ring"] .meter:has(.rail) .win__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+html[data-gauge="ring"] .meter:has(.rail) .win__label::before {
+  content: "";
+  flex: none;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 2.5px solid var(--state, var(--ink-500));
+}
+html[data-gauge="ring"] .meter:has(.rail) .win--7d .win__label::before {
+  width: 7px; height: 7px;
+  border: 0;
+  background: var(--state, var(--ink-500));
+}
+
+html[data-gauge="ring"] .meter .rail {
+  --ring: 84px;
+  --ring-w: 10px;
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  width: var(--ring);
+  height: var(--ring);
+  margin-top: calc(var(--ring) / -2);
+  border-radius: 50%;
+  /* The track is the ring's own hue, faint — the Activity look — so an empty
+   * ring still says which colour it will fill with. */
+  background: color-mix(in srgb, var(--state, var(--ink-500)) 20%, var(--ink-800));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w)), #000000 calc(100% - var(--ring-w) + .5px));
+}
+/* Inner ring: 2px clear of the outer one. */
+html[data-gauge="ring"] .meter .rail--7d {
+  --ring: 60px;
+  left: 16px;
+}
+
+html[data-gauge="ring"] .meter .rail__fill {
+  inset: 0;
+  transform: none;
+  border-radius: 50%;
+  background: conic-gradient(var(--state, var(--calm)) calc(var(--f, 0) * 1turn), transparent 0);
+  -webkit-mask: none;
+  mask: none;
+}
+html[data-gauge="ring"] .meter .rail__band { display: none; }
+
+/* Start cap, at twelve o'clock. */
+html[data-gauge="ring"] .meter .rail__fill::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: var(--ring-w);
+  height: var(--ring-w);
+  margin-left: calc(var(--ring-w) / -2);
+  border-radius: 50%;
+  background: var(--state, var(--calm));
+}
+/* End cap: an arm from the centre to the rim, turned by the same fraction. */
+html[data-gauge="ring"] .meter .rail__tick {
+  top: 0;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  width: var(--ring-w);
+  height: 50%;
+  margin-left: calc(var(--ring-w) / -2);
+  background: none;
+  transform-origin: 50% 100%;
+  transform: rotate(calc(var(--f, 0) * 1turn));
+}
+html[data-gauge="ring"] .meter .rail__tick::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--ring-w);
+  height: var(--ring-w);
+  border-radius: 50%;
+  background: var(--state, var(--calm));
+  /* The end cap overlaps the start of the sweep past one turn; a soft edge
+   * keeps the head legible over its own tail, as on the Watch. */
+  box-shadow: 0 0 3px rgba(0, 0, 0, .45);
+}
+/* An error drains the ring exactly as it drains the bar. */
+html[data-gauge="ring"] .row[data-status="error"] .win { --state: var(--ink-400); }

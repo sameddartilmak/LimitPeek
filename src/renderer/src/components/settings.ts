@@ -155,7 +155,7 @@ function backIcon(): SVGElement {
     svg('path', {
       d: 'M9.5 3.5L5 8l4.5 4.5',
       stroke: 'currentColor',
-      'stroke-width': '1.4',
+      'stroke-width': '1.5',
       'stroke-linecap': 'round',
       'stroke-linejoin': 'round',
     }),
@@ -172,7 +172,7 @@ function chevronIcon(): SVGElement {
     svg('path', {
       d: 'M6 4l4 4-4 4',
       stroke: 'currentColor',
-      'stroke-width': '1.4',
+      'stroke-width': '1.5',
       'stroke-linecap': 'round',
       'stroke-linejoin': 'round',
     }),

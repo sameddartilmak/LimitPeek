@@ -163,7 +163,7 @@ function closeIcon(): SVGElement {
     svg('path', {
       d: 'M5 5l6 6M11 5l-6 6',
       stroke: 'currentColor',
-      'stroke-width': '1.4',
+      'stroke-width': '1.5',
       'stroke-linecap': 'round',
     }),
   );
@@ -175,9 +175,9 @@ function refreshIcon(): SVGElement {
     'svg',
     { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false', class: 'foot__refresh-icon' },
     svg('path', {
-      d: 'M13 8a5 5 0 1 1-1.46-3.54M13 3v2.5h-2.5',
+      d: 'M13 8a5 5 0 1 1-1.5-3.55M13.25 2.5v2.75H10.5',
       stroke: 'currentColor',
-      'stroke-width': '1.4',
+      'stroke-width': '1.5',
       'stroke-linecap': 'round',
       'stroke-linejoin': 'round',
     }),
