@@ -324,5 +324,19 @@
   "app.coachNotSaved": "Kart kapatıldı ama bu tercih kaydedilemedi; uygulama yeniden başlayınca tekrar görünebilir.",
 
   "settings.plan.auto": "Otomatik ({plan})",
-  "row.planSpokenTool": "Araçtan okunan plan:"
+  "row.planSpokenTool": "Araçtan okunan plan:",
+
+  "settings.layout.legend": "Düzen",
+  "settings.layout.list": "Liste",
+  "settings.layout.focus": "Öne çıkan",
+  "settings.layout.tiles": "Kutucuklar",
+  "settings.layout.help": "Düzen: Liste her aracı bir kartta gösterir; Öne çıkan, limite en yakın aracı en üstte büyük bir halkayla; Kutucuklar araçları yan yana kutucuklarda.",
+  "settings.gauge.helpRingsOnly": "Gösterge yalnızca Liste düzeninde geçerli. Öne çıkan ve Kutucuklar her zaman halka kullanır: dış halka 5 saatlik, iç halka haftalık.",
+  "settings.stripStyle.legend": "Şerit stili",
+  "settings.stripStyle.plain": "Sade",
+  "settings.stripStyle.rings": "Halkalı",
+  "settings.stripStyle.fill": "Dolgulu",
+  "settings.stripStyle.help": "Şerit stili: görev çubuğundaki kutucukların görünümü. Halkalı ve Dolgulu, 5 saatlik kullanımı büyük ve renkli gösterir.",
+  "app.layoutNotSaved": "Düzen ayarı kaydedilemedi. Önceki seçim geri alındı.",
+  "app.stripStyleNotSaved": "Şerit stili kaydedilemedi. Önceki seçim geri alındı."
 }

@@ -1,0 +1,9 @@
+/* Görünüm → Düzen: what the three layouts share. The list itself is panel.css
+ * and row.css, unchanged; "Öne çıkan" is layout-focus.css and "Kutucuklar"
+ * layout-tiles.css. app.ts writes `html[data-layout]` before first paint. */
+
+/* ------------------------------------------------- Settings → Görünüm */
+/* "Gösterge" outside the list: the choice is kept for the day the list comes
+ * back, so it stays operable, but it steps back and its line says where it
+ * applies (settings.ts). */
+.theme[data-inactive="true"] .theme__opts { opacity: .55; }

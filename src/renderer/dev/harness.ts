@@ -69,6 +69,8 @@ let prefs: Preferences = {
   gauge: 'bar',
   reduceTransparency: false,
   systemReducedTransparency: false,
+  layout: 'list',
+  stripStyle: 'plain',
 };
 let prefsCb: ((p: Preferences) => void) | null = null;
 
@@ -287,6 +289,22 @@ function makeBridge(scenario: Scenario): Bridge {
     async setReduceTransparency(reduce: boolean): Promise<boolean> {
       log(`setReduceTransparency(${reduce})`);
       prefs = { ...prefs, reduceTransparency: reduce };
+      prefsCb?.(prefs);
+      return true;
+    },
+
+    /** Persist, then push, like setGauge. */
+    async setLayout(layout: 'list' | 'focus' | 'tiles'): Promise<boolean> {
+      log(`setLayout(${layout})`);
+      prefs = { ...prefs, layout };
+      prefsCb?.(prefs);
+      return true;
+    },
+
+    /** Persist, then push. There is no strip here to redraw. */
+    async setStripStyle(stripStyle: 'plain' | 'rings' | 'fill'): Promise<boolean> {
+      log(`setStripStyle(${stripStyle})`);
+      prefs = { ...prefs, stripStyle };
       prefsCb?.(prefs);
       return true;
     },
@@ -557,6 +575,9 @@ controls.appendChild(logBox);
  *   &view=settings  &tab=providers|usage|general  &expand=<provider id>
  *   &gauge=ring (Görünüm → Gösterge: rings instead of bars)
  *   &rt=1 (Görünüm → "Saydamlığı azalt" on)  &rtsys=1 (Windows asks for it)
+ *   &layout=focus|tiles (Görünüm → Düzen)
+ *   &strip=plain|rings|fill (the strip chosen, in that style, as if this
+ *           machine could show it, so Görünüm → "Şerit stili" is on screen)
  *   &shot=1 (the panel alone, no controls)
  *   &bare=1 (with shot: a transparent page, so the site's desktop scene shows
  *           around the panel, as the real transparent window does)
@@ -575,6 +596,14 @@ if (params.get('gauge') === 'ring') prefs = { ...prefs, gauge: 'ring' };
 // ?rt=1 / ?rtsys=1: the glass opaque, by the user's switch or by Windows.
 if (params.get('rt') === '1') prefs = { ...prefs, reduceTransparency: true };
 if (params.get('rtsys') === '1') prefs = { ...prefs, systemReducedTransparency: true };
+// ?layout=focus|tiles: through the same preference the Settings control
+// writes (app.ts paints html[data-layout] in frame one).
+const layoutParam = params.get('layout');
+if (layoutParam === 'focus' || layoutParam === 'tiles') prefs = { ...prefs, layout: layoutParam };
+const stripParam = params.get('strip');
+if (stripParam === 'plain' || stripParam === 'rings' || stripParam === 'fill') {
+  prefs = { ...prefs, trayView: 'strip', stripAvailable: true, stripStyle: stripParam };
+}
 if (params.get('shot') === '1') document.body.classList.add('hx--shot');
 if (params.get('bare') === '1') document.body.classList.add('hx--bare');
 if (params.get('bare') === '1' && window.parent !== window) {

@@ -5,6 +5,8 @@ const { sanitizeAutostart, DEFAULT_AUTOSTART } = require('./autostart-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
 const { sanitizeGauge } = require('../core/gauge');
 const { sanitizeReduceTransparency } = require('../core/reduce-transparency');
+const { sanitizeLayout } = require('../core/layout');
+const { sanitizeStripStyle } = require('../core/strip-style');
 
 /**
  * The main-process half of the language preference that talks to Electron and
@@ -206,6 +208,10 @@ function createPreferences({
       // Windows asks for it (reduced transparency, high contrast). Only a real
       // `true`, so a nativeTheme without the property means "not asked".
       systemReducedTransparency: systemReducedTransparency() === true,
+      // Görünüm → Düzen, re-sanitised: anything but 'focus' or 'tiles' is the list.
+      layout: sanitizeLayout(settings && settings.layout),
+      // Görünüm → Şerit stili, re-sanitised: anything but 'rings' or 'fill' is plain.
+      stripStyle: sanitizeStripStyle(settings && settings.stripStyle),
     };
   };
 }

@@ -345,5 +345,19 @@
   "app.coachNotSaved": "The card was closed, but the choice could not be saved; it may appear again after a restart.",
 
   "settings.plan.auto": "Automatic ({plan})",
-  "row.planSpokenTool": "Plan read from the tool:"
+  "row.planSpokenTool": "Plan read from the tool:",
+
+  "settings.layout.legend": "Layout",
+  "settings.layout.list": "List",
+  "settings.layout.focus": "Focus",
+  "settings.layout.tiles": "Tiles",
+  "settings.layout.help": "Layout: List shows each tool on a card; Focus puts the tool closest to its limit on top as a large ring; Tiles shows the tools side by side.",
+  "settings.gauge.helpRingsOnly": "The gauge applies to the List layout only. Focus and Tiles always use rings: the outer ring is 5-hour usage, the inner ring weekly.",
+  "settings.stripStyle.legend": "Strip style",
+  "settings.stripStyle.plain": "Plain",
+  "settings.stripStyle.rings": "Rings",
+  "settings.stripStyle.fill": "Fill",
+  "settings.stripStyle.help": "Strip style: how the tiles in the taskbar look. Rings and Fill show 5-hour usage larger and in colour.",
+  "app.layoutNotSaved": "The layout setting could not be saved. The previous choice was restored.",
+  "app.stripStyleNotSaved": "The strip style could not be saved. The previous choice was restored."
 }

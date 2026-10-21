@@ -14,9 +14,9 @@
  *   'display'  rendered offscreen and shown inside the taskbar
  *              (taskbar-display.js), at `data.scale`, with the hovered tile lit.
  *
- * Two looks (data.gauge, the panel's Görünüm → Gösterge):
- *   'bar'   per row: label, a mini bar, the figure, the time left (default);
- *   'ring'  two small concentric rings after the logo — five-hour outside,
+ * Two looks (data.style, Görünüm → Şerit stili):
+ *   'plain' per row: label, a mini bar, the figure, the time left (default);
+ *   'rings' two small concentric rings after the logo — five-hour outside,
  *           weekly inside, the bar's ramp colour and track — and per row the
  *           figure and the time left, in the same order (outer ring first).
  *           SVG, so the rings stay crisp at the taskbar's zoom.
@@ -164,8 +164,8 @@
     document.documentElement.style.zoom = String(scale);
     var lit = layer === 'display' && Number.isInteger(data.hover) ? data.hover : -1;
     document.body.setAttribute('data-ground', data.ground === 'light' ? 'light' : 'dark');
-    var ring = data.gauge === 'ring';
-    document.body.setAttribute('data-gauge', ring ? 'ring' : 'bar');
+    var ring = data.style === 'rings';
+    document.body.setAttribute('data-style', ring ? 'rings' : 'plain');
     var width = typeof data.tileWidth === 'number' && data.tileWidth > 20 && data.tileWidth < 400 ? data.tileWidth : 180;
     var tiles = Array.isArray(data.tiles) ? data.tiles.slice(0, 8) : [];
     while (root.firstChild) root.removeChild(root.firstChild);

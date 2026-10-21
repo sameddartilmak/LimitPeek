@@ -167,7 +167,12 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // 23 with setReduceTransparency (2026-10-21): Görünüm → "Saydamlığı
   // azalt", the panel's glass drawn opaque. A local settings write; no network.
   assert.ok(declared.has('setReduceTransparency'), 'contract.ts should declare setReduceTransparency()');
-  assert.equal(declared.size, 23, `expected the 23 declared methods, saw ${[...declared].join(',')}`);
+  // 24 with setLayout and 25 with setStripStyle (2026-10-21): Görünüm →
+  // Düzen (list, focus, tiles) and Şerit stili (plain, rings, fill). Local
+  // settings writes; no network.
+  assert.ok(declared.has('setLayout'), 'contract.ts should declare setLayout()');
+  assert.ok(declared.has('setStripStyle'), 'contract.ts should declare setStripStyle()');
+  assert.equal(declared.size, 25, `expected the 25 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const IPC_STRIP = { ... } as const;`. */

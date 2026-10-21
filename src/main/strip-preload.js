@@ -19,7 +19,7 @@ const CH = {
 };
 
 contextBridge.exposeInMainWorld('usageNotchStrip', {
-  /** main -> page: `{ layer, ground, gauge, tileWidth, tiles, hover?, scale? }`. Returns an unsubscribe. */
+  /** main -> page: `{ layer, ground, style, tileWidth, tiles, hover?, scale? }`. Returns an unsubscribe. */
   onData: (cb) => {
     if (typeof cb !== 'function') return () => {};
     const listener = (_event, payload) => {

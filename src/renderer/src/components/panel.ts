@@ -28,7 +28,7 @@
  *            into the pin's own tooltip
  */
 
-import type { Gauge, LanguageChoice, ProviderSnapshot, ThemeChoice, TrayView } from '../../../shared/contract.js';
+import type { Gauge, LanguageChoice, Layout, ProviderSnapshot, StripStyle, ThemeChoice, TrayView } from '../../../shared/contract.js';
 import { defaultPlacement, placePanel, type PanelPlacement } from '../anchor.js';
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { clockTime } from '../format.js';
@@ -92,6 +92,10 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onGaugeChange(gauge: Gauge): void;
   /** The user flipped Görünüm → "Saydamlığı azalt". Optimistic. */
   onReduceTransparencyChange(reduce: boolean): void;
+  /** The user picked Görünüm → Düzen: list, focus or tiles. Optimistic. */
+  onLayoutChange(layout: Layout): void;
+  /** The user picked Görünüm → Şerit stili. Optimistic. */
+  onStripStyleChange(style: StripStyle): void;
   /** The user pressed a card's "Ayrıntılar". */
   onToggleExpand(providerId: string): void;
   /** "Bağla" on the first-run card: the same consent path, drawn in the card. */
@@ -135,6 +139,8 @@ export interface PanelHandle {
   focusView(view: PanelView): void;
   /** After a rebuild for a new language: back onto the language radio. */
   focusLanguage(): void;
+  /** Back onto a tool's own "Ayrıntılar" control, after its details closed. */
+  focusTool(providerId: string): void;
   /** Re-place the panel against the newest tray geometry. */
   applyAnchor(state: PanelState): void;
   /** Measured panel size in CSS px, for the canvas-fit check. */
@@ -209,6 +215,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onTrayView: (view) => ctx.onTrayViewChange(view),
     onGauge: (gauge) => ctx.onGaugeChange(gauge),
     onReduceTransparency: (reduce) => ctx.onReduceTransparencyChange(reduce),
+    onLayout: (layout) => ctx.onLayoutChange(layout),
+    onStripStyle: (style) => ctx.onStripStyleChange(style),
     onBack: () => ctx.onSettingsToggle(),
     onTab: (tab) => ctx.onSettingsTab(tab),
   });
@@ -901,6 +909,10 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     },
     focusLanguage(): void {
       settings.focusLanguage();
+    },
+    focusTool(providerId: string): void {
+      const handle = rows.get(providerId);
+      if (handle && !handle.moreButton.hidden) handle.moreButton.focus({ preventScroll: true });
     },
     destroy(): void {
       document.removeEventListener('pointerup', onUp);

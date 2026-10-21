@@ -9,6 +9,8 @@ const { migratePlanLabels } = require('../core/plan-labels');
 const { sanitizeTrayView, DEFAULT_TRAY_VIEW } = require('../core/tray-view');
 const { sanitizeGauge, DEFAULT_GAUGE } = require('../core/gauge');
 const { sanitizeReduceTransparency, DEFAULT_REDUCE_TRANSPARENCY } = require('../core/reduce-transparency');
+const { sanitizeLayout, DEFAULT_LAYOUT } = require('../core/layout');
+const { sanitizeStripStyle, DEFAULT_STRIP_STYLE } = require('../core/strip-style');
 
 /**
  * App settings, stored in the app's own userData. Small and hand-editable.
@@ -79,8 +81,9 @@ const DEFAULTS = Object.freeze({
   /**
    * 'bar' | 'ring': how the panel draws each tool's two windows (Settings →
    * Genel → Görünüm → Gösterge). 'bar' is the look every earlier version had;
-   * 'ring' is two concentric activity rings, in the panel and in the taskbar
-   * strip's tiles. An unknown value is 'bar', see `src/core/gauge.js`.
+   * 'ring' is two concentric activity rings. The list layout only, and the
+   * panel only (the strip has its own `stripStyle`). An unknown value is
+   * 'bar', see `src/core/gauge.js`.
    */
   gauge: DEFAULT_GAUGE,
   /**
@@ -90,6 +93,20 @@ const DEFAULTS = Object.freeze({
    * transparency and high contrast do the same without touching this.
    */
   reduceTransparency: DEFAULT_REDUCE_TRANSPARENCY,
+  /**
+   * 'list' | 'focus' | 'tiles': how the panel lays out the tools (Settings →
+   * Genel → Görünüm → Düzen). 'list' is the cards every earlier version had;
+   * 'focus' puts the tool closest to its limit on top as a large ring, 'tiles'
+   * is a two-column grid. Panel only. An unknown value is 'list', see
+   * `src/core/layout.js`.
+   */
+  layout: DEFAULT_LAYOUT,
+  /**
+   * 'plain' | 'rings' | 'fill': how the taskbar strip draws a tile (Settings →
+   * Genel → Görünüm → Şerit stili). 'plain' is the bars the strip always had.
+   * An unknown value is 'plain', see `src/core/strip-style.js`.
+   */
+  stripStyle: DEFAULT_STRIP_STYLE,
 });
 
 function file(userDataDir) {
@@ -148,6 +165,12 @@ function load(userDataDir) {
     // Absent (every file written before the glass existed) or not a real
     // boolean: the glass, the look the trial ships with.
     reduceTransparency: sanitizeReduceTransparency(raw.reduceTransparency),
+    // Absent (every file written before the layouts existed), a typo or a
+    // future value: the list, the look the user already has.
+    layout: sanitizeLayout(raw.layout),
+    // Absent (every file written before the strip styles existed), a typo or
+    // a future value: the plain bars, the look the strip already has.
+    stripStyle: sanitizeStripStyle(raw.stripStyle),
   };
 }
 

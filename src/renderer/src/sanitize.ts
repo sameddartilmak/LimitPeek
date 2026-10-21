@@ -30,6 +30,8 @@ import type {
   RefreshNotice,
   TrayView,
   Gauge,
+  Layout,
+  StripStyle,
   RowStatus,
   SetupAction,
   SetupKind,
@@ -1078,9 +1080,15 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   // way, so a main from before the glass sends nothing and gets the glass.
   const reduceTransparency = source.reduceTransparency === true;
   const systemReducedTransparency = source.systemReducedTransparency === true;
+  // Düzen and Şerit stili: anything but the other literals is the default, as
+  // main's own load() says; a main from before them sends nothing and gets the
+  // list and the plain strip it always drew.
+  const layout: Layout = source.layout === 'focus' || source.layout === 'tiles' ? source.layout : 'list';
+  const stripStyle: StripStyle = source.stripStyle === 'rings' || source.stripStyle === 'fill' ? source.stripStyle : 'plain';
   return {
     theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed,
     trayView, stripAvailable, stripNoRoom, gauge, reduceTransparency, systemReducedTransparency,
+    layout, stripStyle,
   };
 }
 

@@ -26,7 +26,10 @@ execFileSync(process.execPath, [path.join(SRC, 'build.mjs')], { cwd: ROOT, stdio
 fs.rmSync(OUT, { recursive: true, force: true });
 const copy = (from, to) => fs.cpSync(path.join(SRC, from), path.join(OUT, to), { recursive: true });
 copy('dist', 'dist');
-for (const css of ['tokens.css', 'panel.css', 'row.css']) copy(path.join('styles', css), path.join('styles', css));
+// Every stylesheet the harness page links (tokens, panel, row, the layouts).
+for (const css of fs.readdirSync(path.join(SRC, 'styles')).filter((n) => n.endsWith('.css'))) {
+  copy(path.join('styles', css), path.join('styles', css));
+}
 copy(path.join('dev', 'harness.css'), path.join('dev', 'harness.css'));
 copy(path.join('assets', 'app-icon.svg'), path.join('assets', 'app-icon.svg'));
 for (const f of fs.readdirSync(path.join(SRC, 'assets', 'logos')).filter((n) => n.endsWith('-color.svg'))) {

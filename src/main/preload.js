@@ -36,6 +36,8 @@ const CH = {
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   SET_GAUGE: 'prefs:set-gauge',
   SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
+  SET_LAYOUT: 'prefs:set-layout',
+  SET_STRIP_STYLE: 'prefs:set-strip-style',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -244,6 +246,26 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   setReduceTransparency: (reduce) => ipcRenderer.invoke(CH.SET_REDUCE_TRANSPARENCY, reduce === true),
+
+  /**
+   * Persists how the panel lays out the tools: 'list', 'focus' or 'tiles'.
+   * Coerced to a string for convenience only; main checks it against the
+   * three literals. `{ok:false}` means nothing changed anywhere.
+   *
+   * @param {'list'|'focus'|'tiles'} layout
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setLayout: (layout) => ipcRenderer.invoke(CH.SET_LAYOUT, String(layout)),
+
+  /**
+   * Persists how the taskbar strip draws its tiles: 'plain', 'rings' or
+   * 'fill'. Coerced to a string for convenience only; main checks it against
+   * the three literals. `{ok:false}` means nothing changed anywhere.
+   *
+   * @param {'plain'|'rings'|'fill'} style
+   * @returns {Promise<{ok:boolean}>}
+   */
+  setStripStyle: (style) => ipcRenderer.invoke(CH.SET_STRIP_STYLE, String(style)),
 
   /**
    * Persists the plan the user says they are on for ONE tool, or clears it.

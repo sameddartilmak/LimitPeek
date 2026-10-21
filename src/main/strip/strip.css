@@ -142,7 +142,7 @@ body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
   overflow: visible;
 }
 .tile__track { stroke: var(--track); }
-body[data-gauge="ring"] .tile__rows { gap: 3px; }
-body[data-gauge="ring"] .tile__row { gap: 6px; }
-body[data-gauge="ring"] .tile__pct { width: 28px; text-align: left; }
-body[data-gauge="ring"] .tile__left { width: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+body[data-style="rings"] .tile__rows { gap: 3px; }
+body[data-style="rings"] .tile__row { gap: 6px; }
+body[data-style="rings"] .tile__pct { width: 28px; text-align: left; }
+body[data-style="rings"] .tile__left { width: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

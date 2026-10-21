@@ -17,8 +17,10 @@ import type {
   AnchorPayload,
   Gauge,
   LanguageChoice,
+  Layout,
   Preferences,
   Snapshot,
+  StripStyle,
   ThemeChoice,
   TrayView,
   UsageNotchApi,
@@ -120,6 +122,16 @@ export interface Bridge {
    * all-or-nothing promise: `false` means main wrote NOTHING.
    */
   setReduceTransparency(reduce: boolean): Promise<boolean>;
+  /**
+   * Persist Görünüm → Düzen, list, focus or tiles (IPC.SET_LAYOUT). Same
+   * all-or-nothing promise: `false` means main wrote NOTHING.
+   */
+  setLayout(layout: Layout): Promise<boolean>;
+  /**
+   * Persist Görünüm → Şerit stili (IPC.SET_STRIP_STYLE). Same all-or-nothing
+   * promise: `false` means main wrote NOTHING.
+   */
+  setStripStyle(style: StripStyle): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
@@ -160,6 +172,8 @@ function nullBridge(): Bridge {
     setTrayView: async () => false,
     setGauge: async () => false,
     setReduceTransparency: async () => false,
+    setLayout: async () => false,
+    setStripStyle: async () => false,
     close: () => {},
     pin: () => {},
     setPointerOverPanel: () => {},
@@ -450,6 +464,34 @@ export function createBridge(): Bridge {
       }
       try {
         const result = await api.setReduceTransparency(reduce);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** Mirrors setGauge: any failure is a real instruction to revert. */
+    async setLayout(layout: Layout): Promise<boolean> {
+      if (typeof api.setLayout !== 'function') {
+        missing('setLayout');
+        return false;
+      }
+      try {
+        const result = await api.setLayout(layout);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** Mirrors setGauge: any failure is a real instruction to revert. */
+    async setStripStyle(style: StripStyle): Promise<boolean> {
+      if (typeof api.setStripStyle !== 'function') {
+        missing('setStripStyle');
+        return false;
+      }
+      try {
+        const result = await api.setStripStyle(style);
         return !!result && result.ok === true;
       } catch {
         return false;

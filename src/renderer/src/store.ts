@@ -10,9 +10,11 @@ import type {
   AnchorPayload,
   Gauge,
   LanguageChoice,
+  Layout,
   ProviderSnapshot,
   RefreshNotice,
   Snapshot,
+  StripStyle,
   ThemeChoice,
   TrayView,
 } from '../../shared/contract.js';
@@ -227,6 +229,24 @@ export interface PanelState {
   reduceTransparencyReverted: boolean;
   /** Windows asks for less transparency (or high contrast): glass off anyway. */
   systemReducedTransparency: boolean;
+  /**
+   * Görünüm → Düzen: list, focus or tiles. Optimistic, like `gauge`: the
+   * document flips on the gesture and main is asked afterwards.
+   */
+  layout: Layout;
+  /** True while a setLayout call is in flight. */
+  layoutPending: boolean;
+  /** Set briefly when main refused the change and the radio went back. */
+  layoutReverted: boolean;
+  /**
+   * Görünüm → Şerit stili. Optimistic, like `trayView`: the radio moves on
+   * the gesture, main redraws the strip and the radio goes back if it refuses.
+   */
+  stripStyle: StripStyle;
+  /** True while a setStripStyle call is in flight. */
+  stripStylePending: boolean;
+  /** Set briefly when main refused the change and the radio went back. */
+  stripStyleReverted: boolean;
 }
 
 const INITIAL: PanelState = {
@@ -276,6 +296,12 @@ const INITIAL: PanelState = {
   reduceTransparencyPending: false,
   reduceTransparencyReverted: false,
   systemReducedTransparency: false,
+  layout: 'list',
+  layoutPending: false,
+  layoutReverted: false,
+  stripStyle: 'plain',
+  stripStylePending: false,
+  stripStyleReverted: false,
 };
 
 type Listener = (state: PanelState) => void;
