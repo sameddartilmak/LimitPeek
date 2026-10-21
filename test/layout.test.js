@@ -18,7 +18,7 @@ const ROOT = path.join(__dirname, '..');
  * Settings → Genel → Görünüm → "Düzen": "Liste" (default), "Öne çıkan" or
  * "Kutucuklar". The value, its sanitising at every boundary, the handler
  * index.js registers over recorded fakes, the renderer's frame-one write of
- * `html[data-layout]` (and of the gauge it implies), and the optimistic pick
+ * `html[data-layout]` (with the user's own gauge, in every layout), and the optimistic pick
  * with its revert, driven through the real `mountApp` on the fake DOM.
  */
 
@@ -211,23 +211,22 @@ test.describe('the renderer: mounted', () => {
 
   const html = () => document.documentElement.dataset;
 
-  test('frame one: the layout, and the rings it implies outside the list', () => {
+  test('frame one: the layout, and the user\'s own gauge in every layout', () => {
     let app = mount({});
     assert.equal(html().layout, 'list');
     assert.equal(html().gauge, 'bar');
     app.handle.destroy();
-    app = mount({ layout: 'list', gauge: 'ring' });
-    assert.equal(html().gauge, 'ring');
-    app.handle.destroy();
-    for (const layout of ['focus', 'tiles']) {
-      app = mount({ layout, gauge: 'bar' });
-      assert.equal(html().layout, layout);
-      assert.equal(html().gauge, 'ring', `${layout} draws rings whatever the gauge says`);
-      app.handle.destroy();
+    for (const layout of ['list', 'focus', 'tiles']) {
+      for (const gauge of ['bar', 'ring']) {
+        app = mount({ layout, gauge });
+        assert.equal(html().layout, layout);
+        assert.equal(html().gauge, gauge, `${layout} draws the ${gauge} the user chose`);
+        app.handle.destroy();
+      }
     }
   });
 
-  test('a pick is optimistic; a refusal puts the old layout (and its gauge) back and says so', async () => {
+  test('a pick is optimistic and keeps the gauge; a refusal puts the old layout back and says so', async () => {
     const app = mount({ layout: 'list', gauge: 'bar' });
     try {
       await tick();
@@ -236,29 +235,33 @@ test.describe('the renderer: mounted', () => {
       radio.checked = true;
       radio.dispatch('change');
       assert.equal(html().layout, 'tiles', 'not optimistic');
-      assert.equal(html().gauge, 'ring');
+      assert.equal(html().gauge, 'bar', 'the tiles in the user\'s bars');
       assert.deepEqual(app.replies.map((r) => r.value), ['tiles']);
       app.replies[0].resolve(false);
       await tick();
       assert.equal(html().layout, 'list', 'the refused layout stayed on the document');
-      assert.equal(html().gauge, 'bar', 'the list came back with the user\'s bars');
+      assert.equal(html().gauge, 'bar');
       assert.ok(walk(app.container).some((n) => n.textContent === i18n.t('app.layoutNotSaved')));
     } finally {
       app.handle.destroy();
     }
   });
 
-  test('a push from main is adopted, and the list gets the user\'s gauge back', async () => {
+  test('a push from main is adopted, the layout and the gauge each as main says', async () => {
     const app = mount({ layout: 'tiles', gauge: 'bar' });
     try {
       app.push({ layout: 'focus', gauge: 'bar' });
       await tick();
       assert.equal(html().layout, 'focus');
+      assert.equal(html().gauge, 'bar');
+      app.push({ layout: 'focus', gauge: 'ring' });
+      await tick();
+      assert.equal(html().layout, 'focus');
       assert.equal(html().gauge, 'ring');
-      app.push({ layout: 'list', gauge: 'bar' });
+      app.push({ layout: 'list', gauge: 'ring' });
       await tick();
       assert.equal(html().layout, 'list');
-      assert.equal(html().gauge, 'bar');
+      assert.equal(html().gauge, 'ring');
     } finally {
       app.handle.destroy();
     }
