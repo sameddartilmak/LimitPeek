@@ -16,9 +16,10 @@
  *
  * Three looks (data.style, Görünüm → Şerit stili):
  *   'plain' per row: label, a mini bar, the figure, the time left (default);
- *   'rings' "Halkalı": a thick double ring after the logo (five-hour outside,
- *           weekly inside, the bar's ramp colour on the bar's track), then the
- *           lead row's figure large in its state colour and its time left;
+ *   'rings' "Halkalı": per row, its own small ring (the bar's ramp colour on
+ *           the bar's track), the label, the figure in its state colour and
+ *           the time left. One ring per window, each named beside it: a
+ *           double ring left the owner asking which ring was which;
  *   'fill'  "Dolgulu": the tile's own ground filled to the lead row's figure
  *           in its ramp colour, that figure and its time left on top, and the
  *           weekly figure in a small chip at the right.
@@ -36,15 +37,13 @@
   var SVG = 'http://www.w3.org/2000/svg';
   var STATES = { calm: 1, watch: 1, ember: 1, spent: 1 };
   /**
-   * "Halkalı" in CSS px (the page is zoomed to the taskbar scale): a 32px
-   * box, 5px strokes, the inner ring 2px clear of the outer one. A tile with
-   * one window draws that one ring at the outer size. pathLength 100 lets the
-   * sweep be the rounded figure itself.
+   * "Halkalı" in CSS px (the page is zoomed to the taskbar scale): a 14px
+   * ring per row, 3px stroke, drawn in a 16px box so the stroke is not
+   * clipped. pathLength 100 lets the sweep be the rounded figure itself.
    */
-  var RING_BOX = 32;
-  var RING_W = 5;
-  var RING_OUTER = 13.5;
-  var RING_INNER = 6.5;
+  var RING_BOX = 16;
+  var RING_W = 3;
+  var RING_R = 6.5;
 
   function text(value, max) {
     return typeof value === 'string' ? value.slice(0, max) : '';
@@ -78,26 +77,38 @@
     return c;
   }
 
-  /** One ring per row the tile has: its track, and the sweep from twelve o'clock. */
-  function rings(rows) {
+  /** One row's ring: its track, and the sweep from twelve o'clock. */
+  function ring(r) {
     var box = document.createElementNS(SVG, 'svg');
-    box.setAttribute('class', 'tile__rings');
+    box.setAttribute('class', 'tile__ring');
     box.setAttribute('viewBox', '0 0 ' + RING_BOX + ' ' + RING_BOX);
     box.setAttribute('aria-hidden', 'true');
-    rows.forEach(function (r, i) {
-      var radius = i === 0 ? RING_OUTER : RING_INNER;
-      box.appendChild(circle(radius, 'tile__track'));
-      var pct = pctOf(r);
-      if (pct <= 0) return;
-      var sweep = circle(radius, 'tile__sweep');
+    box.appendChild(circle(RING_R, 'tile__track'));
+    var pct = pctOf(r);
+    if (pct > 0) {
+      var sweep = circle(RING_R, 'tile__sweep');
       sweep.setAttribute('pathLength', '100');
       sweep.setAttribute('stroke-dasharray', pct + ' 100');
       sweep.setAttribute('stroke-linecap', pct >= 100 ? 'butt' : 'round');
       sweep.setAttribute('transform', 'rotate(-90 ' + RING_BOX / 2 + ' ' + RING_BOX / 2 + ')');
       if (HEX.test(r.colour)) sweep.setAttribute('stroke', r.colour);
       box.appendChild(sweep);
-    });
+    }
     return box;
+  }
+
+  /** "Halkalı", one row: its ring, "5sa", the figure in its state, the time left. */
+  function ringRow(r) {
+    var line = document.createElement('div');
+    line.className = 'tile__row';
+    line.appendChild(ring(r));
+    line.appendChild(span('tile__label', text(r.label, 6)));
+    var figure = span('tile__pct', text(r.percentText, 8));
+    var state = stateOf(r);
+    if (state) figure.setAttribute('data-state', state);
+    line.appendChild(figure);
+    line.appendChild(span('tile__left', text(r.left, 16)));
+    return line;
   }
 
   /**
@@ -190,8 +201,10 @@
     }
     el.appendChild(logo);
     if (style === 'rings' && list.length > 0) {
-      el.appendChild(rings(list));
-      el.appendChild(lead(list[0], true));
+      var ringRows = document.createElement('div');
+      ringRows.className = 'tile__rows';
+      list.forEach(function (r) { ringRows.appendChild(ringRow(r)); });
+      el.appendChild(ringRows);
     } else if (style === 'fill' && list.length > 0) {
       el.appendChild(lead(list[0], false));
       if (list[1]) el.appendChild(chip(list[1]));

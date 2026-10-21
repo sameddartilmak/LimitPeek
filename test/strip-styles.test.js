@@ -175,27 +175,25 @@ test.describe('the page draws each style from the same payload', () => {
     assert.deepEqual(t[1].rows.map((r) => [r.kind, r.state]), [['sevenDay', 'calm']]);
   });
 
-  test('"Halkalı": a 32px double ring, five-hour outside; the lead figure large in its state; its time left under it', () => {
+  test('"Halkalı": one small ring per row, named beside it, the figure in its state, the time left', () => {
     draw({ layer: 'display', ground: 'dark', style: 'rings', tileWidth: 180, tiles: tiles(), hover: -1, scale: 1 });
     assert.equal(document.body.getAttribute('data-style'), 'rings');
     const [claude, codex] = root.children;
-    const svg = find(claude, 'tile__rings')[0];
-    assert.equal(svg.getAttribute('viewBox'), '0 0 32 32');
+    const rows = find(claude, 'tile__row');
+    assert.equal(rows.length, 2, 'a row per window');
+    assert.deepEqual(rows.map((r) => find(r, 'tile__label')[0].textContent), ['5sa', '7g'], 'each ring has its name beside it');
+    assert.deepEqual(find(claude, 'tile__ring').map((s) => s.getAttribute('viewBox')), ['0 0 16 16', '0 0 16 16']);
     const sweeps = find(claude, 'tile__sweep');
-    assert.deepEqual(sweeps.map((c) => c.getAttribute('r')), ['13.5', '6.5'], 'outer then inner');
-    assert.deepEqual(sweeps.map((c) => c.getAttribute('stroke-width')), ['5', '5']);
+    assert.deepEqual(sweeps.map((c) => c.getAttribute('stroke-width')), ['3', '3']);
     assert.deepEqual(sweeps.map((c) => c.getAttribute('stroke')), [RAMPS.dark.watch, RAMPS.dark.ember], 'the ramp, for the rings');
     assert.deepEqual(sweeps.map((c) => c.getAttribute('stroke-dasharray')), ['62 100', '91 100']);
-    const big = find(claude, 'tile__big')[0];
-    assert.equal(big.textContent, '%62');
-    assert.equal(big.getAttribute('data-state'), 'watch', 'the text step, not a hex');
-    assert.match(find(claude, 'tile__sub')[0].textContent, /^2sa 12dk$/);
+    const figures = find(claude, 'tile__pct');
+    assert.deepEqual(figures.map((f) => [f.textContent, f.getAttribute('data-state')]), [['%62', 'watch'], ['%91', 'ember']], 'the text step, not a hex');
+    assert.match(find(claude, 'tile__left')[0].textContent, /^2sa 12dk$/);
     assert.equal(find(claude, 'tile__bar').length, 0, 'no bars in this style');
-    // Every lead figure names its window beside it; one window: one ring, at
-    // the outer size, and that weekly lead says so.
-    assert.equal(find(claude, 'tile__tag')[0].textContent, '5sa');
-    assert.deepEqual(find(codex, 'tile__sweep').map((c) => c.getAttribute('r')), ['13.5']);
-    assert.equal(find(codex, 'tile__tag')[0].textContent, '7g');
+    // One window: one row, and it says which window it is.
+    assert.deepEqual(find(codex, 'tile__label').map((l) => l.textContent), ['7g']);
+    assert.equal(find(codex, 'tile__ring').length, 1);
     assert.equal(claude.style.width, '176px', 'the same 180px tile, gap included');
   });
 
@@ -226,7 +224,7 @@ test.describe('the page draws each style from the same payload', () => {
       draw({ layer: 'full', ground: 'dark', style, tileWidth: 180, tiles: tiles() });
       assert.equal(document.body.getAttribute('data-style'), 'plain');
       assert.equal(find(root, 'tile__bar').length, 3);
-      assert.equal(find(root, 'tile__rings').length + find(root, 'tile__ground').length + find(root, 'tile__chip').length, 0);
+      assert.equal(find(root, 'tile__ring').length + find(root, 'tile__ground').length + find(root, 'tile__chip').length, 0);
     }
   });
 
@@ -238,7 +236,7 @@ test.describe('the page draws each style from the same payload', () => {
     draw({ layer: 'full', ground: 'dark', style: 'rings', tileWidth: 180, tiles: t });
     const claude = root.children[0];
     assert.equal(find(claude, 'tile__sweep')[0].getAttribute('stroke'), null);
-    assert.equal(find(claude, 'tile__big')[0].getAttribute('data-state'), null);
+    assert.deepEqual(find(claude, 'tile__pct').map((f) => f.getAttribute('data-state')), [null, null]);
     draw({ layer: 'full', ground: 'dark', style: 'fill', tileWidth: 180, tiles: t });
     assert.equal(find(root.children[0], 'tile__ground')[0].style.background, undefined);
     assert.equal(find(root.children[0], 'tile__chip')[0].getAttribute('data-state'), null);

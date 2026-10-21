@@ -170,15 +170,21 @@ body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
  * (--fill-label) 5.07 / 4.90. The weekly chip is opaque, so its figure is
  * measured on the chip alone: 6.58 or better dark, 6.42 or better light. */
 
-/* "Halkalı": logo, a thick double ring, the lead figure large and coloured,
- * its time left under it. */
-.tile__rings {
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
+/* "Halkalı": the plain rows, each with its own small ring where the bar is,
+ * so every ring has its window's name beside it; the figure in its state. */
+.tile__ring {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
   overflow: visible;
 }
 .tile__track { stroke: var(--track); }
+body[data-style="rings"] .tile__rows { gap: 3px; }
+body[data-style="rings"] .tile__pct { font-weight: 700; }
+body[data-style="rings"] .tile__pct[data-state="calm"]  { color: var(--ink-calm); }
+body[data-style="rings"] .tile__pct[data-state="watch"] { color: var(--ink-watch); }
+body[data-style="rings"] .tile__pct[data-state="ember"] { color: var(--ink-ember); }
+body[data-style="rings"] .tile__pct[data-state="spent"] { color: var(--ink-spent); }
 .tile__lead {
   flex: 1 1 auto;
   min-width: 0;
