@@ -167,7 +167,10 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // 23 with setReduceTransparency (2026-10-21): Görünüm → "Saydamlığı
   // azalt", the panel's glass drawn opaque. A local settings write; no network.
   assert.ok(declared.has('setReduceTransparency'), 'contract.ts should declare setReduceTransparency()');
-  assert.equal(declared.size, 23, `expected the 23 declared methods, saw ${[...declared].join(',')}`);
+  // 24 with setPanelHeight (2026-10-21): a fitted Windows 11 window is the
+  // panel, so main sizes it to the panel's height. Fire-and-forget, local.
+  assert.ok(declared.has('setPanelHeight'), 'contract.ts should declare setPanelHeight()');
+  assert.equal(declared.size, 24, `expected the 24 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const IPC_STRIP = { ... } as const;`. */
@@ -802,7 +805,10 @@ test('nothing the packaged app loads opens a socket', () => {
  *     thread), src/main/taskbar-icons-worker.js (a worker, for UI Automation)
  *     and src/main/taskbar-display-worker.js (a worker that owns the strip's
  *     drawing window inside the taskbar) — lazily: a user on the tray icon
- *     never loads it. A load failure only makes the strip "unavailable".
+ *     loads it only for the panel's two DWM window attributes on Windows 11
+ *     (win32.loadDwm: light/dark acrylic, a neutral hairline). A load failure
+ *     only makes the strip "unavailable" and leaves Windows' defaults on the
+ *     panel.
  *   - Its runtime JavaScript requires node:fs, node:util and node:module and
  *     nothing that reaches a network (grepped 2026-10-20, and scanned below;
  *     its install-time builder cnoke.cjs uses child_process and is excluded

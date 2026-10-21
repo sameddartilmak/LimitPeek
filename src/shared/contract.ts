@@ -1308,6 +1308,14 @@ export const IPC = {
    * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
    */
   SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
+  /**
+   * renderer -> main send(height: number). The panel's own height in CSS px,
+   * whenever it changes. A 'fitted' window (`Preferences.frame`) IS the panel,
+   * so main sizes the window to it — keeping the side nearest the taskbar
+   * where it is — up to `AnchorPayload.maxHeight`. A 'canvas' window ignores
+   * it. Anything that is not a plausible height changes nothing.
+   */
+  PANEL_SIZE: 'panel:size',
 } as const;
 
 /**
@@ -1356,6 +1364,23 @@ export type TrayView = 'tray' | 'strip';
  * it; the tray icon does not.
  */
 export type Gauge = 'bar' | 'ring';
+
+/**
+ * What is behind the panel (src/core/panel-material.js). 'acrylic': the real
+ * Windows 11 acrylic, live behind a transparent page, so the panel draws a
+ * translucent base and translucent cards over it. 'none': nothing; the panel
+ * draws its opaque base.
+ */
+export type PanelMaterial = 'acrylic' | 'none';
+
+/**
+ * The shape of the panel's window. 'fitted' (Windows 11): the window IS the
+ * panel; Windows draws its corners and shadow, the page fills it, there is no
+ * tail, and main sizes it to the panel (IPC.PANEL_SIZE). 'canvas': a
+ * transparent frame larger than the panel, which draws its own corners,
+ * shadow and tail inside it.
+ */
+export type PanelFrame = 'fitted' | 'canvas';
 
 export interface Preferences {
   theme: ThemeChoice;
@@ -1435,6 +1460,20 @@ export interface Preferences {
    * why. Anything that is not `true` reaches the renderer as `false`.
    */
   systemReducedTransparency: boolean;
+  /**
+   * What is behind the panel RIGHT NOW. Main decides it — the OS build, the
+   * window, "Saydamlığı azalt" and Windows' own requests — and pushes it on
+   * every change; the renderer paints `html[data-material]` from it in frame
+   * one, like the theme. Anything that is not 'acrylic' is 'none', the opaque
+   * look that is right over any window.
+   */
+  material: PanelMaterial;
+  /**
+   * The window's shape, fixed for the life of the process. Read in frame one
+   * (`html[data-frame]`). Anything that is not 'fitted' is 'canvas', the
+   * shape every earlier version had.
+   */
+  frame: PanelFrame;
 }
 
 /**
@@ -1467,6 +1506,13 @@ export interface AnchorPayload {
     workArea: { x: number; y: number; width: number; height: number };
   };
   window: { x: number; y: number; width: number; height: number };
+  /**
+   * The tallest the panel may be drawn, DIP. A 'canvas' window's own height;
+   * for a 'fitted' one, the most main will grow the window to on this work
+   * area. The list scrolls past it. A payload without it is read as
+   * `window.height`.
+   */
+  maxHeight: number;
   /** Which screen edge the taskbar sits on. */
   edge: 'bottom' | 'top' | 'left' | 'right';
   /**
@@ -1570,6 +1616,8 @@ export interface UsageNotchApi {
   pin(): void;
   /** The pointer is over the painted panel (true) or not. See IPC.PANEL_HIT. */
   setPointerOverPanel(over: boolean): void;
+  /** The panel's own height in CSS px. Fire-and-forget. See IPC.PANEL_SIZE. */
+  setPanelHeight(height: number): void;
 }
 
 declare global {

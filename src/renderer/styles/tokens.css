@@ -216,6 +216,13 @@
   --glass-ctl-edge: rgba(255, 255, 255, .08);
   --glass-ctl-shadow: 0 1px 2px rgba(0, 0, 0, .3);
 
+  /* --- the sheet itself -------------------------------------------------
+   * What the panel is drawn ON: the opaque base, unless Windows' own acrylic
+   * is live behind the window (`html[data-material="acrylic"]`, below), when
+   * it is a translucent tint over that acrylic. Its own token rather than
+   * --ink-900, which is also an INK (the filled freshness chip's text). */
+  --panel-base: var(--ink-900);
+
   /* --- provider accent, per theme --------------------------------------
    * `ProviderSnapshot.accent` is one fixed brand hex chosen against a dark
    * ground, and four of the five fail the 3:1 non-text threshold on a light
@@ -410,6 +417,61 @@
    * row surface. */
   --accent-shade: 66%;
   --accent-tint: 22%;
+}
+
+/* ------------------------------------------------------------ acrylic */
+/* REAL WINDOWS 11 ACRYLIC BEHIND THE PANEL (concept "A · Gerçek Windows
+ * camı", 2026-10-21). Main sets the window's backdrop to the flyout acrylic
+ * and says so in Preferences.material; app.ts paints it on <html>. The page
+ * is transparent over it, so the sheet becomes a TINT over the acrylic and
+ * the cards light translucent plates on the tint. Everything else stays: the
+ * opaque card colours above are the fallback (Windows 10, "Saydamlığı
+ * azalt", Windows' transparency off, high contrast, a refused material).
+ *
+ * The header and the tab band lose their in-app blur here — glass on glass
+ * is the stacking the design report rules out, and the window is the glass
+ * now — and panel.css stops the list running under them.
+ *
+ * SIZED FOR CONTRAST, NOT FOR LOOKS. The mockup's 55 % tint was drawn over a
+ * CSS blur of a dark wallpaper. Measured on this machine (Windows 11 26200,
+ * scratch spike): DWM's dark acrylic alone paints #929292 over a white
+ * window and (0,183,0) over a pure green one, so at 55 % the meta ink sat at
+ * 2.2:1 on a card. The tint is the smallest that keeps every TEXT ink at
+ * 4.5:1 or better on the worst backdrop (white for dark, black for light;
+ * nine flat colours tried), with the two inks that still fell short lifted
+ * one step for acrylic only. Then MEASURED off the screen with the real panel
+ * over a white, a pure green and a black window — the composite of DWM's
+ * acrylic, this tint and the card plate: dark card #404042 and base #333336
+ * over white, light base #E2E2E3 over black. Worst case, card or base:
+ *
+ *                   dark (white behind)     light (black behind)
+ *   ink-100         9.50                    13.00
+ *   ink-200         8.24                     8.77
+ *   ink-300         6.14                     5.82
+ *   ink-400         4.68  (#AEAEB2)          4.98  (#5E5E63)
+ *   tint-text       4.60  (#69B1FF)          5.02  (#005CB9)
+ *   figures, card   spent 3.04 … watch 7.33  calm 4.87 … spent 6.33
+ *
+ * The figures are the 24px semibold hero, large text (3:1), as on the opaque
+ * card; the ramp itself does not move (the tray mirrors it byte for byte).
+ *
+ * Off as soon as the renderer knows transparency is to be reduced, before
+ * main has switched the window: a tint over an opaque base still reads. */
+:root[data-material="acrylic"]:not([data-reduce-transparency]) {
+  --panel-base: rgba(30, 30, 34, .82);
+  --ink-800: rgba(255, 255, 255, .06);
+  --ink-400: #AEAEB2;
+  --tint-text: #69B1FF;
+  --glass: transparent;
+  --glass-filter: none;
+  --glass-ctl: rgba(255, 255, 255, .08);
+}
+:root[data-material="acrylic"][data-theme="light"]:not([data-reduce-transparency]) {
+  --panel-base: rgba(246, 246, 248, .82);
+  --ink-800: rgba(255, 255, 255, .7);
+  --ink-400: #5E5E63;
+  --tint-text: #005CB9;
+  --glass-ctl: rgba(255, 255, 255, .6);
 }
 
 /* ------------------------------------------------------------ no glass */

@@ -727,6 +727,7 @@ export function anchorFor(
     anchorSource,
     display: { id: 1, scaleFactor, bounds, workArea },
     window: win,
+    maxHeight: win.height,
     edge,
     mode,
   };

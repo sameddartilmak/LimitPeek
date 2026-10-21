@@ -29,7 +29,7 @@
  */
 
 import type { Gauge, LanguageChoice, ProviderSnapshot, ThemeChoice, TrayView } from '../../../shared/contract.js';
-import { defaultPlacement, placePanel, type PanelPlacement } from '../anchor.js';
+import { defaultPlacement, FITTED_MAX_HEIGHT, fittedPlacement, placePanel, type PanelPlacement } from '../anchor.js';
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { clockTime } from '../format.js';
 import { language, t } from '../i18n.js';
@@ -117,6 +117,8 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onKeepAlive(): void;
   /** The pointer entered (true) or left (false) the painted panel. */
   onPointerOverPanel(over: boolean): void;
+  /** The panel's height changed; a fitted window follows it (IPC.PANEL_SIZE). */
+  onPanelHeight(height: number): void;
   /** The user closed the toast. Clears `state.notice`. */
   onNoticeDismiss(): void;
   /** The user closed the refresh bubble ("Antigravity açık değil"). */
@@ -546,15 +548,36 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     setAttr(anchorEl, 'data-anchor-source', placement.anchorSource);
   }
 
+  /**
+   * A fitted window IS the panel, so main sizes it to the panel's height
+   * (IPC.PANEL_SIZE). Reported on every change — content, a disclosure, a
+   * toast, the language — and only on a change. A canvas window has a fixed
+   * size and is never told.
+   */
+  let reportedHeight = 0;
+  function reportHeight(frame = lastState?.frame): void {
+    if (frame !== 'fitted') return;
+    const height = root.offsetHeight;
+    if (height <= 0 || height === reportedHeight) return;
+    reportedHeight = height;
+    ctx.onPanelHeight(height);
+  }
+  const sizeWatch = typeof ResizeObserver === 'function' ? new ResizeObserver(() => reportHeight()) : null;
+  if (sizeWatch) sizeWatch.observe(root);
+
   function applyAnchor(state: PanelState): void {
-    // The OS window cannot grow, so the list — not the panel — absorbs any
-    // excess. Header and footer stay put; only the list scrolls.
+    // The window cannot grow past `maxHeight` (a canvas is that tall, a fitted
+    // window grows to it), so the list — not the panel — absorbs any excess.
+    // Header and footer stay put; only the list scrolls.
+    const fitted = state.frame === 'fitted';
     const canvasHeight = state.anchor
-      ? state.anchor.window.height
-      : document.documentElement.clientHeight;
+      ? state.anchor.maxHeight
+      : fitted ? FITTED_MAX_HEIGHT : document.documentElement.clientHeight;
     const headerHeight = header.el.offsetHeight;
     const chrome = headerHeight + footBand.offsetHeight + (strip.hidden ? 0 : strip.offsetHeight);
-    const budget = canvasHeight - chrome - 2 * 12 - 8 - 2;
+    // A canvas keeps its 12px margins, the tail and the 1px border round the
+    // panel; a fitted window is the panel edge to edge.
+    const budget = canvasHeight - chrome - (fitted ? 0 : 2 * 12 + 8 + 2);
     listBand.style.setProperty('--list-max', `${Math.max(120, budget)}px`);
     // The list runs on under the glass header by exactly this much and is
     // padded back by the same (panel.css), so the panel's height is unchanged.
@@ -564,12 +587,15 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     }
 
     const size = { width: root.offsetWidth || 400, height: root.offsetHeight || 0 };
-    const placement = state.anchor
-      ? placePanel(state.anchor, size)
-      : defaultPlacement({
-          width: document.documentElement.clientWidth,
-          height: document.documentElement.clientHeight,
-        });
+    reportHeight(state.frame);
+    const placement = fitted
+      ? fittedPlacement(state.anchor)
+      : state.anchor
+        ? placePanel(state.anchor, size)
+        : defaultPlacement({
+            width: document.documentElement.clientWidth,
+            height: document.documentElement.clientHeight,
+          });
 
     // Re-applied on every render because the height changes with content, but
     // keyed so identical styles are not rewritten every second.
@@ -904,6 +930,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     },
     destroy(): void {
       document.removeEventListener('pointerup', onUp);
+      if (sizeWatch) sizeWatch.disconnect();
       if (noticeTimer !== null) clearTimeout(noticeTimer);
       if (toolToastTimer !== null) clearTimeout(toolToastTimer);
       reorder.destroy();

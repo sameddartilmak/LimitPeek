@@ -2,8 +2,9 @@
 const log = require('../core/log');
 
 /**
- * The only main-thread door to Win32, for the taskbar strip (taskbar-strip.js).
- * (The taskbar's button area is measured by UI Automation in a worker,
+ * The only main-thread door to Win32, for the taskbar strip (taskbar-strip.js)
+ * and for the shape and tint of the panel window (`loadDwm`, below). (The
+ * taskbar's button area is measured by UI Automation in a worker,
  * taskbar-icons-worker.js, which is the one other file that loads koffi.)
  *
  * WHY THIS EXISTS AT ALL
@@ -40,7 +41,9 @@ const log = require('../core/log');
  * user32 (find the taskbar, read rectangles, DPI, monitors, the z-order and
  * the foreground window; style and place OUR window) and gdi32 GetPixel (the
  * taskbar's colour, to choose dark or light ink). Both are KnownDLLs, so
- * `koffi.load` cannot be handed a planted copy from the app folder. Nothing
+ * `koffi.load` cannot be handed a planted copy from the app folder. dwmapi
+ * DwmSetWindowAttribute sets four attributes of the PANEL's own window (see
+ * `loadDwm` for why its name is safe too). Nothing
  * here writes to another process's window, opens a file, a socket or a
  * process; koffi's runtime JavaScript has no network module either (scanned by
  * test/contract-mirror.test.js).
@@ -82,6 +85,16 @@ const VK_LBUTTON = 0x01;
 const GA_ROOT = 2;
 /** GetPixel's "could not read". */
 const CLR_INVALID = 0xFFFFFFFF;
+/** DwmSetWindowAttribute: the light or dark variant of the window's backdrop. */
+const DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+/** DwmSetWindowAttribute: the colour of the hairline Windows 11 draws round a window. */
+const DWMWA_BORDER_COLOR = 34;
+/** DwmSetWindowAttribute: Windows 11's rounded corners (DWMWCP_ROUND, 8px). */
+const DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+const DWMWCP_ROUND = 2;
+/** DwmSetWindowAttribute: DWM draws the window's frame effects — its shadow. */
+const DWMWA_NCRENDERING_POLICY = 2;
+const DWMNCRP_ENABLED = 2;
 
 /** undefined: not tried yet; null: tried and unavailable; object: ready. */
 let api;
@@ -268,6 +281,88 @@ function makeApi(f) {
   };
 }
 
+/* ------------------------------------------------------------ panel window */
+
+/**
+ * The panel's fitted window (panel-window.js) takes its backdrop, corners and
+ * shadow from Windows, and four of Windows' choices there have to be OURS:
+ *
+ *   - the corners and the shadow. A frameless window with Electron's default
+ *     thick frame gets both, and with them Windows' INVISIBLE resize borders:
+ *     measured here, 8 physical px left, right and below the visible panel
+ *     that still answer WindowFromPoint for the panel, so a click just beside
+ *     it was swallowed. With `thickFrame: false` the window is exactly the
+ *     panel, and Electron then asks DWM for square corners and no frame;
+ *     these two ask for the rounding and the shadow back.
+ *   - light or dark acrylic. DWM tints the backdrop by the window's immersive
+ *     dark mode, which Electron sets from `nativeTheme.shouldUseDarkColors` —
+ *     Windows' app mode, not the panel's own theme. A user who chose "Açık" on
+ *     a dark Windows would get light text on dark glass turned light. Electron
+ *     writes its value again on every nativeTheme change, so the panel writes
+ *     its own after each one (index.js).
+ *   - the hairline. Windows draws the ACCENT colour there on an active window
+ *     when the user has accent borders on; a coloured frame the moment the
+ *     panel is clicked.
+ *
+ * Bound separately from `load()`: a failure here costs these refinements (a
+ * square, shadowless panel, still acrylic), never the strip, and the strip's
+ * failure never costs them. dwmapi.dll is not a KnownDLL, but Chromium has already loaded it
+ * into this process (it composites through DWM), and LoadLibrary hands back a
+ * module that is already loaded by name before it searches any folder — so the
+ * name cannot reach a planted copy beside the exe.
+ *
+ * Window handles are the same numbers `handleOf()` returns.
+ */
+
+/** undefined: not tried yet; null: tried and unavailable; object: ready. */
+let dwm;
+
+function bindDwm() {
+  if (process.platform !== 'win32') throw Object.assign(new Error('not windows'), { code: 'NOT_WIN32' });
+  // eslint-disable-next-line global-require
+  const koffi = require('koffi');
+  const dwmapi = koffi.load('dwmapi.dll');
+  return {
+    DwmSetWindowAttribute: dwmapi.func('int __stdcall DwmSetWindowAttribute(intptr h, uint attr, _In_ uint32_t* value, uint size)'),
+  };
+}
+
+/** `#RRGGBB` -> COLORREF (0x00BBGGRR), or null for anything else. */
+function colorrefOfHex(hex) {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
+  if (!m) return null;
+  return (parseInt(m[1], 16) | (parseInt(m[2], 16) << 8) | (parseInt(m[3], 16) << 16)) >>> 0;
+}
+
+function makeDwm(f) {
+  const set = (h, attr, value) => f.DwmSetWindowAttribute(h, attr, [value >>> 0], 4) === 0;
+  return {
+    /** Dark (true) or light acrylic behind `hwnd`. True when Windows took it. */
+    setDarkMode: guard('setDarkMode', (h, dark) => Boolean(h) && set(h, DWMWA_USE_IMMERSIVE_DARK_MODE, dark ? 1 : 0), false),
+    /** Rounded corners and the frame shadow. True when Windows took both. */
+    setFlyoutShape: guard('setFlyoutShape', (h) => Boolean(h)
+      && set(h, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND)
+      && set(h, DWMWA_NCRENDERING_POLICY, DWMNCRP_ENABLED), false),
+    /** The window's hairline, `#RRGGBB`. True when Windows took it. */
+    setBorderColour: guard('setBorderColour', (h, hex) => {
+      const ref = colorrefOfHex(hex);
+      return Boolean(h) && ref !== null && set(h, DWMWA_BORDER_COLOR, ref);
+    }, false),
+  };
+}
+
+/** The panel's DWM attributes, or null when they cannot be had. Tried once. */
+function loadDwm() {
+  if (dwm !== undefined) return dwm;
+  try {
+    dwm = makeDwm(bindDwm());
+  } catch (err) {
+    log.warn(`panel window attributes unavailable: code=${(err && err.code) || (err && err.name) || 'UNKNOWN'}`);
+    dwm = null;
+  }
+  return dwm;
+}
+
 /** Our BrowserWindow's HWND as a number, or 0. No koffi needed. */
 function handleOf(win) {
   try {
@@ -282,8 +377,9 @@ function handleOf(win) {
 /** Tests only: forget the cached answer. */
 function __resetForTest() {
   api = undefined;
+  dwm = undefined;
 }
 
 module.exports = {
-  load, handleOf, hexOfColorref, __resetForTest, MOVE_FLAGS, RAISE_FLAGS,
+  load, loadDwm, handleOf, hexOfColorref, colorrefOfHex, __resetForTest, MOVE_FLAGS, RAISE_FLAGS,
 };

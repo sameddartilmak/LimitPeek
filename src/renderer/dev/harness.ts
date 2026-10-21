@@ -69,6 +69,9 @@ let prefs: Preferences = {
   gauge: 'bar',
   reduceTransparency: false,
   systemReducedTransparency: false,
+  // A browser page has no acrylic and no fitted window: the canvas look.
+  material: 'none',
+  frame: 'canvas',
 };
 let prefsCb: ((p: Preferences) => void) | null = null;
 
@@ -342,6 +345,10 @@ function makeBridge(scenario: Scenario): Bridge {
       // A browser page has no click-through window; only note it.
       document.body.setAttribute('data-pointer-over-panel', over ? 'true' : 'false');
     },
+    setPanelHeight(height: number) {
+      // No window to size; only note it.
+      document.body.setAttribute('data-panel-height', String(Math.round(height)));
+    },
   };
 }
 
@@ -557,6 +564,7 @@ controls.appendChild(logBox);
  *   &view=settings  &tab=providers|usage|general  &expand=<provider id>
  *   &gauge=ring (Görünüm → Gösterge: rings instead of bars)
  *   &rt=1 (Görünüm → "Saydamlığı azalt" on)  &rtsys=1 (Windows asks for it)
+ *   &frame=fitted  &material=acrylic (the Windows 11 window and its acrylic)
  *   &shot=1 (the panel alone, no controls)
  *   &bare=1 (with shot: a transparent page, so the site's desktop scene shows
  *           around the panel, as the real transparent window does)
@@ -575,6 +583,10 @@ if (params.get('gauge') === 'ring') prefs = { ...prefs, gauge: 'ring' };
 // ?rt=1 / ?rtsys=1: the glass opaque, by the user's switch or by Windows.
 if (params.get('rt') === '1') prefs = { ...prefs, reduceTransparency: true };
 if (params.get('rtsys') === '1') prefs = { ...prefs, systemReducedTransparency: true };
+// ?frame=fitted / ?material=acrylic: the Windows 11 window, panel edge to edge
+// (with bare=1 the page behind stands in for the desktop under the acrylic).
+if (params.get('frame') === 'fitted') prefs = { ...prefs, frame: 'fitted' };
+if (params.get('material') === 'acrylic') prefs = { ...prefs, material: 'acrylic' };
 if (params.get('shot') === '1') document.body.classList.add('hx--shot');
 if (params.get('bare') === '1') document.body.classList.add('hx--bare');
 if (params.get('bare') === '1' && window.parent !== window) {

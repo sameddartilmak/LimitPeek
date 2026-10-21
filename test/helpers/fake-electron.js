@@ -112,6 +112,23 @@ class FakeWindow {
     this.ignoreCalls = this.ignoreCalls || [];
     this.ignoreCalls.push({ ignore, forward: Boolean(opts && opts.forward) });
   }
+  /** Every material change, in order. Set `refuseMaterial` to make it throw. */
+  setBackgroundMaterial(material) {
+    if (this.refuseMaterial) throw Object.assign(new Error('refused'), { code: 'E_MATERIAL' });
+    this.materials = this.materials || [];
+    this.materials.push(material);
+  }
+  /** Every background colour, in order. */
+  setBackgroundColor(colour) {
+    this.colours = this.colours || [];
+    this.colours.push(colour);
+  }
+  /** A fixed HWND, as the 8-byte buffer Electron hands back on x64. */
+  getNativeWindowHandle() {
+    const buf = Buffer.alloc(8);
+    buf.writeBigUInt64LE(4242n);
+    return buf;
+  }
   loadFile() { this.loads++; }
   isDestroyed() { return this.destroyed; }
   isVisible() { return this.visible; }

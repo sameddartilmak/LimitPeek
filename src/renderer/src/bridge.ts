@@ -126,6 +126,8 @@ export interface Bridge {
   pin(): void;
   /** The pointer is over the painted panel (IPC.PANEL_HIT). Fire-and-forget. */
   setPointerOverPanel(over: boolean): void;
+  /** The panel's own height in CSS px (IPC.PANEL_SIZE). Fire-and-forget. */
+  setPanelHeight(height: number): void;
 }
 
 function getApi(): UsageNotchApi | null {
@@ -163,6 +165,7 @@ function nullBridge(): Bridge {
     close: () => {},
     pin: () => {},
     setPointerOverPanel: () => {},
+    setPanelHeight: () => {},
   };
 }
 
@@ -490,6 +493,17 @@ export function createBridge(): Bridge {
       if (typeof api.setPointerOverPanel !== 'function') return;
       try {
         api.setPointerOverPanel(over === true);
+      } catch {
+        /* ignore */
+      }
+    },
+
+    setPanelHeight(height: number): void {
+      // An older preload without it: the window keeps the size it has.
+      if (typeof api.setPanelHeight !== 'function') return;
+      if (!Number.isFinite(height)) return;
+      try {
+        api.setPanelHeight(height);
       } catch {
         /* ignore */
       }

@@ -10,6 +10,8 @@ import type {
   AnchorPayload,
   Gauge,
   LanguageChoice,
+  PanelFrame,
+  PanelMaterial,
   ProviderSnapshot,
   RefreshNotice,
   Snapshot,
@@ -227,6 +229,10 @@ export interface PanelState {
   reduceTransparencyReverted: boolean;
   /** Windows asks for less transparency (or high contrast): glass off anyway. */
   systemReducedTransparency: boolean;
+  /** What main has behind the panel right now (Preferences.material). */
+  material: PanelMaterial;
+  /** The window's shape, fixed per process (Preferences.frame). */
+  frame: PanelFrame;
 }
 
 const INITIAL: PanelState = {
@@ -276,6 +282,8 @@ const INITIAL: PanelState = {
   reduceTransparencyPending: false,
   reduceTransparencyReverted: false,
   systemReducedTransparency: false,
+  material: 'none',
+  frame: 'canvas',
 };
 
 type Listener = (state: PanelState) => void;

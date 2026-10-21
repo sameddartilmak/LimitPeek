@@ -41,7 +41,7 @@ function withNavigatorLanguage(tag, body) {
   }
 }
 
-const GOOD = { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false, setupCoachDismissed: false, trayView: 'tray', stripAvailable: true, stripNoRoom: false, gauge: 'bar', reduceTransparency: false, systemReducedTransparency: false };
+const GOOD = { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false, setupCoachDismissed: false, trayView: 'tray', stripAvailable: true, stripNoRoom: false, gauge: 'bar', reduceTransparency: false, systemReducedTransparency: false, material: 'none', frame: 'canvas' };
 
 test.describe('sanitizePreferences: the language fields', () => {
   test('a well-formed payload passes through unchanged', () => {
@@ -129,6 +129,26 @@ test.describe('sanitizePreferences: autostart', () => {
       assert.ok(out, JSON.stringify(bad));
       assert.equal(out.autostart, true, JSON.stringify(bad));
       assert.equal(out.theme, 'dark', JSON.stringify(bad));
+    }
+  });
+});
+
+test.describe('sanitizePreferences: the window material and frame', () => {
+  test('the exact literals pass through', () => {
+    const out = s.sanitizePreferences({ ...GOOD, material: 'acrylic', frame: 'fitted' });
+    assert.equal(out.material, 'acrylic');
+    assert.equal(out.frame, 'fitted');
+  });
+
+  test('anything else is the opaque canvas, and costs nothing else', () => {
+    // The safe direction: a translucent page in an opaque window shows black,
+    // an opaque one over live acrylic only hides it.
+    for (const bad of [undefined, null, 'Acrylic', 'mica', 1, true, {}]) {
+      const out = s.sanitizePreferences({ ...GOOD, material: bad, frame: bad });
+      assert.ok(out, JSON.stringify(bad));
+      assert.equal(out.material, 'none', JSON.stringify(bad));
+      assert.equal(out.frame, 'canvas', JSON.stringify(bad));
+      assert.equal(out.theme, 'dark');
     }
   });
 });
