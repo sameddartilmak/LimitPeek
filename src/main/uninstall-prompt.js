@@ -95,8 +95,10 @@ function runUninstallPrompt(deps) {
       center: true,
       alwaysOnTop: true,
       title: t('uninstall.windowTitle'),
-      // --ink-900 of each theme (tokens.css), so the first frame is not white.
-      backgroundColor: theme === 'light' ? '#F4F7F6' : '#0E1211',
+      // --ink-900 of each theme (tokens.css), so the first frame is not white
+      // and not a different grey from the page it turns into.
+      // test/uninstall-prompt.test.js reads both values out of tokens.css.
+      backgroundColor: theme === 'light' ? '#F2F2F7' : '#1C1C1E',
       // spellcheck: false is a NETWORK control, not typography: Electron
       // downloads hunspell dictionaries the first time a field takes focus.
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: false, spellcheck: false },

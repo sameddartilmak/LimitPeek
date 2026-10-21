@@ -72,6 +72,20 @@ test.describe('the window', () => {
     assert.doesNotMatch(src, /child_process|spawn\(/, 'the uninstaller is the one that acts; the app only answers');
   });
 
+  test('the first frame is the page\'s own --ink-900, in both themes', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'styles', 'tokens.css'), 'utf8');
+    const ink900 = (selector) => {
+      const start = css.indexOf(selector);
+      assert.notEqual(start, -1, selector);
+      return /--ink-900:\s*(#[0-9A-Fa-f]{6})/.exec(css.slice(start, css.indexOf('}', start)))[1];
+    };
+    for (const [theme, selector] of [['dark', ':root {'], ['light', ':root[data-theme="light"] {']]) {
+      runUninstallPrompt({ BrowserWindow: FakeWindow, t, lang: 'tr', theme, log });
+      assert.equal(FakeWindow.last.opts.backgroundColor, ink900(selector), theme);
+      FakeWindow.last.emit('closed');
+    }
+  });
+
   test('"Kaldır" answers 0, with "keep" 1, closing the window 2', async () => {
     let r = rig(); answer(r.win, 'usage-notch-uninstall:remove:delete'); assert.equal(await r.done, 0);
     r = rig(); answer(r.win, 'usage-notch-uninstall:remove:keep'); assert.equal(await r.done, 1);
