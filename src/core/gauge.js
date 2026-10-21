@@ -9,7 +9,8 @@
  *   'ring'  two concentric activity rings, five-hour outside and weekly
  *           inside (row.css, `html[data-gauge="ring"]`).
  *
- * Panel-only: the tray donut and the taskbar strip are not affected. A sibling
+ * The panel, and the taskbar strip's tiles (mini rings for 'ring',
+ * src/main/strip/strip.js); the tray donut is not affected. A sibling
  * of `theme.js` and `tray-view.js`, for the same reason: the value comes out
  * of a hand-editable settings file, so a typo, a future value or a non-string
  * all land on the default here and nothing downstream has to decide what an

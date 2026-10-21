@@ -130,3 +130,19 @@ body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
   height: 100%;
   border-radius: 2px;
 }
+
+/* Görünüm → Gösterge → Halka (strip.js): logo, two concentric rings — the
+ * five-hour window outside, the weekly one inside, the bar's track and ramp
+ * colour — then the figure and the time left per row, outer ring's first.
+ * The same 180px tile; the rings replace the label and the bar. */
+.tile__rings {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  overflow: visible;
+}
+.tile__track { stroke: var(--track); }
+body[data-gauge="ring"] .tile__rows { gap: 3px; }
+body[data-gauge="ring"] .tile__row { gap: 6px; }
+body[data-gauge="ring"] .tile__pct { width: 28px; text-align: left; }
+body[data-gauge="ring"] .tile__left { width: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

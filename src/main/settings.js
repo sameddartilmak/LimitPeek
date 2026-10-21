@@ -79,8 +79,8 @@ const DEFAULTS = Object.freeze({
   /**
    * 'bar' | 'ring': how the panel draws each tool's two windows (Settings →
    * Genel → Görünüm → Gösterge). 'bar' is the look every earlier version had;
-   * 'ring' is two concentric activity rings. Panel only. An unknown value is
-   * 'bar', see `src/core/gauge.js`.
+   * 'ring' is two concentric activity rings, in the panel and in the taskbar
+   * strip's tiles. An unknown value is 'bar', see `src/core/gauge.js`.
    */
   gauge: DEFAULT_GAUGE,
   /**

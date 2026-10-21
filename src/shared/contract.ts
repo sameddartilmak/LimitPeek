@@ -1295,8 +1295,9 @@ export const IPC = {
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   /**
    * renderer -> main invoke(gauge: Gauge). Persists how the panel draws each
-   * tool's two windows ('bar' | 'ring'), then pushes PREFERENCES. Panel only:
-   * nothing is applied in main. Anything but the two literals is refused.
+   * tool's two windows ('bar' | 'ring'), hands it to the taskbar strip (mini
+   * rings in its tiles), then pushes PREFERENCES. Anything but the two
+   * literals is refused.
    * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
    */
   SET_GAUGE: 'prefs:set-gauge',
@@ -1315,7 +1316,10 @@ export const IPC = {
  * exposing only these three; the panel's preload carries none of them.
  */
 export const IPC_STRIP = {
-  /** main -> strip page: the tiles to draw, and dark or light ink for the taskbar under them. */
+  /**
+   * main -> strip page: the tiles to draw, dark or light ink for the taskbar
+   * under them, and the panel's gauge ('bar' | 'ring': bars or mini rings).
+   */
   DATA: 'strip:data',
   /** strip page -> main send(): a left click; opens the panel like the tray. */
   OPEN: 'strip:open',
@@ -1348,8 +1352,8 @@ export type TrayView = 'tray' | 'strip';
 /**
  * How the panel draws a tool's two usage windows. 'bar' (the default) is two
  * bars side by side; 'ring' is two concentric activity rings, five-hour
- * outside and weekly inside. Panel only; the tray icon and the strip are not
- * affected.
+ * outside and weekly inside. The panel and the taskbar strip's tiles follow
+ * it; the tray icon does not.
  */
 export type Gauge = 'bar' | 'ring';
 

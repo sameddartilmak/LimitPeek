@@ -588,12 +588,14 @@ function registerIpc() {
     log,
   }));
 
-  // Görünüm: bars or activity rings. Persist, then push; rollback on a failed
-  // write. Panel only, so nothing to apply in main. Tested in gauge-ipc.js's suite.
+  // Görünüm: bars or activity rings. Persist, hand it to the taskbar strip
+  // (mini rings in its tiles), push; rollback on a failed write. Tested in
+  // gauge-ipc.js's suite.
   ipcMain.handle(IPC.SET_GAUGE, createSetGaugeHandler({
     fromPanel,
     getSettings: () => settings,
     save: (s) => settingsStore.save(userDataDir(), s),
+    apply: (gauge) => { if (strip) strip.setGauge(gauge); },
     push: pushPreferences,
     log,
   }));
@@ -941,6 +943,8 @@ function bootstrap() {
     onCoveredClick: () => openFromStrip(),
     onChange: () => { pushPreferences(); syncTrayPresence(); },
   });
+  // Before it is enabled, so its first frame already has the user's gauge.
+  strip.setGauge(settings.gauge);
   applyTrayView(settings.trayView);
 
   // The user flipping Windows between light and dark changes no snapshot

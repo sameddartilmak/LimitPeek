@@ -67,7 +67,7 @@ test.describe('the value', () => {
 });
 
 test.describe('SET_GAUGE', () => {
-  function rig({ fromPanel = true, saves = [], stored = 'bar', pushThrows = false } = {}) {
+  function rig({ fromPanel = true, saves = [], stored = 'bar', pushThrows = false, applyThrows = false } = {}) {
     const calls = [];
     const warnings = [];
     const settings = { theme: 'dark', gauge: stored };
@@ -76,16 +76,17 @@ test.describe('SET_GAUGE', () => {
       fromPanel: () => fromPanel,
       getSettings: () => settings,
       save: (s) => { calls.push(`persist:${s.gauge}`); const ok = saves[n] !== false; n += 1; return ok; },
+      apply: (g) => { calls.push(`apply:${g}`); if (applyThrows) throw Object.assign(new Error('x'), { code: 'ESTRIP' }); },
       push: () => { calls.push('push'); if (pushThrows) throw Object.assign(new Error('x'), { code: 'EPUSH' }); },
       log: { warn: (m) => warnings.push(m) },
     });
     return { handler, calls, warnings, settings };
   }
 
-  test('persist, then push', () => {
+  test('persist, hand it to the strip, then push', () => {
     const r = rig();
     assert.deepEqual(r.handler({}, 'ring'), { ok: true });
-    assert.deepEqual(r.calls, ['persist:ring', 'push']);
+    assert.deepEqual(r.calls, ['persist:ring', 'apply:ring', 'push']);
     assert.equal(r.settings.gauge, 'ring');
     assert.deepEqual(r.handler({}, 'bar'), { ok: true });
     assert.equal(r.settings.gauge, 'bar');
@@ -111,6 +112,14 @@ test.describe('SET_GAUGE', () => {
     assert.ok(r.warnings.some((w) => w.includes('could not be persisted')));
   });
 
+  test('a strip that throws is logged; the choice is stored and still pushed', () => {
+    const r = rig({ applyThrows: true });
+    assert.deepEqual(r.handler({}, 'ring'), { ok: true });
+    assert.deepEqual(r.calls, ['persist:ring', 'apply:ring', 'push']);
+    assert.equal(r.settings.gauge, 'ring');
+    assert.ok(r.warnings.some((w) => w.includes('ESTRIP')));
+  });
+
   test('a push that throws is logged, and the stored choice still stands', () => {
     const r = rig({ pushThrows: true });
     assert.deepEqual(r.handler({}, 'ring'), { ok: true });
@@ -120,7 +129,7 @@ test.describe('SET_GAUGE', () => {
 
   test('index.js registers this handler once, and the preload passes a string over its own channel', () => {
     const main = fs.readFileSync(path.join(ROOT, 'src', 'main', 'index.js'), 'utf8').replace(/\s+/g, ' ');
-    assert.ok(main.includes('ipcMain.handle(IPC.SET_GAUGE, createSetGaugeHandler({ fromPanel, getSettings: () => settings, save: (s) => settingsStore.save(userDataDir(), s), push: pushPreferences, log, }))'));
+    assert.ok(main.includes('ipcMain.handle(IPC.SET_GAUGE, createSetGaugeHandler({ fromPanel, getSettings: () => settings, save: (s) => settingsStore.save(userDataDir(), s), apply: (gauge) => { if (strip) strip.setGauge(gauge); }, push: pushPreferences, log, }))'));
     assert.equal(main.split('IPC.SET_GAUGE').length - 1, 1);
     const preload = fs.readFileSync(path.join(ROOT, 'src', 'main', 'preload.js'), 'utf8');
     assert.match(preload, /setGauge: \(gauge\) => ipcRenderer\.invoke\(CH\.SET_GAUGE, String\(gauge\)\)/);

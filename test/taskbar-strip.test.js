@@ -453,6 +453,66 @@ const target = (count = 2) => {
   return [777, BAR.left + p.x, BAR.top + p.y, p.width, p.height];
 };
 
+test.describe('the gauge: bars or mini rings, as the panel draws them', () => {
+  test('a change is re-sent to the SAME window, which stays shown and placed; nothing is rebuilt', () => {
+    const r = shownRig();
+    const w = FakeWindow.all[0];
+    const placed = r.w32.state.placed.length;
+    r.strip.setGauge('ring');
+    assert.equal(lastData(w).gauge, 'ring');
+    assert.deepEqual(lastData(w).tiles.map((t) => t.id), ['claude', 'codex'], 'the same tiles');
+    assert.equal(FakeWindow.all.length, 1, 'no new window');
+    assert.equal(w.destroyed, false);
+    assert.equal(w.hidden, 0, 'the strip must not blink on the change');
+    assert.equal(r.w32.state.placed.length, placed, 'not even moved');
+    assert.equal(r.strip.status(), 'shown');
+    r.strip.setGauge('bar');
+    assert.equal(lastData(w).gauge, 'bar');
+  });
+
+  test('the same value, or anything but the two literals, sends nothing new', () => {
+    const r = shownRig();
+    const w = FakeWindow.all[0];
+    const sent = w.webContents.sent.length;
+    r.strip.setGauge('bar');
+    r.strip.setGauge('Ring');
+    r.strip.setGauge(null);
+    assert.equal(w.webContents.sent.length, sent);
+    r.strip.setGauge('ring');
+    r.strip.setGauge(42);
+    assert.equal(lastData(w).gauge, 'bar', 'an unknown value is the bars');
+  });
+
+  test('set before the strip is enabled, the first frame already has it', () => {
+    const r = rig();
+    r.strip.setGauge('ring');
+    assert.equal(FakeWindow.all.length, 0, 'nothing is built for a strip that is off');
+    r.strip.enable();
+    r.strip.update(SNAP);
+    FakeWindow.all[0].finishLoad();
+    assert.equal(lastData(FakeWindow.all[0]).gauge, 'ring');
+  });
+
+  test('index.js passes the stored gauge before enabling, and SET_GAUGE hands a change to the strip', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'index.js'), 'utf8');
+    const at = src.indexOf('strip.setGauge(settings.gauge);');
+    assert.notEqual(at, -1);
+    assert.ok(at < src.indexOf('applyTrayView(settings.trayView);'), 'set before the strip is first enabled');
+    assert.match(src.replace(/\s+/g, ' '), /apply: \(gauge\) => \{ if \(strip\) strip\.setGauge\(gauge\); \},/);
+  });
+
+  test('the page draws the rings as SVG (crisp at any taskbar zoom), one per row it has, in the ramp colour main sent', () => {
+    const js = fs.readFileSync(path.join(ROOT, 'src', 'main', 'strip', 'strip.js'), 'utf8');
+    assert.match(js, /var ring = data\.gauge === 'ring';/);
+    assert.match(js, /document\.createElementNS\(SVG, 'circle'\)/);
+    assert.match(js, /var RINGS = \{ fiveHour: 12, sevenDay: 6\.5 \};/, 'five-hour outside, weekly inside');
+    assert.match(js, /sweep\.setAttribute\('pathLength', '100'\);/);
+    assert.match(js, /if \(HEX\.test\(r\.colour\)\) sweep\.setAttribute\('stroke', r\.colour\);/);
+    const css = fs.readFileSync(path.join(ROOT, 'src', 'main', 'strip', 'strip.css'), 'utf8');
+    assert.match(css, /\.tile__track \{ stroke: var\(--track\); \}/, 'the bars\' own track');
+  });
+});
+
 test.describe('enable and disable', () => {
   test('off by default; enable starts the button probe, a poll and a guard, and builds the window once there is something to show', () => {
     const r = rig();
@@ -501,7 +561,8 @@ test.describe('enable and disable', () => {
     assert.equal(w.shown, 1);
     const data = lastData(w);
     assert.equal(data.ground, 'dark');
-    assert.deepEqual(Object.keys(data).sort(), ['ground', 'layer', 'tileWidth', 'tiles']);
+    assert.deepEqual(Object.keys(data).sort(), ['gauge', 'ground', 'layer', 'tileWidth', 'tiles']);
+    assert.equal(data.gauge, 'bar', 'the bars until the panel says rings');
     assert.equal(data.layer, 'full', 'no display layer: this window draws the tiles itself');
     assert.equal(data.tileWidth, TILE_WIDTH);
     assert.deepEqual(data.tiles.map((t) => t.id), ['claude', 'codex']);

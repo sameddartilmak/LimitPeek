@@ -2,6 +2,7 @@
 const path = require('node:path');
 const { IPC_STRIP } = require('../shared/contract');
 const { stripTiles, groundFor } = require('../core/strip-tiles');
+const { sanitizeGauge } = require('../core/gauge');
 const defaultWin32 = require('./win32');
 const { IconProbe } = require('./taskbar-icons');
 
@@ -247,6 +248,8 @@ class TaskbarStrip {
 
     this._colour = null;
     this._candidate = null;
+    /** Görünüm → Gösterge: 'ring' draws each tile's two windows as mini rings. */
+    this._gauge = 'bar';
   }
 
   /** 'off' | 'unavailable' | 'waiting' | 'hidden' | 'no-room' | 'covered' | 'shown' */
@@ -308,6 +311,19 @@ class TaskbarStrip {
   update(snapshot) {
     this._snapshot = snapshot || null;
     if (this._wanted && this._api) this._sync('update');
+  }
+
+  /**
+   * Görünüm → Gösterge changed (the SET_GAUGE handler applies it here, and
+   * index.js passes the stored value at start). Re-sent, not rebuilt: the
+   * same window and the same display layer redraw their tiles in the next
+   * frame, so the strip never hides or blinks on the change.
+   */
+  setGauge(gauge) {
+    const next = sanitizeGauge(gauge);
+    if (next === this._gauge) return;
+    this._gauge = next;
+    if (this._wanted && this._api) this._sync('gauge');
   }
 
   /** Windows switched light/dark: read the colour afresh, no debounce. */
@@ -629,7 +645,7 @@ class TaskbarStrip {
       this._target = { left: x, top: y, right: x + place.width, bottom: y + place.height };
     }
 
-    const base = { ground, tileWidth: TILE_WIDTH, tiles: tiles.slice(0, place.count) };
+    const base = { ground, gauge: this._gauge, tileWidth: TILE_WIDTH, tiles: tiles.slice(0, place.count) };
     const display = this._display;
     if (display && !display.failed()) {
       // The same tiles, drawn inside the taskbar at the same place.
