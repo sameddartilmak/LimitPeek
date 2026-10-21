@@ -59,6 +59,12 @@ html[data-layout="tiles"] .row:not([data-expanded]) .row__plan { max-width: 100%
 html[data-layout="tiles"] .row:not([data-expanded]) .row__gap { flex-basis: 0; }
 html[data-layout="tiles"] .row:not([data-expanded]) .row__stalehint { display: none; }
 
+/* The setup question ("Bağla" on a tile) is drawn in the tile it was asked
+ * from; that tile takes the grid's width while it is open, so the question
+ * reads at the card's measure. */
+html[data-layout="tiles"] .row:not([data-expanded]):has(> .consent:not([hidden])) { grid-column: 1 / -1; }
+html[data-layout="tiles"] .row:not([data-expanded]) > .consent { grid-column: 1 / -1; }
+
 /* --- the ring, and the two lines under it -------------------------------- */
 html[data-layout="tiles"] .row:not([data-expanded]) .meter,
 html[data-layout="tiles"] .row:not([data-expanded]) .meter:has(.rail) {

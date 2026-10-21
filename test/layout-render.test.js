@@ -326,6 +326,26 @@ test.describe('outside the list', () => {
     }
   });
 
+  test('a click inside the setup question drawn in a tile does not open the tile', async () => {
+    const snap = SNAP();
+    snap.providers[0].setupAction = { kind: 'install-bridge', label: 'Bağla', detail: 'Claude Code ayarlarına bir satır ekler.' };
+    const app = mount({ layout: 'tiles' }, snap);
+    try {
+      await tick();
+      const tile = app.row('claude');
+      walk(tile).find((n) => n.tagName === 'BUTTON' && n.textContent === 'Bağla').click();
+      await tick();
+      const consent = walk(tile).find((n) => cls(n).includes('consent'));
+      assert.ok(consent && !consent.hidden, 'the question is drawn in the tile');
+      const para = walk(consent).find((n) => cls(n).includes('consent__para'));
+      tile.dispatch('click', { target: para });
+      await tick();
+      assert.equal(tile.getAttribute('data-expanded'), null);
+    } finally {
+      app.handle.destroy();
+    }
+  });
+
   test('in the list a click on the card does nothing; only "Ayrıntılar" opens, and Esc closes the panel', async () => {
     const app = mount({ layout: 'list' });
     try {

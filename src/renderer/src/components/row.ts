@@ -800,11 +800,12 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
   ) as HTMLButtonElement;
   on(moreButton, 'click', () => ctx.onToggleExpand?.(current.id));
   // A closed tile or focus row opens on a click anywhere on it, except on a
-  // control of its own ("Bağla", "Yeniden dene"), which keeps its action.
+  // control of its own ("Bağla", "Yeniden dene"), which keeps its action, and
+  // inside the setup question drawn in it (panel.ts placeConsent).
   on(root, 'click', (event: MouseEvent) => {
     if (!lastCtx.opensOnCard?.(current.id) || moreButton.hidden) return;
     const target = event.target;
-    if (target instanceof Element && target.closest('button, a, input, select, textarea, [role="button"]')) return;
+    if (target instanceof Element && target.closest('button, a, input, select, textarea, [role="button"], .consent')) return;
     lastCtx.onToggleExpand?.(current.id);
   });
 
