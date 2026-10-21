@@ -437,16 +437,20 @@
  * scratch spike): DWM's dark acrylic alone paints #929292 over a white
  * window and (0,183,0) over a pure green one, so at 55 % the meta ink sat at
  * 2.2:1 on a card. The tint is the smallest that keeps every TEXT ink at
- * 4.5:1 or better on the worst backdrop measured (white for dark, black for
- * light, nine flat colours tried), with the two inks that still fell short
- * lifted one step for acrylic only. Worst case, on a card or the base:
+ * 4.5:1 or better on the worst backdrop (white for dark, black for light;
+ * nine flat colours tried), with the two inks that still fell short lifted
+ * one step for acrylic only. Then MEASURED off the screen with the real panel
+ * over a white, a pure green and a black window — the composite of DWM's
+ * acrylic, this tint and the card plate: dark card #404042 and base #333336
+ * over white, light base #E2E2E3 over black. Worst case, card or base:
  *
  *                   dark (white behind)     light (black behind)
- *   ink-100         9.62                    13.01
- *   ink-300         6.22                     5.83
- *   ink-400         4.74  (#AEAEB2)          4.98  (#5E5E63)
- *   tint-text       4.65  (#69B1FF)          5.02  (#005CB9)
- *   figures         spent 3.07 … watch 7.42  calm 4.06 … spent 5.29
+ *   ink-100         9.50                    13.00
+ *   ink-200         8.24                     8.77
+ *   ink-300         6.14                     5.82
+ *   ink-400         4.68  (#AEAEB2)          4.98  (#5E5E63)
+ *   tint-text       4.60  (#69B1FF)          5.02  (#005CB9)
+ *   figures, card   spent 3.04 … watch 7.33  calm 4.87 … spent 6.33
  *
  * The figures are the 24px semibold hero, large text (3:1), as on the opaque
  * card; the ramp itself does not move (the tray mirrors it byte for byte).

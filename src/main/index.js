@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { app, ipcMain, dialog, nativeTheme, BrowserWindow } = require('electron');
 
@@ -49,6 +50,8 @@ const { createSetTrayViewHandler } = require('./tray-view-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
 const { createSetGaugeHandler } = require('./gauge-ipc');
 const { createSetReduceTransparencyHandler } = require('./reduce-transparency-ipc');
+const { panelFrameFor, acrylicAvailable, createPanelLook } = require('../core/panel-material');
+const win32 = require('./win32');
 
 // userData is %APPDATA%\usage-notch by name, whatever the product is called
 // (packaging.js). First, before the early exits below and the single-instance
@@ -199,6 +202,24 @@ const preferences = createPreferences({
   // goes opaque (Görünüm → "Saydamlığı azalt" says why). Re-read on every
   // build; nativeTheme 'updated' below pushes when either moves.
   systemReducedTransparency: () => systemReducedTransparency(),
+  material: () => (panel ? panel.material() : 'none'),
+  frame: () => PANEL_FRAME,
+});
+
+/**
+ * The panel window's shape and material (src/core/panel-material.js): on
+ * Windows 11 the window IS the panel, with Windows' acrylic behind it unless
+ * transparency is to be reduced; on Windows 10 the transparent canvas as
+ * before. The shape is fixed for the process; the look is rebuilt from the
+ * settings and Windows' state every time it is asked for.
+ */
+const PANEL_FRAME = panelFrameFor(process.platform, os.release());
+const panelLook = createPanelLook({
+  frame: PANEL_FRAME,
+  available: acrylicAvailable(process.platform, os.release()),
+  getSettings: () => settings,
+  systemReduced: () => systemReducedTransparency(),
+  systemDark: () => nativeTheme.shouldUseDarkColors,
 });
 
 /** Both nativeTheme reads, guarded: a property this Electron lacks reads as false. */
@@ -230,8 +251,15 @@ function refreshLocale() {
   return locale;
 }
 
+/**
+ * Every PREFERENCES push is also the moment the window's look is re-applied
+ * (a theme, "Saydamlığı azalt" or Windows' transparency moved), and the
+ * window goes first: the push says which material is live, so it must be.
+ */
 function pushPreferences() {
-  if (panel) panel.send(IPC.PREFERENCES, preferences());
+  if (!panel) return;
+  panel.setLook(panelLook());
+  panel.send(IPC.PREFERENCES, preferences());
 }
 
 /* ------------------------------------------------------------ taskbar strip */
@@ -386,6 +414,13 @@ function registerIpc() {
   ipcMain.on(IPC.PANEL_HIT, (event, over) => {
     if (!fromPanel(event)) return;
     panel.setPointerOverPanel(over === true);
+  });
+
+  // A fitted window is the panel and follows its height; a canvas ignores it.
+  // The value is checked there (PanelWindow.setContentHeight).
+  ipcMain.on(IPC.PANEL_SIZE, (event, height) => {
+    if (!fromPanel(event)) return;
+    panel.setContentHeight(height);
   });
 
   /**
@@ -860,6 +895,10 @@ function bootstrap() {
   registerIpc();
 
   panel = new PanelWindow({
+    // Born in its look, so the renderer's frame one and the window agree.
+    frame: PANEL_FRAME,
+    look: panelLook(),
+    dwm: () => win32.loadDwm(),
     onVisibilityChange: (visible) => {
       if (!visible) collector.setPanelOpen(false);
     },
@@ -955,6 +994,10 @@ function bootstrap() {
   nativeTheme.on('updated', () => {
     log.trace('os.theme', { ground: trayGround() });
     if (collector && collector.snapshot) updateTray(collector.snapshot);
+    // Electron has just written Windows' app mode into the panel window's
+    // dark-mode attribute; the panel's own theme goes back on, and a
+    // 'system' theme follows the flip into the acrylic's tint.
+    if (panel) panel.setLook(panelLook());
     // High contrast or "Saydamlık efektleri" moved: the settings screen says
     // why the glass is off. Pushed only on a change, not on every theme event.
     const glassOff = systemReducedTransparency();

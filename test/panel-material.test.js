@@ -31,7 +31,11 @@ const TRAY = { x: 1800, y: 1032, width: 24, height: 48 };
 
 function fitted(options = {}) {
   const dwmCalls = [];
-  const dwm = { setDarkMode: (h, d) => dwmCalls.push(['dark', h, d]), setBorderColour: (h, c) => dwmCalls.push(['edge', h, c]) };
+  const dwm = {
+    setFlyoutShape: (h) => dwmCalls.push(['shape', h]),
+    setDarkMode: (h, d) => dwmCalls.push(['dark', h, d]),
+    setBorderColour: (h, c) => dwmCalls.push(['edge', h, c]),
+  };
   const panel = new PanelWindow({ entry: __filename, frame: 'fitted', dwm: () => dwm, ...options });
   panel.create();
   return { panel, dwmCalls };
@@ -80,6 +84,55 @@ test.describe('which frame and which material (src/core/panel-material.js)', () 
     assert.equal(material.PANEL_BASE.light, ink900(':root[data-theme="light"] {'));
   });
 
+  test('the look is rebuilt from the settings and Windows on every call, re-sanitised', () => {
+    let settings = { theme: 'system', reduceTransparency: false };
+    let reduced = false;
+    let dark = true;
+    const look = material.createPanelLook({
+      frame: 'fitted', available: true, getSettings: () => settings, systemReduced: () => reduced, systemDark: () => dark,
+    });
+    assert.deepEqual(look(), { acrylic: true, dark: true });
+    dark = false;
+    assert.deepEqual(look(), { acrylic: true, dark: false }, "'system' follows Windows' app mode");
+    settings = { theme: 'dark', reduceTransparency: true };
+    assert.deepEqual(look(), { acrylic: false, dark: true });
+    settings = { theme: 'nocturne', reduceTransparency: 'yes' };
+    assert.deepEqual(look(), { acrylic: true, dark: false }, 'an odd file is the defaults: system theme, glass on');
+    reduced = true;
+    assert.equal(look().acrylic, false);
+    settings = null;
+    assert.doesNotThrow(() => look());
+    const canvas = material.createPanelLook({
+      frame: 'canvas', available: true, getSettings: () => ({}), systemReduced: () => false, systemDark: () => true,
+    });
+    assert.equal(canvas().acrylic, false);
+  });
+
+  test('Preferences carry what the window IS, and only the exact literals', () => {
+    const { createPreferences } = require('../src/main/language-ipc');
+    const base = { getSettings: () => ({}), currentLocale: () => ({ language: 'en', resolvedLanguage: 'en', formatLocale: 'en-US' }), readOs: () => ({}) };
+    const p = (m, f) => createPreferences({ ...base, material: m, frame: f })();
+    assert.deepEqual([p(() => 'acrylic', () => 'fitted').material, p(() => 'acrylic', () => 'fitted').frame], ['acrylic', 'fitted']);
+    assert.deepEqual([p(() => 'mica', () => 'round').material, p(() => 'mica', () => 'round').frame], ['none', 'canvas']);
+    const older = createPreferences(base)();
+    assert.equal(older.material, 'none');
+    assert.equal(older.frame, 'canvas');
+  });
+
+  test('index.js builds the panel in its look, re-applies it on every push and theme change, and sizes it', () => {
+    const code = fs.readFileSync(path.join(ROOT, 'src', 'main', 'index.js'), 'utf8')
+      .split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n').replace(/\s+/g, ' ');
+    for (const needle of [
+      'const PANEL_FRAME = panelFrameFor(process.platform, os.release());',
+      'available: acrylicAvailable(process.platform, os.release()),',
+      'panel = new PanelWindow({ frame: PANEL_FRAME, look: panelLook(), dwm: () => win32.loadDwm(),',
+      'ipcMain.on(IPC.PANEL_SIZE, (event, height) => { if (!fromPanel(event)) return; panel.setContentHeight(height); });',
+      "nativeTheme.on('updated', () => { log.trace('os.theme', { ground: trayGround() }); if (collector && collector.snapshot) updateTray(collector.snapshot); if (panel) panel.setLook(panelLook());",
+    ]) {
+      assert.ok(code.includes(needle), `index.js no longer wires: ${needle}`);
+    }
+  });
+
   test('a DWM colour is a COLORREF, 0x00BBGGRR', () => {
     assert.equal(colorrefOfHex('#112233'), 0x00332211);
     assert.equal(colorrefOfHex('#454548'), 0x00484545);
@@ -93,6 +146,7 @@ test.describe('the fitted window is made the way the spike measured', () => {
     const { panel } = fitted({ look: { acrylic: true, dark: true } });
     const o = panel.win.options;
     assert.equal(o.transparent, false, 'a transparent window gets square corners and no shadow');
+    assert.equal(o.thickFrame, false, 'a thick frame brings invisible borders that take clicks beside the panel');
     assert.equal(o.frame, false);
     assert.equal(o.hasShadow, true);
     assert.equal(o.backgroundMaterial, 'acrylic');
@@ -119,7 +173,7 @@ test.describe('the fitted window is made the way the spike measured', () => {
 
   test('Windows is told the theme and a neutral hairline, on the fitted window only', () => {
     const { dwmCalls } = fitted({ look: { acrylic: true, dark: true } });
-    assert.deepEqual(dwmCalls, [['dark', 4242, true], ['edge', 4242, material.PANEL_EDGE.dark]]);
+    assert.deepEqual(dwmCalls, [['shape', 4242], ['dark', 4242, true], ['edge', 4242, material.PANEL_EDGE.dark]]);
     const calls = [];
     const canvas = new PanelWindow({ entry: __filename, dwm: () => { calls.push('loaded'); return null; } });
     canvas.create();
@@ -151,7 +205,7 @@ test.describe('the material switches live', () => {
     dwmCalls.length = 0;
     panel.setLook({ acrylic: true, dark: false });
     assert.equal(panel.win.materials, undefined, 'still acrylic: no material call');
-    assert.deepEqual(dwmCalls, [['dark', 4242, false], ['edge', 4242, material.PANEL_EDGE.light]]);
+    assert.deepEqual(dwmCalls, [['shape', 4242], ['dark', 4242, false], ['edge', 4242, material.PANEL_EDGE.light]]);
     panel.setLook({ acrylic: false, dark: false });
     assert.equal(panel.win.colours.at(-1), material.PANEL_BASE.light);
   });

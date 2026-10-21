@@ -26,6 +26,9 @@
  * Pure, so the rule is tested without a window (test/panel-material.test.js).
  */
 
+const { sanitizeTheme } = require('./theme');
+const { sanitizeReduceTransparency } = require('./reduce-transparency');
+
 const PANEL_FRAMES = Object.freeze(['fitted', 'canvas']);
 const PANEL_MATERIALS = Object.freeze(['acrylic', 'none']);
 
@@ -89,6 +92,36 @@ function panelDark(theme, systemDark) {
   return systemDark !== false;
 }
 
+/**
+ * The look main hands the panel window (PanelWindow.setLook), rebuilt on
+ * every call from what is true NOW: the settings file (theme, "Saydamlığı
+ * azalt", both re-sanitised — they came off disk), Windows' own requests and
+ * app mode. index.js calls it before every PREFERENCES push and after every
+ * nativeTheme change.
+ *
+ * @param {object} deps
+ * @param {'fitted'|'canvas'} deps.frame
+ * @param {boolean} deps.available  acrylicAvailable() for this OS
+ * @param {() => object|null} deps.getSettings
+ * @param {() => boolean} deps.systemReduced  Windows: transparency off, or high contrast
+ * @param {() => boolean} deps.systemDark     nativeTheme.shouldUseDarkColors
+ * @returns {() => {acrylic: boolean, dark: boolean}}
+ */
+function createPanelLook({ frame, available, getSettings, systemReduced, systemDark }) {
+  return () => {
+    const settings = getSettings() || {};
+    return {
+      acrylic: wantsAcrylic({
+        frame,
+        available,
+        reduceTransparency: sanitizeReduceTransparency(settings.reduceTransparency),
+        systemReduced: systemReduced() === true,
+      }),
+      dark: panelDark(sanitizeTheme(settings.theme), systemDark() !== false),
+    };
+  };
+}
+
 function isPanelMaterial(value) {
   return typeof value === 'string' && PANEL_MATERIALS.includes(value);
 }
@@ -109,6 +142,7 @@ module.exports = {
   acrylicAvailable,
   wantsAcrylic,
   panelDark,
+  createPanelLook,
   isPanelMaterial,
   isPanelFrame,
 };

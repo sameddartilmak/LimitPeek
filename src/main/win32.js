@@ -3,7 +3,7 @@ const log = require('../core/log');
 
 /**
  * The only main-thread door to Win32, for the taskbar strip (taskbar-strip.js)
- * and for two attributes of the panel window (`loadDwm`, below). (The
+ * and for the shape and tint of the panel window (`loadDwm`, below). (The
  * taskbar's button area is measured by UI Automation in a worker,
  * taskbar-icons-worker.js, which is the one other file that loads koffi.)
  *
@@ -42,7 +42,7 @@ const log = require('../core/log');
  * the foreground window; style and place OUR window) and gdi32 GetPixel (the
  * taskbar's colour, to choose dark or light ink). Both are KnownDLLs, so
  * `koffi.load` cannot be handed a planted copy from the app folder. dwmapi
- * DwmSetWindowAttribute sets two attributes of the PANEL's own window (see
+ * DwmSetWindowAttribute sets four attributes of the PANEL's own window (see
  * `loadDwm` for why its name is safe too). Nothing
  * here writes to another process's window, opens a file, a socket or a
  * process; koffi's runtime JavaScript has no network module either (scanned by
@@ -89,6 +89,12 @@ const CLR_INVALID = 0xFFFFFFFF;
 const DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
 /** DwmSetWindowAttribute: the colour of the hairline Windows 11 draws round a window. */
 const DWMWA_BORDER_COLOR = 34;
+/** DwmSetWindowAttribute: Windows 11's rounded corners (DWMWCP_ROUND, 8px). */
+const DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+const DWMWCP_ROUND = 2;
+/** DwmSetWindowAttribute: DWM draws the window's frame effects — its shadow. */
+const DWMWA_NCRENDERING_POLICY = 2;
+const DWMNCRP_ENABLED = 2;
 
 /** undefined: not tried yet; null: tried and unavailable; object: ready. */
 let api;
@@ -279,8 +285,15 @@ function makeApi(f) {
 
 /**
  * The panel's fitted window (panel-window.js) takes its backdrop, corners and
- * shadow from Windows, and two of Windows' choices there have to be OURS:
+ * shadow from Windows, and four of Windows' choices there have to be OURS:
  *
+ *   - the corners and the shadow. A frameless window with Electron's default
+ *     thick frame gets both, and with them Windows' INVISIBLE resize borders:
+ *     measured here, 8 physical px left, right and below the visible panel
+ *     that still answer WindowFromPoint for the panel, so a click just beside
+ *     it was swallowed. With `thickFrame: false` the window is exactly the
+ *     panel, and Electron then asks DWM for square corners and no frame;
+ *     these two ask for the rounding and the shadow back.
  *   - light or dark acrylic. DWM tints the backdrop by the window's immersive
  *     dark mode, which Electron sets from `nativeTheme.shouldUseDarkColors` —
  *     Windows' app mode, not the panel's own theme. A user who chose "Açık" on
@@ -291,9 +304,9 @@ function makeApi(f) {
  *     when the user has accent borders on; a coloured frame the moment the
  *     panel is clicked.
  *
- * Bound separately from `load()`: a failure here costs those two refinements
- * (Windows' defaults stay), never the strip, and the strip's failure never
- * costs them. dwmapi.dll is not a KnownDLL, but Chromium has already loaded it
+ * Bound separately from `load()`: a failure here costs these refinements (a
+ * square, shadowless panel, still acrylic), never the strip, and the strip's
+ * failure never costs them. dwmapi.dll is not a KnownDLL, but Chromium has already loaded it
  * into this process (it composites through DWM), and LoadLibrary hands back a
  * module that is already loaded by name before it searches any folder — so the
  * name cannot reach a planted copy beside the exe.
@@ -326,6 +339,10 @@ function makeDwm(f) {
   return {
     /** Dark (true) or light acrylic behind `hwnd`. True when Windows took it. */
     setDarkMode: guard('setDarkMode', (h, dark) => Boolean(h) && set(h, DWMWA_USE_IMMERSIVE_DARK_MODE, dark ? 1 : 0), false),
+    /** Rounded corners and the frame shadow. True when Windows took both. */
+    setFlyoutShape: guard('setFlyoutShape', (h) => Boolean(h)
+      && set(h, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND)
+      && set(h, DWMWA_NCRENDERING_POLICY, DWMNCRP_ENABLED), false),
     /** The window's hairline, `#RRGGBB`. True when Windows took it. */
     setBorderColour: guard('setBorderColour', (h, hex) => {
       const ref = colorrefOfHex(hex);
@@ -334,7 +351,7 @@ function makeDwm(f) {
   };
 }
 
-/** The panel's two DWM attributes, or null when they cannot be had. Tried once. */
+/** The panel's DWM attributes, or null when they cannot be had. Tried once. */
 function loadDwm() {
   if (dwm !== undefined) return dwm;
   try {

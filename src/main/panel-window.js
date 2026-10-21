@@ -36,7 +36,11 @@ const { handleOf } = require('./win32');
  * rounding by hand on that window turned the backdrop flat grey instead. On
  * an opaque frameless window the same option gives acrylic, Windows' 8px
  * corners and its shadow, and it stays acrylic while the window is NOT active
- * — which the tray open needs, because it never takes focus.
+ * — which the tray open needs, because it never takes focus. That window also
+ * had Windows' invisible resize borders, 8 physical px left, right and below,
+ * that answered hit tests for the panel; so the thick frame is off and the
+ * corners and the shadow are asked of DWM directly (win32 setFlyoutShape).
+ * Measured after: WindowFromPoint 3px outside any edge is the window behind.
  *
  * A fitted window grows and shrinks with the panel: the renderer reports the
  * panel's height (IPC.PANEL_SIZE, `setContentHeight`) and the window follows,
@@ -306,7 +310,10 @@ class PanelWindow {
       alwaysOnTop: true,
       acceptFirstMouse: true,
       backgroundColor: fitted && !acrylic ? this._base() : '#00000000',
-      ...(fitted ? { backgroundMaterial: acrylic ? 'acrylic' : 'none' } : {}),
+      // No thick frame: with one, Windows adds invisible resize borders that
+      // take clicks beside the panel (win32.js, setFlyoutShape gives the
+      // corners and the shadow back).
+      ...(fitted ? { backgroundMaterial: acrylic ? 'acrylic' : 'none', thickFrame: false } : {}),
       title: 'LimitPeek',
       icon: path.join(__dirname, '..', '..', 'assets', 'app-icon.png'),
       webPreferences: {
@@ -558,15 +565,17 @@ class PanelWindow {
   }
 
   /**
-   * Windows' half of the look (win32.loadDwm): light or dark acrylic to match
-   * the PANEL's theme, and a neutral hairline instead of the accent colour.
-   * Best effort; without it Windows' defaults stay.
+   * Windows' half of the look (win32.loadDwm): the rounded corners and the
+   * shadow, light or dark acrylic to match the PANEL's theme, and a neutral
+   * hairline instead of the accent colour. Best effort; without it the panel
+   * is square and shadowless, and still acrylic.
    */
   _applyDwm() {
     const dwm = this._dwm ? this._dwm() : null;
     if (!dwm || !this.win || this.win.isDestroyed()) return;
     const hwnd = handleOf(this.win);
     if (!hwnd) return;
+    dwm.setFlyoutShape(hwnd);
     dwm.setDarkMode(hwnd, this._dark);
     dwm.setBorderColour(hwnd, PANEL_EDGE[this._dark ? 'dark' : 'light']);
   }

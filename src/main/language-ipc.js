@@ -174,10 +174,12 @@ function createApplyLanguage({ refreshLocale, getTray, trayMenuOptions, resetToo
  * @param {() => boolean} [deps.stripAvailable]  false once the taskbar strip failed here
  * @param {() => boolean} [deps.stripNoRoom]  true while the strip finds no room on the taskbar
  * @param {() => boolean} [deps.systemReducedTransparency]  true while Windows asks for less transparency
+ * @param {() => string} [deps.material]  what is live behind the panel (PanelWindow.material)
+ * @param {() => string} [deps.frame]     the panel window's shape (src/core/panel-material.js)
  */
 function createPreferences({
   getSettings, currentLocale, readOs, storeBuild = () => false, stripAvailable = () => true, stripNoRoom = () => false,
-  systemReducedTransparency = () => false,
+  systemReducedTransparency = () => false, material = () => 'none', frame = () => 'canvas',
 }) {
   return () => {
     const settings = getSettings();
@@ -206,6 +208,10 @@ function createPreferences({
       // Windows asks for it (reduced transparency, high contrast). Only a real
       // `true`, so a nativeTheme without the property means "not asked".
       systemReducedTransparency: systemReducedTransparency() === true,
+      // The window, as it IS: the panel reads it in frame one. Only the exact
+      // literals; anything else is the opaque canvas every earlier version had.
+      material: material() === 'acrylic' ? 'acrylic' : 'none',
+      frame: frame() === 'fitted' ? 'fitted' : 'canvas',
     };
   };
 }
