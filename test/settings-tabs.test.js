@@ -556,7 +556,7 @@ test.describe('Görünüm → "Gösterge": "Çubuk" or "Halka", on the "Genel" t
     return { handle, group, radios, picked };
   }
 
-  test('two native radios in a group named "Gösterge", after the theme and the tray view, before "Dil"', () => {
+  test('two native radios in a group named "Gösterge", in "Panel görünümü" after the theme, before the taskbar group', () => {
     const { handle, group, radios } = mountGauge();
     assert.deepEqual(radios.map((r) => [r.getAttribute('type'), r.getAttribute('value')]), [['radio', 'bar'], ['radio', 'ring']]);
     const labels = walk(group).filter((el) => el.tagName === 'LABEL').map((el) => el.textContent);
@@ -566,10 +566,20 @@ test.describe('Görünüm → "Gösterge": "Çubuk" or "Halka", on the "Genel" t
     assert.ok(general, 'not on a tab panel');
     const kids = walk(general);
     const theme = kids.find((el) => el.tagName === 'FIELDSET' && el.getAttribute('class') === 'theme');
+    const panelHeading = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Panel görünümü');
+    const taskbarHeading = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Görev çubuğu');
     const trayView = kids.find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--tray-view'));
     const language = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Dil');
-    assert.ok(kids.indexOf(theme) < kids.indexOf(trayView) && kids.indexOf(trayView) < kids.indexOf(group));
-    assert.ok(kids.indexOf(group) < kids.indexOf(language));
+    assert.ok(kids.indexOf(panelHeading) < kids.indexOf(theme) && kids.indexOf(theme) < kids.indexOf(group));
+    assert.ok(kids.indexOf(group) < kids.indexOf(taskbarHeading) && kids.indexOf(taskbarHeading) < kids.indexOf(trayView));
+    assert.ok(kids.indexOf(trayView) < kids.indexOf(language));
+  });
+
+  test('every choice shows its name above it: "Tema", "Düzen", "Gösterge", "Kullanım nerede görünsün", "Şerit stili"', () => {
+    const { handle } = mountGauge();
+    const legends = walk(handle.el).filter((el) => el.tagName === 'LEGEND');
+    const shown = legends.filter((el) => el.getAttribute('class') === 'theme__label').map((el) => el.textContent);
+    assert.deepEqual(shown, ['Tema', 'Düzen', 'Gösterge', 'Kullanım nerede görünsün', 'Şerit stili']);
   });
 
   test('the help line says which ring is which', () => {
@@ -619,7 +629,7 @@ test.describe('Görünüm → "Saydamlığı azalt": a switch on the "Genel" tab
     const name = findById(handle.el, control.getAttribute('aria-labelledby'));
     assert.equal(name.textContent, 'Saydamlığı azalt');
     const help = findById(handle.el, control.getAttribute('aria-describedby'));
-    assert.match(help.textContent, /cam efektini kapatır; Windows'ta yüksek kontrast açıksa kendiliğinden kapanır/);
+    assert.match(help.textContent, /cam efektini kapatır, zemin düz olur; Windows'ta yüksek kontrast açıksa kendiliğinden kapanır/);
     const general = walk(handle.el).find((el) => el.getAttribute('role') === 'tabpanel' && walk(el).includes(row));
     assert.ok(general, 'not on a tab panel');
     assert.equal(general.getAttribute('data-tab'), 'general');
@@ -683,7 +693,7 @@ test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', 
     assert.deepEqual(labels(layout), ['Liste', 'Öne çıkan', 'Kutucuklar']);
     assert.equal(walk(layout).find((el) => el.tagName === 'LEGEND').textContent, 'Düzen');
     const help = walk(layout).find((el) => el.tagName === 'P');
-    assert.match(help.textContent, /^Düzen: Liste/);
+    assert.match(help.textContent, /^Liste: her araç bir kartta/);
     assert.equal(layout.getAttribute('aria-describedby'), help.getAttribute('id'));
     const kids = walk(walk(handle.el).find((el) => el.getAttribute('data-tab') === 'general' && el.getAttribute('role') === 'tabpanel'));
     assert.ok(kids.indexOf(layout) > -1 && kids.indexOf(layout) < kids.indexOf(gauge), 'the layout comes before the gauge it governs');
@@ -704,18 +714,17 @@ test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', 
     assert.equal(layout.getAttribute('data-revert'), 'true');
   });
 
-  test('outside the list the gauge says it applies to the list only, dimmed but still operable', () => {
+  test('the gauge shows only with the list, the one layout it applies to, and keeps its choice', () => {
     const { handle, gauge, radios } = mountLooks();
-    const help = walk(gauge).find((el) => el.tagName === 'P');
     handle.render(state({ layout: 'list', gauge: 'bar' }), []);
-    assert.equal(gauge.getAttribute('data-inactive'), null);
-    assert.match(help.textContent, /dış halka 5 saatlik, iç halka haftalık/);
+    assert.equal(gauge.hidden, false);
     for (const layout of ['focus', 'tiles']) {
       handle.render(state({ layout, gauge: 'bar' }), []);
-      assert.equal(gauge.getAttribute('data-inactive'), 'true');
-      assert.match(help.textContent, /yalnızca Liste düzeninde geçerli/);
-      assert.ok(radios(gauge).every((r) => r.disabled !== true), 'still operable');
+      assert.equal(gauge.hidden, true);
+      assert.deepEqual(radios(gauge).map((r) => r.checked), [true, false], 'the stored choice stays');
     }
+    handle.render(state({ layout: 'list', gauge: 'bar' }), []);
+    assert.equal(gauge.hidden, false);
   });
 
   test('"Şerit stili: Sade / Halkalı / Dolgulu" sits under the tray / strip choice and shows only with the strip', () => {

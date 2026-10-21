@@ -597,7 +597,7 @@ function createThemeControl(ctx: SettingsContext): ThemeHandleLocal {
   const root = el(
     'fieldset',
     { class: 'theme', 'aria-describedby': THEME_HELP_ID },
-    el('legend', { class: 'u-sr', id: THEME_TITLE_ID }, t('settings.theme.legend')),
+    el('legend', { class: 'theme__label', id: THEME_TITLE_ID }, t('settings.theme.title')),
     help,
     options,
   );
@@ -771,7 +771,7 @@ function createTrayViewControl(ctx: SettingsContext): TrayViewHandleLocal {
   const root = el(
     'fieldset',
     { class: 'theme theme--tray-view', 'aria-describedby': TRAY_VIEW_HELP_ID },
-    el('legend', { class: 'u-sr', id: TRAY_VIEW_TITLE_ID }, t('settings.trayView.legend')),
+    el('legend', { class: 'theme__label', id: TRAY_VIEW_TITLE_ID }, t('settings.trayView.legend')),
     help,
     options,
   );
@@ -840,7 +840,7 @@ function createGaugeControl(ctx: SettingsContext): GaugeHandleLocal {
   const root = el(
     'fieldset',
     { class: 'theme theme--gauge', 'aria-describedby': GAUGE_HELP_ID },
-    el('legend', { class: 'u-sr', id: GAUGE_TITLE_ID }, t('settings.gauge.legend')),
+    el('legend', { class: 'theme__label', id: GAUGE_TITLE_ID }, t('settings.gauge.legend')),
     help,
     options,
   );
@@ -853,12 +853,10 @@ function createGaugeControl(ctx: SettingsContext): GaugeHandleLocal {
     setAttr(root, 'data-pending', state.gaugePending ? 'true' : null);
     setAttr(root, 'data-revert', state.gaugeReverted ? 'true' : null);
     setAttr(root, 'aria-busy', state.gaugePending ? 'true' : null);
-    // "Öne çıkan" and "Kutucuklar" are ring layouts: the choice is kept (and
-    // still operable, for the day the list comes back) but dimmed, and the
-    // line under it says where it applies instead of which ring is which.
-    const listOnly = state.layout !== 'list';
-    setAttr(root, 'data-inactive', listOnly ? 'true' : null);
-    setText(help, t(listOnly ? 'settings.gauge.helpRingsOnly' : 'settings.gauge.help'));
+    // "Öne çıkan" and "Kutucuklar" are ring layouts: the choice only means
+    // something in the list, so it is shown only there, right under "Düzen".
+    // The stored choice is kept for the day the list comes back.
+    root.hidden = state.layout !== 'list';
   }
 
   return { el: root, update };
@@ -910,7 +908,7 @@ function createChoiceGroup<V extends string>(opts: {
   const root = el(
     'fieldset',
     { class: `theme ${opts.className}`, 'aria-describedby': opts.helpId },
-    el('legend', { class: 'u-sr', id: opts.titleId }, t(opts.legend)),
+    el('legend', { class: 'theme__label', id: opts.titleId }, t(opts.legend)),
     help,
     options,
   );
@@ -1996,13 +1994,15 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
         id: 'general',
         label: t('settings.tabs.general'),
         content: [
-          el('h3', { class: 'settings__heading' }, t('settings.theme.legend')),
+          // Two groups: how the panel looks, then what the taskbar shows.
+          el('h3', { class: 'settings__heading' }, t('settings.heading.panel')),
           theme.el,
-          trayView.el,
-          stripStyle.el,
           layout.el,
           gauge.el,
           glass.el,
+          el('h3', { class: 'settings__heading' }, t('settings.heading.taskbar')),
+          trayView.el,
+          stripStyle.el,
           el('h3', { class: 'settings__heading' }, t('settings.language.legend')),
           languageControl.el,
           autostart.el,

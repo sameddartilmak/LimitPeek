@@ -1351,6 +1351,20 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
   min-inline-size: 0;
 }
 
+/* Each choice's name, above its options: "Tema", "Düzen", "Gösterge"... The
+ * float takes a legend out of the fieldset's border slot so it lays out like
+ * any block. */
+.theme__label {
+  float: left;
+  width: 100%;
+  order: 0;
+  margin: 0;
+  padding: 0 calc(var(--s-4) + var(--s-4)) 6px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--ink-200);
+}
+
 .theme__help {
   order: 2;
   margin: 0;
