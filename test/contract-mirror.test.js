@@ -167,7 +167,10 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // 23 with setReduceTransparency (2026-10-21): Görünüm → "Saydamlığı
   // azalt", the panel's glass drawn opaque. A local settings write; no network.
   assert.ok(declared.has('setReduceTransparency'), 'contract.ts should declare setReduceTransparency()');
-  assert.equal(declared.size, 23, `expected the 23 declared methods, saw ${[...declared].join(',')}`);
+  // 24 with setPanelHeight (2026-10-21): a fitted Windows 11 window is the
+  // panel, so main sizes it to the panel's height. Fire-and-forget, local.
+  assert.ok(declared.has('setPanelHeight'), 'contract.ts should declare setPanelHeight()');
+  assert.equal(declared.size, 24, `expected the 24 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const IPC_STRIP = { ... } as const;`. */

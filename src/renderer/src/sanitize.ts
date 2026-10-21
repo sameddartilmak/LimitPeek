@@ -30,6 +30,8 @@ import type {
   RefreshNotice,
   TrayView,
   Gauge,
+  PanelMaterial,
+  PanelFrame,
   RowStatus,
   SetupAction,
   SetupKind,
@@ -948,6 +950,9 @@ export function sanitizeAnchor(raw: unknown): AnchorPayload | null {
   const id = finite(d.id);
   const scaleFactor = finite(d.scaleFactor);
   if (!bounds || !workArea || id === null) return null;
+  // The panel's height budget. A main from before the fitted window sends
+  // none, and its canvas IS the budget.
+  const maxHeight = finite(source.maxHeight);
 
   return {
     tray,
@@ -960,6 +965,7 @@ export function sanitizeAnchor(raw: unknown): AnchorPayload | null {
       workArea,
     },
     window,
+    maxHeight: maxHeight !== null && maxHeight > 0 ? maxHeight : window.height,
     // An absent or unrecognised value falls back to 'cursor', never 'tray':
     // we cannot claim the rect is a real tray icon unless we were told so, and
     // the failure direction should be "look less certain", not more.
@@ -1078,9 +1084,15 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   // way, so a main from before the glass sends nothing and gets the glass.
   const reduceTransparency = source.reduceTransparency === true;
   const systemReducedTransparency = source.systemReducedTransparency === true;
+  // The window: only the exact literals count, and the fallbacks are the
+  // opaque base in the transparent canvas — what every earlier main sent, and
+  // a look that is right over any window.
+  const material: PanelMaterial = source.material === 'acrylic' ? 'acrylic' : 'none';
+  const frame: PanelFrame = source.frame === 'fitted' ? 'fitted' : 'canvas';
   return {
     theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed,
     trayView, stripAvailable, stripNoRoom, gauge, reduceTransparency, systemReducedTransparency,
+    material, frame,
   };
 }
 

@@ -264,12 +264,25 @@ test.describe('anchor geometry is all-or-nothing', () => {
       workArea: { x: 0, y: 0, width: 1920, height: 1040 },
     },
     window: { x: 1600, y: 700, width: 320, height: 340 },
+    maxHeight: 680,
     edge: 'bottom',
     mode: 'hover',
   };
 
   test('a complete anchor round-trips', () => {
     assert.deepEqual(s.sanitizeAnchor(okAnchor), okAnchor);
+  });
+
+  test('a missing or unusable maxHeight is the window height, and costs nothing else', () => {
+    // A main from before the fitted window: its canvas IS the budget.
+    const { maxHeight, ...older } = okAnchor;
+    assert.equal(s.sanitizeAnchor(older).maxHeight, 340);
+    for (const bad of [0, -5, NaN, '680', null, Infinity]) {
+      const out = s.sanitizeAnchor({ ...okAnchor, maxHeight: bad });
+      assert.ok(out, JSON.stringify(bad));
+      assert.equal(out.maxHeight, 340, JSON.stringify(bad));
+      assert.equal(out.edge, 'bottom');
+    }
   });
 
   test('an absent or unrecognised anchorSource falls back to cursor, never tray', () => {

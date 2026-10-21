@@ -36,6 +36,7 @@ const CH = {
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   SET_GAUGE: 'prefs:set-gauge',
   SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
+  PANEL_SIZE: 'panel:size',
 };
 
 /** Strips the IpcRendererEvent so the renderer never sees a sender handle. */
@@ -274,4 +275,9 @@ contextBridge.exposeInMainWorld('usageNotch', {
   // Only a literal true takes the mouse back; anything else leaves the
   // transparent window click-through, the safe state for other apps.
   setPointerOverPanel: (over) => ipcRenderer.send(CH.PANEL_HIT, over === true),
+  // A finite number or nothing: main checks it is a plausible height before a
+  // fitted window takes it (PanelWindow.setContentHeight).
+  setPanelHeight: (height) => {
+    if (typeof height === 'number' && Number.isFinite(height)) ipcRenderer.send(CH.PANEL_SIZE, height);
+  },
 });

@@ -9,6 +9,8 @@
 import type {
   Gauge,
   LanguageChoice,
+  PanelFrame,
+  PanelMaterial,
   Preferences,
   ProviderSnapshot,
   SetupAction,
@@ -91,6 +93,19 @@ function paintGlass(reduce: boolean, system: boolean): void {
   else delete document.documentElement.dataset.reduceTransparency;
 }
 
+/**
+ * What main has behind the panel, and the window's shape, on the document:
+ * tokens.css draws the translucent base and cards under
+ * `html[data-material="acrylic"]`, panel.css fills a `data-frame="fitted"`
+ * window with the panel. Frame one, like the gauge: a translucent panel
+ * painted before main's answer would show the desktop through an opaque
+ * window as black, and an opaque one over live acrylic would hide it.
+ */
+function paintMaterial(material: PanelMaterial, frame: PanelFrame): void {
+  document.documentElement.dataset.material = material;
+  document.documentElement.dataset.frame = frame;
+}
+
 export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const store = new Store();
   const disposers: Array<() => void> = [];
@@ -107,6 +122,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
   paintGauge(initialPrefs?.gauge ?? 'bar');
   paintGlass(initialPrefs?.reduceTransparency === true, initialPrefs?.systemReducedTransparency === true);
+  paintMaterial(initialPrefs?.material ?? 'none', initialPrefs?.frame ?? 'canvas');
   store.set({
     theme: theme.choice(),
     language: initialPrefs?.language ?? 'system',
@@ -120,6 +136,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     gauge: initialPrefs?.gauge ?? 'bar',
     reduceTransparency: initialPrefs?.reduceTransparency === true,
     systemReducedTransparency: initialPrefs?.systemReducedTransparency === true,
+    material: initialPrefs?.material ?? 'none',
+    frame: initialPrefs?.frame ?? 'canvas',
   });
   disposers.push(() => theme.destroy());
   // 400 ms on hover, at once on keyboard focus (tooltip.ts).
@@ -186,6 +204,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onReorder: (ids) => void applyOrder(ids),
     onKeepAlive: () => bridge.panelOpened(),
     onPointerOverPanel: (over) => bridge.setPointerOverPanel(over),
+    onPanelHeight: (height) => bridge.setPanelHeight(height),
     // The user read it and is done with it. Only ever reaches a notice the
     // STORE owns: the offline banner is a live condition, not an outcome, and
     // the panel does not offer a control that would clear it (panel.ts).
@@ -611,6 +630,12 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     acceptTrayView(prefs);
     acceptGauge(prefs);
     acceptReduceTransparency(prefs);
+    // Not the user's to revert: main states what the window IS, so the
+    // document follows at once, request in flight or not.
+    if (prefs.material !== store.get().material || prefs.frame !== store.get().frame) {
+      paintMaterial(prefs.material, prefs.frame);
+      store.set({ material: prefs.material, frame: prefs.frame });
+    }
     // Main's persisted answer. Only ever moves the card SHUT from here: a push
     // that crossed a "Şimdi değil" in flight must not re-open it under the user.
     if (prefs.setupCoachDismissed && !store.get().setupCoachDismissed) {
