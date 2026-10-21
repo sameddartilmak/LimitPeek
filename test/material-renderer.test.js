@@ -123,6 +123,47 @@ test.describe('the material on the document', () => {
   });
 });
 
+test.describe('the stylesheets: acrylic tokens over an opaque fallback', () => {
+  const css = (f) => fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles', f), 'utf8');
+  const block = (text, selector) => {
+    const start = text.indexOf(selector);
+    assert.notEqual(start, -1, `missing ${selector}`);
+    return text.slice(start, text.indexOf('\n}', start));
+  };
+
+  test('the translucent sheet and cards exist only under live acrylic, and step aside for reduced transparency', () => {
+    const tokens = css('tokens.css');
+    const dark = block(tokens, ':root[data-material="acrylic"]:not([data-reduce-transparency]) {');
+    assert.match(dark, /--panel-base: rgba\(/);
+    assert.match(dark, /--ink-800: rgba\(255, 255, 255, \.\d+\)/);
+    assert.match(dark, /--glass-filter: none;/, 'no in-app blur over the real acrylic');
+    assert.ok(block(tokens, ':root[data-material="acrylic"][data-theme="light"]:not([data-reduce-transparency]) {').includes('--panel-base: rgba('));
+    // The opaque palette stays the fallback.
+    assert.match(block(tokens, ':root {'), /--ink-800: #2C2C2E;/);
+    assert.match(block(tokens, ':root {'), /--panel-base: var\(--ink-900\);/);
+    assert.match(css('panel.css'), /\.panel \{[\s\S]*?background: var\(--panel-base\);/);
+  });
+
+  test('a fitted window draws no corner, edge, shadow or tail of its own', () => {
+    const panel = css('panel.css');
+    const sheet = block(panel, 'html[data-frame="fitted"] .panel {');
+    assert.match(sheet, /border: 0;/);
+    assert.match(sheet, /border-radius: 0;/);
+    assert.match(sheet, /box-shadow: none;/);
+    assert.match(panel, /html\[data-frame="fitted"\] \.panel__tail \{ display: none; \}/);
+  });
+
+  test('the figures are 650 in the state colour, and Yenile is a filled capsule', () => {
+    const pct = block(css('row.css'), '.win__pct {');
+    assert.match(pct, /font-weight: 650;/);
+    assert.match(pct, /color: var\(--state, var\(--ink-100\)\);/);
+    const refresh = block(css('panel.css'), '.btn.foot__refresh {');
+    assert.match(refresh, /background: var\(--tint-fill\);/);
+    assert.match(refresh, /color: var\(--on-tint\);/);
+    assert.match(refresh, /border-radius: 999px;/);
+  });
+});
+
 test.describe('a fitted window is the panel', () => {
   const anchorEl = (app) => app.find((n) => cls(n).includes('anchor'));
 

@@ -58,12 +58,42 @@
    * The 1px edge stays — a Windows flyout is drawn over any wallpaper, and a
    * dark sheet on a dark desktop needs its silhouette — but at the hairline
    * ink, so it reads as an edge and not as a frame. */
-  background: var(--ink-900);
+  background: var(--panel-base);
   border: 1px solid var(--ink-700);
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-inset), var(--shadow-panel);
   overflow: hidden;
 }
+
+/* THE FITTED WINDOW (Windows 11, `html[data-frame="fitted"]`, 2026-10-21).
+ * The OS window IS the panel: Windows rounds its corners (8px), draws its
+ * shadow and its hairline, and puts its acrylic behind it when the material
+ * is live. So the sheet loses everything it drew for itself in the canvas —
+ * the corner, the edge, the shadow, the tail — and fills the window from the
+ * edge nearest the taskbar (fittedPlacement in anchor.ts), so a height change
+ * that reaches the window a frame late shows on the far side, not under the
+ * taskbar.
+ *
+ * The window itself appears in one move, so the entrance is the content's
+ * alone: it rises out of the taskbar's side by a few pixels as it fades in,
+ * the way Windows' own flyouts do, instead of growing — a scale would show
+ * the acrylic round it while it grew. */
+html[data-frame="fitted"] .anchor { width: 100%; }
+html[data-frame="fitted"] .anchor,
+html[data-frame="fitted"] .anchor[data-open="false"] { transform: translateY(6px); }
+html[data-frame="fitted"] .anchor[data-tail="top"],
+html[data-frame="fitted"] .anchor[data-tail="top"][data-open="false"] { transform: translateY(-6px); }
+html[data-frame="fitted"] .anchor[data-tail="left"],
+html[data-frame="fitted"] .anchor[data-tail="left"][data-open="false"] { transform: translateX(-6px); }
+html[data-frame="fitted"] .anchor[data-tail="right"],
+html[data-frame="fitted"] .anchor[data-tail="right"][data-open="false"] { transform: translateX(6px); }
+html[data-frame="fitted"] .anchor[data-open="true"] { transform: none; }
+html[data-frame="fitted"] .panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+html[data-frame="fitted"] .panel__tail { display: none; }
 
 /* THE DIALOG ROOT NEVER DRAWS A FOCUS RING.
  *
@@ -414,6 +444,16 @@
   max-height: calc(var(--list-max, 100vh) + var(--hdr-h, 60px));
   scroll-padding-top: var(--hdr-h, 60px);
 }
+/* Over real acrylic the header is not glass of its own (tokens.css), so
+ * nothing may pass under it: the list starts below it again, and the
+ * header's hairline (data-under) marks where it was cut. */
+html[data-material="acrylic"]:not([data-reduce-transparency]) .panel .strip[hidden] + .panel__band--list {
+  margin-top: 0;
+  padding-top: 0;
+  max-height: var(--list-max, 100vh);
+  scroll-padding-top: 0;
+}
+html[data-material="acrylic"]:not([data-reduce-transparency]) .panel__band--list::-webkit-scrollbar-track { margin-top: 0; }
 /* The scroller now starts under the header, so its track is inset by the
  * header's height: the thumb never hides behind the glass. That margin is
  * only honoured by the ::-webkit-scrollbar parts, which Chromium ignores as
@@ -579,17 +619,22 @@
 .foot__scan { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* A fixed width, so "Yenile" -> "Yenileniyor" -> "Taranıyor" never moves the
- * button under the pointer; the icon turns while it works. Apple's "tinted"
- * button: tint words on a faint tint ground, a capsule. */
+ * button under the pointer; the icon turns while it works. A FILLED capsule
+ * (concept A, 2026-10-21): the panel's one standing action, white on the
+ * filled tint, 4.70:1 in both themes, over acrylic or not — the mockup's
+ * #0A84FF ground would leave the white at 3.6. */
 .btn.foot__refresh {
-  min-width: 118px;
+  min-width: 128px;
   gap: var(--s-1);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--tint) 15%, transparent);
-  color: var(--tint-text);
+  background: var(--tint-fill);
+  color: var(--on-tint);
+  font-size: var(--fs-body);
   font-weight: 600;
 }
-.btn.foot__refresh:hover { background: color-mix(in srgb, var(--tint) 24%, transparent); color: var(--tint-text); }
+.btn.foot__refresh:hover { background: color-mix(in srgb, var(--tint-fill), #000000 12%); color: var(--on-tint); }
+/* Over acrylic the footer's rule is the sheet's own hairline, not an opaque grey. */
+html[data-material="acrylic"]:not([data-reduce-transparency]) .foot { border-top-color: var(--glass-edge); }
 .foot__refresh-icon { width: 14px; height: 14px; flex: none; }
 .foot__refresh[data-busy="true"] .foot__refresh-icon { animation: spin 900ms linear infinite; }
 
@@ -860,6 +905,9 @@
  * below) and padded back by as much, so nothing moves. "Kullanım" keeps its
  * own scroller under its period chooser and is left as it was. */
 .settings { --tabs-h: 40px; }
+/* Over real acrylic the band is part of the sheet, like the header: no page
+ * under it. Zero folds the pull-up, its padding and the track inset at once. */
+html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs-h: 0px; }
 .settings__top {
   position: relative;
   z-index: 1;
