@@ -49,7 +49,7 @@ const CONTROL_CHARS = new RegExp(
   'g',
 );
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const NEUTRAL_ACCENT = '#6B7A77';
+const NEUTRAL_ACCENT = '#98989F';
 
 /** ADR-003 A6: the history floor-cause codes the renderer has copy for. */
 const HISTORY_FLOOR_CAUSES = new Set<HistoryFloorCause>([

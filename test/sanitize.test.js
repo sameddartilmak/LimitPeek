@@ -65,7 +65,7 @@ test.describe('accent is a CSS custom property, so it is not free text', () => {
     ];
     for (const attack of attacks) {
       const accent = claudeOf(s.sanitizeSnapshot(snapshotWith({ accent: attack }))).accent;
-      assert.equal(accent, '#6B7A77', JSON.stringify(attack));
+      assert.equal(accent, '#98989F', JSON.stringify(attack));
     }
   });
 });
@@ -352,7 +352,7 @@ test.describe('enabled decides whether a row exists at all', () => {
       providers: ['claude', 'codex', 'antigravity', 'kimi', 'qwen', 'grok'].map((id, i) => ({
         id,
         displayName: id,
-        accent: '#6B7A77',
+        accent: '#98989F',
         enabled: [undefined, null, 'false', 0, NaN, ''][i],
         connected: false,
         status: 'passive',
@@ -383,7 +383,7 @@ test.describe('enabled decides whether a row exists at all', () => {
       providers: PROVIDER_IDS.map((id) => ({
         id,
         displayName: id,
-        accent: '#6B7A77',
+        accent: '#98989F',
         enabled: resolved[id],
         connected: false,
         status: 'passive',
@@ -416,7 +416,7 @@ test.describe('enabled decides whether a row exists at all', () => {
       providers: PROVIDER_IDS.map((id) => ({
         id,
         displayName: id,
-        accent: '#6B7A77',
+        accent: '#98989F',
         enabled: resolved[id],
         connected: false,
         status: 'passive',

@@ -24,13 +24,15 @@
  * contrast set, deepened so every step still clears 4.5 on the base and 3 on
  * the track, and so each step stays darker than the one before it.
  *
- * TWO CONSUMERS, TWO PALETTES — see the `body` block after the light theme.
- * The ramp hexes and the tray greys in the two :root blocks are the TRAY
- * ICON's (src/core/donut.js mirrors them byte for byte and
- * test/tray-icon.test.js pins it); the panel re-assigns exactly those keys on
- * <body>. Moving the tray onto the Apple ramp is a main-lane change.
+ * ONE PALETTE, THREE CONSUMERS (2026-10-21). The panel, the tray donut and
+ * the taskbar strip all draw from the two :root blocks below: src/core/
+ * donut.js mirrors the ramp and the tray greys byte for byte (test/
+ * tray-icon.test.js pins it), and the strip takes donut.js's ramp. During the
+ * trial the panel re-assigned these keys on <body> while the tray kept the
+ * graphite values; that override is gone.
  *
- * Original notes, kept for the roles and the tray values they describe:
+ * Original notes, kept for the roles they describe. The ratio tables in them
+ * are of the graphite palette and no longer of these values:
  *
  * Graphite-instrument palette. The ONLY thing that may color a meter is the
  * state ramp (--calm/--watch/--ember/--spent). A provider's brand accent is
@@ -88,7 +90,7 @@
   --ink-700: #38383A; /* hairline, hover fill, tile ground (opaqueSeparator) */
   --ink-600: #3A3A3C; /* meter track (systemGray5) */
   --ink-500: #636366; /* disabled ink, skeleton (systemGray2) */
-  --ink-400: #6B7A77; /* meta text */
+  --ink-400: #98989F; /* meta text (secondaryLabel over the dark card); also the tray's neutral grey */
   /* The tray track, and NOT an ink.
    *
    * It used to be `--ink-400`, which made one value answer two unrelated
@@ -139,10 +141,14 @@
    * 0.20 relative luminance, so a deeper red was not an option. Urgency is
    * carried by hue and saturation instead, which is the honest carrier anyway —
    * brightness is already spoken for by the ink scale. */
-  --calm:  #22F58C;
-  --watch: #E0A845;
-  --ember: #E2653F;
-  --spent: #E4404E;
+  /* Apple's system colours, dark (2026-10-21; the graphite ramp was
+   * #22F58C / #E0A845 / #E2653F / #E4404E). On a #202020 dark taskbar they
+   * measure 8.06 / 11.54 / 7.93 / 4.78 — every step at or above the graphite
+   * ramp's worst (3.99) — and see the panel table at the top of this file. */
+  --calm:  #30D158;   /* systemGreen */
+  --watch: #FFD60A;   /* systemYellow */
+  --ember: #FF9F0A;   /* systemOrange */
+  --spent: #FF453A;   /* systemRed */
 
   /* --- elevation / texture ---------------------------------------------
    * Shadows are light-direction, not colour, so they invert with the theme:
@@ -319,8 +325,8 @@
    * This matters more at D3's geometry than it did: a thinner ring is a
    * shorter boundary for that contrast to be read across. */
   --tray-track-light: #A0ACA7;
-  --ink-400: #5F6E6A; /* meta text; also the tray identity dot */
-  --ink-300: #43514E; /* secondary text */
+  --ink-400: #6C6C70; /* meta text (systemGray, increased contrast); also the tray identity dot */
+  --ink-300: #545458; /* secondary text; also the tray's no-data ring */
   --ink-200: #3A3A3C; /* body text */
   --ink-100: #1D1D1F; /* primary text, darkest ink (label) */
   --ink-max: #000000;
@@ -329,12 +335,15 @@
    * cannot see. The raised white reads at 4.9:1 or better on every step. */
   --tick: var(--ink-850);
 
-  /* Same four meanings, re-picked for a light ground. Every step is darker
-   * than the one before it, so urgency reads as weight as well as hue. */
-  --calm:  #00803A;
-  --watch: #8A5A0B;
-  --ember: #A83512;
-  --spent: #7C160A;
+  /* Same four meanings, re-picked for a light ground: Apple's increased-
+   * contrast green / yellow / orange / red, deepened just enough that each
+   * clears 4.5 on the base and 3 on the track and stays darker than the step
+   * before it, so urgency reads as weight as well as hue. On a #F3F3F3 light
+   * taskbar: 4.74 / 5.01 / 5.60 / 6.16 (graphite: 4.56 at worst). */
+  --calm:  #1F7C36;
+  --watch: #9C5700;
+  --ember: #B62E00;
+  --spent: #B90010;
 
   /* A panel that floats above a bright desktop needs a softer, shorter
    * shadow and a WHITE inset highlight would be invisible — the top edge
@@ -373,48 +382,25 @@
  * either column drifts. Editing a ramp step here is therefore a two-file
  * change; the test will say so by name.
  *
- * It also takes two greys, and the mapping is NOT the same index in each
- * theme, which is a consequence of the light ramp being re-picked rather than
- * inverted:
+ * It also takes three greys, one job each (see the note above TRACKS in
+ * donut.js for why they cannot be one value):
  *
- *   tray track      dark: --ink-400      light: --ink-500
- *   tray identity   dark: --ink-400      light: --ink-400
+ *   tray track      dark: --tray-track-dark   light: --tray-track-light
+ *   no-data ring    dark: --ink-400           light: --ink-300
+ *   identity dot    dark: --ink-400           light: --ink-400
  *
- * The track has to satisfy two things at once — be visible against the
- * taskbar, and let the sweep be told apart from it. In the dark theme the
- * sweeps are BRIGHTER than the ground, so the track sits below them at
- * --ink-400. In the light theme every ramp step is DARKER than the ground, so
- * the track has to sit above them instead, and --ink-400 is the wrong side:
- * light calm against it measures 1.02:1, which would make a healthy donut
- * indistinguishable from the no-data ring. --ink-500 gives 2.09 to 4.23 across
- * the four steps. See the frontend note in donut.js for the ratios. */
-
-/* THE PANEL'S RAMP AND GREYS (Apple HIG trial)
- * -------------------------------------------
- * Exactly the keys the tray mirrors, and nothing else: the four ramp steps
- * and the greys donut.js reads (dark --ink-400; light --ink-300 and
- * --ink-400). The :root blocks above keep the tray's values byte-identical;
- * everything the panel draws sits inside <body> and resolves these instead.
- * When the tray moves to the Apple ramp (a main-lane change in donut.js),
- * these values move up into the :root blocks and this block goes away. */
-body {
-  --ink-400: #98989F; /* meta text (secondaryLabel over the dark card) */
-  --calm:  #30D158;   /* systemGreen, dark */
-  --watch: #FFD60A;   /* systemYellow, dark */
-  --ember: #FF9F0A;   /* systemOrange, dark */
-  --spent: #FF453A;   /* systemRed, dark */
-}
-:root[data-theme="light"] body {
-  --ink-400: #6C6C70; /* meta text (systemGray, increased contrast) */
-  --ink-300: #545458; /* secondary text */
-  /* Apple's increased-contrast green / yellow / orange / red, deepened just
-   * enough that each clears 4.5 on the base and 3 on the track and stays
-   * darker than the step before it. */
-  --calm:  #1F7C36;
-  --watch: #9C5700;
-  --ember: #B62E00;
-  --spent: #B90010;
-}
+ * Measured with the Apple ramp (2026-10-21), against a #202020 / #F3F3F3
+ * taskbar:
+ *
+ *                      dark                       light
+ *   ramp vs taskbar    8.06 11.54 7.93 4.78       4.74 5.01 5.60 6.16
+ *   ramp vs track      1.79 2.56 1.76 1.06        2.24 2.37 2.65 2.92
+ *   no-data ring       5.68                       6.79
+ *   identity dot       5.68                       4.71
+ *
+ * The worst sweep-to-track pair is the same 1.06 the graphite ramp had (it
+ * was ember then, spent now; the hue carries that boundary), and the light
+ * worst rose from 2.16 to 2.24, so the two tracks did not move. */
 
 *, *::before, *::after { box-sizing: border-box; }
 

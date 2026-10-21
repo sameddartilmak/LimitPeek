@@ -64,7 +64,7 @@ function stateForPercentage(usedPercentage) {
  * decided to grey out; the dot would be the only place in the product claiming
  * that row is live.
  */
-const FALLBACK_ACCENT = '#6B7A77';
+const FALLBACK_ACCENT = '#98989F';
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 function accentOf(provider) {

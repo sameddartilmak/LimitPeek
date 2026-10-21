@@ -249,11 +249,11 @@ test.describe('the no-data path (contract.ts, TrayIconSpec)', () => {
     assert.equal(drawablePercentage(disconnected), null);
     const spec = traySpecFromSnapshot(snapshot([disconnected]));
     assert.equal(spec.state, 'none');
-    assert.equal(spec.accent, '#6B7A77');
+    assert.equal(spec.accent, '#98989F');
     const size = 32;
     const buf = drawDonut(size, spec);
     // NO_DATA_RINGS, not TRACKS: this is the broken no-data ring, a different
-    // constant with a different job. The two shared #6B7A77 on dark until the
+    // constant with a different job. The two shared one grey on dark until the
     // track became its own token, so this assertion used to pass against the
     // wrong name — one value answering two questions, as donut.js warns.
     assert.ok(isColour(ringPixel(buf, size, 45), NO_DATA_RINGS.dark), 'no ramp colour may be drawn');
@@ -264,7 +264,7 @@ test.describe('the no-data path (contract.ts, TrayIconSpec)', () => {
     // The panel renders a disconnected row monochrome; the tray must not be
     // the one surface still claiming that provider is live.
     const spec = traySpecFromSnapshot(snapshot([provider({ connected: false, fiveHour: null })]));
-    assert.equal(spec.accent, '#6B7A77');
+    assert.equal(spec.accent, '#98989F');
     assert.equal(traySpecFromSnapshot(snapshot([provider({ connected: true })])).accent, '#C96442');
   });
 

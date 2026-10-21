@@ -272,7 +272,7 @@ test.describe('the tray icon is driven by the first ENABLED provider', () => {
     const spec = traySpecFromSnapshot(s);
     assert.equal(spec.usedPercentage, null, 'no enabled row means nothing to describe');
     assert.equal(spec.state, 'none');
-    assert.equal(spec.accent, '#6B7A77');
+    assert.equal(spec.accent, '#98989F');
   });
 
   test('a snapshot built with the shipped defaults leads with claude', () => {

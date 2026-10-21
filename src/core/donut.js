@@ -87,21 +87,28 @@ const GEOMETRY = Object.freeze({
  * tokens.css and fails the build if either column drifts, which is how the
  * dark `spent` change from #7A3A28 to #E4404E was caught here rather than
  * shipping as a tray icon that disagreed with the meter beside it.
+ *
+ * 2026-10-21: both columns moved to the Apple system colours the panel adopted
+ * (the graphite ramp was #22F58C/#E0A845/#E2653F/#E4404E dark and
+ * #00803A/#8A5A0B/#A83512/#7C160A light). Against the taskbars every dark step
+ * rose to 4.78:1 or better on #202020 and every light step stays at 4.74:1 or
+ * better on #F3F3F3; tokens.css carries the table. The taskbar strip
+ * (strip-tiles.js) takes the same columns through `rampFor`.
  */
 const RAMPS = Object.freeze({
   /** Mirrors `:root { }` in tokens.css. */
   dark: Object.freeze({
-    calm: '#22F58C',
-    watch: '#E0A845',
-    ember: '#E2653F',
-    spent: '#E4404E',
+    calm: '#30D158',
+    watch: '#FFD60A',
+    ember: '#FF9F0A',
+    spent: '#FF453A',
   }),
   /** Mirrors `:root[data-theme="light"] { }` in tokens.css. */
   light: Object.freeze({
-    calm: '#00803A',
-    watch: '#8A5A0B',
-    ember: '#A83512',
-    spent: '#7C160A',
+    calm: '#1F7C36',
+    watch: '#9C5700',
+    ember: '#B62E00',
+    spent: '#B90010',
   }),
 });
 
@@ -150,6 +157,12 @@ function rampFor(ground) {
  *   NO_DATA_RINGS    dark --ink-400   light --ink-300
  *   NEUTRAL_ACCENTS  dark --ink-400   light --ink-400
  *
+ * Apple palette (2026-10-21): the no-data ring and the identity dot follow
+ * the panel's new greys (#98989F dark; #545458 / #6C6C70 light), which are
+ * further from the taskbar than the graphite ones were (dark no-data ring
+ * 3.63 -> 5.68 on #202020). The two tracks did not move: against the new
+ * ramp their worst pair is 1.06 dark (as before) and 2.24 light (was 2.16).
+ *
  * They are three constants because they have three different jobs, and one
  * value cannot serve them at once on a light ground:
  *
@@ -175,8 +188,8 @@ function rampFor(ground) {
  * which is how it stopped being true without anything failing.
  */
 const TRACKS = Object.freeze({ dark: '#7A8A86', light: '#A0ACA7' });
-const NO_DATA_RINGS = Object.freeze({ dark: '#6B7A77', light: '#43514E' });
-const NEUTRAL_ACCENTS = Object.freeze({ dark: '#6B7A77', light: '#5F6E6A' });
+const NO_DATA_RINGS = Object.freeze({ dark: '#98989F', light: '#545458' });
+const NEUTRAL_ACCENTS = Object.freeze({ dark: '#98989F', light: '#6C6C70' });
 
 /** Dark is the default ground, so the old names still resolve to it. */
 const TRACK = TRACKS.dark;
