@@ -7,6 +7,7 @@
  */
 
 import type {
+  Gauge,
   LanguageChoice,
   Preferences,
   ProviderSnapshot,
@@ -69,6 +70,15 @@ function applyLocale(prefs: Preferences | null): void {
   document.title = 'LimitPeek';
 }
 
+/**
+ * Görünüm → Gösterge on the document: row.css draws the activity rings under
+ * `html[data-gauge="ring"]` and the bars otherwise. Written in frame one, like
+ * the theme, or a ring user sees bars turn into rings on every launch.
+ */
+function paintGauge(gauge: Gauge): void {
+  document.documentElement.dataset.gauge = gauge;
+}
+
 export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const store = new Store();
   const disposers: Array<() => void> = [];
@@ -83,6 +93,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const initialPrefs = bridge.initialPreferences();
   applyLocale(initialPrefs);
   const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
+  paintGauge(initialPrefs?.gauge ?? 'bar');
   store.set({
     theme: theme.choice(),
     language: initialPrefs?.language ?? 'system',
@@ -93,6 +104,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     trayView: initialPrefs?.trayView ?? 'tray',
     stripAvailable: initialPrefs?.stripAvailable ?? true,
     stripNoRoom: initialPrefs?.stripNoRoom ?? false,
+    gauge: initialPrefs?.gauge ?? 'bar',
   });
   disposers.push(() => theme.destroy());
   // 400 ms on hover, at once on keyboard focus (tooltip.ts).
@@ -153,6 +165,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onLanguageChange: (choice) => void applyLanguage(choice),
     onAutostartChange: (enabled) => void applyAutostart(enabled),
     onTrayViewChange: (view) => void applyTrayView(view),
+    onGaugeChange: (gauge) => void applyGauge(gauge),
     coachDismissed: false,
     onReorder: (ids) => void applyOrder(ids),
     onKeepAlive: () => bridge.panelOpened(),
@@ -580,6 +593,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     acceptLanguage(prefs);
     acceptAutostart(prefs);
     acceptTrayView(prefs);
+    acceptGauge(prefs);
     // Main's persisted answer. Only ever moves the card SHUT from here: a push
     // that crossed a "Şimdi değil" in flight must not re-open it under the user.
     if (prefs.setupCoachDismissed && !store.get().setupCoachDismissed) {
@@ -692,6 +706,53 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     confirmedTrayView = prefs.trayView;
     if (trayViewRequest !== null) return;
     if (prefs.trayView !== store.get().trayView) store.set({ trayView: prefs.trayView });
+  }
+
+  // --- Görünüm: bars or activity rings -------------------------------------
+
+  /** The newest gauge asked of main. Same shape as trayViewRequest. */
+  let gaugeRequest: { gauge: Gauge; at: number } | null = null;
+  /** Same role as `confirmedTheme`: what main is known to hold. */
+  let confirmedGauge: Gauge = store.get().gauge;
+
+  /**
+   * Optimistic, then reconciled, exactly like applyTheme: the meters change on
+   * the gesture and main is asked afterwards. `{ok:false}` means nothing
+   * changed anywhere, so the OLD gauge goes back on the document as well as in
+   * the radio group: leaving rings on screen would show a setting that will
+   * not survive a restart.
+   */
+  async function applyGauge(next: Gauge): Promise<void> {
+    if (next === store.get().gauge) return;
+
+    const request = { gauge: next, at: Date.now() };
+    gaugeRequest = request;
+    paintGauge(next);
+    store.set({ gauge: next, gaugePending: true, gaugeReverted: false, notice: null });
+
+    const ok = await bridge.setGauge(next);
+    if (ok) confirmedGauge = next;
+
+    if (gaugeRequest !== request) return;
+    gaugeRequest = null;
+    store.set({ gaugePending: false });
+    if (ok) return;
+
+    paintGauge(confirmedGauge);
+    store.set({ gauge: confirmedGauge, gaugeReverted: true });
+    say(t('app.gaugeNotSaved'), 'error');
+    window.setTimeout(() => {
+      if (store.get().gaugeReverted) store.set({ gaugeReverted: false });
+    }, 1_600);
+  }
+
+  /** Main's value, pushed. Adopted unless a pick is still in flight. */
+  function acceptGauge(prefs: Preferences): void {
+    confirmedGauge = prefs.gauge;
+    if (gaugeRequest !== null) return;
+    if (prefs.gauge === store.get().gauge) return;
+    paintGauge(prefs.gauge);
+    store.set({ gauge: prefs.gauge });
   }
 
   // --- language -----------------------------------------------------------

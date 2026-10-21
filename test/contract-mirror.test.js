@@ -158,10 +158,13 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // 21 with setTrayView (2026-10-20): Görünüm, tray icon or taskbar strip. A
   // local settings write; the strip itself speaks only IPC_STRIP, below.
   assert.ok(declared.has('setTrayView'), 'contract.ts should declare setTrayView()');
+  // 22 with setGauge (2026-10-21): Görünüm → Gösterge, bars or activity
+  // rings. A local settings write for the panel alone; no network.
+  assert.ok(declared.has('setGauge'), 'contract.ts should declare setGauge()');
   for (const gone of ['requestKeyEntry', 'removeKey', 'openTokenPage', 'refreshKey']) {
     assert.equal(declared.has(gone), false, `${gone}() belonged to the removed key feature`);
   }
-  assert.equal(declared.size, 21, `expected the 21 declared methods, saw ${[...declared].join(',')}`);
+  assert.equal(declared.size, 22, `expected the 22 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const IPC_STRIP = { ... } as const;`. */

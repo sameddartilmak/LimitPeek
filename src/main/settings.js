@@ -7,6 +7,7 @@ const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeLanguage, DEFAULT_LANGUAGE } = require('../core/language');
 const { migratePlanLabels } = require('../core/plan-labels');
 const { sanitizeTrayView, DEFAULT_TRAY_VIEW } = require('../core/tray-view');
+const { sanitizeGauge, DEFAULT_GAUGE } = require('../core/gauge');
 
 /**
  * App settings, stored in the app's own userData. Small and hand-editable.
@@ -74,6 +75,13 @@ const DEFAULTS = Object.freeze({
    * An unknown value is 'tray', see `src/core/tray-view.js`.
    */
   trayView: DEFAULT_TRAY_VIEW,
+  /**
+   * 'bar' | 'ring': how the panel draws each tool's two windows (Settings →
+   * Genel → Görünüm → Gösterge). 'bar' is the look every earlier version had;
+   * 'ring' is two concentric activity rings. Panel only. An unknown value is
+   * 'bar', see `src/core/gauge.js`.
+   */
+  gauge: DEFAULT_GAUGE,
 });
 
 function file(userDataDir) {
@@ -126,6 +134,9 @@ function load(userDataDir) {
     // Absent (every file written before the strip existed), a typo or a
     // future value: the tray icon, the look the user already has.
     trayView: sanitizeTrayView(raw.trayView),
+    // Absent (every file written before the rings existed), a typo or a
+    // future value: the bars, the look the user already has.
+    gauge: sanitizeGauge(raw.gauge),
   };
 }
 

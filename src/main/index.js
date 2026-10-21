@@ -47,6 +47,7 @@ const { TaskbarStrip } = require('./taskbar-strip');
 const { DisplayLayer } = require('./taskbar-display');
 const { createSetTrayViewHandler } = require('./tray-view-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
+const { createSetGaugeHandler } = require('./gauge-ipc');
 
 // userData is %APPDATA%\usage-notch by name, whatever the product is called
 // (packaging.js). First, before the early exits below and the single-instance
@@ -569,6 +570,16 @@ function registerIpc() {
     getSettings: () => settings,
     save: (s) => settingsStore.save(userDataDir(), s),
     apply: applyTrayView,
+    push: pushPreferences,
+    log,
+  }));
+
+  // Görünüm: bars or activity rings. Persist, then push; rollback on a failed
+  // write. Panel only, so nothing to apply in main. Tested in gauge-ipc.js's suite.
+  ipcMain.handle(IPC.SET_GAUGE, createSetGaugeHandler({
+    fromPanel,
+    getSettings: () => settings,
+    save: (s) => settingsStore.save(userDataDir(), s),
     push: pushPreferences,
     log,
   }));

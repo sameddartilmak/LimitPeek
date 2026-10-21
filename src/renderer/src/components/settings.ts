@@ -45,6 +45,7 @@
  */
 
 import type {
+  Gauge,
   LanguageChoice,
   PeriodModelCost,
   PeriodUsage,
@@ -81,6 +82,8 @@ const LANGUAGE_TITLE_ID = 'settings-language-title';
 const LANGUAGE_HELP_ID = 'settings-language-help';
 const TRAY_VIEW_TITLE_ID = 'settings-tray-view-title';
 const TRAY_VIEW_HELP_ID = 'settings-tray-view-help';
+const GAUGE_TITLE_ID = 'settings-gauge-title';
+const GAUGE_HELP_ID = 'settings-gauge-help';
 const AUTOSTART_NAME_ID = 'settings-autostart-name';
 const AUTOSTART_HELP_ID = 'settings-autostart-help';
 
@@ -108,6 +111,8 @@ export interface SettingsContext {
   onAutostart(enabled: boolean): void;
   /** The user picked tray icon or taskbar strip. Optimistic; the app owns the revert. */
   onTrayView(view: TrayView): void;
+  /** The user picked bars or rings. Optimistic; the app owns the revert. */
+  onGauge(gauge: Gauge): void;
   /** Leave settings and go back to the usage list. */
   onBack(): void;
   /** The user picked a tab. The store keeps it across hide and rebuild. */
@@ -765,6 +770,69 @@ function createTrayViewControl(ctx: SettingsContext): TrayViewHandleLocal {
     setText(help, t(unavailable
       ? 'settings.trayView.unavailable'
       : noRoom ? 'settings.trayView.noRoom' : 'settings.trayView.help'));
+  }
+
+  return { el: root, update };
+}
+
+/**
+ * Görünüm, third part: "Gösterge", how the panel draws each tool's two
+ * windows. "Çubuk" (the default, two bars side by side) or "Halka" (two
+ * concentric activity rings, row.css). The theme's native-radio fieldset and
+ * CSS again, under the same "Görünüm" heading, after the theme and the tray
+ * view. The help line says which ring is which, because that is the one thing
+ * about the rings a user cannot read off the picture the first time.
+ */
+interface GaugeHandleLocal {
+  el: HTMLElement;
+  update(state: PanelState): void;
+}
+
+function createGaugeControl(ctx: SettingsContext): GaugeHandleLocal {
+  const CHOICES: ReadonlyArray<{ v: Gauge; key: MessageKey }> = [
+    { v: 'bar', key: 'settings.gauge.bar' },
+    { v: 'ring', key: 'settings.gauge.ring' },
+  ];
+
+  const inputs = new Map<Gauge, HTMLInputElement>();
+  const options = el('div', { class: 'theme__opts' });
+
+  for (const choice of CHOICES) {
+    const id = 'gauge-' + choice.v;
+    const input = el('input', {
+      type: 'radio',
+      name: 'usage-notch-gauge',
+      id,
+      value: choice.v,
+      class: 'theme__radio',
+    }) as HTMLInputElement;
+    const label = el('label', { class: 'theme__opt', for: id }, t(choice.key));
+    on(input, 'change', () => {
+      if (input.checked) ctx.onGauge(choice.v);
+    });
+    inputs.set(choice.v, input);
+    options.appendChild(input);
+    options.appendChild(label);
+  }
+
+  const help = el('p', { class: 'theme__help', id: GAUGE_HELP_ID }, t('settings.gauge.help'));
+
+  const root = el(
+    'fieldset',
+    { class: 'theme theme--gauge', 'aria-describedby': GAUGE_HELP_ID },
+    el('legend', { class: 'u-sr', id: GAUGE_TITLE_ID }, t('settings.gauge.legend')),
+    help,
+    options,
+  );
+
+  function update(state: PanelState): void {
+    for (const [choice, input] of inputs) {
+      const on_ = state.gauge === choice;
+      if (input.checked !== on_) input.checked = on_;
+    }
+    setAttr(root, 'data-pending', state.gaugePending ? 'true' : null);
+    setAttr(root, 'data-revert', state.gaugeReverted ? 'true' : null);
+    setAttr(root, 'aria-busy', state.gaugePending ? 'true' : null);
   }
 
   return { el: root, update };
@@ -1698,6 +1766,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   const theme = createThemeControl(ctx);
   const languageControl = createLanguageControl(ctx);
   const trayView = createTrayViewControl(ctx);
+  const gauge = createGaugeControl(ctx);
   const autostart = createAutostartControl(ctx);
   // The first-run introduction, on request: it runs once, so this is the way
   // back to it (and how the owner can look at it again).
@@ -1717,6 +1786,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
           el('h3', { class: 'settings__heading' }, t('settings.theme.legend')),
           theme.el,
           trayView.el,
+          gauge.el,
           el('h3', { class: 'settings__heading' }, t('settings.language.legend')),
           languageControl.el,
           autostart.el,
@@ -1792,6 +1862,7 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     theme.update(state);
     languageControl.update(state);
     trayView.update(state);
+    gauge.update(state);
     autostart.update(state);
     // The FULL snapshot list, not the added subset: a model row names its tool
     // even when that tool's card was removed from the main panel.

@@ -8,6 +8,7 @@
 
 import type {
   AnchorPayload,
+  Gauge,
   LanguageChoice,
   ProviderSnapshot,
   RefreshNotice,
@@ -206,6 +207,15 @@ export interface PanelState {
   stripAvailable: boolean;
   /** True while the strip finds no room on the taskbar. */
   stripNoRoom: boolean;
+  /**
+   * Görünüm → Gösterge: bars or activity rings. Optimistic, like `theme`: the
+   * document flips on the gesture and main is asked afterwards.
+   */
+  gauge: Gauge;
+  /** True while a setGauge call is in flight. */
+  gaugePending: boolean;
+  /** Set briefly when main refused the change and the radio went back. */
+  gaugeReverted: boolean;
 }
 
 const INITIAL: PanelState = {
@@ -248,6 +258,9 @@ const INITIAL: PanelState = {
   trayViewReverted: false,
   stripAvailable: true,
   stripNoRoom: false,
+  gauge: 'bar',
+  gaugePending: false,
+  gaugeReverted: false,
 };
 
 type Listener = (state: PanelState) => void;

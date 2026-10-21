@@ -538,3 +538,60 @@ test.describe('Görünüm: "Tepsi simgesi" or "Görev çubuğu şeridi", on the 
     assert.match(help.textContent, /gösterilemiyor/, '"cannot be shown here" wins over "no room"');
   });
 });
+
+// ------------------------------------------------ Görünüm: bars or activity rings
+
+test.describe('Görünüm → "Gösterge": "Çubuk" or "Halka", on the "Genel" tab', () => {
+  function mountGauge() {
+    const picked = [];
+    const handle = settingsMod.createSettings({
+      onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
+      onDisconnect() {}, onTrayView() {},
+      onGauge(gauge) { picked.push(gauge); },
+    });
+    const group = walk(handle.el).find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--gauge'));
+    assert.ok(group, 'no gauge group');
+    const radios = walk(group).filter((el) => el.tagName === 'INPUT');
+    return { handle, group, radios, picked };
+  }
+
+  test('two native radios in a group named "Gösterge", after the theme and the tray view, before "Dil"', () => {
+    const { handle, group, radios } = mountGauge();
+    assert.deepEqual(radios.map((r) => [r.getAttribute('type'), r.getAttribute('value')]), [['radio', 'bar'], ['radio', 'ring']]);
+    const labels = walk(group).filter((el) => el.tagName === 'LABEL').map((el) => el.textContent);
+    assert.deepEqual(labels, ['Çubuk', 'Halka']);
+    assert.equal(walk(group).find((el) => el.tagName === 'LEGEND').textContent, 'Gösterge');
+    const general = walk(handle.el).find((el) => el.getAttribute('role') === 'tabpanel' && walk(el).includes(group));
+    assert.ok(general, 'not on a tab panel');
+    const kids = walk(general);
+    const theme = kids.find((el) => el.tagName === 'FIELDSET' && el.getAttribute('class') === 'theme');
+    const trayView = kids.find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--tray-view'));
+    const language = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Dil');
+    assert.ok(kids.indexOf(theme) < kids.indexOf(trayView) && kids.indexOf(trayView) < kids.indexOf(group));
+    assert.ok(kids.indexOf(group) < kids.indexOf(language));
+  });
+
+  test('the help line says which ring is which', () => {
+    const { group } = mountGauge();
+    const help = walk(group).find((el) => el.tagName === 'P');
+    assert.match(help.textContent, /dış halka 5 saatlik, iç halka haftalık/);
+    assert.equal(group.getAttribute('aria-describedby'), help.getAttribute('id'));
+  });
+
+  test('the checked radio follows the state, a pick tells the app, pending and revert are on the group', () => {
+    const { handle, group, radios, picked } = mountGauge();
+    handle.render(state({ gauge: 'bar', gaugePending: false, gaugeReverted: false }), []);
+    assert.deepEqual(radios.map((r) => r.checked), [true, false]);
+    radios[1].checked = true;
+    radios[1].dispatch('change');
+    assert.deepEqual(picked, ['ring']);
+    handle.render(state({ gauge: 'ring', gaugePending: true, gaugeReverted: false }), []);
+    assert.deepEqual(radios.map((r) => r.checked), [false, true]);
+    assert.equal(group.getAttribute('data-pending'), 'true');
+    assert.equal(group.getAttribute('aria-busy'), 'true');
+    handle.render(state({ gauge: 'bar', gaugePending: false, gaugeReverted: true }), []);
+    assert.deepEqual(radios.map((r) => r.checked), [true, false]);
+    assert.equal(group.getAttribute('data-pending'), null);
+    assert.equal(group.getAttribute('data-revert'), 'true');
+  });
+});

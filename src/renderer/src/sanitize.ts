@@ -29,6 +29,7 @@ import type {
   ProviderSnapshot,
   RefreshNotice,
   TrayView,
+  Gauge,
   RowStatus,
   SetupAction,
   SetupKind,
@@ -1070,9 +1071,12 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   const trayView: TrayView = source.trayView === 'strip' ? 'strip' : 'tray';
   const stripAvailable = source.stripAvailable !== false;
   const stripNoRoom = source.stripNoRoom === true;
+  // Gösterge: anything but 'ring' is the bars, as main's own load() says; a
+  // main from before the rings sends nothing and gets the bars it always drew.
+  const gauge: Gauge = source.gauge === 'ring' ? 'ring' : 'bar';
   return {
     theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed,
-    trayView, stripAvailable, stripNoRoom,
+    trayView, stripAvailable, stripNoRoom, gauge,
   };
 }
 

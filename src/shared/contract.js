@@ -40,6 +40,7 @@ const IPC = {
   SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
   PANEL_HIT: 'panel:hit',
   SET_TRAY_VIEW: 'prefs:set-tray-view',
+  SET_GAUGE: 'prefs:set-gauge',
 };
 
 /**

@@ -41,7 +41,7 @@ function withNavigatorLanguage(tag, body) {
   }
 }
 
-const GOOD = { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false, setupCoachDismissed: false, trayView: 'tray', stripAvailable: true, stripNoRoom: false };
+const GOOD = { theme: 'dark', language: 'en', resolvedLanguage: 'en', formatLocale: 'en-GB', autostart: true, autostartByWindows: false, setupCoachDismissed: false, trayView: 'tray', stripAvailable: true, stripNoRoom: false, gauge: 'bar' };
 
 test.describe('sanitizePreferences: the language fields', () => {
   test('a well-formed payload passes through unchanged', () => {

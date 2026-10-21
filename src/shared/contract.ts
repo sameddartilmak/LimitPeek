@@ -1293,6 +1293,13 @@ export const IPC = {
    * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
    */
   SET_TRAY_VIEW: 'prefs:set-tray-view',
+  /**
+   * renderer -> main invoke(gauge: Gauge). Persists how the panel draws each
+   * tool's two windows ('bar' | 'ring'), then pushes PREFERENCES. Panel only:
+   * nothing is applied in main. Anything but the two literals is refused.
+   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
+   */
+  SET_GAUGE: 'prefs:set-gauge',
 } as const;
 
 /**
@@ -1330,6 +1337,14 @@ export type LanguageChoice = 'tr' | 'en' | 'zh' | 'system';
  * one tile per tool. The tray icon stays in both.
  */
 export type TrayView = 'tray' | 'strip';
+
+/**
+ * How the panel draws a tool's two usage windows. 'bar' (the default) is two
+ * bars side by side; 'ring' is two concentric activity rings, five-hour
+ * outside and weekly inside. Panel only; the tray icon and the strip are not
+ * affected.
+ */
+export type Gauge = 'bar' | 'ring';
 
 export interface Preferences {
   theme: ThemeChoice;
@@ -1389,6 +1404,12 @@ export interface Preferences {
    * Anything that is not `true` reaches the renderer as `false`.
    */
   stripNoRoom: boolean;
+  /**
+   * Settings → Genel → Görünüm → Gösterge. Anything that is not a Gauge is
+   * 'bar'. Read in frame one, like the theme: a gauge applied after first
+   * paint is a visible flash of bars turning into rings.
+   */
+  gauge: Gauge;
 }
 
 /**
@@ -1494,6 +1515,8 @@ export interface UsageNotchApi {
   setSetupCoachDismissed(dismissed: boolean): Promise<{ ok: boolean }>;
   /** Persist where the usage is shown outside the panel. See IPC.SET_TRAY_VIEW. */
   setTrayView(view: TrayView): Promise<{ ok: boolean }>;
+  /** Persist bars or rings for the panel's windows. See IPC.SET_GAUGE. */
+  setGauge(gauge: Gauge): Promise<{ ok: boolean }>;
   /**
    * Persist the plan the user says they are on for ONE tool, or clear it. See
    * IPC.SET_PLAN_LABEL and `ProviderSnapshot.planLabel`.

@@ -15,6 +15,7 @@
 
 import type {
   AnchorPayload,
+  Gauge,
   LanguageChoice,
   Preferences,
   Snapshot,
@@ -109,6 +110,11 @@ export interface Bridge {
    * all-or-nothing promise as setAutostart: `false` means main wrote NOTHING.
    */
   setTrayView(view: TrayView): Promise<boolean>;
+  /**
+   * Persist Görünüm → Gösterge, bars or rings (IPC.SET_GAUGE). Same
+   * all-or-nothing promise: `false` means main wrote NOTHING.
+   */
+  setGauge(gauge: Gauge): Promise<boolean>;
   close(): void;
   /** Asks main to switch to pinned mode. Main is the source of truth and
    *  answers by pushing a new anchor with mode:'pin'. */
@@ -147,6 +153,7 @@ function nullBridge(): Bridge {
     setAutostart: async () => false,
     setSetupCoachDismissed: async () => false,
     setTrayView: async () => false,
+    setGauge: async () => false,
     close: () => {},
     pin: () => {},
     setPointerOverPanel: () => {},
@@ -409,6 +416,20 @@ export function createBridge(): Bridge {
       }
       try {
         const result = await api.setTrayView(view);
+        return !!result && result.ok === true;
+      } catch {
+        return false;
+      }
+    },
+
+    /** Mirrors setTrayView: any failure is a real instruction to revert. */
+    async setGauge(gauge: Gauge): Promise<boolean> {
+      if (typeof api.setGauge !== 'function') {
+        missing('setGauge');
+        return false;
+      }
+      try {
+        const result = await api.setGauge(gauge);
         return !!result && result.ok === true;
       } catch {
         return false;

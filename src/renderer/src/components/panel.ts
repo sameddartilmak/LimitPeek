@@ -28,7 +28,7 @@
  *            into the pin's own tooltip
  */
 
-import type { LanguageChoice, ProviderSnapshot, ThemeChoice, TrayView } from '../../../shared/contract.js';
+import type { Gauge, LanguageChoice, ProviderSnapshot, ThemeChoice, TrayView } from '../../../shared/contract.js';
 import { defaultPlacement, placePanel, type PanelPlacement } from '../anchor.js';
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { clockTime } from '../format.js';
@@ -88,6 +88,8 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onAutostartChange(enabled: boolean): void;
   /** The user picked Görünüm: tray icon or taskbar strip. Optimistic. */
   onTrayViewChange(view: TrayView): void;
+  /** The user picked Görünüm → Gösterge: bars or rings. Optimistic. */
+  onGaugeChange(gauge: Gauge): void;
   /** The user pressed a card's "Ayrıntılar". */
   onToggleExpand(providerId: string): void;
   /** "Bağla" on the first-run card: the same consent path, drawn in the card. */
@@ -203,6 +205,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onLanguage: (choice) => ctx.onLanguageChange(choice),
     onAutostart: (enabled) => ctx.onAutostartChange(enabled),
     onTrayView: (view) => ctx.onTrayViewChange(view),
+    onGauge: (gauge) => ctx.onGaugeChange(gauge),
     onBack: () => ctx.onSettingsToggle(),
     onTab: (tab) => ctx.onSettingsTab(tab),
   });
