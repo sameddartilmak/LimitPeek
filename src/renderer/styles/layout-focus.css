@@ -8,15 +8,18 @@
  *     ((          ))   %84                 the lead window's figure
  *                      5 saatlik · 58 dk kaldı
  *                      Haftalık %23        the other window, small
+ *                        6 gün 2 sa kaldı
  *                      Antigravity  Pro
  *
  *     (( )) [logo] Codex           5 saatlik  %18
- *               4 sa 2 dk kaldı    Haftalık   %57
+ *                             4 sa 2 dk kaldı
+ *                                Haftalık  %57
+ *                            5 gün 1 sa kaldı
  *
  * The big ring is 132px with 16px strokes, the small one 52px with 7px. A
  * tool with one window draws that ring at the outer size. The stale
  * "itibarıyla" line stays under the lead window; the reason a figure is
- * missing and the second window's countdown are in the details. */
+ * missing is in the details. */
 
 html[data-layout="focus"] .rows:not([data-sheet="true"]) { gap: 0; }
 
@@ -29,6 +32,7 @@ html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) {
     "ring . sl   sr"
     "ring . la   la"
     "ring . ol   op"
+    "ring . or   or"
     "ring . who  who"
     "ring . err  err"
     "ring . hint hint";
@@ -102,20 +106,20 @@ html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .wi
   --a-pct: op;
   --a-label: ol;
   --a-asof: la;
-  --a-reset-show: none;
+  --a-reset: or;
 }
 html[data-layout="focus"] .row[data-hero="true"][data-lead="5h"]:not([data-expanded]) .meter .win--5h,
 html[data-layout="focus"] .row[data-hero="true"][data-lead="7d"]:not([data-expanded]) .meter .win--7d {
   --a-pct: big;
   --a-label: sl;
   --a-asof: la;
-  --a-reset-show: block;
+  --a-reset: sr;
 }
 html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__label { grid-area: var(--a-label); }
 html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__pct { grid-area: var(--a-pct); }
 html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__reset:not([hidden]) {
-  display: var(--a-reset-show);
-  grid-area: sr;
+  display: block;
+  grid-area: var(--a-reset);
 }
 html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__asof { grid-area: var(--a-asof); }
 html[data-layout="focus"] .row[data-hero="true"][data-lead="5h"]:not([data-expanded]) .meter .win--7d .win__asof,
@@ -145,6 +149,13 @@ html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .wi
   text-overflow: ellipsis;
 }
 html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__asof { font-size: var(--fs-meta); color: var(--ink-400); }
+/* The other window's countdown, under its figure, past the glyph. */
+html[data-layout="focus"] .row[data-hero="true"][data-lead="5h"]:not([data-expanded]) .meter .win--7d .win__reset,
+html[data-layout="focus"] .row[data-hero="true"][data-lead="7d"]:not([data-expanded]) .meter .win--5h .win__reset {
+  margin-left: 18px;
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+}
 /* The other window's figure: beside its name, small. */
 html[data-layout="focus"] .row[data-hero="true"]:not([data-expanded]) .meter .win__pct {
   justify-self: start;
@@ -184,8 +195,9 @@ html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) {
   grid-template-columns: 52px 20px minmax(0, 1fr) max-content max-content;
   grid-template-areas:
     "ring logo name l5 p5"
-    "ring .    left l7 p7"
-    "ring .    as   as as";
+    "ring .    left r5 r5"
+    "ring .    as   l7 p7"
+    "ring .    .    r7 r7";
   align-items: center;
   align-content: center;
   column-gap: var(--s-2);
@@ -201,7 +213,9 @@ html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]):has(.row__l
   grid-template-areas:
     "ring logo name name name"
     "ring .    left l5   p5"
-    "ring .    as   l7   p7";
+    "ring .    as   r5   r5"
+    "ring .    .    l7   p7"
+    "ring .    .    r7   r7";
   row-gap: 3px;
 }
 html[data-layout="focus"] .rows:not([data-sheet="true"]) > .row:not([data-hero]):first-child,
@@ -285,10 +299,12 @@ html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win
 html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]):not(:has(.win--5h)) .meter .win--7d {
   --a-label: l5;
   --a-pct: p5;
+  --a-reset: r5;
 }
 html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win--5h ~ .win--7d {
   --a-label: l7;
   --a-pct: p7;
+  --a-reset: r7;
 }
 html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__label {
   grid-area: var(--a-label, l7);
@@ -319,7 +335,8 @@ html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win
   font-weight: 500;
 }
 
-/* The time left of the first window, under the name; its "itibarıyla" too. */
+/* Each window's time left under its own figure; the first one's "itibarıyla"
+ * under the name. */
 html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__reset,
 html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__asof {
   min-width: 0;
@@ -329,9 +346,12 @@ html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win
   overflow: hidden;
   text-overflow: ellipsis;
 }
-html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__reset { grid-area: left; }
+html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__reset {
+  grid-area: var(--a-reset, r7);
+  justify-self: end;
+  font-size: var(--fs-micro);
+}
 html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__asof { grid-area: as; }
-html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win--5h ~ .win--7d .win__reset,
 html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win--5h ~ .win--7d .win__asof,
 html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .meter .win__reason,
 html[data-layout="focus"] .row:not([data-hero]):not([data-expanded]) .row__stalehint { display: none; }

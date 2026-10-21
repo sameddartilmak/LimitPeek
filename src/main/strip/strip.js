@@ -116,12 +116,16 @@
     return box;
   }
 
-  /** "Dolgulu": the weekly figure in a chip, in its state colour. */
+  /** "Dolgulu": the weekly figure in a chip, in its state colour, and its time left under it. */
   function chip(r) {
+    var box = span('tile__wk');
     var el = span('tile__chip', text(r.percentText, 8));
     var state = stateOf(r);
     if (state) el.setAttribute('data-state', state);
-    return el;
+    box.appendChild(el);
+    var left = text(r.left, 16);
+    if (left) box.appendChild(span('tile__sub', left));
+    return box;
   }
 
   function row(r) {

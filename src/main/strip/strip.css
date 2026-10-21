@@ -225,7 +225,16 @@ body[data-style="fill"] .tile {
 }
 body[data-style="fill"] .tile__logo,
 body[data-style="fill"] .tile__lead,
-.tile__chip { position: relative; }
+.tile__wk { position: relative; }
+/* The weekly chip over its time left, flush right. */
+.tile__wk {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+}
 body[data-style="fill"] .tile__big { color: var(--fill-figure); }
 body[data-style="fill"] .tile__sub { color: var(--fill-label); }
 .tile__chip {

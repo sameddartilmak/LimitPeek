@@ -7,14 +7,14 @@
  *                               inside, the five-hour figure in its middle
  *     5 saatlik · 2 sa 13 dk kaldı
  *     Haftalık %41
+ *       3 gün 4 sa kaldı
  *
  * The meter keeps its elements and its meters' aria; its blocks are laid out
  * with `display: contents` straight onto one grid. A tool with one window
  * draws that ring at the outer size and puts its figure in the middle; a
  * window with no figure keeps its words ("bilinmiyor") in the figure's place.
  * The stale "itibarıyla" line stays under the first window's countdown;
- * the reason a figure is missing and the second window's countdown are in
- * the details. */
+ * the reason a figure is missing is in the details. */
 
 html[data-layout="tiles"] .rows {
   display: grid;
@@ -76,7 +76,8 @@ html[data-layout="tiles"] .row:not([data-expanded]) .meter:has(.rail) {
     "ring ring"
     "l5   r5"
     "as   as"
-    "l7   p7";
+    "l7   p7"
+    "r7   r7";
   column-gap: 5px;
   row-gap: 0;
   align-items: baseline;
@@ -130,13 +131,15 @@ html[data-layout="tiles"] .row:not([data-expanded]) .meter:not(:has(.win--5h)) .
 html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d {
   --a-pct: p7;
   --a-label: l7;
+  --a-reset: r7;
 }
+/* The weekly countdown on its own line, under its name past the glyph. */
+html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d .win__reset { margin-left: 15px; }
 html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__label { grid-area: var(--a-label, l7); }
 html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__pct { grid-area: var(--a-pct, p7); }
 html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__reset { grid-area: var(--a-reset, r5); }
 html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__asof { grid-area: var(--a-asof, as); }
-/* Under the second window: its figure only. */
-html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d .win__reset,
+/* Under the second window: its figure and its countdown. */
 html[data-layout="tiles"] .row:not([data-expanded]) .meter .win--5h ~ .win--7d .win__asof,
 html[data-layout="tiles"] .row:not([data-expanded]) .meter .win__reason { display: none; }
 
