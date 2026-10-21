@@ -171,3 +171,40 @@ test.describe('the renderer', () => {
     assert.match(harness.slice(0, harness.indexOf('}')), /--dur-ring: 1ms/, 'data-reduce-motion collapses it too');
   });
 });
+
+test.describe('the rings\' harder states (row.css)', () => {
+  const row = () => fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles', 'row.css'), 'utf8');
+  const rule = (body, selector) => {
+    const at = body.indexOf(`${selector} {`);
+    assert.notEqual(at, -1, `no rule for ${selector}`);
+    return body.slice(at, body.indexOf('}', at) + 1);
+  };
+
+  test('an estimate fades its tail instead of breaking it into teeth', () => {
+    const body = row();
+    const est = rule(body, 'html[data-gauge="ring"] .meter .rail__fill.rail__fill--estimated');
+    assert.match(est, /--ring-fade: conic-gradient\(from -12deg,\s*#000000 calc\(var\(--ring-f\) \* \.64turn \+ 12deg\),\s*rgba\(0, 0, 0, \.2\) calc\(var\(--ring-f\) \* 1turn \+ 12deg\),\s*transparent 0\);/);
+    assert.match(est, /\bmask: var\(--ring-fade\);/);
+    assert.doesNotMatch(body, /repeating-conic-gradient/, 'the dashed "gear teeth" tail is back');
+  });
+
+  test('estimated and stale together keep both cues: the fade intersected with the hatch', () => {
+    const both = rule(row(), 'html[data-gauge="ring"] .row[data-status="stale"] .rail__fill--estimated.rail__fill');
+    assert.match(both, /\bmask: var\(--ring-fade\), var\(--ring-hatch\);/);
+    assert.match(both, /\bmask-composite: intersect;/);
+  });
+
+  test('a window with no figure lights neither ring of its glyph', () => {
+    const none = rule(row(), 'html[data-gauge="ring"] .meter:has(.rail) .win:not(:has(.rail))');
+    assert.match(none, /--glyph-out: var\(--glyph-dim\);\s*--glyph-in: var\(--glyph-dim\);/);
+  });
+
+  test('the loading skeleton is two concentric grooves, at the rings\' sizes', () => {
+    const body = row();
+    const outer = rule(body, 'html[data-gauge="ring"] .row[data-status="loading"] .sk--rail');
+    assert.match(outer, /--ring: 84px;/);
+    assert.match(outer, /mask: radial-gradient\(farthest-side, transparent calc\(100% - 10px\)/);
+    assert.match(rule(body, 'html[data-gauge="ring"] .row[data-status="loading"] .win + .win .sk--rail'), /--ring: 60px;\s*left: 16px;/);
+    assert.match(rule(body, 'html[data-gauge="ring"] .meter .rail--7d'), /--ring: 60px;\s*left: 16px;/, 'the skeleton and the real inner ring disagree');
+  });
+});

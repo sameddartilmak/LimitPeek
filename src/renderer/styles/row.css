@@ -1331,6 +1331,15 @@ html[data-gauge="ring"] .meter:has(.rail) .win--7d {
   --glyph-out: var(--glyph-dim);
   --glyph-in: var(--state, var(--ink-400));
 }
+/* A window with no figure has no ring (meter.ts never builds one for it), so
+ * its glyph must not light a ring that is not there: both rings stay dim and
+ * the words in the figure's place ("bildirilmiyor", "bilinmiyor") say the
+ * rest. Lighting it would point at an empty groove as if it were a reading. */
+html[data-gauge="ring"] .meter:has(.rail) .win:not(:has(.rail)) {
+  --glyph-out: var(--glyph-dim);
+  --glyph-in: var(--glyph-dim);
+}
+html[data-gauge="ring"] .meter:has(.rail) .win:not(:has(.rail)) .win__label { color: var(--ink-400); }
 
 html[data-gauge="ring"] .meter .rail {
   --ring: 84px;
@@ -1437,16 +1446,21 @@ html[data-gauge="ring"] .panel[data-open="true"] .rail--7d .rail__fill {
 /* certainty: estimated. The bar's treatment, bent round: the ink pulls toward
  * the meta grey exactly as the bar's does, the end cap is dropped (no hard
  * terminus to read a number off; `.rail__fill--estimated .rail__tick` above),
- * and the last stretch of the sweep breaks into dashes where the bar frays.
- * The solid body starts just before twelve so the start cap stays whole. */
+ * and the last stretch of the sweep FADES where the bar frays: solid to 64%
+ * of the reading, then thinning to a fifth of its ink at the end. It used to
+ * break into 5° dashes every 9°, which at this size read as gear teeth — a
+ * busier mark for the reading that deserves the quietest one. A fade has no
+ * edge to read a number off either, and it is nothing like the stale hatch,
+ * so the two cues stay apart. The solid body starts just before twelve so the
+ * start cap stays whole. */
 html[data-gauge="ring"] .meter .rail__fill.rail__fill--estimated {
   --ring-ink: color-mix(in oklab, var(--state, var(--calm)), var(--ink-400) 45%);
-  -webkit-mask:
-    conic-gradient(from -12deg, #000000 calc(var(--ring-f) * .64turn + 12deg), transparent 0),
-    repeating-conic-gradient(#000000 0 5deg, transparent 5deg 9deg);
-  mask:
-    conic-gradient(from -12deg, #000000 calc(var(--ring-f) * .64turn + 12deg), transparent 0),
-    repeating-conic-gradient(#000000 0 5deg, transparent 5deg 9deg);
+  --ring-fade: conic-gradient(from -12deg,
+    #000000 calc(var(--ring-f) * .64turn + 12deg),
+    rgba(0, 0, 0, .2) calc(var(--ring-f) * 1turn + 12deg),
+    transparent 0);
+  -webkit-mask: var(--ring-fade);
+  mask: var(--ring-fade);
 }
 
 /* state: stale / error. The bar's dim-and-hatch, as a mask so the hatch lands
@@ -1454,8 +1468,51 @@ html[data-gauge="ring"] .meter .rail__fill.rail__fill--estimated {
  * the bar rule above, caps included (they are the fill's children). */
 html[data-gauge="ring"] .row[data-status="stale"] .rail__fill,
 html[data-gauge="ring"] .row[data-status="error"] .rail__fill {
-  -webkit-mask: repeating-linear-gradient(135deg, rgba(0, 0, 0, .3) 0 2px, #000000 2px 5px);
-  mask: repeating-linear-gradient(135deg, rgba(0, 0, 0, .3) 0 2px, #000000 2px 5px);
+  --ring-hatch: repeating-linear-gradient(135deg, rgba(0, 0, 0, .3) 0 2px, #000000 2px 5px);
+  -webkit-mask: var(--ring-hatch);
+  mask: var(--ring-hatch);
+}
+/* Estimated AND stale: both cues, not whichever rule came last. The hatch is
+ * intersected with the fade, so the tail still thins out (an estimate) and
+ * the whole sweep is still hatched and dimmed (no longer current). */
+html[data-gauge="ring"] .row[data-status="stale"] .rail__fill--estimated.rail__fill {
+  -webkit-mask: var(--ring-fade), var(--ring-hatch);
+  -webkit-mask-composite: source-in;
+  mask: var(--ring-fade), var(--ring-hatch);
+  mask-composite: intersect;
+}
+
+/* state: loading. The skeleton takes the ring's final geometry — two
+ * concentric grooves on the left, a two-line table beside them — so nothing
+ * jumps when the first reading lands, as the bar skeleton does for bars. */
+html[data-gauge="ring"] .row[data-status="loading"] .meter {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  row-gap: 8px;
+  min-height: 84px;
+  padding-left: 100px;
+}
+html[data-gauge="ring"] .row[data-status="loading"] .win__head {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+html[data-gauge="ring"] .row[data-status="loading"] .sk--rail {
+  --ring: 84px;
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  width: var(--ring);
+  height: var(--ring);
+  margin-top: calc(var(--ring) / -2);
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 10px), #000000 calc(100% - 10px + .5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 10px), #000000 calc(100% - 10px + .5px));
+}
+html[data-gauge="ring"] .row[data-status="loading"] .win + .win .sk--rail {
+  --ring: 60px;
+  left: 16px;
 }
 html[data-gauge="ring"] .row[data-status="stale"] .win__label { color: var(--ink-400); }
 /* An error drains the ring exactly as it drains the bar. */
