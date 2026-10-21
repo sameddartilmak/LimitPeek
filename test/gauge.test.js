@@ -158,4 +158,16 @@ test.describe('the renderer', () => {
     // A refusal puts the old gauge back on the document, not only in the radios.
     assert.match(app, /paintGauge\(confirmedGauge\);/);
   });
+
+  test('the ring styles hang off the same attribute, and the sweep respects reduced motion', () => {
+    const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles', 'row.css'), 'utf8');
+    assert.match(css, /html\[data-gauge="ring"\] \.meter \.rail \{/);
+    assert.match(css, /@property --ring-f \{/);
+    assert.match(css, /animation: ring-sweep var\(--dur-ring\)/);
+    const tokens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles', 'tokens.css'), 'utf8');
+    const reduced = tokens.slice(tokens.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+    assert.match(reduced, /--dur-ring: 1ms/);
+    const harness = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'dev', 'harness.css'), 'utf8');
+    assert.match(harness.slice(0, harness.indexOf('}')), /--dur-ring: 1ms/, 'data-reduce-motion collapses it too');
+  });
 });

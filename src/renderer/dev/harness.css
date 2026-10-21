@@ -4,6 +4,7 @@ html[data-reduce-motion="true"] {
   --dur-open: 1ms;
   --dur-close: 1ms;
   --dur-fill: 1ms;
+  --dur-ring: 1ms;
   --stagger: 0ms;
   --dur-spring: 1ms;
   --dur-disclosure: 1ms;

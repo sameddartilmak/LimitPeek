@@ -267,6 +267,9 @@
   --dur-open: 220ms;
   --dur-close: 140ms;
   --dur-fill: 400ms;
+  /* The ring sweep: longer than a bar fill, because an arc travels further
+   * than a bar for the same change, and it is the open gesture too. */
+  --dur-ring: 700ms;
   --stagger: 30ms;
   /* A card's details opening, and every hover/focus colour change. */
   --dur-disclosure: 180ms;
@@ -459,7 +462,7 @@ body { user-select: none; cursor: default; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --dur-open: 1ms; --dur-close: 1ms; --dur-fill: 1ms; --stagger: 0ms; --dur-disclosure: 1ms; --dur-hover: 1ms; --dur-spring: 1ms; }
+  :root { --dur-open: 1ms; --dur-close: 1ms; --dur-fill: 1ms; --dur-ring: 1ms; --stagger: 0ms; --dur-disclosure: 1ms; --dur-hover: 1ms; --dur-spring: 1ms; }
   *, *::before, *::after {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
