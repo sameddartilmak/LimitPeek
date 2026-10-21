@@ -538,7 +538,11 @@ html, body {
   font-feature-settings: "tnum" 1, "lnum" 1;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* clip, not just hidden: a hidden box can still be scrolled by a focus or a
+   * scrollIntoView, and in the fitted window that slid the whole panel up
+   * under its own top edge (a strip-style pick did it). */
   overflow: hidden;
+  overflow: clip;
   /* Turkish: NEVER text-transform: uppercase anywhere. CSS maps i -> I. */
 }
 

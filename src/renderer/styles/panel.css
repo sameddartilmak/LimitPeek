@@ -8,7 +8,9 @@
   position: relative;
   width: 100%;
   height: 100vh;
+  /* Never scrolled, by anything (see html, body in tokens.css). */
   overflow: hidden;
+  overflow: clip;
 }
 
 .anchor {
@@ -62,7 +64,10 @@
   border: 1px solid var(--ink-700);
   border-radius: var(--radius-panel);
   box-shadow: var(--shadow-inset), var(--shadow-panel);
+  /* Clips its corners and is never scrolled: only the list and the settings
+   * pages inside it scroll. */
   overflow: hidden;
+  overflow: clip;
 }
 
 /* THE FITTED WINDOW (Windows 11, `html[data-frame="fitted"]`, 2026-10-21).
@@ -890,7 +895,7 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .foot { border-top
 /* The bar and the tab list stay put; only the selected page scrolls. The view
  * takes the list band's whole budget, so switching tabs never changes the
  * panel's height under the pointer. */
-.panel[data-view="settings"] .panel__band--list { overflow: hidden; }
+.panel[data-view="settings"] .panel__band--list { overflow: hidden; overflow: clip; }
 .settings {
   display: flex;
   flex-direction: column;
