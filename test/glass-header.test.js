@@ -17,6 +17,8 @@ const { FakeElement, installDom, mirrorRenderer, walk } = require('./helpers/fak
  *      the gesture, a refusal puts the old value back and says so, and
  *      Windows' own request (systemReducedTransparency) keeps the glass off
  *      whatever the switch says.
+ *   3. Two small accessibility details from the report: "Yenile" names what
+ *      it is doing while it does it, and the rings keep the meters' values.
  */
 
 let mirror;
@@ -45,7 +47,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function mount(prefs = {}) {
+function mount(prefs = {}, { snapshot = null, requestRefresh = async () => null } = {}) {
   i18n.setLocale('tr', 'tr-TR');
   document.documentElement = new FakeElement('html');
   const glassReplies = [];
@@ -54,7 +56,7 @@ function mount(prefs = {}) {
   const bridge = {
     available: true,
     initialPreferences: () => ({ ...base }),
-    initialSnapshot: () => null,
+    initialSnapshot: () => snapshot,
     onSnapshot: () => () => {},
     onAnchor: () => () => {},
     onPanelVisibility: () => () => {},
@@ -62,7 +64,7 @@ function mount(prefs = {}) {
     panelOpened() {},
     pin() {},
     close() {},
-    requestRefresh: async () => null,
+    requestRefresh,
     setReduceTransparency: (v) => { const d = deferred(); glassReplies.push({ value: v, ...d }); return d.promise; },
   };
   const container = new FakeElement('div');
@@ -173,6 +175,65 @@ test.describe('"Saydamlığı azalt" on the document', () => {
       app.push({ systemReducedTransparency: false });
       await tick();
       assert.equal(html(), undefined);
+    } finally {
+      app.handle.destroy();
+    }
+  });
+});
+
+test.describe('small details', () => {
+  const later = (h) => new Date(Date.now() + h * 3600_000).toISOString();
+  const SNAP = {
+    generatedAt: new Date().toISOString(),
+    providers: [{
+      id: 'claude', displayName: 'Claude Code', accent: '#D97757', enabled: true, connected: true,
+      status: 'ok', planLabel: null,
+      fiveHour: { usedPercentage: 62, certainty: 'known', resetsAt: later(2) },
+      sevenDay: { usedPercentage: 41, certainty: 'known', resetsAt: later(50) },
+      tokens: null, weeklyTokens: null, burnRatePerHour: null, weeklyCost: null, setupAction: null,
+    }],
+  };
+
+  test('"Yenile" says "Taranıyor" / "Yenileniyor" to a screen reader too, and is busy while it is', async () => {
+    let finish = null;
+    const app = mount({}, { requestRefresh: () => new Promise((r) => { finish = r; }) });
+    try {
+      const button = app.find((n) => cls(n).includes('foot__refresh'));
+      await tick();
+      assert.equal(button.getAttribute('aria-label'), i18n.t('panel.scanning'), 'the first scan');
+      assert.equal(button.getAttribute('aria-busy'), 'true');
+      app.handle.applySnapshot(SNAP);
+      await tick();
+      assert.equal(button.getAttribute('aria-label'), i18n.t('panel.refreshLabel'));
+      assert.equal(button.getAttribute('aria-busy'), null);
+      button.click();
+      await tick();
+      assert.equal(button.getAttribute('aria-label'), i18n.t('panel.refreshing'));
+      assert.equal(button.getAttribute('aria-busy'), 'true');
+      finish(SNAP);
+      await tick();
+      assert.equal(button.getAttribute('aria-label'), i18n.t('panel.refreshLabel'));
+      assert.equal(button.getAttribute('aria-busy'), null);
+    } finally {
+      app.handle.destroy();
+    }
+  });
+
+  test('in ring mode every window is still a meter with its value and its sentence', async () => {
+    const app = mount({ gauge: 'ring' }, { snapshot: SNAP });
+    try {
+      app.handle.applySnapshot(SNAP);
+      await tick();
+      assert.equal(document.documentElement.dataset.gauge, 'ring');
+      const meters = walk(app.container).filter((n) => n.getAttribute('role') === 'meter');
+      assert.deepEqual(meters.map((m) => m.getAttribute('aria-valuenow')), ['62', '41']);
+      for (const m of meters) {
+        assert.equal(m.getAttribute('aria-valuemin'), '0');
+        assert.equal(m.getAttribute('aria-valuemax'), '100');
+        // The spoken sentence names the window and carries the same figure.
+        assert.ok(m.getAttribute('aria-valuetext').includes(m.getAttribute('aria-valuenow')), m.getAttribute('aria-valuetext'));
+        assert.match(m.getAttribute('aria-valuetext'), /pencere/);
+      }
     } finally {
       app.handle.destroy();
     }

@@ -810,11 +810,15 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     // Hidden in both empty states: each offers its own one action.
     refreshButton.hidden = !emptyState.hidden;
     refreshButton.disabled = state.refreshing || !state.bridgeAvailable || scanning;
-    setAttr(refreshButton, 'data-busy', state.refreshing || scanning ? 'true' : null);
-    setText(
-      refreshLabel,
-      scanning ? t('panel.scanning') : state.refreshing ? t('panel.refreshing') : t('panel.refresh'),
-    );
+    const busy = state.refreshing || scanning;
+    setAttr(refreshButton, 'data-busy', busy ? 'true' : null);
+    const busyText = scanning ? t('panel.scanning') : state.refreshing ? t('panel.refreshing') : null;
+    setText(refreshLabel, busyText ?? t('panel.refresh'));
+    // The accessible name follows the words on the button. It was the fixed
+    // "Şimdi yenile", which overrode the visible "Yenileniyor", so a screen
+    // reader was offered the action the button was in the middle of doing.
+    setAttr(refreshButton, 'aria-label', busyText ?? t('panel.refreshLabel'));
+    setAttr(refreshButton, 'aria-busy', busy ? 'true' : null);
     setAttr(refreshButton, 'title', !state.bridgeAvailable ? t('panel.refreshOffline') : t('panel.refreshLabel'));
 
     const generatedAt = state.snapshot?.generatedAt ?? null;
