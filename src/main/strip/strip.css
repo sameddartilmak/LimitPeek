@@ -14,21 +14,35 @@ html, body {
   user-select: none;
   cursor: default;
 }
+/* THE PANEL'S NEUTRALS (2026-10-21). The greys were a teal-tinted set from
+ * the graphite palette (#A9B4B1 / #4F5B58 labels, #EDF2F0 / #171D1C figures)
+ * while the panel moved to Apple's neutral greys; side by side, the strip read
+ * as another app's. They are now the panel's family: the grey fills are
+ * tertiarySystemFill's rgba(118, 118, 128), the figures the panel's primary
+ * ink, the labels a step of the same neutral scale chosen to keep 4.5:1 on the
+ * tile at rest AND lit. Measured on a #202020 / #F3F3F3 taskbar:
+ *
+ *                       dark: ground / tile / lit     light: ground / tile / lit
+ *   label   #AEAEB2  7.37 / 6.13 / 5.45    #5F5F64  5.72 / 5.00 / 4.55
+ *   figure  #F5F5F7 14.96 / 12.46 / 11.06  #1D1D1F 15.17 / 13.25 / 12.06
+ *
+ * (graphite: label 7.64 / 6.46 / 5.25 dark, 6.37 / 5.77 / 5.21 light.) The
+ * bar and ring fills are still the tray donut's ramp, sent by main. */
 body {
   font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   /* Dark ground; [data-ground="light"] below. */
-  --tile: rgba(255, 255, 255, 0.06);
-  --tile-hover: rgba(255, 255, 255, 0.11);
-  --label: #A9B4B1;
-  --track: rgba(255, 255, 255, 0.14);
-  --figure: #EDF2F0;
+  --tile: rgba(118, 118, 128, 0.16);
+  --tile-hover: rgba(118, 118, 128, 0.26);
+  --label: #AEAEB2;
+  --track: rgba(120, 120, 128, 0.36);
+  --figure: #F5F5F7;
 }
 body[data-ground="light"] {
-  --tile: rgba(0, 0, 0, 0.045);
-  --tile-hover: rgba(0, 0, 0, 0.09);
-  --label: #4F5B58;
-  --track: rgba(0, 0, 0, 0.14);
-  --figure: #171D1C;
+  --tile: rgba(118, 118, 128, 0.12);
+  --tile-hover: rgba(118, 118, 128, 0.2);
+  --label: #5F5F64;
+  --track: rgba(120, 120, 128, 0.28);
+  --figure: #1D1D1F;
 }
 .strip {
   display: flex;
@@ -42,10 +56,12 @@ body[data-ground="light"] {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   margin: 0 2px;
-  padding: 0 7px 0 6px;
-  border-radius: 6px;
+  /* The panel's control corner (8px) and an even 8px inset, as a card's
+   * content sits in its card. */
+  padding: 0 8px;
+  border-radius: 8px;
   background: var(--tile);
 }
 .tile:hover, .tile--hover { background: var(--tile-hover); }
@@ -85,7 +101,9 @@ body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
   min-width: 18px;
   font-size: 10px;
   line-height: 12px;
-  font-weight: 600;
+  /* The panel's hierarchy: window names medium in the secondary grey, the
+   * figure semibold in the primary ink, the time left regular. */
+  font-weight: 500;
   color: var(--label);
   white-space: nowrap;
 }
@@ -107,7 +125,7 @@ body[data-layer="display"] .tile--hover { background: var(--tile-hover); }
   white-space: nowrap;
 }
 .tile__pct { width: 26px; text-align: right; color: var(--figure); }
-.tile__left { width: 50px; color: var(--label); }
+.tile__left { width: 50px; font-weight: 400; color: var(--label); }
 .tile__fill {
   height: 100%;
   border-radius: 2px;

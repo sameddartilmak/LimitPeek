@@ -922,6 +922,49 @@ test.describe('the strip page', () => {
     assert.deepEqual([...new Set([...js.matchAll(/api\.([a-zA-Z]+)\(/g)].map((m) => m[1]))].sort(), ['hover', 'menu', 'onData', 'open']);
   });
 
+  test('the panel\'s neutral greys, and 4.5:1 for every word on the tile at rest and lit, on both taskbars', () => {
+    const css = read('src/main/strip/strip.css').replace(/\r/g, '');
+    const block = (sel) => {
+      // At the start of a line: `html, body {` is not the palette.
+      const at = css.indexOf(`\n${sel} {`);
+      assert.notEqual(at, -1, sel);
+      return css.slice(at, css.indexOf('}', at));
+    };
+    const varOf = (body, name) => {
+      const m = new RegExp(`--${name}: ([^;]+);`).exec(body);
+      assert.ok(m, name);
+      return m[1].trim();
+    };
+    const lum = (hex) => {
+      const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+        .map((x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    };
+    const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+    const over = (rgba, ground) => {
+      const [r, g, b, a] = rgba.match(/[\d.]+/g).map(Number);
+      return '#' + [r, g, b].map((v, i) => Math.round(v * a + parseInt(ground.slice(1 + 2 * i, 3 + 2 * i), 16) * (1 - a))
+        .toString(16).padStart(2, '0')).join('');
+    };
+    for (const [sel, ground] of [['body', '#202020'], ['body[data-ground="light"]', '#F3F3F3']]) {
+      const b = block(sel);
+      // No teal cast: every grey is a neutral (R = G, B within the Apple tint).
+      for (const name of ['label', 'figure']) {
+        const hex = varOf(b, name);
+        assert.match(hex, /^#[0-9A-F]{6}$/);
+        assert.equal(hex.slice(1, 3), hex.slice(3, 5), `${sel} --${name} ${hex} is tinted`);
+      }
+      assert.match(varOf(b, 'tile'), /^rgba\(118, 118, 128, /);
+      for (const ground2 of [ground, over(varOf(b, 'tile'), ground), over(varOf(b, 'tile-hover'), ground)]) {
+        for (const name of ['label', 'figure']) {
+          const r = ratio(varOf(b, name), ground2);
+          assert.ok(r >= 4.5, `${sel} --${name} on ${ground2}: ${r.toFixed(2)}`);
+        }
+      }
+    }
+    assert.doesNotMatch(css, /:\s*(#A9B4B1|#4F5B58|#EDF2F0|#171D1C)/, 'a graphite grey is back');
+  });
+
   test('every logo the page names exists, under the renderer\'s own file names', () => {
     const css = read('src/main/strip/strip.css');
     const urls = [...css.matchAll(/url\(([^)]+)\)/g)].map((m) => m[1]);
