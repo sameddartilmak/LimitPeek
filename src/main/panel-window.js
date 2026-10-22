@@ -49,10 +49,11 @@ const { handleOf } = require('./win32');
  * and only when the content does.
  */
 /**
- * The window's size where the work area allows it (UI plan 2026-09-29: a 400px
- * panel inside a 480x720 frame). A smaller work area gets a smaller window —
- * `fitTo` — and the renderer sizes the panel as `min(400px, 100vw - 32px)` and
- * its list from the window height it is handed, so nothing is cut off.
+ * The window's size where the work area allows it (UI plan 2026-09-29: the
+ * panel inside a 480x720 frame; the panel is 320 wide since 2026-10-22). A
+ * smaller work area gets a smaller window — `fitTo` — and the renderer sizes
+ * the panel as `min(320px, 100vw - 32px)` and its list from the window height
+ * it is handed, so nothing is cut off.
  */
 const PANEL_WIDTH = 480;
 const PANEL_HEIGHT = 720;
@@ -60,12 +61,14 @@ const EDGE_MARGIN = 8;
 /** Size of the stand-in rect used when the real tray rect is unavailable. */
 const SYNTHETIC_TRAY_SIZE = 16;
 /**
- * The fitted window (see the header). 400 wide, the canvas panel's width; at
- * most 680 tall, the tallest panel the 720 canvas held; 12 from the taskbar
- * and the work-area edges, where Windows 11 puts its own flyouts. The start
+ * The fitted window (see the header). 320 wide, the canvas panel's width
+ * (`--panel-w` in tokens.css; 400 until the minimal redesign, 2026-10-22, and
+ * one width for every view, so it never changes under the pointer); at most
+ * 680 tall, the tallest panel the 720 canvas held; 12 from the taskbar and
+ * the work-area edges, where Windows 11 puts its own flyouts. The start
  * height only lasts until the renderer's first report.
  */
-const FITTED_WIDTH = 400;
+const FITTED_WIDTH = 320;
 const FITTED_MAX_HEIGHT = 680;
 const FITTED_GAP = 12;
 const FITTED_START_HEIGHT = 420;
