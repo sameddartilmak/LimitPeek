@@ -7,7 +7,7 @@ const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeLanguage, DEFAULT_LANGUAGE } = require('../core/language');
 const { migratePlanLabels } = require('../core/plan-labels');
 const { sanitizeTrayView, DEFAULT_TRAY_VIEW } = require('../core/tray-view');
-const { sanitizeReduceTransparency, DEFAULT_REDUCE_TRANSPARENCY } = require('../core/reduce-transparency');
+const { transparencyFromSettings, DEFAULT_TRANSPARENCY } = require('../core/transparency');
 const { sanitizeLayout, DEFAULT_LAYOUT } = require('../core/layout');
 const { sanitizeStripStyle, DEFAULT_STRIP_STYLE } = require('../core/strip-style');
 
@@ -82,12 +82,13 @@ const DEFAULTS = Object.freeze({
   // rings). A file that still carries one keeps it on disk until the next
   // save; `load` below simply never reads it.
   /**
-   * Settings → Genel → Görünüm → "Saydamlığı azalt": the panel's glass
-   * (header, settings tab band) drawn opaque. Off by default; only a real
-   * `true` is on, see `src/core/reduce-transparency.js`. Windows' own reduced
-   * transparency and high contrast do the same without touching this.
+   * Settings → Genel → Görünüm → "Saydamlık": 0 (the opaque panel) to 100
+   * (clear glass), 45 by default; see `src/core/transparency.js`. Replaces
+   * the boolean `reduceTransparency` of 0.6.41 and earlier (`true` reads as
+   * 0). Windows' own reduced transparency and high contrast make the panel
+   * opaque without touching this.
    */
-  reduceTransparency: DEFAULT_REDUCE_TRANSPARENCY,
+  transparency: DEFAULT_TRANSPARENCY,
   /**
    * 'sade' | 'halka': how the panel lays out the tools (Settings → Genel →
    * Görünüm → Düzen). 'sade' is one short line per tool, 'halka' a grid of
@@ -154,9 +155,11 @@ function load(userDataDir) {
     // Absent (every file written before the strip existed), a typo or a
     // future value: the tray icon, the look the user already has.
     trayView: sanitizeTrayView(raw.trayView),
-    // Absent (every file written before the glass existed) or not a real
-    // boolean: the glass, the look the trial ships with.
-    reduceTransparency: sanitizeReduceTransparency(raw.reduceTransparency),
+    // A number is rounded and clamped to 0–100; absent, the old switch's
+    // `reduceTransparency: true` is 0 (the opaque panel it asked for), and
+    // anything else is the default glass. The old key is not carried on, so
+    // the next save drops it.
+    transparency: transparencyFromSettings(raw),
     // An old layout ('list', 'focus', 'tiles') reads as its successor, so an
     // update keeps the user's list or grid; absent, a typo or a future value:
     // the short list, the default.

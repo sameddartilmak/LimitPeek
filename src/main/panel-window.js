@@ -4,7 +4,8 @@ const path = require('node:path');
 const { BrowserWindow, screen, app } = require('electron');
 const { IPC } = require('../shared/contract');
 const log = require('../core/log');
-const { PANEL_BASE, PANEL_EDGE } = require('../core/panel-material');
+const { PANEL_BASE, PANEL_EDGE, panelAccent } = require('../core/panel-material');
+const { sanitizeTransparency } = require('../core/transparency');
 const { handleOf } = require('./win32');
 
 /**
@@ -25,22 +26,32 @@ const { handleOf } = require('./win32');
  *             (setPointerOverPanel). Windows 10, and every earlier version.
  *   'fitted'  the window IS the panel: opaque to Windows, so DWM rounds its
  *             corners, draws its shadow and — when the material is 'acrylic'
- *             — the real flyout acrylic behind it, with the page transparent
- *             on top. Windows 11 (src/core/panel-material.js).
+ *             — Windows' glass behind it, with the page transparent on top.
+ *             Windows 11 (src/core/panel-material.js).
  *
- * Why fitted and not acrylic behind the canvas, measured in Electron 44.2 on
+ * Why fitted and not glass behind the canvas, measured in Electron 44.2 on
  * Windows 11 26200 (scratch spike, 2026-10-21): `backgroundMaterial: 'acrylic'`
  * on a TRANSPARENT window does draw acrylic, but across the whole window rect
  * — margins included — with square corners and no shadow, because Electron
  * turns DWM's rounding off for transparent windows; asking DWM for the
  * rounding by hand on that window turned the backdrop flat grey instead. On
- * an opaque frameless window the same option gives acrylic, Windows' 8px
- * corners and its shadow, and it stays acrylic while the window is NOT active
- * — which the tray open needs, because it never takes focus. That window also
- * had Windows' invisible resize borders, 8 physical px left, right and below,
- * that answered hit tests for the panel; so the thick frame is off and the
- * corners and the shadow are asked of DWM directly (win32 setFlyoutShape).
- * Measured after: WindowFromPoint 3px outside any edge is the window behind.
+ * an opaque frameless window Windows gives its 8px corners and its shadow.
+ * That window also had Windows' invisible resize borders, 8 physical px left,
+ * right and below, that answered hit tests for the panel; so the thick frame
+ * is off and the corners and the shadow are asked of DWM directly (win32
+ * setFlyoutShape). Measured after: WindowFromPoint 3px outside any edge is the
+ * window behind.
+ *
+ * THE GLASS IS THE ACCENT POLICY, NOT `backgroundMaterial` (2026-10-22). Up to
+ * 0.6.41 the fitted window took Electron's `backgroundMaterial: 'acrylic'`,
+ * Windows' system backdrop. It has one strength, and it changes with the
+ * window's activation (the backdrop falls back while the window is inactive):
+ * the panel turned another colour every time the user clicked somewhere else
+ * ("panel dışı bir yere tıklayınca renk değişiyor").
+ * The window is now born with `backgroundMaterial: 'none'` and gets its glass
+ * from SetWindowCompositionAttribute (win32 setAccent): frosted or clear, its
+ * tint set by the "Saydamlık" slider (panel-material.js `panelAccent`), and
+ * measured the same inactive as active. The page is transparent over it.
  *
  * A fitted window grows and shrinks with the panel: the renderer reports the
  * panel's height (IPC.PANEL_SIZE, `setContentHeight`) and the window follows,
@@ -204,6 +215,15 @@ const OFFSCREEN = { x: -32000, y: -32000 };
  * was 300 ms.
  */
 
+/**
+ * A look's transparency as a level. Absent (a caller that says nothing, as
+ * every test and the canvas do) is 0, the opaque base: the look that is
+ * right over any window.
+ */
+function levelOf(value) {
+  return typeof value === 'number' ? sanitizeTransparency(value) : 0;
+}
+
 class PanelWindow {
   constructor(options = {}) {
     this.width = options.width || PANEL_WIDTH;
@@ -214,12 +234,19 @@ class PanelWindow {
     /** 'canvas' unless the caller measured the OS for 'fitted' (see the header). */
     this.frame = options.frame === 'fitted' ? 'fitted' : 'canvas';
     const look = options.look || {};
-    /** What the caller asked for; `_material` is what is actually live. */
-    this._wantAcrylic = look.acrylic === true;
+    /**
+     * What the caller asked for, 0 (opaque) to 100 (clear glass); `_material`
+     * is what is actually live.
+     */
+    this._transparency = levelOf(look.transparency);
     this._dark = look.dark !== false;
     this._material = 'none';
-    /** Set when Electron refused the acrylic once; the panel stays opaque after. */
-    this._acrylicBroken = false;
+    /**
+     * Set when Windows refused the glass once (or there is no way to ask:
+     * koffi unavailable); the panel stays opaque after. Asking again on every
+     * slider step would log a warning per step for a window that cannot.
+     */
+    this._glassBroken = false;
     /** win32.loadDwm, injected so a test never loads koffi. */
     this._dwm = typeof options.dwm === 'function' ? options.dwm : null;
     /** The panel's own height, as the renderer last reported it (fitted only). */
@@ -289,7 +316,9 @@ class PanelWindow {
     if (this.win) return this.win;
     const entry = this.entry || resolveRendererEntry();
     const fitted = this.frame === 'fitted';
-    const acrylic = fitted && this._wantAcrylic;
+    // Born transparent to the page only if the glass is wanted; _applyLook
+    // below puts the base back if Windows will not draw it.
+    const glass = fitted && this._transparency > 0;
     const size = fitted
       ? { width: FITTED_WIDTH, height: this._fitHeight }
       : { width: this.width, height: this.height };
@@ -300,7 +329,7 @@ class PanelWindow {
       show: false,
       frame: false,
       // Fitted: opaque to Windows, so DWM rounds, shadows and backdrops it;
-      // the page stays transparent over the acrylic (header comment).
+      // the page stays transparent over the glass (header comment).
       transparent: !fitted,
       resizable: false,
       movable: false,
@@ -312,11 +341,13 @@ class PanelWindow {
       hasShadow: fitted,
       alwaysOnTop: true,
       acceptFirstMouse: true,
-      backgroundColor: fitted && !acrylic ? this._base() : '#00000000',
+      backgroundColor: fitted && !glass ? this._base() : '#00000000',
       // No thick frame: with one, Windows adds invisible resize borders that
       // take clicks beside the panel (win32.js, setFlyoutShape gives the
-      // corners and the shadow back).
-      ...(fitted ? { backgroundMaterial: acrylic ? 'acrylic' : 'none', thickFrame: false } : {}),
+      // corners and the shadow back). No system backdrop: the glass is the
+      // accent policy, which keeps its look when the window is inactive
+      // (header comment).
+      ...(fitted ? { backgroundMaterial: 'none', thickFrame: false } : {}),
       title: 'LimitPeek',
       icon: path.join(__dirname, '..', '..', 'assets', 'app-icon.png'),
       webPreferences: {
@@ -342,8 +373,7 @@ class PanelWindow {
     this.win.setAlwaysOnTop(true, 'pop-up-menu');
     this.win.setVisibleOnAllWorkspaces(true);
     this.win.setMenu(null);
-    this._material = acrylic ? 'acrylic' : 'none';
-    if (fitted) this._applyDwm();
+    if (fitted) this._applyLook();
 
     // The canvas is larger than the panel and transparent around it, and a
     // transparent window still takes every click on its rectangle. So it
@@ -518,46 +548,80 @@ class PanelWindow {
   }
 
   /**
-   * The window's material, live: real acrylic behind a fitted panel, or the
-   * opaque base. `acrylic` is the caller's verdict (src/core/panel-material.js:
-   * the OS can, and nobody asked for less transparency); `dark` is the panel's
-   * resolved theme, which tints both the acrylic and the base. Safe to call
-   * again with the same look — index.js does after every nativeTheme change,
-   * because Electron rewrites the dark-mode attribute then.
+   * The window's material, live: Windows' glass behind a fitted panel, or the
+   * opaque base. `transparency` is the caller's verdict, 0 to 100
+   * (src/core/panel-material.js effectiveTransparency: the slider, unless
+   * Windows asks for less); `dark` is the panel's resolved theme, which tints
+   * both the glass and the base. Safe to call again with the same look —
+   * index.js does after every nativeTheme change, because Electron rewrites
+   * the dark-mode attribute then — and as often as the slider moves.
    *
    * A canvas window is always 'none': its backdrop would fill the margins.
    *
-   * @param {{acrylic?: boolean, dark?: boolean}} look
+   * @param {{transparency?: number, dark?: boolean}} look
    * @returns {'acrylic'|'none'} the material now live
    */
   setLook(look = {}) {
-    this._wantAcrylic = look.acrylic === true;
+    this._transparency = levelOf(look.transparency);
     this._dark = look.dark !== false;
     if (this.frame !== 'fitted' || !this.win || this.win.isDestroyed()) return this.material();
-    const next = this._wantAcrylic && !this._acrylicBroken ? 'acrylic' : 'none';
-    if (next !== this._material) {
-      try {
-        this.win.setBackgroundMaterial(next);
-        this._material = next;
-      } catch (err) {
-        // Not expected on a Windows that passed the build check. Once refused,
-        // never asked again: the opaque base is the look that cannot fail.
-        log.warn(`panel material ${next} refused: code=${(err && err.code) || 'UNKNOWN'}`);
-        this._acrylicBroken = true;
-        this._material = 'none';
-        try { this.win.setBackgroundMaterial('none'); } catch { /* the base colour below covers it */ }
-      }
-      log.trace('panel.material', { material: this._material });
-    }
-    // Transparent over the acrylic; the base itself when there is none, so a
-    // frame that paints before the page (a resize, a revived renderer) shows
-    // the panel's colour and never black or white.
-    this.win.setBackgroundColor(this._material === 'acrylic' ? '#00000000' : this._base());
-    this._applyDwm();
+    this._applyLook();
     return this._material;
   }
 
-  /** 'acrylic' while the real backdrop is live behind the panel, else 'none'. */
+  /**
+   * The look onto the window: the accent (src/core/panel-material.js
+   * panelAccent) through win32 setAccent, the frame attributes, and the
+   * window's own background — transparent over the glass, the base itself
+   * when there is none, so a frame that paints before the page (a resize, a
+   * revived renderer) shows the panel's colour and never black or white.
+   *
+   * The accent is asserted on every call, an unchanged one too: it is one
+   * cheap call, and a window attribute something else rewrote (as Electron
+   * rewrites the dark mode) is put back by the next push instead of trusted.
+   *
+   * Any refusal — setAccent answering false or throwing, no DWM helper at all
+   * — costs the glass and nothing else: the opaque base, once, with a warning,
+   * and the glass is not asked for again in this process.
+   */
+  _applyLook() {
+    const win = this.win;
+    const accent = panelAccent(this._glassBroken ? 0 : this._transparency, this._dark);
+    let material = accent.state === 0 ? 'none' : 'acrylic';
+    // The window's own background first, then the accent over it: the order
+    // the spike measured (a transparent window, then the policy).
+    win.setBackgroundColor(material === 'acrylic' ? '#00000000' : this._base());
+    if (!this._setAccent(accent) && material === 'acrylic') {
+      log.warn('panel glass refused; the panel stays opaque');
+      this._glassBroken = true;
+      material = 'none';
+      // Take back whatever half of it Windows may have applied, and put the
+      // base under the page.
+      this._setAccent(panelAccent(0, this._dark));
+      win.setBackgroundColor(this._base());
+    }
+    if (material !== this._material) {
+      this._material = material;
+      log.trace('panel.material', { material, transparency: this._transparency });
+    }
+    this._applyDwm();
+  }
+
+  /** win32 setAccent on our window. False when it cannot be had or was refused. */
+  _setAccent(accent) {
+    const dwm = this._dwm ? this._dwm() : null;
+    if (!dwm || typeof dwm.setAccent !== 'function' || !this.win || this.win.isDestroyed()) return false;
+    const hwnd = handleOf(this.win);
+    if (!hwnd) return false;
+    try {
+      return dwm.setAccent(hwnd, accent) === true;
+    } catch (err) {
+      log.warn(`panel accent failed: code=${(err && err.code) || 'UNKNOWN'}`);
+      return false;
+    }
+  }
+
+  /** 'acrylic' while Windows' glass is live behind the panel, else 'none'. */
   material() {
     if (this.frame !== 'fitted' || !this.win || this.win.isDestroyed()) return 'none';
     return this._material;
@@ -568,10 +632,10 @@ class PanelWindow {
   }
 
   /**
-   * Windows' half of the look (win32.loadDwm): the rounded corners and the
-   * shadow, light or dark acrylic to match the PANEL's theme, and a neutral
+   * Windows' half of the frame (win32.loadDwm): the rounded corners and the
+   * shadow, a light or dark frame to match the PANEL's theme, and a neutral
    * hairline instead of the accent colour. Best effort; without it the panel
-   * is square and shadowless, and still acrylic.
+   * is square and shadowless (and opaque: the glass needs the same helper).
    */
   _applyDwm() {
     const dwm = this._dwm ? this._dwm() : null;

@@ -1294,12 +1294,14 @@ export const IPC = {
    */
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   /**
-   * renderer -> main invoke(reduce: boolean). Persists "Saydamlığı azalt",
-   * the panel's glass drawn opaque, then pushes PREFERENCES. Panel only:
-   * nothing is applied in main. Anything but a real boolean is refused.
+   * renderer -> main invoke(level: number). Persists the "Saydamlık" slider,
+   * 0 (opaque) to 100 (clear glass), then pushes PREFERENCES; the push
+   * re-applies the window's glass, so the panel follows the slider while it
+   * is dragged (the renderer throttles the steps). Anything but an integer
+   * from 0 to 100 is refused.
    * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
    */
-  SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
+  SET_TRANSPARENCY: 'prefs:set-transparency',
   /**
    * renderer -> main send(height: number). The panel's own height in CSS px,
    * whenever it changes. A 'fitted' window (`Preferences.frame`) IS the panel,
@@ -1367,9 +1369,10 @@ export type LanguageChoice = 'tr' | 'en' | 'zh' | 'system';
 export type TrayView = 'tray' | 'strip';
 
 /**
- * What is behind the panel (src/core/panel-material.js). 'acrylic': the real
- * Windows 11 acrylic, live behind a transparent page, so the panel draws a
- * translucent base and translucent cards over it. 'none': nothing; the panel
+ * What is behind the panel (src/core/panel-material.js). 'acrylic': Windows'
+ * own glass (the accent backdrop, frosted or clear as the "Saydamlık" slider
+ * says, tinted by main), live behind a transparent page, so the panel draws a
+ * transparent base and translucent cards over it. 'none': nothing; the panel
  * draws its opaque base.
  */
 export type PanelMaterial = 'acrylic' | 'none';
@@ -1462,25 +1465,27 @@ export interface Preferences {
    */
   stripNoRoom: boolean;
   /**
-   * Settings → Genel → Görünüm → "Saydamlığı azalt": the panel's glass (the
-   * header, the settings tab band) drawn opaque. Only a real `true` is on.
-   * Read in frame one, like the theme.
+   * Settings → Genel → Görünüm → "Saydamlık": an integer from 0 (the opaque
+   * panel, and the in-app glass of the header and the settings tab band drawn
+   * opaque too) to 100 (clear glass). Anything that is not one reaches the
+   * renderer as the default, 45 (src/core/transparency.js). Read in frame
+   * one, like the theme.
    */
-  reduceTransparency: boolean;
+  transparency: number;
   /**
    * Windows itself asks for less transparency: "Saydamlık efektleri" is off,
    * or high contrast is on (nativeTheme.prefersReducedTransparency /
    * inForcedColorsMode, re-read on nativeTheme 'updated'). The glass goes
-   * opaque whatever `reduceTransparency` says, and the settings screen says
-   * why. Anything that is not `true` reaches the renderer as `false`.
+   * opaque whatever `transparency` says, the slider is disabled, and the
+   * settings screen says why. Anything that is not `true` reaches the renderer as `false`.
    */
   systemReducedTransparency: boolean;
   /**
    * What is behind the panel RIGHT NOW. Main decides it — the OS build, the
-   * window, "Saydamlığı azalt" and Windows' own requests — and pushes it on
-   * every change; the renderer paints `html[data-material]` from it in frame
-   * one, like the theme. Anything that is not 'acrylic' is 'none', the opaque
-   * look that is right over any window.
+   * window, the "Saydamlık" level, Windows' own requests and whether Windows
+   * took the glass — and pushes it on every change; the renderer paints
+   * `html[data-material]` from it in frame one, like the theme. Anything that
+   * is not 'acrylic' is 'none', the opaque look that is right over any window.
    */
   material: PanelMaterial;
   /**
@@ -1614,8 +1619,8 @@ export interface UsageNotchApi {
   setSetupCoachDismissed(dismissed: boolean): Promise<{ ok: boolean }>;
   /** Persist where the usage is shown outside the panel. See IPC.SET_TRAY_VIEW. */
   setTrayView(view: TrayView): Promise<{ ok: boolean }>;
-  /** Persist "Saydamlığı azalt". See IPC.SET_REDUCE_TRANSPARENCY. */
-  setReduceTransparency(reduce: boolean): Promise<{ ok: boolean }>;
+  /** Persist the "Saydamlık" level. See IPC.SET_TRANSPARENCY. */
+  setTransparency(level: number): Promise<{ ok: boolean }>;
   /** Persist the panel's layout. See IPC.SET_LAYOUT. */
   setLayout(layout: Layout): Promise<{ ok: boolean }>;
   /** Persist the taskbar strip's tile style. See IPC.SET_STRIP_STYLE. */

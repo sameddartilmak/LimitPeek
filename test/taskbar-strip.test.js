@@ -834,8 +834,9 @@ test.describe('when it cannot be shown', () => {
     assert.equal(code.includes('GWLP_HWNDPARENT'), false);
     assert.equal((code.match(/HWND_TOPMOST, 0, 0, 0, 0, RAISE_FLAGS/g) || []).length, 2, 'attach and raise, nowhere else');
     assert.match(code, /SetWindowPos\(hwnd, 0, Math\.round\(x\),[\s\S]{0,90}?MOVE_FLAGS\)/);
-    // dwmapi.dll: the panel window's two attributes (loadDwm), bound apart from the strip's.
-    assert.deepEqual([...code.matchAll(/koffi\.load\('([^']+)'\)/g)].map((m) => m[1]), ['user32.dll', 'gdi32.dll', 'dwmapi.dll']);
+    // dwmapi.dll and user32.dll again: the panel window's attributes and its
+    // glass (loadDwm), bound apart from the strip's.
+    assert.deepEqual([...code.matchAll(/koffi\.load\('([^']+)'\)/g)].map((m) => m[1]), ['user32.dll', 'gdi32.dll', 'dwmapi.dll', 'user32.dll']);
   });
 
   test('handleOf reads the HWND buffer without koffi, and a bad window is 0', () => {

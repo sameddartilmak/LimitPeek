@@ -3,7 +3,7 @@ const { isLanguage, resolveLanguage } = require('../core/language');
 const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeAutostart, DEFAULT_AUTOSTART } = require('./autostart-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
-const { sanitizeReduceTransparency } = require('../core/reduce-transparency');
+const { sanitizeTransparency } = require('../core/transparency');
 const { sanitizeLayout } = require('../core/layout');
 const { sanitizeStripStyle } = require('../core/strip-style');
 
@@ -202,8 +202,9 @@ function createPreferences({
       stripAvailable: stripAvailable() !== false,
       // Only a real `true`: the strip is wanted but the taskbar has no room.
       stripNoRoom: stripNoRoom() === true,
-      // Görünüm → "Saydamlığı azalt", re-sanitised: only a real `true` is on.
-      reduceTransparency: sanitizeReduceTransparency(settings && settings.reduceTransparency),
+      // Görünüm → "Saydamlık", re-sanitised: always an integer from 0 to 100,
+      // the default for anything that is not a number.
+      transparency: sanitizeTransparency(settings && settings.transparency),
       // Windows asks for it (reduced transparency, high contrast). Only a real
       // `true`, so a nativeTheme without the property means "not asked".
       systemReducedTransparency: systemReducedTransparency() === true,

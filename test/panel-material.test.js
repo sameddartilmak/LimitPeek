@@ -24,22 +24,37 @@ const WORK = { ...DISPLAY.workArea };
 const TRAY = { x: 1800, y: 1032, width: 24, height: 48 };
 
 /**
- * The panel's window MATERIAL (concept "A · Gerçek Windows camı"): a fitted
- * window that is the panel itself, with the real Windows 11 acrylic behind it,
- * or the opaque base whenever acrylic is not available or not wanted.
+ * The panel's window MATERIAL (concept "A · Gerçek Windows camı"; the
+ * "Saydamlık" slider): a fitted window that is the panel itself, with
+ * Windows' accent glass behind it — frosted or clear, as see-through as the
+ * level says — or the opaque base whenever the glass is not wanted or not
+ * available.
  */
 
-function fitted(options = {}) {
+/**
+ * A fitted panel over a recorded DWM helper. `accents` is every accent asked
+ * for; `refuse` makes setAccent answer false, `throws` makes it throw.
+ */
+function fitted(options = {}, { refuse = false, throws = false } = {}) {
   const dwmCalls = [];
+  const accents = [];
   const dwm = {
     setFlyoutShape: (h) => dwmCalls.push(['shape', h]),
     setDarkMode: (h, d) => dwmCalls.push(['dark', h, d]),
     setBorderColour: (h, c) => dwmCalls.push(['edge', h, c]),
+    setAccent: (h, a) => {
+      accents.push({ h, ...a });
+      if (throws) throw Object.assign(new Error('x'), { code: 'EACCENT' });
+      return !refuse;
+    },
   };
   const panel = new PanelWindow({ entry: __filename, frame: 'fitted', dwm: () => dwm, ...options });
   panel.create();
-  return { panel, dwmCalls };
+  return { panel, dwmCalls, accents, dwm };
 }
+
+const FROSTED = material.ACCENT_FROSTED;
+const CLEAR = material.ACCENT_CLEAR;
 
 test.describe('which frame and which material (src/core/panel-material.js)', () => {
   test('Windows 11 gets the fitted frame; Windows 10 and anything else keeps the canvas', () => {
@@ -52,19 +67,14 @@ test.describe('which frame and which material (src/core/panel-material.js)', () 
     assert.equal(material.panelFrameFor('linux', '10.0.26200'), 'canvas');
   });
 
-  test('acrylic needs 22H2 (22621), the build Electron itself checks', () => {
-    assert.equal(material.acrylicAvailable('win32', '10.0.22621'), true);
-    assert.equal(material.acrylicAvailable('win32', '10.0.22000'), false, '21H2: rounded, but no backdrop');
-    assert.equal(material.acrylicAvailable('win32', '10.0.19045'), false);
-  });
-
-  test('every request for less transparency wins, and only a fitted window is ever acrylic', () => {
-    const want = (o) => material.wantsAcrylic({ frame: 'fitted', available: true, ...o });
-    assert.equal(want({}), true);
-    assert.equal(want({ reduceTransparency: true }), false, 'Saydamlığı azalt');
-    assert.equal(want({ systemReduced: true }), false, 'Windows: transparency off, or high contrast');
-    assert.equal(want({ available: false }), false);
-    assert.equal(want({ frame: 'canvas' }), false);
+  test('the slider is the level, unless Windows asks for less; only a fitted window has glass at all', () => {
+    const level = (o) => material.effectiveTransparency({ frame: 'fitted', transparency: 45, ...o });
+    assert.equal(level({}), 45);
+    assert.equal(level({ transparency: 0 }), 0, '"Saydamlık" at Düz');
+    assert.equal(level({ transparency: 100 }), 100);
+    assert.equal(level({ transparency: 'x' }), 45, 'an odd value is the default');
+    assert.equal(level({ systemReduced: true }), 0, 'Windows: transparency off, or high contrast');
+    assert.equal(level({ frame: 'canvas' }), 0);
   });
 
   test('the panel theme resolves like the renderer: system follows Windows app mode', () => {
@@ -85,27 +95,96 @@ test.describe('which frame and which material (src/core/panel-material.js)', () 
   });
 
   test('the look is rebuilt from the settings and Windows on every call, re-sanitised', () => {
-    let settings = { theme: 'system', reduceTransparency: false };
+    let settings = { theme: 'system', transparency: 45 };
     let reduced = false;
     let dark = true;
     const look = material.createPanelLook({
-      frame: 'fitted', available: true, getSettings: () => settings, systemReduced: () => reduced, systemDark: () => dark,
+      frame: 'fitted', getSettings: () => settings, systemReduced: () => reduced, systemDark: () => dark,
     });
-    assert.deepEqual(look(), { acrylic: true, dark: true });
+    assert.deepEqual(look(), { transparency: 45, dark: true });
     dark = false;
-    assert.deepEqual(look(), { acrylic: true, dark: false }, "'system' follows Windows' app mode");
-    settings = { theme: 'dark', reduceTransparency: true };
-    assert.deepEqual(look(), { acrylic: false, dark: true });
-    settings = { theme: 'nocturne', reduceTransparency: 'yes' };
-    assert.deepEqual(look(), { acrylic: true, dark: false }, 'an odd file is the defaults: system theme, glass on');
+    assert.deepEqual(look(), { transparency: 45, dark: false }, "'system' follows Windows' app mode");
+    settings = { theme: 'dark', transparency: 0 };
+    assert.deepEqual(look(), { transparency: 0, dark: true });
+    settings = { theme: 'nocturne', transparency: 'yes' };
+    assert.deepEqual(look(), { transparency: 45, dark: false }, 'an odd file is the defaults: system theme, the default glass');
+    settings = { theme: 'dark', transparency: 100 };
     reduced = true;
-    assert.equal(look().acrylic, false);
+    assert.equal(look().transparency, 0);
     settings = null;
     assert.doesNotThrow(() => look());
     const canvas = material.createPanelLook({
-      frame: 'canvas', available: true, getSettings: () => ({}), systemReduced: () => false, systemDark: () => true,
+      frame: 'canvas', getSettings: () => ({ transparency: 100 }), systemReduced: () => false, systemDark: () => true,
     });
-    assert.equal(canvas().acrylic, false);
+    assert.equal(canvas().transparency, 0);
+  });
+
+  test('THE RULE: 0 opaque, 1–55 frosted from 0xE6 to 0x30, 56–100 clear from 0x70 to 0', () => {
+    const a = (level, dark = true) => material.panelAccent(level, dark);
+    assert.deepEqual(a(0), { mode: 'opaque', state: 0, flags: 0, alpha: 0, color: 0 });
+    assert.deepEqual([a(1).mode, a(1).state, a(1).flags, a(1).alpha], ['frosted', FROSTED, 2, 0xE6]);
+    assert.deepEqual([a(55).mode, a(55).state, a(55).alpha], ['frosted', FROSTED, 0x30], '0x30: below it state 4 renders black');
+    assert.deepEqual([a(56).mode, a(56).state, a(56).flags, a(56).alpha], ['clear', CLEAR, 2, 0x70]);
+    assert.deepEqual(a(100), { mode: 'clear', state: CLEAR, flags: 2, alpha: 0, color: 0 }, "truly clear: the spike's 0x00000000");
+    assert.equal(FROSTED, 4);
+    assert.equal(CLEAR, 2);
+    // Linear inside each band, and never thicker as the slider goes right.
+    assert.equal(a(28).alpha, Math.round(0xE6 + (0x30 - 0xE6) * (27 / 54)));
+    assert.equal(a(78).alpha, Math.round(0x70 * (22 / 44)));
+    for (let n = 2; n <= 100; n += 1) {
+      if (n === 56) continue;
+      assert.ok(a(n).alpha <= a(n - 1).alpha, `alpha grew at ${n}`);
+    }
+    for (let n = 1; n <= 55; n += 1) assert.ok(a(n).alpha >= 0x30, `frosted below the floor at ${n}`);
+  });
+
+  test("the rule's colour: the theme's tint at the alpha, 0xAABBGGRR", () => {
+    assert.equal(material.panelAccent(1, true).color, 0xE6221E1E, 'dark #1E1E22');
+    assert.equal(material.panelAccent(1, false).color, 0xE6F8F6F6, 'light #F6F6F8');
+    assert.equal(material.panelAccent(56, false).color, 0x70F8F6F6);
+    assert.equal(material.gradientColor('#112233', 0x80), 0x80332211);
+    assert.equal(material.gradientColor('#112233', 0), 0);
+  });
+
+  test('the rule clamps and survives garbage: NaN and strings are the default, out of range is the end', () => {
+    const a = (level) => material.panelAccent(level, true);
+    assert.deepEqual(a(NaN), a(45));
+    assert.deepEqual(a('100'), a(45));
+    assert.deepEqual(a(undefined), a(45));
+    assert.deepEqual(a(150), a(100));
+    assert.deepEqual(a(-10), a(0));
+    assert.deepEqual(a(54.6), a(55));
+    assert.deepEqual(a(55.4), a(55));
+  });
+
+  test('the accent policy goes to Windows as the 16 bytes it reads', () => {
+    const { accentPolicyBuffer } = require('../src/main/win32');
+    const buf = accentPolicyBuffer(material.panelAccent(1, true));
+    assert.equal(buf.length, 16);
+    assert.equal(buf.readInt32LE(0), 4, 'AccentState');
+    assert.equal(buf.readInt32LE(4), 2, 'AccentFlags');
+    assert.equal(buf.readUInt32LE(8), 0xE6221E1E, 'GradientColor');
+    assert.equal(buf.readInt32LE(12), 0, 'AnimationId');
+  });
+
+  test('win32 setAccent: WCA_ACCENT_POLICY on our window, guarded', () => {
+    const { makeDwm } = require('../src/main/win32');
+    const calls = [];
+    const dwm = makeDwm({
+      DwmSetWindowAttribute: () => 0,
+      SetWindowCompositionAttribute: (h, data) => { calls.push({ h, ...data }); return true; },
+    });
+    assert.equal(dwm.setAccent(4242, material.panelAccent(80, true)), true);
+    assert.equal(calls[0].h, 4242);
+    assert.equal(calls[0].Attrib, 19);
+    assert.equal(calls[0].cbData, 16);
+    assert.equal(calls[0].pvData.readInt32LE(0), 2);
+    assert.equal(dwm.setAccent(0, material.panelAccent(80, true)), false, 'no window, no call');
+    assert.equal(calls.length, 1);
+    const broken = makeDwm({ DwmSetWindowAttribute: () => 0, SetWindowCompositionAttribute: () => { throw new Error('gone'); } });
+    assert.equal(broken.setAccent(4242, material.panelAccent(80, true)), false, 'a throw is a refusal');
+    const refused = makeDwm({ DwmSetWindowAttribute: () => 0, SetWindowCompositionAttribute: () => false });
+    assert.equal(refused.setAccent(4242, material.panelAccent(80, true)), false);
   });
 
   test('Preferences carry what the window IS, and only the exact literals', () => {
@@ -124,7 +203,7 @@ test.describe('which frame and which material (src/core/panel-material.js)', () 
       .split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n').replace(/\s+/g, ' ');
     for (const needle of [
       'const PANEL_FRAME = panelFrameFor(process.platform, os.release());',
-      'available: acrylicAvailable(process.platform, os.release()),',
+      'const panelLook = createPanelLook({ frame: PANEL_FRAME, getSettings: () => settings,',
       'panel = new PanelWindow({ frame: PANEL_FRAME, look: panelLook(), dwm: () => win32.loadDwm(),',
       'ipcMain.on(IPC.PANEL_SIZE, (event, height) => { if (!fromPanel(event)) return; panel.setContentHeight(height); });',
       "nativeTheme.on('updated', () => { log.trace('os.theme', { ground: trayGround() }); if (collector && collector.snapshot) updateTray(collector.snapshot); if (panel) panel.setLook(panelLook());",
@@ -142,37 +221,47 @@ test.describe('which frame and which material (src/core/panel-material.js)', () 
 });
 
 test.describe('the fitted window is made the way the spike measured', () => {
-  test('opaque to Windows, its shadow, the acrylic option, transparent page', () => {
-    const { panel } = fitted({ look: { acrylic: true, dark: true } });
+  test('opaque to Windows, its shadow, NO system backdrop, transparent page over the glass', () => {
+    const { panel, accents } = fitted({ look: { transparency: 45, dark: true } });
     const o = panel.win.options;
     assert.equal(o.transparent, false, 'a transparent window gets square corners and no shadow');
     assert.equal(o.thickFrame, false, 'a thick frame brings invisible borders that take clicks beside the panel');
     assert.equal(o.frame, false);
     assert.equal(o.hasShadow, true);
-    assert.equal(o.backgroundMaterial, 'acrylic');
-    assert.equal(o.backgroundColor, '#00000000', 'the page shows the acrylic through');
+    assert.equal(o.backgroundMaterial, 'none', "the system backdrop changes colour when the window is inactive");
+    assert.equal(o.backgroundColor, '#00000000', 'the page shows the glass through');
     assert.equal(o.width, FITTED_WIDTH);
     assert.equal(panel.material(), 'acrylic');
+    assert.deepEqual(accents.map((a) => [a.h, a.state, a.flags, a.color]), [[4242, FROSTED, 2, material.panelAccent(45, true).color]]);
+    assert.equal(panel.win.colours.at(-1), '#00000000');
+    assert.equal(panel.win.materials, undefined, 'never asks Electron for a material');
   });
 
-  test('without acrylic it is born opaque, in the panel base of its theme', () => {
-    const { panel } = fitted({ look: { acrylic: false, dark: false } });
+  test('at 0 it is born opaque, in the panel base of its theme, and the accent is off', () => {
+    const { panel, accents } = fitted({ look: { transparency: 0, dark: false } });
     assert.equal(panel.win.options.backgroundMaterial, 'none');
     assert.equal(panel.win.options.backgroundColor, material.PANEL_BASE.light);
     assert.equal(panel.material(), 'none');
+    assert.deepEqual(accents.map((a) => a.state), [0]);
   });
 
-  test('the canvas window is untouched: transparent, no material, never acrylic', () => {
-    const panel = new PanelWindow({ entry: __filename, look: { acrylic: true } });
+  test('no look at all is the opaque base', () => {
+    const { panel } = fitted();
+    assert.equal(panel.material(), 'none');
+  });
+
+  test('the canvas window is untouched: transparent, no material, never any glass', () => {
+    const panel = new PanelWindow({ entry: __filename, look: { transparency: 100 } });
     panel.create();
     assert.equal(panel.win.options.transparent, true);
     assert.equal('backgroundMaterial' in panel.win.options, false);
-    assert.equal(panel.setLook({ acrylic: true, dark: true }), 'none');
+    assert.equal(panel.setLook({ transparency: 100, dark: true }), 'none');
     assert.equal(panel.win.materials, undefined, 'a canvas never asks for a material');
+    assert.equal(panel.win.colours, undefined, 'nor recolours its transparent frame');
   });
 
   test('Windows is told the theme and a neutral hairline, on the fitted window only', () => {
-    const { dwmCalls } = fitted({ look: { acrylic: true, dark: true } });
+    const { dwmCalls } = fitted({ look: { transparency: 45, dark: true } });
     assert.deepEqual(dwmCalls, [['shape', 4242], ['dark', 4242, true], ['edge', 4242, material.PANEL_EDGE.dark]]);
     const calls = [];
     const canvas = new PanelWindow({ entry: __filename, dwm: () => { calls.push('loaded'); return null; } });
@@ -180,52 +269,75 @@ test.describe('the fitted window is made the way the spike measured', () => {
     assert.deepEqual(calls, [], 'a canvas never loads the DWM helper');
   });
 
-  test('no DWM helper (koffi unavailable) costs nothing but the refinement', () => {
-    const panel = new PanelWindow({ entry: __filename, frame: 'fitted', dwm: () => null, look: { acrylic: true } });
+  test('no DWM helper (koffi unavailable) costs the glass and the refinements, nothing else', () => {
+    const panel = new PanelWindow({ entry: __filename, frame: 'fitted', dwm: () => null, look: { transparency: 45 } });
     assert.doesNotThrow(() => panel.create());
-    assert.equal(panel.material(), 'acrylic');
+    assert.equal(panel.material(), 'none');
+    assert.equal(panel.win.colours.at(-1), material.PANEL_BASE.dark);
   });
 });
 
-test.describe('the material switches live', () => {
-  test('reduce transparency on and off without reopening, base colour in step', () => {
-    const { panel, dwmCalls } = fitted({ look: { acrylic: true, dark: true } });
-    dwmCalls.length = 0;
-    assert.equal(panel.setLook({ acrylic: false, dark: true }), 'none');
-    assert.deepEqual(panel.win.materials, ['none']);
-    assert.equal(panel.win.colours.at(-1), material.PANEL_BASE.dark);
-    assert.equal(panel.setLook({ acrylic: true, dark: true }), 'acrylic');
-    assert.deepEqual(panel.win.materials, ['none', 'acrylic']);
+test.describe('the material follows the slider live', () => {
+  test('frosted, clear, opaque and back without reopening, background colour in step', () => {
+    const { panel, accents } = fitted({ look: { transparency: 45, dark: true } });
+    accents.length = 0;
+    assert.equal(panel.setLook({ transparency: 90, dark: true }), 'acrylic');
+    assert.deepEqual(accents.map((a) => a.state), [CLEAR]);
     assert.equal(panel.win.colours.at(-1), '#00000000');
-    assert.deepEqual(dwmCalls.filter((c) => c[0] === 'dark').map((c) => c[2]), [true, true]);
+    assert.equal(panel.setLook({ transparency: 0, dark: true }), 'none');
+    assert.deepEqual(accents.map((a) => a.state), [CLEAR, 0], 'the accent is taken away, not left behind the base');
+    assert.equal(panel.win.colours.at(-1), material.PANEL_BASE.dark);
+    assert.equal(panel.setLook({ transparency: 20, dark: true }), 'acrylic');
+    assert.deepEqual(accents.map((a) => a.state), [CLEAR, 0, FROSTED]);
+    assert.equal(accents.at(-1).color, material.panelAccent(20, true).color);
+    assert.equal(panel.win.colours.at(-1), '#00000000');
   });
 
-  test('a theme flip re-tints without asking for the same material again', () => {
-    const { panel, dwmCalls } = fitted({ look: { acrylic: true, dark: true } });
+  test('an unchanged look re-asserts the same accent; a theme flip re-tints the glass', () => {
+    const { panel, dwmCalls, accents } = fitted({ look: { transparency: 45, dark: true } });
+    accents.length = 0;
     dwmCalls.length = 0;
-    panel.setLook({ acrylic: true, dark: false });
-    assert.equal(panel.win.materials, undefined, 'still acrylic: no material call');
-    assert.deepEqual(dwmCalls, [['shape', 4242], ['dark', 4242, false], ['edge', 4242, material.PANEL_EDGE.light]]);
-    panel.setLook({ acrylic: false, dark: false });
+    panel.setLook({ transparency: 45, dark: true });
+    assert.deepEqual(accents.map((a) => a.color), [material.panelAccent(45, true).color], 'put back, never trusted');
+    accents.length = 0;
+    panel.setLook({ transparency: 45, dark: false });
+    assert.deepEqual(accents.map((a) => a.color), [material.panelAccent(45, false).color]);
+    assert.deepEqual(dwmCalls.slice(-3), [['shape', 4242], ['dark', 4242, false], ['edge', 4242, material.PANEL_EDGE.light]]);
+    panel.setLook({ transparency: 0, dark: false });
     assert.equal(panel.win.colours.at(-1), material.PANEL_BASE.light);
   });
 
-  test('a refused acrylic falls back to the opaque base and is never asked for again', () => {
-    const { panel } = fitted({ look: { acrylic: false, dark: true } });
-    panel.win.refuseMaterial = true;
-    assert.equal(panel.setLook({ acrylic: true, dark: true }), 'none');
+  test('Windows refusing the glass falls back to the opaque base once, with a warning, and is never asked again', () => {
+    const warnings = [];
+    const warn = log.warn;
+    log.warn = (m) => warnings.push(m);
+    try {
+      const { panel, accents } = fitted({ look: { transparency: 0, dark: true } }, { refuse: true });
+      assert.equal(panel.setLook({ transparency: 45, dark: true }), 'none');
+      assert.equal(panel.material(), 'none');
+      assert.equal(panel.win.colours.at(-1), material.PANEL_BASE.dark);
+      assert.equal(warnings.filter((w) => w.includes('glass refused')).length, 1);
+      const asked = accents.filter((a) => a.state !== 0).length;
+      assert.equal(panel.setLook({ transparency: 90, dark: true }), 'none');
+      assert.equal(accents.filter((a) => a.state !== 0).length, asked, 'not retried');
+      assert.equal(warnings.filter((w) => w.includes('glass refused')).length, 1, 'warned once');
+    } finally {
+      log.warn = warn;
+    }
+  });
+
+  test('a setAccent that throws is a refusal too, and never reaches the caller', () => {
+    const { panel } = fitted({ look: { transparency: 0, dark: true } }, { throws: true });
+    assert.doesNotThrow(() => panel.setLook({ transparency: 80, dark: true }));
     assert.equal(panel.material(), 'none');
     assert.equal(panel.win.colours.at(-1), material.PANEL_BASE.dark);
-    panel.win.refuseMaterial = false;
-    assert.equal(panel.setLook({ acrylic: true, dark: true }), 'none');
-    assert.equal(panel.win.materials, undefined, 'not retried');
   });
 
   test('a destroyed window answers none and throws nothing', () => {
-    const { panel } = fitted({ look: { acrylic: true } });
+    const { panel } = fitted({ look: { transparency: 45 } });
     panel.win.destroyed = true;
     assert.equal(panel.material(), 'none');
-    assert.doesNotThrow(() => panel.setLook({ acrylic: false }));
+    assert.doesNotThrow(() => panel.setLook({ transparency: 0 }));
   });
 });
 
