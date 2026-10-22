@@ -13,7 +13,7 @@ const { FakeElement, installDom, mirrorRenderer, walk } = require('./helpers/fak
  *      that opened the view is hidden, and the keyboard meets back, pin,
  *      close, then the tabs. Closing the view puts the brand and the button
  *      back, and focus on the button.
- *   2. "Saydamlığı azalt" is optimistic like the gauge: the document flips on
+ *   2. "Saydamlık" (stored as reduceTransparency) is optimistic like the gauge: the document flips on
  *      the gesture, a refusal puts the old value back and says so, and
  *      Windows' own request (systemReducedTransparency) keeps the glass off
  *      whatever the switch says.
@@ -130,7 +130,7 @@ test.describe('Settings has one top row', () => {
   });
 });
 
-test.describe('"Saydamlığı azalt" on the document', () => {
+test.describe('"Saydamlık" off on the document', () => {
   const html = () => document.documentElement.dataset.reduceTransparency;
   const switchOf = (app) => app.find((n) => n.getAttribute('role') === 'switch' && n.getAttribute('aria-labelledby') === 'settings-glass-name');
 
@@ -159,7 +159,7 @@ test.describe('"Saydamlığı azalt" on the document', () => {
       app.glassReplies[0].resolve(false);
       await tick();
       assert.equal(html(), undefined, 'the refused value stayed on the document');
-      assert.equal(control.getAttribute('aria-checked'), 'false');
+      assert.equal(control.getAttribute('aria-checked'), 'true', 'the switch is "Saydamlık": on again');
       assert.ok(walk(app.container).some((n) => n.textContent === i18n.t('app.reduceTransparencyNotSaved')));
     } finally {
       app.handle.destroy();

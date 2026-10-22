@@ -993,8 +993,10 @@ function createStripStyleControl(ctx: SettingsContext): StripStyleHandleLocal {
 }
 
 /**
- * Görünüm, last part: "Saydamlığı azalt", the panel's glass (the header and
- * the tab band) drawn opaque. A switch row like "Windows açılışında başlat",
+ * Görünüm, last part: "Saydamlık", ON while the panel is see-through; off
+ * draws it opaque. It is stored as reduceTransparency, so the switch shows
+ * the opposite of the stored flag: the owner asked for a switch that turns
+ * the transparency ON, not one that reduces it (2026-10-22). A switch row like "Windows açılışında başlat",
  * because it is an on/off choice and not one of several looks. While Windows
  * itself asks for less transparency (or high contrast is on) the glass is
  * off whatever the switch says, and the line under it says so instead of the
@@ -1027,13 +1029,14 @@ function createGlassControl(ctx: SettingsContext): GlassHandleLocal {
 
   on(control, 'click', () => {
     // The rendered state, not a captured one, as the autostart switch does.
-    ctx.onReduceTransparency(control.getAttribute('aria-checked') !== 'true');
+    // On (see-through) now, so the press reduces the transparency.
+    ctx.onReduceTransparency(control.getAttribute('aria-checked') === 'true');
   });
 
   function update(state: PanelState): void {
     setText(hint, t(state.systemReducedTransparency ? 'settings.glass.bySystem' : 'settings.glass.help'));
-    setAttr(control, 'aria-checked', state.reduceTransparency ? 'true' : 'false');
-    setAttr(root, 'data-enabled', state.reduceTransparency ? 'true' : 'false');
+    setAttr(control, 'aria-checked', state.reduceTransparency ? 'false' : 'true');
+    setAttr(root, 'data-enabled', state.reduceTransparency ? 'false' : 'true');
     setAttr(control, 'aria-busy', state.reduceTransparencyPending ? 'true' : null);
     setAttr(root, 'data-pending', state.reduceTransparencyPending ? 'true' : null);
     setAttr(root, 'data-revert', state.reduceTransparencyReverted ? 'true' : null);

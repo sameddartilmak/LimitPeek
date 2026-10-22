@@ -455,11 +455,21 @@
  * The figures are the 24px semibold hero, large text (3:1), as on the opaque
  * card; the ramp itself does not move (the tray mirrors it byte for byte).
  *
+ * LOWERED FOR LOOKS, 2026-10-22. At 82 % the owner saw a grey panel, not a
+ * glass one ("sadece renk griye dönüyor"): DWM's acrylic is already a heavy
+ * blur and luminosity layer, so the tint has to be thin for anything behind
+ * to show. Shot on the real panel over a colourful window at 82 / 55 / 40 /
+ * 20 / 0 %: from 20 % the colours come through and the text on the cards
+ * still reads. The table above was for 82 %: over a white or black window
+ * the small inks now fall under 4.5:1, which is the price of the look the
+ * owner asked for. "Saydamlık" off (and Windows' own setting, and high
+ * contrast) gives the opaque base, measured as before.
+ *
  * Off as soon as the renderer knows transparency is to be reduced, before
  * main has switched the window: a tint over an opaque base still reads. */
 :root[data-material="acrylic"]:not([data-reduce-transparency]) {
-  --panel-base: rgba(30, 30, 34, .82);
-  --ink-800: rgba(255, 255, 255, .06);
+  --panel-base: rgba(30, 30, 34, .25);
+  --ink-800: rgba(255, 255, 255, .07);
   --ink-400: #AEAEB2;
   --tint-text: #69B1FF;
   --glass: transparent;
@@ -467,7 +477,7 @@
   --glass-ctl: rgba(255, 255, 255, .08);
 }
 :root[data-material="acrylic"][data-theme="light"]:not([data-reduce-transparency]) {
-  --panel-base: rgba(246, 246, 248, .82);
+  --panel-base: rgba(246, 246, 248, .4);
   --ink-800: rgba(255, 255, 255, .7);
   --ink-400: #5E5E63;
   --tint-text: #005CB9;
@@ -479,7 +489,7 @@
  * shadow, when Windows asks for less transparency (Settings → Kişiselleştirme
  * → Renkler → Saydamlık efektleri) or for high contrast. Both reach Chromium
  * as media features, so this needs nothing from main and follows a change
- * live. The panel's own "Saydamlığı azalt" adds the same through
+ * live. The panel's own "Saydamlık" switched off adds the same through
  * `html[data-reduce-transparency]` (app.ts). Re-pointing the tokens rather
  * than overriding components keeps it one rule wide, in both themes. */
 :root[data-reduce-transparency] {

@@ -607,9 +607,9 @@ test.describe('Görünüm → "Gösterge": "Çubuk" or "Halka", on the "Genel" t
   });
 });
 
-// ------------------------------------------------ Görünüm: "Saydamlığı azalt"
+// ------------------------------------------------------- Görünüm: "Saydamlık"
 
-test.describe('Görünüm → "Saydamlığı azalt": a switch on the "Genel" tab', () => {
+test.describe('Görünüm → "Saydamlık": a switch on the "Genel" tab, on while the panel is see-through', () => {
   function mountGlass() {
     const flipped = [];
     const handle = settingsMod.createSettings({
@@ -618,18 +618,18 @@ test.describe('Görünüm → "Saydamlığı azalt": a switch on the "Genel" tab
       onReduceTransparency(reduce) { flipped.push(reduce); },
     });
     const row = walk(handle.el).find((el) => (el.getAttribute('class') || '').includes('settings__item--glass'));
-    assert.ok(row, 'no "Saydamlığı azalt" row');
+    assert.ok(row, 'no "Saydamlık" row');
     const control = walk(row).find((el) => el.getAttribute('role') === 'switch');
     return { handle, row, control, flipped };
   }
 
-  test('a real switch named "Saydamlığı azalt", after "Gösterge" and before "Dil"', () => {
+  test('a real switch named "Saydamlık", after "Gösterge" and before "Dil"', () => {
     const { handle, row, control } = mountGlass();
     assert.equal(control.tagName, 'BUTTON');
     const name = findById(handle.el, control.getAttribute('aria-labelledby'));
-    assert.equal(name.textContent, 'Saydamlığı azalt');
+    assert.equal(name.textContent, 'Saydamlık');
     const help = findById(handle.el, control.getAttribute('aria-describedby'));
-    assert.match(help.textContent, /cam efektini kapatır, zemin düz olur; Windows'ta yüksek kontrast açıksa kendiliğinden kapanır/);
+    assert.match(help.textContent, /buzlu cam gibi saydam görünür; kapatınca zemin düz olur\. Windows'ta yüksek kontrast açıksa kendiliğinden kapanır/);
     const general = walk(handle.el).find((el) => el.getAttribute('role') === 'tabpanel' && walk(el).includes(row));
     assert.ok(general, 'not on a tab panel');
     assert.equal(general.getAttribute('data-tab'), 'general');
@@ -639,18 +639,21 @@ test.describe('Görünüm → "Saydamlığı azalt": a switch on the "Genel" tab
     assert.ok(kids.indexOf(gauge) < kids.indexOf(row) && kids.indexOf(row) < kids.indexOf(language));
   });
 
-  test('the switch follows the state, a press tells the app, pending and revert are on the row', () => {
+  test('the switch shows the opposite of the stored flag, a press tells the app, pending and revert are on the row', () => {
     const { handle, row, control, flipped } = mountGlass();
+    // Stored reduceTransparency: false is the glass on, so the switch is on.
     handle.render(state({ reduceTransparency: false }), []);
-    assert.equal(control.getAttribute('aria-checked'), 'false');
-    control.click();
-    assert.deepEqual(flipped, [true]);
-    handle.render(state({ reduceTransparency: true, reduceTransparencyPending: true }), []);
     assert.equal(control.getAttribute('aria-checked'), 'true');
+    control.click();
+    assert.deepEqual(flipped, [true], 'turning the transparency off reduces it');
+    handle.render(state({ reduceTransparency: true, reduceTransparencyPending: true }), []);
+    assert.equal(control.getAttribute('aria-checked'), 'false');
     assert.equal(control.getAttribute('aria-busy'), 'true');
     assert.equal(row.getAttribute('data-pending'), 'true');
+    control.click();
+    assert.deepEqual(flipped, [true, false], 'turning it back on');
     handle.render(state({ reduceTransparency: false, reduceTransparencyReverted: true }), []);
-    assert.equal(control.getAttribute('aria-checked'), 'false');
+    assert.equal(control.getAttribute('aria-checked'), 'true');
     assert.equal(row.getAttribute('data-pending'), null);
     assert.equal(row.getAttribute('data-revert'), 'true');
   });
@@ -659,9 +662,9 @@ test.describe('Görünüm → "Saydamlığı azalt": a switch on the "Genel" tab
     const { handle, control } = mountGlass();
     const help = findById(handle.el, control.getAttribute('aria-describedby'));
     handle.render(state({ systemReducedTransparency: true }), []);
-    assert.match(help.textContent, /Windows saydamlığın azaltılmasını istiyor/);
+    assert.match(help.textContent, /saydamlık efektleri kapalı ya da yüksek kontrast açık; bu yüzden panel şu an saydam değil/);
     handle.render(state({ systemReducedTransparency: false }), []);
-    assert.match(help.textContent, /cam efektini kapatır/);
+    assert.match(help.textContent, /buzlu cam gibi saydam/);
   });
 });
 
