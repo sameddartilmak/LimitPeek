@@ -94,11 +94,11 @@ const DEFAULTS = Object.freeze({
    */
   reduceTransparency: DEFAULT_REDUCE_TRANSPARENCY,
   /**
-   * 'list' | 'focus' | 'tiles': how the panel lays out the tools (Settings →
-   * Genel → Görünüm → Düzen). 'list' is the cards every earlier version had;
-   * 'focus' puts the tool closest to its limit on top as a large ring, 'tiles'
-   * is a two-column grid. Panel only. An unknown value is 'list', see
-   * `src/core/layout.js`.
+   * 'sade' | 'halka': how the panel lays out the tools (Settings → Genel →
+   * Görünüm → Düzen). 'sade' is one short line per tool, 'halka' a grid of
+   * small ring tiles. Panel only. The three layouts of 0.6.38 and earlier
+   * ('list', 'focus', 'tiles') are read as their successors; anything else is
+   * 'sade', see `src/core/layout.js`.
    */
   layout: DEFAULT_LAYOUT,
   /**
@@ -165,8 +165,9 @@ function load(userDataDir) {
     // Absent (every file written before the glass existed) or not a real
     // boolean: the glass, the look the trial ships with.
     reduceTransparency: sanitizeReduceTransparency(raw.reduceTransparency),
-    // Absent (every file written before the layouts existed), a typo or a
-    // future value: the list, the look the user already has.
+    // An old layout ('list', 'focus', 'tiles') reads as its successor, so an
+    // update keeps the user's list or grid; absent, a typo or a future value:
+    // the short list, the default.
     layout: sanitizeLayout(raw.layout),
     // Absent (every file written before the strip styles existed), a typo or
     // a future value: the plain bars, the look the strip already has.

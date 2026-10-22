@@ -1093,8 +1093,10 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   const frame: PanelFrame = source.frame === 'fitted' ? 'fitted' : 'canvas';
   // Düzen and Şerit stili: anything but the other literals is the default, as
   // main's own load() says; a main from before them sends nothing and gets the
-  // list and the plain strip it always drew.
-  const layout: Layout = source.layout === 'focus' || source.layout === 'tiles' ? source.layout : 'list';
+  // short list and the plain strip. A main from before the two layouts may
+  // still say 'tiles', the grid, which is 'halka' now (src/core/layout.js
+  // maps a settings file the same way); its two lists are the short list.
+  const layout: Layout = source.layout === 'halka' || source.layout === 'tiles' ? 'halka' : 'sade';
   const stripStyle: StripStyle = source.stripStyle === 'rings' || source.stripStyle === 'fill' ? source.stripStyle : 'plain';
   return {
     theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed,

@@ -386,6 +386,11 @@
   text-overflow: ellipsis;
 }
 
+/* "5sa" / "7g": the compact layouts' tag in front of the figure (meter.ts).
+ * A card drawn in full — a tool's open details — names its windows in full
+ * above, so the tag is drawn only by layout-sade.css and layout-halka.css. */
+.win__tag { display: none; }
+
 /* The figure. The one thing in the row allowed to carry the state ramp, and it
  * takes it from its OWN window: %19 weekly beside %91 five-hourly are two
  * different answers and one colour cannot carry both. */

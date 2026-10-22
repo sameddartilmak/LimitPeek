@@ -72,7 +72,7 @@ let prefs: Preferences = {
   // A browser page has no acrylic and no fitted window: the canvas look.
   material: 'none',
   frame: 'canvas',
-  layout: 'list',
+  layout: 'sade',
   stripStyle: 'plain',
 };
 let prefsCb: ((p: Preferences) => void) | null = null;
@@ -297,7 +297,7 @@ function makeBridge(scenario: Scenario): Bridge {
     },
 
     /** Persist, then push, like setGauge. */
-    async setLayout(layout: 'list' | 'focus' | 'tiles'): Promise<boolean> {
+    async setLayout(layout: 'sade' | 'halka'): Promise<boolean> {
       log(`setLayout(${layout})`);
       prefs = { ...prefs, layout };
       prefsCb?.(prefs);
@@ -583,7 +583,7 @@ controls.appendChild(logBox);
  *   &gauge=ring (Görünüm → Gösterge: rings instead of bars)
  *   &rt=1 (Görünüm → "Saydamlığı azalt" on)  &rtsys=1 (Windows asks for it)
  *   &frame=fitted  &material=acrylic (the Windows 11 window and its acrylic)
- *   &layout=focus|tiles (Görünüm → Düzen)
+ *   &layout=halka (Görünüm → Düzen: the ring tiles; the short list otherwise)
  *   &strip=plain|rings|fill (the strip chosen, in that style, as if this
  *           machine could show it, so Görünüm → "Şerit stili" is on screen)
  *   &shot=1 (the panel alone, no controls)
@@ -608,10 +608,10 @@ if (params.get('rtsys') === '1') prefs = { ...prefs, systemReducedTransparency: 
 // (with bare=1 the page behind stands in for the desktop under the acrylic).
 if (params.get('frame') === 'fitted') prefs = { ...prefs, frame: 'fitted' };
 if (params.get('material') === 'acrylic') prefs = { ...prefs, material: 'acrylic' };
-// ?layout=focus|tiles: through the same preference the Settings control
+// ?layout=halka: through the same preference the Settings control
 // writes (app.ts paints html[data-layout] in frame one).
 const layoutParam = params.get('layout');
-if (layoutParam === 'focus' || layoutParam === 'tiles') prefs = { ...prefs, layout: layoutParam };
+if (layoutParam === 'halka') prefs = { ...prefs, layout: layoutParam };
 const stripParam = params.get('strip');
 if (stripParam === 'plain' || stripParam === 'rings' || stripParam === 'fill') {
   prefs = { ...prefs, trayView: 'strip', stripAvailable: true, stripStyle: stripParam };

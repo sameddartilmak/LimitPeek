@@ -1,6 +1,20 @@
 /**
  * Header: the brand, the freshness marker, and the panel controls.
  *
+ * THE MINIMAL HEADER (owner, 2026-10-22: "panel çok büyük")
+ * --------------------------------------------------------
+ * One short row: the app tile, "LimitPeek", and three small icons — refresh,
+ * pin, settings. Two things left it and one moved in:
+ *
+ *   - the close (X): Esc closes the panel, an unpinned panel closes when the
+ *     pointer leaves it, and the tray icon toggles it; a fourth way out was a
+ *     button on every open for a gesture nobody needed it for;
+ *   - the green "live" dot: it said "fine" 95% of the time (see below). The
+ *     marker still speaks the moment there is something to say;
+ *   - the footer's "Son tarama 09:59" and its big "Yenile" became the refresh
+ *     icon here. The last scan is its tooltip and part of its name, so the
+ *     fact is one hover or one Tab away instead of a line of its own.
+ *
  * THE LEAD READOUT IS GONE
  * ------------------------
  * It printed "5 sa %25 · Hafta %20" for the first added provider. It was added
@@ -28,9 +42,10 @@
  *
  * So it escalates instead of announcing:
  *
- *   live      a 6px calm dot, NO words. The answer to "is this current" is
- *             still there — in the dot, in the tooltip, and in the screen
- *             reader status — it just does not occupy a line to say "yes".
+ *   live      NOTHING drawn (it was a 6px calm dot until the minimal header).
+ *             The answer to "is this current" is still there — in the
+ *             refresh icon's "son tarama", and in the screen reader status —
+ *             it just does not occupy any of the header to say "yes".
  *   pending   dot pulses, words return: the first scan has not landed.
  *   aging     dot turns watch, words return with the age. Past the cadence
  *             main guarantees, so the silence is now worth a sentence.
@@ -41,9 +56,9 @@
  *             for the user — what is on screen is not current — so it is the
  *             same alarm rather than a competing second one.
  *
- * A refresh in flight pulses the dot at ANY level and never adds words: the
- * footer's Yenile button already says "Yenileniyor", and a second copy of that
- * sentence in the header is the redundancy this change exists to remove.
+ * A refresh in flight pulses the dot where one is drawn and never adds words:
+ * the refresh icon turns, and its name says "Yenileniyor", and a second copy of
+ * that sentence in the header is the redundancy this change exists to remove.
  */
 
 import { el, on, setAttr, setText, svg } from '../dom.js';
@@ -67,9 +82,10 @@ const PIN_TITLE_ON = (): string => t('header.pin.titleOn');
 
 export interface HeaderContext {
   onPinToggle(pinned: boolean): void;
-  onClose(): void;
   /** Swap between the usage list and the in-panel settings view. */
   onSettingsToggle(): void;
+  /** The refresh icon: scan now. */
+  onRefresh(): void;
 }
 
 export interface HeaderHandle {
@@ -78,6 +94,14 @@ export interface HeaderHandle {
   tick(state: PanelState, now: number): void;
   pinButton: HTMLButtonElement;
   settingsButton: HTMLButtonElement;
+  /** The panel's one refresh control (the footer that held it is gone). */
+  refreshButton: HTMLButtonElement;
+  /**
+   * Hide the refresh while an empty state offers its own one action ("Yeniden
+   * tara", "Araçları seç"): two buttons for one job is a choice with no
+   * difference behind it.
+   */
+  setRefreshHidden(hidden: boolean): void;
   /**
    * Where the settings view's own title row (back + "Ayarlar") lives. Shown
    * in place of the brand while the view is open; see SETTINGS IN THE HEADER.
@@ -139,17 +163,45 @@ function settingsIcon(): SVGElement {
   );
 }
 
-function closeIcon(): SVGElement {
+/** The refresh arrow. It turns while a refresh is in flight; the name says so too. */
+function refreshIcon(): SVGElement {
   return svg(
     'svg',
-    { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false' },
+    { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false', class: 'iconbtn__spin' },
     svg('path', {
-      d: 'M4.5 4.5l7 7M11.5 4.5l-7 7',
+      d: 'M13 8a5 5 0 1 1-1.5-3.55M13.25 2.5v2.75H10.5',
       stroke: 'currentColor',
       'stroke-width': '1.5',
       'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
     }),
   );
+}
+
+/**
+ * What the refresh icon says, at every level. It has no words on it, so its
+ * NAME carries what the footer's two lines used to: what it does, what it is
+ * doing right now, and when the last scan landed. While the first scan runs
+ * it says so and waits; while the service is unreachable it cannot do
+ * anything and says why.
+ */
+function refreshCopy(state: PanelState): { label: string; title: string; disabled: boolean; busy: boolean } {
+  const scanning = !state.hasData && state.bridgeAvailable;
+  const busy = state.refreshing || scanning;
+  const generatedAt = state.snapshot?.generatedAt ?? null;
+  const time = generatedAt ? clockTime(generatedAt) : null;
+  const disabled = state.refreshing || !state.bridgeAvailable || scanning;
+  if (!state.bridgeAvailable) {
+    const title = t('panel.refreshOffline');
+    return { label: title, title, disabled, busy: false };
+  }
+  // The accessible name follows what the control is doing: "Yenileniyor" while
+  // it works, never the action it is in the middle of performing.
+  if (scanning) return { label: t('panel.scanning'), title: t('panel.scanning'), disabled, busy };
+  if (state.refreshing) return { label: t('panel.refreshing'), title: t('panel.refreshing'), disabled, busy };
+  return time
+    ? { label: t('header.refresh.label', { time }), title: t('header.refresh.title', { time }), disabled, busy }
+    : { label: t('panel.refreshLabel'), title: t('header.refresh.titleNoScan'), disabled, busy };
 }
 
 /**
@@ -254,13 +306,12 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
   }) as HTMLButtonElement;
   pinButton.appendChild(pin.root);
 
-  const closeButton = el('button', {
+  const refreshButton = el('button', {
     type: 'button',
-    class: 'iconbtn',
-    'aria-label': t('header.close'),
-    title: t('header.closeTitle'),
+    class: 'iconbtn iconbtn--refresh',
+    'aria-label': t('panel.refreshLabel'),
   }) as HTMLButtonElement;
-  closeButton.appendChild(closeIcon());
+  refreshButton.appendChild(refreshIcon());
 
   // The product, not a section name: the app's own tile beside its name. The
   // name is not translated (it is a product name), and the tile is decorative
@@ -278,8 +329,11 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
   // two controls a few pixels apart both meant "leave settings". Now the view
   // has ONE top row: while it is open the brand gives way to its back button
   // and title (mounted here by panel.ts) and the settings button is hidden,
-  // leaving the freshness marker, the pin and the close. Tab order is then
-  // back, pin, close, the tabs: the way out first, as before.
+  // leaving the freshness marker, the refresh and the pin. Tab order is then
+  // back, refresh, pin, the tabs: the way out first, as before.
+  //
+  // Refresh, pin, settings: the order of the mockup the owner picked, the
+  // action used most nearest the list and the one that changes the view last.
   const lead = el('div', { class: 'hdr__lead' });
   lead.hidden = true;
   const top = el(
@@ -289,7 +343,7 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
     lead,
     el('span', { class: 'hdr__spacer' }),
     fresh,
-    el('div', { class: 'hdr__actions' }, settingsButton, pinButton, closeButton),
+    el('div', { class: 'hdr__actions' }, refreshButton, pinButton, settingsButton),
   );
 
   const root = el('header', { class: 'hdr panel__band' }, top);
@@ -299,8 +353,17 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
     const next = pinButton.getAttribute('aria-pressed') !== 'true';
     ctx.onPinToggle(next);
   });
-  on(closeButton, 'click', () => ctx.onClose());
+  on(refreshButton, 'click', () => ctx.onRefresh());
   on(settingsButton, 'click', () => ctx.onSettingsToggle());
+
+  function paintRefresh(state: PanelState): void {
+    const copy = refreshCopy(state);
+    refreshButton.disabled = copy.disabled;
+    setAttr(refreshButton, 'data-busy', copy.busy ? 'true' : null);
+    setAttr(refreshButton, 'aria-busy', copy.busy ? 'true' : null);
+    setAttr(refreshButton, 'aria-label', copy.label);
+    setAttr(refreshButton, 'title', copy.title);
+  }
 
   /** Last announced (level, refreshing) pair, so the 1Hz tick stays silent. */
   let lastSpokenKey = '';
@@ -326,6 +389,7 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
 
   function paint(state: PanelState, now: number): void {
     paintFreshness(state, now);
+    paintRefresh(state);
 
     // The pin states what it PROMISES, not what it does to focus. Pinned: the
     // panel survives blur, app switching and anything else happening on the
@@ -357,6 +421,10 @@ export function createHeader(ctx: HeaderContext): HeaderHandle {
     tick: paint,
     pinButton,
     settingsButton,
+    refreshButton,
+    setRefreshHidden(hidden: boolean): void {
+      refreshButton.hidden = hidden;
+    },
     mountSettingsBar(bar: HTMLElement): void {
       if (bar.parentElement !== lead) lead.appendChild(bar);
     },

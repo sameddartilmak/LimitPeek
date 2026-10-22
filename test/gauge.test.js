@@ -154,7 +154,7 @@ test.describe('the renderer', () => {
     // The user's own, in every layout: nothing forces the rings any more.
     assert.match(app, /document\.documentElement\.dataset\.gauge = gauge;/);
     assert.doesNotMatch(app, /dataset\.gauge = [^;]*'ring'/, 'a layout forces a gauge');
-    const first = app.indexOf("paintLayout(initialPrefs?.layout ?? 'list', initialPrefs?.gauge ?? 'bar');");
+    const first = app.indexOf("paintLayout(initialPrefs?.layout ?? 'sade', initialPrefs?.gauge ?? 'bar');");
     assert.notEqual(first, -1, 'the frame-one paint is missing');
     assert.ok(first < app.search(/store\.set\(\{\s+theme: theme\.choice\(\)/), 'painted before the first store write');
     assert.ok(first < app.indexOf('createPanel('), 'painted before the panel is built');

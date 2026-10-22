@@ -78,20 +78,14 @@ function applyLocale(prefs: Preferences | null): void {
  * Görünüm → Gösterge on the document: row.css draws the activity rings under
  * `html[data-gauge="ring"]` and the bars otherwise. Written in frame one, like
  * the theme, or a ring user sees bars turn into rings on every launch.
- *
- * The user's choice in every layout: "Öne çıkan" and "Kutucuklar" draw the
- * bars or the rings as the list does (layout-focus.css, layout-tiles.css,
- * each with a bar and a ring variant). Either way the cues stay row.css's
- * own (the estimate's fray or fade, the stale hatch, the skeleton, high
- * contrast, reduced motion), with no second copy of them.
  */
 function paintGauge(gauge: Gauge): void {
   document.documentElement.dataset.gauge = gauge;
 }
 
 /**
- * Görünüm → Düzen on the document: `html[data-layout]` selects the list, the
- * focus or the tiles styles, and panel.ts builds the matching structure.
+ * Görünüm → Düzen on the document: `html[data-layout]` selects the short
+ * list's styles or the ring tiles' (layout-sade.css, layout-halka.css).
  * Written in frame one, before the panel exists, so a tiles user never sees
  * the list for one frame. The gauge is written with it, in the same frame.
  */
@@ -139,7 +133,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const initialPrefs = bridge.initialPreferences();
   applyLocale(initialPrefs);
   const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
-  paintLayout(initialPrefs?.layout ?? 'list', initialPrefs?.gauge ?? 'bar');
+  paintLayout(initialPrefs?.layout ?? 'sade', initialPrefs?.gauge ?? 'bar');
   paintGlass(initialPrefs?.reduceTransparency === true, initialPrefs?.systemReducedTransparency === true);
   paintMaterial(initialPrefs?.material ?? 'none', initialPrefs?.frame ?? 'canvas');
   store.set({
@@ -157,7 +151,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     systemReducedTransparency: initialPrefs?.systemReducedTransparency === true,
     material: initialPrefs?.material ?? 'none',
     frame: initialPrefs?.frame ?? 'canvas',
-    layout: initialPrefs?.layout ?? 'list',
+    layout: initialPrefs?.layout ?? 'sade',
     stripStyle: initialPrefs?.stripStyle ?? 'plain',
   });
   disposers.push(() => theme.destroy());
@@ -200,14 +194,13 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       // succeeded, and it never flips its own button ahead of the answer.
       bridge.pin();
     },
-    onClose: () => requestClose(),
     onSettingsToggle: () => toggleSettings(),
     onOpenSettings: (tab) => openSettings(tab),
     onSettingsTab: (tab) => store.set({ settingsTab: tab }),
-    // One card's details at a time: opening another closes the first, and
-    // pressing the open one closes it. In "Öne çıkan" and "Kutucuklar" the
-    // open card is a sheet over the others (panel.ts), and closing it puts
-    // focus back on the tool it was opened from.
+    // One tool's details at a time: opening another closes the first, and
+    // pressing the open one closes it. The open card is a sheet over the
+    // other tools (panel.ts), and closing it puts focus back on the tool it
+    // was opened from.
     onToggleExpand: (id) => {
       const open = store.get().expandedProviderId;
       store.set({ expandedProviderId: open === id ? null : id });
@@ -825,7 +818,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     store.set({ gauge: prefs.gauge });
   }
 
-  // --- Görünüm: list, focus or tiles ----------------------------------------
+  // --- Görünüm: the short list or the ring tiles ----------------------------
 
   /** The newest layout asked of main. Same shape as gaugeRequest. */
   let layoutRequest: { layout: Layout; at: number } | null = null;
@@ -836,9 +829,8 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    * Optimistic, then reconciled, exactly like applyGauge: the panel changes
    * layout on the gesture and main is asked afterwards. `{ok:false}` puts the
    * OLD layout back on the document as well as in the radio group. An open
-   * "Ayrıntılar" is closed first: in the list it is a card that grew, in the
-   * other two a sheet, and carrying one into the other would open the wrong
-   * shape under the user.
+   * sheet is closed first: the user is in Settings, and coming back to the
+   * new layout should show the new layout, not one tool's details.
    */
   async function applyLayout(next: Layout): Promise<void> {
     if (next === store.get().layout) return;
@@ -1161,12 +1153,12 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       panel.focusView('main');
       return;
     }
-    // Then a tool's details, where they are a sheet over the other tools
-    // ("Öne çıkan", "Kutucuklar"): Esc is the way back to them, as in
-    // settings. In the list the details are part of a card and Esc closes
-    // the panel as it always did.
+    // Then a tool's details, a sheet over the other tools in both layouts:
+    // Esc is the way back to them, as in settings. With no sheet open, Esc
+    // closes the panel, the way it always did (the header has no close
+    // button any more; Esc and a click outside are the ways out).
     const state = store.get();
-    if (state.layout !== 'list' && state.expandedProviderId !== null) {
+    if (state.expandedProviderId !== null) {
       ctx.onToggleExpand(state.expandedProviderId);
       return;
     }

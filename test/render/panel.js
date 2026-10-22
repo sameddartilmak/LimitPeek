@@ -1383,14 +1383,14 @@ app.whenReady().then(async () => {
   // Refreshing: the third state that matters, and the one the old chip never
   // represented at all.
   await js('window.__probe.setRefreshDelay(900)');
-  await js(`document.querySelector('.foot button.btn').click()`);
+  await js(`document.querySelector('.iconbtn--refresh').click()`);
   await sleep(260);
   const refreshing = await js(`(() => {
     const f = document.querySelector('.hdr .fresh');
     return { busy: f.dataset.busy || null, level: f.dataset.fresh,
              text: f.querySelector('.fresh__text').textContent,
              anim: getComputedStyle(f.querySelector('.fresh__dot')).animationName,
-             button: document.querySelector('.foot button.btn').textContent };
+             button: document.querySelector('.iconbtn--refresh').getAttribute('aria-label') };
   })()`);
   say('refreshing: ' + JSON.stringify(refreshing));
   check('a refresh in flight is visible in the header', refreshing.busy === 'true', refreshing);
@@ -2265,7 +2265,7 @@ app.whenReady().then(async () => {
   await js(`document.querySelector('.row[data-provider="kimi"] button.btn').click()`);
   await sleep(240);
   const noSteal = await js(`(() => {
-    const refresh = [...document.querySelectorAll('.foot button')].pop();
+    const refresh = document.querySelector('.iconbtn--refresh');
     refresh.focus();
     document.querySelector('.notice__close').click();
     return {

@@ -214,7 +214,8 @@ function createPreferences({
       // literals; anything else is the opaque canvas every earlier version had.
       material: material() === 'acrylic' ? 'acrylic' : 'none',
       frame: frame() === 'fitted' ? 'fitted' : 'canvas',
-      // Görünüm → Düzen, re-sanitised: anything but 'focus' or 'tiles' is the list.
+      // Görünüm → Düzen, re-sanitised: an old value reads as its successor,
+      // anything else is the short list ('sade').
       layout: sanitizeLayout(settings && settings.layout),
       // Görünüm → Şerit stili, re-sanitised: anything but 'rings' or 'fill' is plain.
       stripStyle: sanitizeStripStyle(settings && settings.stripStyle),

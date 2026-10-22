@@ -922,10 +922,11 @@ function createChoiceGroup<V extends string>(opts: {
 }
 
 /**
- * Görünüm → "Düzen": "Liste" (the default, one card per tool), "Öne çıkan"
- * (the tool closest to its limit, large, on top, a compact row per other
- * tool) or "Kutucuklar" (a two-column grid of tiles with quick tiles under
- * it). Right before "Gösterge", whose bars or rings every layout draws.
+ * Görünüm → "Düzen": "Sade liste" (the default, one short line per tool with
+ * its two figures) or "Halka kutuları" (small tiles side by side, a ring for
+ * the five-hour window in each). The two the owner picked from the minimal
+ * mockups (2026-10-22); the help line says in one sentence what each is, and
+ * that a tool opens its details on a click in both.
  */
 interface LayoutHandleLocal {
   el: HTMLElement;
@@ -941,9 +942,8 @@ function createLayoutControl(ctx: SettingsContext): LayoutHandleLocal {
     legend: 'settings.layout.legend',
     help: 'settings.layout.help',
     choices: [
-      { v: 'list', key: 'settings.layout.list' },
-      { v: 'focus', key: 'settings.layout.focus' },
-      { v: 'tiles', key: 'settings.layout.tiles' },
+      { v: 'sade', key: 'settings.layout.sade' },
+      { v: 'halka', key: 'settings.layout.halka' },
     ],
     onPick: (layout) => ctx.onLayout(layout),
   });

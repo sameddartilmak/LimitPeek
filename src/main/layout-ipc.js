@@ -2,14 +2,16 @@
 const { isLayout } = require('../core/layout');
 
 /**
- * The SET_LAYOUT handler: Settings → Genel → Görünüm, "Düzen: Liste / Öne
- * çıkan / Kutucuklar". Split out of `index.js` for the reason `gauge-ipc.js`
- * is: `test/layout.test.js` drives this exact function.
+ * The SET_LAYOUT handler: Settings → Genel → Görünüm, "Düzen: Sade liste /
+ * Halka kutuları". Split out of `index.js` so `test/layout.test.js` can drive
+ * this exact function.
  *
- * Persist-then-push, synchronous end to end like SET_GAUGE, so two rapid
- * picks cannot interleave two read-modify-write cycles over one settings
- * object and one file. The value is checked against the three literals, never
- * coerced: anything else is a bug or a hostile message.
+ * Persist-then-push, synchronous end to end, so two rapid picks cannot
+ * interleave two read-modify-write cycles over one settings object and one
+ * file. The value is checked against the two literals, never coerced and
+ * never migrated: the old 'list' / 'focus' / 'tiles' are a settings file's
+ * business (src/core/layout.js), and a renderer that sends one is a bug or a
+ * hostile message.
  *
  * Nothing is applied in main: the layout is drawn by the renderer alone (the
  * tray donut and the strip do not change), so after the write there is only
@@ -37,8 +39,8 @@ function createSetLayoutHandler({ fromPanel, getSettings, save, push, log }) {
       log.warn('layout could not be persisted; nothing changed');
       return { ok: false };
     }
-    // Best effort, like SET_GAUGE's: the renderer already shows the new
-    // layout, so a push that fails costs an echo, not a disagreement.
+    // Best effort: the renderer already shows the new layout, so a push that
+    // fails costs an echo, not a disagreement.
     try { push(); } catch (err) {
       log.warn(`layout push failed: code=${(err && err.code) || 'UNKNOWN'}`);
     }

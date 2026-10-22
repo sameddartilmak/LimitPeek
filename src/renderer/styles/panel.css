@@ -211,12 +211,15 @@ html[data-frame="fitted"] .panel__tail { display: none; }
  *
  * The edge highlight and the shadow appear only while something is under it
  * (`data-under`, set from the list's scroll position): at rest the header is
- * the panel base and draws no line, as before. 14 + 36 + 10 keeps the header
- * the 60px it was with the grouped controls' 36px capsule. */
+ * the panel base and draws no line, as before.
+ *
+ * THE MINIMAL HEADER (owner, 2026-10-22): one short row, 10 + 28 + 6, the
+ * app tile, the name and three bare icons, as on the mockup the owner picked.
+ * It was 60px with a 17px title and a capsule of 32px buttons. */
 .hdr {
   position: relative;
   z-index: 2;
-  padding: 14px var(--s-3) 10px var(--s-4);
+  padding: 10px var(--s-2) 6px 14px;
   background: var(--glass);
   -webkit-backdrop-filter: var(--glass-filter);
   backdrop-filter: var(--glass-filter);
@@ -242,7 +245,7 @@ html[data-frame="fitted"] .panel__tail { display: none; }
   gap: var(--s-2);
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--fs-title);
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: -.01em;
   color: var(--ink-100);
@@ -256,7 +259,8 @@ html[data-frame="fitted"] .panel__tail { display: none; }
  * legible. Vector either way, so it stays crisp at every scale. */
 .hdr__logo {
   flex: none;
-  width: 24px; height: 24px;
+  /* 18 since the minimal header: beside a 14px name and 28px icons. */
+  width: 18px; height: 18px;
   background: url(../assets/app-icon.svg) center / contain no-repeat;
 }
 
@@ -267,27 +271,30 @@ html[data-frame="fitted"] .panel__tail { display: none; }
 
 .hdr__spacer { flex: 1 1 auto; }
 
-/* Settings, pin and close as ONE grouped control: a capsule with a hairline
- * of light at its rim and one small shadow, the buttons sitting in it edge to
- * edge. A fill on the header's glass, never a second pane of glass (no blur
- * of its own). The buttons keep their 32px targets and their own states. */
+/* When the freshness marker raises its alarm ("güncel değil · 22 dk önce",
+ * "Bağlantı yok"), the brand gives up its NAME to it and keeps its tile: at
+ * 320px the name and the filled chip do not fit side by side, and the chip is
+ * the one that carries news. The quieter words ("ilk tarama sürüyor",
+ * "1 dk önce") fit beside the name. `font-size: 0` hides the words and keeps
+ * them in the h1's accessible name. */
+.hdr__top:has(.fresh:is([data-fresh="stale"], [data-fresh="offline"])) .hdr__title { font-size: 0; gap: 0; }
+
+/* Refresh, pin and settings, side by side and bare (the minimal header): the
+ * capsule they sat in was one more surface on a panel the owner found too
+ * big, and three icons in a row already read as one group. */
 .hdr__actions {
   display: flex;
   align-items: center;
-  gap: 0;
-  padding: 2px;
-  border-radius: 999px;
-  background: var(--glass-ctl);
-  box-shadow: inset 0 0 0 .5px var(--glass-ctl-edge), var(--glass-ctl-shadow);
+  gap: 2px;
 }
 
-/* 32px: a comfortable target for a pointer and a touch screen alike (UI plan
- * 2026-09-29); the glyph stays 16px. */
+/* 28px, the mockup's: still a comfortable pointer target, and the glyph stays
+ * 16px. */
 .iconbtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px; height: 32px;
+  width: 28px; height: 28px;
   padding: 0;
   border: 0;
   /* A circle, like a toolbar button on a sheet: the glyph floats until the
@@ -308,7 +315,13 @@ html[data-frame="fitted"] .panel__tail { display: none; }
   color: var(--tint-text);
   background: var(--fill);
 }
-.iconbtn svg { width: 18px; height: 18px; display: block; }
+.iconbtn svg { width: 16px; height: 16px; display: block; }
+.iconbtn[disabled] { cursor: default; opacity: .55; }
+.iconbtn[disabled]:hover { color: var(--ink-400); background: transparent; }
+.iconbtn[disabled]:active { transform: none; }
+/* The refresh turns while it works (its name says "Yenileniyor" as well). */
+.iconbtn[data-busy="true"] .iconbtn__spin { animation: spin 900ms linear infinite; }
+.iconbtn--refresh[data-busy="true"] { opacity: 1; }
 
 /* PINNED vs. NOT PINNED, at a glance.
  *
@@ -341,7 +354,7 @@ html[data-frame="fitted"] .panel__tail { display: none; }
  * for one signal, in the header's best real estate, saying "fine". This
  * escalates instead:
  *
- *   live     6px dot, no ground, no words       (~14px wide)
+ *   live     nothing (a 6px dot until 2026-10-22)
  *   pending  dot pulses, words return
  *   aging    dot turns watch, words return
  *   stale    filled ember block, words          (the row list dims with it)
@@ -382,7 +395,10 @@ html[data-frame="fitted"] .panel__tail { display: none; }
 }
 .fresh__text:empty { display: none; }
 
-.fresh[data-fresh="live"]    { --fresh-color: var(--calm); }
+/* Live: nothing at all since the minimal header (owner, 2026-10-22: the
+ * green dot went). The marker still holds its screen-reader status, so it
+ * keeps its place in the tree; it just draws no box. */
+.fresh[data-fresh="live"] .fresh__dot { display: none; }
 /* Aging: a small outlined chip, "1 dk önce". */
 /* Aging: the dot turns watch and the words return — no ground and no frame,
  * which stays reserved for the alarm tier below. */
@@ -607,53 +623,23 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .panel__band--list
 .onb .onb__skip:hover { background: var(--fill-2); }
 
 /* --------------------------------------------------------------- footer */
-
-/* "Son tarama" and "Yenile", nothing else (UI plan 2026-09-29). The pin's
- * promise moved into the pin's own tooltip. */
-.foot {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  padding: var(--s-2) var(--s-3) var(--s-3) var(--s-4);
-  /* The one separator the sheet keeps: the list scrolls under it. */
-  border-top: 1px solid var(--ink-700);
-  font-size: var(--fs-micro);
-  color: var(--ink-400);
-}
-.foot__spacer { flex: 1 1 auto; }
-.foot__scan { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* A fixed width, so "Yenile" -> "Yenileniyor" -> "Taranıyor" never moves the
- * button under the pointer; the icon turns while it works. A FILLED capsule
- * (concept A, 2026-10-21): the panel's one standing action, white on the
- * filled tint, 4.70:1 in both themes, over acrylic or not — the mockup's
- * #0A84FF ground would leave the white at 3.6. */
-.btn.foot__refresh {
-  min-width: 128px;
-  gap: var(--s-1);
-  border-radius: 999px;
-  background: var(--tint-fill);
-  color: var(--on-tint);
-  font-size: var(--fs-body);
-  font-weight: 600;
-}
-.btn.foot__refresh:hover { background: color-mix(in srgb, var(--tint-fill), #000000 12%); color: var(--on-tint); }
-/* Over acrylic the footer's rule is the sheet's own hairline, not an opaque grey. */
-html[data-material="acrylic"]:not([data-reduce-transparency]) .foot { border-top-color: var(--glass-edge); }
-.foot__refresh-icon { width: 14px; height: 14px; flex: none; }
-.foot__refresh[data-busy="true"] .foot__refresh-icon { animation: spin 900ms linear infinite; }
+/* Gone (minimal redesign, 2026-10-22): "Son tarama" is the header refresh
+ * icon's tooltip and name, and the big "Yenile" is that icon. */
 
 /* Tray-icon coaching. Only shown when the anchor came from the cursor, i.e.
  * when main could not measure a tray rect — on Win11 that is usually the
  * hidden-icons overflow flyout. */
-/* Toasts: the outcomes of the user's own actions, stacked above the footer. */
+/* Toasts: the outcomes of the user's own actions, stacked under the list. */
 .toasts {
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
   margin: 0 var(--s-3) var(--s-2);
 }
-.toasts:empty { display: none; }
+/* With every toast hidden the box would still keep its margin under the
+ * list; the panel's last edge is the list's own. */
+.toasts:empty,
+.toasts:not(:has(> :not([hidden]))) { display: none; }
 
 .coach {
   display: flex;
@@ -1031,7 +1017,8 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
 .settings__title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--fs-title);
+  /* The header's own size (the brand's 14px, a step up for a view title). */
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: -.01em;
   color: var(--ink-100);

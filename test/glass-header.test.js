@@ -10,8 +10,8 @@ const { FakeElement, installDom, mirrorRenderer, walk } = require('./helpers/fak
  *
  *   1. While Settings is open the view has ONE top row: its back button and
  *      "Ayarlar" take the brand's place in the header, the settings button
- *      that opened the view is hidden, and the keyboard meets back, pin,
- *      close, then the tabs. Closing the view puts the brand and the button
+ *      that opened the view is hidden, and the keyboard meets back, refresh,
+ *      pin, then the tabs (the header has no close since the minimal redesign). Closing the view puts the brand and the button
  *      back, and focus on the button.
  *   2. "Saydamlık" (stored as reduceTransparency) is optimistic like the gauge: the document flips on
  *      the gesture, a refusal puts the old value back and says so, and
@@ -110,9 +110,9 @@ test.describe('Settings has one top row', () => {
       assert.equal(visible(app.settingsButton), false, 'a second way out still shows');
       assert.equal(document.activeElement, back, 'focus did not land on the way out');
 
-      // Keyboard order inside the header: back, then the pin and the close.
+      // Keyboard order inside the header: back, then the refresh and the pin.
       const order = walk(app.header).filter((n) => n.tagName === 'BUTTON' && visible(n));
-      assert.deepEqual(order.map((n) => n === back ? 'back' : cls(n).includes('iconbtn--pin') ? 'pin' : 'other'), ['back', 'pin', 'other']);
+      assert.deepEqual(order.map((n) => n === back ? 'back' : cls(n).includes('iconbtn--pin') ? 'pin' : cls(n).includes('iconbtn--refresh') ? 'refresh' : 'other'), ['back', 'refresh', 'pin']);
       // ...and the tabs come after the header.
       const tab = app.find((n) => n.getAttribute('role') === 'tab');
       const all = walk(app.container);
@@ -198,13 +198,14 @@ test.describe('small details', () => {
     let finish = null;
     const app = mount({}, { requestRefresh: () => new Promise((r) => { finish = r; }) });
     try {
-      const button = app.find((n) => cls(n).includes('foot__refresh'));
+      const button = app.find((n) => cls(n).includes('iconbtn--refresh'));
       await tick();
       assert.equal(button.getAttribute('aria-label'), i18n.t('panel.scanning'), 'the first scan');
       assert.equal(button.getAttribute('aria-busy'), 'true');
       app.handle.applySnapshot(SNAP);
       await tick();
-      assert.equal(button.getAttribute('aria-label'), i18n.t('panel.refreshLabel'));
+      // At rest it says what it does and when the last scan landed.
+      assert.match(button.getAttribute('aria-label'), /^Şimdi yenile, son tarama \d{2}[:.]\d{2}$/);
       assert.equal(button.getAttribute('aria-busy'), null);
       button.click();
       await tick();
@@ -212,7 +213,7 @@ test.describe('small details', () => {
       assert.equal(button.getAttribute('aria-busy'), 'true');
       finish(SNAP);
       await tick();
-      assert.equal(button.getAttribute('aria-label'), i18n.t('panel.refreshLabel'));
+      assert.match(button.getAttribute('aria-label'), /^Şimdi yenile, son tarama /);
       assert.equal(button.getAttribute('aria-busy'), null);
     } finally {
       app.handle.destroy();

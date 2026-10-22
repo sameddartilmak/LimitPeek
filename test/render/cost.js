@@ -216,7 +216,7 @@ app.whenReady().then(async () => {
   // the half that makes the white-frame fix a scoping decision rather than a
   // blanket `outline: none`, so it may never be softened.
   const ctl = await js(`(() => {
-    const b = [...document.querySelectorAll('.foot button')].pop();
+    const b = document.querySelector('.iconbtn--refresh');
     b.focus();
     const cs = getComputedStyle(b);
     return {
@@ -1399,7 +1399,7 @@ app.whenReady().then(async () => {
     (await js(`document.querySelector('.toast').hidden`)) === true);
 
   await js(`window.__probe.setRefreshNotices(['ANTIGRAVITY_NOT_RUNNING'])`);
-  await js(`[...document.querySelectorAll('.foot button')].pop().click()`);
+  await js(`document.querySelector('.iconbtn--refresh').click()`);
   await sleep(220);
   const bubble = await js(`(() => {
     const b = document.querySelector('.toast');
@@ -1429,7 +1429,7 @@ app.whenReady().then(async () => {
     (await js(`document.querySelector('.toast').hidden`)) === true);
 
   await js(`window.__probe.setRefreshNotices(null)`);
-  await js(`[...document.querySelectorAll('.foot button')].pop().click()`);
+  await js(`document.querySelector('.iconbtn--refresh').click()`);
   await sleep(220);
   check('a clean refresh leaves it down',
     (await js(`document.querySelector('.toast').hidden`)) === true);

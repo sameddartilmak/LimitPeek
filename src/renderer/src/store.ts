@@ -236,7 +236,7 @@ export interface PanelState {
   /** The window's shape, fixed per process (Preferences.frame). */
   frame: PanelFrame;
   /**
-   * Görünüm → Düzen: list, focus or tiles. Optimistic, like `gauge`: the
+   * Görünüm → Düzen: the short list or the ring tiles. Optimistic, like `gauge`: the
    * document flips on the gesture and main is asked afterwards.
    */
   layout: Layout;
@@ -304,7 +304,7 @@ const INITIAL: PanelState = {
   systemReducedTransparency: false,
   material: 'none',
   frame: 'canvas',
-  layout: 'list',
+  layout: 'sade',
   layoutPending: false,
   layoutReverted: false,
   stripStyle: 'plain',

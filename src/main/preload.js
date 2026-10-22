@@ -251,9 +251,9 @@ contextBridge.exposeInMainWorld('usageNotch', {
   /**
    * Persists how the panel lays out the tools: 'list', 'focus' or 'tiles'.
    * Coerced to a string for convenience only; main checks it against the
-   * three literals. `{ok:false}` means nothing changed anywhere.
+   * two literals. `{ok:false}` means nothing changed anywhere.
    *
-   * @param {'list'|'focus'|'tiles'} layout
+   * @param {'sade'|'halka'} layout
    * @returns {Promise<{ok:boolean}>}
    */
   setLayout: (layout) => ipcRenderer.invoke(CH.SET_LAYOUT, String(layout)),

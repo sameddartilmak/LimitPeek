@@ -689,14 +689,14 @@ test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', 
     return { handle, layout, strip, gauge, radios, labels, picked };
   }
 
-  test('"Düzen: Liste / Öne çıkan / Kutucuklar": three native radios, before "Gösterge"', () => {
+  test('"Düzen: Sade liste / Halka kutuları": two native radios, with a help line', () => {
     const { handle, layout, gauge, radios, labels } = mountLooks();
     assert.deepEqual(radios(layout).map((r) => [r.getAttribute('type'), r.getAttribute('value')]),
-      [['radio', 'list'], ['radio', 'focus'], ['radio', 'tiles']]);
-    assert.deepEqual(labels(layout), ['Liste', 'Öne çıkan', 'Kutucuklar']);
+      [['radio', 'sade'], ['radio', 'halka']]);
+    assert.deepEqual(labels(layout), ['Sade liste', 'Halka kutuları']);
     assert.equal(walk(layout).find((el) => el.tagName === 'LEGEND').textContent, 'Düzen');
     const help = walk(layout).find((el) => el.tagName === 'P');
-    assert.match(help.textContent, /^Liste: her araç bir kartta/);
+    assert.match(help.textContent, /^Sade liste: her araç tek satırda/);
     assert.equal(layout.getAttribute('aria-describedby'), help.getAttribute('id'));
     const kids = walk(walk(handle.el).find((el) => el.getAttribute('data-tab') === 'general' && el.getAttribute('role') === 'tabpanel'));
     assert.ok(kids.indexOf(layout) > -1 && kids.indexOf(layout) < kids.indexOf(gauge), 'the layout comes before the gauge it governs');
@@ -704,16 +704,16 @@ test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', 
 
   test('a pick tells the app; pending and revert are on the group', () => {
     const { handle, layout, radios, picked } = mountLooks();
-    handle.render(state({ layout: 'list' }), []);
-    assert.deepEqual(radios(layout).map((r) => r.checked), [true, false, false]);
-    radios(layout)[2].checked = true;
-    radios(layout)[2].dispatch('change');
-    assert.deepEqual(picked.layout, ['tiles']);
-    handle.render(state({ layout: 'tiles', layoutPending: true }), []);
-    assert.deepEqual(radios(layout).map((r) => r.checked), [false, false, true]);
+    handle.render(state({ layout: 'sade' }), []);
+    assert.deepEqual(radios(layout).map((r) => r.checked), [true, false]);
+    radios(layout)[1].checked = true;
+    radios(layout)[1].dispatch('change');
+    assert.deepEqual(picked.layout, ['halka']);
+    handle.render(state({ layout: 'halka', layoutPending: true }), []);
+    assert.deepEqual(radios(layout).map((r) => r.checked), [false, true]);
     assert.equal(layout.getAttribute('aria-busy'), 'true');
-    handle.render(state({ layout: 'list', layoutReverted: true }), []);
-    assert.deepEqual(radios(layout).map((r) => r.checked), [true, false, false]);
+    handle.render(state({ layout: 'sade', layoutReverted: true }), []);
+    assert.deepEqual(radios(layout).map((r) => r.checked), [true, false]);
     assert.equal(layout.getAttribute('data-revert'), 'true');
   });
 
@@ -722,7 +722,7 @@ test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', 
     assert.equal(layout.parentNode, gauge.parentNode);
     const siblings = layout.parentNode.childNodes;
     assert.equal(siblings.indexOf(gauge), siblings.indexOf(layout) + 1, '"Gösterge" is not right under "Düzen"');
-    for (const l of ['list', 'focus', 'tiles']) {
+    for (const l of ['sade', 'halka']) {
       for (const g of ['bar', 'ring']) {
         handle.render(state({ layout: l, gauge: g }), []);
         assert.equal(gauge.hidden, false, `${l} / ${g}`);
