@@ -19,8 +19,8 @@
  * details (layouts.css says where everything went).
  *
  * THE PLATE. The lines sit on one rounded plate in the card token
- * (--ink-800), not on cards of their own: over the thin acrylic tint
- * (tokens.css, 25 % dark / 40 % light) bare text on the base reads against
+ * (--ink-800), not on cards of their own: over the window's glass, as thin
+ * as the "Saydamlık" slider makes it (tokens.css), bare text on the base reads against
  * whatever is behind the window, and the plate is the one surface that keeps
  * it readable without raising the tint again. A window material that
  * restyles the cards restyles the plate with them.

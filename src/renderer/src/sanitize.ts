@@ -1080,9 +1080,11 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   const stripNoRoom = source.stripNoRoom === true;
   // No `gauge` any more (Gösterge went with the old layouts): a main from
   // before then still sends one, and it is simply not read.
-  // Saydamlığı azalt, and Windows asking for it: only a real `true` either
-  // way, so a main from before the glass sends nothing and gets the glass.
-  const reduceTransparency = source.reduceTransparency === true;
+  // Saydamlık: an integer from 0 to 100, as main's own load() says (a number
+  // rounded and clamped, anything else the default). A main from before the
+  // slider sends the old switch instead: its `reduceTransparency: true` is
+  // the opaque panel, 0. Windows asking for less: only a real `true`.
+  const transparency = sanitizeTransparencyLevel(source.transparency, source.reduceTransparency === true);
   const systemReducedTransparency = source.systemReducedTransparency === true;
   // The window: only the exact literals count, and the fallbacks are the
   // opaque base in the transparent canvas — what every earlier main sent, and
@@ -1098,9 +1100,23 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   const stripStyle: StripStyle = source.stripStyle === 'rings' || source.stripStyle === 'fill' ? source.stripStyle : 'plain';
   return {
     theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed,
-    trayView, stripAvailable, stripNoRoom, reduceTransparency, systemReducedTransparency,
+    trayView, stripAvailable, stripNoRoom, transparency, systemReducedTransparency,
     material, frame, layout, stripStyle,
   };
+}
+
+/** "Saydamlık"'s default, src/core/transparency.js DEFAULT_TRANSPARENCY. */
+export const DEFAULT_TRANSPARENCY = 45;
+
+/**
+ * Untrusted level -> an integer from 0 to 100, the same rule as main's
+ * sanitizeTransparency (src/core/transparency.js): a finite number rounded
+ * and clamped, anything else the default — or 0 when the payload carried the
+ * old "less transparency" switch instead.
+ */
+export function sanitizeTransparencyLevel(raw: unknown, legacyReduce = false): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return legacyReduce ? 0 : DEFAULT_TRANSPARENCY;
+  return Math.min(100, Math.max(0, Math.round(raw)));
 }
 
 /** Returns null when the payload is not a usable Snapshot at all. */

@@ -72,7 +72,7 @@
 
 /* THE FITTED WINDOW (Windows 11, `html[data-frame="fitted"]`, 2026-10-21).
  * The OS window IS the panel: Windows rounds its corners (8px), draws its
- * shadow and its hairline, and puts its acrylic behind it when the material
+ * shadow and its hairline, and puts its glass behind it when the material
  * is live. So the sheet loses everything it drew for itself in the canvas —
  * the corner, the edge, the shadow, the tail — and fills the window from the
  * edge nearest the taskbar (fittedPlacement in anchor.ts), so a height change
@@ -82,7 +82,7 @@
  * The window itself appears in one move, so the entrance is the content's
  * alone: it rises out of the taskbar's side by a few pixels as it fades in,
  * the way Windows' own flyouts do, instead of growing — a scale would show
- * the acrylic round it while it grew. */
+ * the glass round it while it grew. */
 html[data-frame="fitted"] .anchor { width: 100%; }
 html[data-frame="fitted"] .anchor,
 html[data-frame="fitted"] .anchor[data-open="false"] { transform: translateY(6px); }
@@ -465,7 +465,7 @@ html[data-frame="fitted"] .panel__tail { display: none; }
   max-height: calc(var(--list-max, 100vh) + var(--hdr-h, 60px));
   scroll-padding-top: var(--hdr-h, 60px);
 }
-/* Over real acrylic the header is not glass of its own (tokens.css), so
+/* Over the window's glass the header is not glass of its own (tokens.css), so
  * nothing may pass under it: the list starts below it again, and the
  * header's hairline (data-under) marks where it was cut. */
 html[data-material="acrylic"]:not([data-reduce-transparency]) .panel .strip[hidden] + .panel__band--list {
@@ -896,7 +896,7 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .panel__band--list
  * below) and padded back by as much, so nothing moves. "Kullanım" keeps its
  * own scroller under its period chooser and is left as it was. */
 .settings { --tabs-h: 40px; }
-/* Over real acrylic the band is part of the sheet, like the header: no page
+/* Over the window's glass the band is part of the sheet, like the header: no page
  * under it. Zero folds the pull-up, its padding and the track inset at once. */
 html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs-h: 0px; }
 .settings__top {
@@ -1319,10 +1319,85 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
  * off at the switch. */
 .settings__item--autostart .settings__meta { white-space: normal; }
 /* A switch row has no plan field to wrap below it, and a help line long
- * enough to fill the row ("Saydamlığı azalt") must wrap inside the text
+ * enough to fill the row ("Windows açılışında başlat") must wrap inside the text
  * column rather than push the switch onto a line of its own. */
 .settings__item--autostart { flex-wrap: nowrap; }
 .settings__item--autostart .switch { flex: none; }
+
+/* "Saydamlık": the slider row (settings.ts createGlassControl). A group of
+ * one like the switch rows, laid out as a column: the name with its figure,
+ * the slider between "Düz" and "Saydam", then the help line, which wraps. */
+.settings__item--glass {
+  flex-direction: column;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: var(--s-2);
+  margin: var(--s-4) var(--s-4) var(--s-3);
+  border-radius: var(--radius-card);
+  background: var(--ink-800);
+}
+.glass-slider__head {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.settings__item--glass .settings__name { color: var(--ink-100); }
+.glass-slider__value {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--tint-text);
+  font-variant-numeric: tabular-nums;
+}
+.settings__item--glass > .settings__meta { white-space: normal; }
+.glass-slider {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.glass-slider__end {
+  flex: none;
+  font-size: var(--fs-meta);
+  color: var(--ink-400);
+}
+/* The range itself, drawn like the switches beside it: a thin track in the
+ * switch's off grey, filled with the tint up to the thumb (--fill, which
+ * settings.ts sets from the value), and the switch's white knob. Still the
+ * native input underneath: arrows move it a step, the global focus ring
+ * shows, and forced colours draw it in system colours (below). */
+.glass-slider__input {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+}
+.glass-slider__input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--tint) 0 var(--fill, 45%), var(--switch-off) var(--fill, 45%) 100%);
+}
+.glass-slider__input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px; height: 20px;
+  /* Centred on the 4px track: (4 - 20) / 2. */
+  margin-top: -8px;
+  border-radius: 50%;
+  background: var(--knob);
+  box-shadow: var(--shadow-knob);
+  transition: transform var(--dur-hover) var(--ease-open);
+}
+/* The press grows the knob a little, as the switch's stretches. */
+.glass-slider__input:active::-webkit-slider-thumb { transform: scale(1.12); }
+/* Windows decides (high contrast, transparency effects off): the slider is
+ * disabled and reads so; the line under it says why. */
+.glass-slider__input:disabled { cursor: default; }
+.settings__item--glass[data-disabled="true"] .glass-slider { opacity: .45; }
 
 @keyframes settings-revert {
   0%, 45% { background: color-mix(in srgb, var(--watch) 22%, var(--ink-800)); }
@@ -1936,6 +2011,15 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
   .switch__track::after { top: 1px; left: 1px; background: ButtonText; }
   .switch[aria-checked="true"] .switch__track { background: Highlight; border-color: Highlight; }
   .switch[aria-checked="true"] .switch__track::after { background: HighlightText; }
+
+  /* The transparency slider: the track outlined, the thumb in Highlight
+   * (its place is the value; no fill in a system colour is needed for it);
+   * disabled, all of it in GrayText. */
+  .glass-slider__input::-webkit-slider-runnable-track { forced-color-adjust: none; background: Canvas; border: 1px solid ButtonText; }
+  .glass-slider__input::-webkit-slider-thumb { forced-color-adjust: none; background: Highlight; border: 1px solid HighlightText; box-shadow: none; }
+  .glass-slider__input:disabled::-webkit-slider-runnable-track { background: Canvas; border-color: GrayText; }
+  .glass-slider__input:disabled::-webkit-slider-thumb { background: GrayText; border-color: GrayText; }
+  .settings__item--glass[data-disabled="true"] .glass-slider { opacity: 1; }
 
   /* The usage chart: columns in the text colour, the chosen one in Highlight. */
   .usage__col-track { forced-color-adjust: none; background: Canvas; }

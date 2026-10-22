@@ -100,7 +100,7 @@ test.describe('the material on the document', () => {
     }
   });
 
-  test('a push switches the material live, e.g. "Saydamlığı azalt" or Windows turning transparency off', async () => {
+  test('a push switches the material live, e.g. "Saydamlık" at 0 or Windows turning transparency off', async () => {
     const app = mount({ material: 'acrylic', frame: 'fitted' });
     try {
       app.push({ material: 'none', frame: 'fitted', systemReducedTransparency: true });
@@ -131,13 +131,14 @@ test.describe('the stylesheets: acrylic tokens over an opaque fallback', () => {
     return text.slice(start, text.indexOf('\n}', start));
   };
 
-  test('the translucent sheet and cards exist only under live acrylic, and step aside for reduced transparency', () => {
+  test('the transparent sheet and translucent cards exist only over live glass, and step aside at 0', () => {
     const tokens = css('tokens.css');
     const dark = block(tokens, ':root[data-material="acrylic"]:not([data-reduce-transparency]) {');
-    assert.match(dark, /--panel-base: rgba\(/);
+    // The tint is the window's GradientColor now (panel-material.js): the page adds none.
+    assert.match(dark, /--panel-base: transparent;/);
     assert.match(dark, /--ink-800: rgba\(255, 255, 255, \.\d+\)/);
     assert.match(dark, /--glass-filter: none;/, 'no in-app blur over the real acrylic');
-    assert.ok(block(tokens, ':root[data-material="acrylic"][data-theme="light"]:not([data-reduce-transparency]) {').includes('--panel-base: rgba('));
+    assert.equal(block(tokens, ':root[data-material="acrylic"][data-theme="light"]:not([data-reduce-transparency]) {').includes('--panel-base'), false, 'light inherits the transparent sheet');
     // The opaque palette stays the fallback.
     assert.match(block(tokens, ':root {'), /--ink-800: #2C2C2E;/);
     assert.match(block(tokens, ':root {'), /--panel-base: var\(--ink-900\);/);

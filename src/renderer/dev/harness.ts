@@ -66,7 +66,7 @@ let prefs: Preferences = {
   trayView: 'tray',
   stripAvailable: true,
   stripNoRoom: false,
-  reduceTransparency: false,
+  transparency: 45,
   systemReducedTransparency: false,
   // A browser page has no acrylic and no fitted window: the canvas look.
   material: 'none',
@@ -279,10 +279,13 @@ function makeBridge(scenario: Scenario): Bridge {
       return true;
     },
 
-    /** Persist, then push, like setTrayView. */
-    async setReduceTransparency(reduce: boolean): Promise<boolean> {
-      log(`setReduceTransparency(${reduce})`);
-      prefs = { ...prefs, reduceTransparency: reduce };
+    /**
+     * Persist, then push, like setTrayView. A page has no window glass; with
+     * &material=acrylic it says the glass is there above 0, as main would.
+     */
+    async setTransparency(level: number): Promise<boolean> {
+      log(`setTransparency(${level})`);
+      prefs = { ...prefs, transparency: level, material: glassParam && level > 0 ? 'acrylic' : 'none' };
       prefsCb?.(prefs);
       return true;
     },
@@ -571,8 +574,9 @@ controls.appendChild(logBox);
  * URL parameters, for screenshots of a given state without clicking through:
  *   ?s=<scenario id>  &theme=light|dark  &lang=en  &coach=done
  *   &view=settings  &tab=providers|usage|general  &expand=<provider id>
- *   &rt=1 (Görünüm → "Saydamlığı azalt" on)  &rtsys=1 (Windows asks for it)
- *   &frame=fitted  &material=acrylic (the Windows 11 window and its acrylic)
+ *   &tp=0..100 (Görünüm → "Saydamlık"; 0 is the opaque panel)
+ *   &rtsys=1 (Windows asks for less transparency: opaque, the slider disabled)
+ *   &frame=fitted  &material=acrylic (the Windows 11 window and its glass)
  *   &layout=halka (Görünüm → Düzen: the ring tiles; the short list otherwise)
  *   &strip=plain|rings|fill (the strip chosen, in that style, as if this
  *           machine could show it, so Görünüm → "Şerit stili" is on screen)
@@ -588,13 +592,15 @@ if (langParam === 'en' || langParam === 'zh') {
   prefs = { ...prefs, language: langParam, resolvedLanguage: langParam, formatLocale: defaultFormatLocale(langParam) };
 }
 if (params.get('coach') === 'done') prefs = { ...prefs, setupCoachDismissed: true };
-// ?rt=1 / ?rtsys=1: the glass opaque, by the user's switch or by Windows.
-if (params.get('rt') === '1') prefs = { ...prefs, reduceTransparency: true };
+// ?tp=<0..100> / ?rtsys=1: the slider at a level, or Windows asking for less.
+const tpParam = params.get('tp');
+if (tpParam !== null && /^\d{1,3}$/.test(tpParam)) prefs = { ...prefs, transparency: Math.min(100, Number(tpParam)) };
 if (params.get('rtsys') === '1') prefs = { ...prefs, systemReducedTransparency: true };
 // ?frame=fitted / ?material=acrylic: the Windows 11 window, panel edge to edge
-// (with bare=1 the page behind stands in for the desktop under the acrylic).
+// (with bare=1 the page behind stands in for the desktop under the glass).
 if (params.get('frame') === 'fitted') prefs = { ...prefs, frame: 'fitted' };
-if (params.get('material') === 'acrylic') prefs = { ...prefs, material: 'acrylic' };
+const glassParam = params.get('material') === 'acrylic';
+if (glassParam && prefs.transparency > 0) prefs = { ...prefs, material: 'acrylic' };
 // ?layout=halka: through the same preference the Settings control
 // writes (app.ts paints html[data-layout] in frame one).
 const layoutParam = params.get('layout');

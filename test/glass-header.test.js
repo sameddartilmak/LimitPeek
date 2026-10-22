@@ -13,10 +13,11 @@ const { FakeElement, installDom, mirrorRenderer, walk } = require('./helpers/fak
  *      that opened the view is hidden, and the keyboard meets back, refresh,
  *      pin, then the tabs (the header has no close since the minimal redesign). Closing the view puts the brand and the button
  *      back, and focus on the button.
- *   2. "Saydamlık" (stored as reduceTransparency) is optimistic like the layout: the document flips on
- *      the gesture, a refusal puts the old value back and says so, and
- *      Windows' own request (systemReducedTransparency) keeps the glass off
- *      whatever the switch says.
+ *   2. The "Saydamlık" slider is optimistic like the layout: the store and the
+ *      document follow every step, main is asked at a throttled rate while
+ *      it is dragged and at once on 'change', a refusal puts main's value
+ *      back and says so, and Windows' own request (systemReducedTransparency)
+ *      keeps the panel opaque and the slider disabled whatever it says.
  *   3. Two small accessibility details from the report: the refresh names what
  *      it is doing while it does it, and the ring tiles keep the meters' values.
  */
@@ -65,7 +66,7 @@ function mount(prefs = {}, { snapshot = null, requestRefresh = async () => null 
     pin() {},
     close() {},
     requestRefresh,
-    setReduceTransparency: (v) => { const d = deferred(); glassReplies.push({ value: v, ...d }); return d.promise; },
+    setTransparency: (v) => { const d = deferred(); glassReplies.push({ value: v, ...d }); return d.promise; },
   };
   const container = new FakeElement('div');
   document.body.replaceChildren(container);
@@ -130,51 +131,151 @@ test.describe('Settings has one top row', () => {
   });
 });
 
-test.describe('"Saydamlık" off on the document', () => {
+test.describe('"Saydamlık": the slider on the document', () => {
   const html = () => document.documentElement.dataset.reduceTransparency;
-  const switchOf = (app) => app.find((n) => n.getAttribute('role') === 'switch' && n.getAttribute('aria-labelledby') === 'settings-glass-name');
+  const sliderOf = (app) => app.find((n) => n.tagName === 'INPUT' && n.getAttribute('aria-labelledby') === 'settings-glass-name');
+  const figureOf = (app) => app.find((n) => cls(n).includes('glass-slider__value'));
+  const step = (input, value, type = 'input') => { input.value = String(value); input.dispatch(type); };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  test('painted in frame one from either half', () => {
-    let app = mount({ reduceTransparency: true });
+  async function openGeneral(app) {
+    app.settingsButton.click();
+    await tick();
+    const input = sliderOf(app);
+    assert.ok(input, 'no slider');
+    return input;
+  }
+
+  test('painted in frame one: opaque at 0 or when Windows asks, glass otherwise', () => {
+    let app = mount({ transparency: 0 });
     assert.equal(html(), 'true');
     app.handle.destroy();
     app = mount({ systemReducedTransparency: true });
     assert.equal(html(), 'true');
     app.handle.destroy();
-    app = mount({});
+    app = mount({ transparency: 100 });
     assert.equal(html(), undefined);
+    app.handle.destroy();
+    app = mount({});
+    assert.equal(html(), undefined, 'the default is glass');
     app.handle.destroy();
   });
 
-  test('a flip is optimistic; a refusal puts the glass back and says so', async () => {
-    const app = mount();
+  test('the slider starts at main\'s level and every step moves the figure at once', async () => {
+    const app = mount({ transparency: 70 });
     try {
-      app.settingsButton.click();
+      const input = await openGeneral(app);
+      assert.equal(input.value, '70');
+      assert.equal(figureOf(app).textContent, '%70');
+      assert.equal(input.getAttribute('aria-valuetext'), '%70');
+      step(input, 35);
       await tick();
-      const control = switchOf(app);
-      assert.ok(control, 'no switch');
-      control.click();
-      assert.equal(html(), 'true', 'not optimistic');
-      assert.deepEqual(app.glassReplies.map((r) => r.value), [true]);
-      app.glassReplies[0].resolve(false);
-      await tick();
-      assert.equal(html(), undefined, 'the refused value stayed on the document');
-      assert.equal(control.getAttribute('aria-checked'), 'true', 'the switch is "Saydamlık": on again');
-      assert.ok(walk(app.container).some((n) => n.textContent === i18n.t('app.reduceTransparencyNotSaved')));
+      assert.equal(figureOf(app).textContent, '%35');
+      assert.equal(input.style.getPropertyValue('--fill'), '35%');
     } finally {
       app.handle.destroy();
     }
   });
 
-  test('Windows asking keeps the glass off with the switch off, and a push that drops it brings the glass back', async () => {
-    const app = mount();
+  test('a drag is throttled: the first step at once, the rest held back, the newest sent last', async () => {
+    const app = mount({ transparency: 45 });
     try {
-      app.push({ systemReducedTransparency: true });
+      const input = await openGeneral(app);
+      step(input, 50);
+      step(input, 55);
+      step(input, 60);
+      assert.deepEqual(app.glassReplies.map((r) => r.value), [50], 'only the first step went straight out');
+      await wait(120);
+      assert.deepEqual(app.glassReplies.map((r) => r.value), [50, 60], 'the held step goes out when the throttle runs out');
+      // Letting go on the value already sent asks nothing more.
+      step(input, 60, 'change');
+      assert.deepEqual(app.glassReplies.map((r) => r.value), [50, 60]);
+      for (const r of app.glassReplies) r.resolve(true);
+      await tick();
+    } finally {
+      app.handle.destroy();
+    }
+  });
+
+  test('\'change\' (let go, or a key) is sent at once, without waiting for the throttle', async () => {
+    const app = mount({ transparency: 45 });
+    try {
+      const input = await openGeneral(app);
+      step(input, 50);
+      step(input, 40);
+      step(input, 0, 'change');
+      assert.deepEqual(app.glassReplies.map((r) => r.value), [50, 0]);
+      assert.equal(html(), 'true', '0 is opaque on the gesture');
+      await wait(120);
+      assert.deepEqual(app.glassReplies.map((r) => r.value), [50, 0], 'nothing held back after the final value');
+      for (const r of app.glassReplies) r.resolve(true);
+      await tick();
+    } finally {
+      app.handle.destroy();
+    }
+  });
+
+  test('a refusal puts main\'s value back on the slider and the document, and says so', async () => {
+    const app = mount({ transparency: 45 });
+    try {
+      const input = await openGeneral(app);
+      step(input, 30, 'change');
+      app.glassReplies[0].resolve(true);
+      await tick();
+      step(input, 0, 'change');
+      assert.equal(html(), 'true', 'not optimistic');
+      app.glassReplies[1].resolve(false);
+      await tick();
+      assert.equal(html(), undefined, 'the refused value stayed on the document');
+      assert.equal(input.value, '30', 'the slider is back on the last level main kept');
+      assert.equal(figureOf(app).textContent, '%30');
+      assert.ok(walk(app.container).some((n) => n.textContent === i18n.t('app.transparencyNotSaved')));
+    } finally {
+      app.handle.destroy();
+    }
+  });
+
+  test('a push that crosses a drag does not pull the slider back under the hand', async () => {
+    const app = mount({ transparency: 45 });
+    try {
+      const input = await openGeneral(app);
+      step(input, 50);
+      app.glassReplies[0].resolve(true);
+      await tick();
+      step(input, 65);
+      // Main's echo of the 50 arrives while the 65 is still held back.
+      app.push({ transparency: 50 });
+      await tick();
+      assert.equal(input.value, '65');
+      await wait(120);
+      assert.deepEqual(app.glassReplies.map((r) => r.value), [50, 65]);
+      app.glassReplies[1].resolve(true);
+      await tick();
+      // Nothing in flight any more: main's word is adopted again.
+      app.push({ transparency: 80 });
+      await tick();
+      assert.equal(input.value, '80');
+    } finally {
+      app.handle.destroy();
+    }
+  });
+
+  test('Windows asking keeps the panel opaque and the slider disabled; a push that drops it brings both back', async () => {
+    const app = mount({ transparency: 70 });
+    try {
+      const input = await openGeneral(app);
+      app.push({ transparency: 70, systemReducedTransparency: true });
       await tick();
       assert.equal(html(), 'true');
-      app.push({ systemReducedTransparency: false });
+      assert.equal(input.getAttribute('disabled'), '');
+      // A step that still arrives changes nothing and asks nothing.
+      step(input, 20, 'change');
+      assert.deepEqual(app.glassReplies, []);
+      app.push({ transparency: 70, systemReducedTransparency: false });
       await tick();
       assert.equal(html(), undefined);
+      assert.equal(input.getAttribute('disabled'), null);
+      assert.equal(input.value, '70');
     } finally {
       app.handle.destroy();
     }

@@ -217,9 +217,9 @@
   --glass-ctl-shadow: 0 1px 2px rgba(0, 0, 0, .3);
 
   /* --- the sheet itself -------------------------------------------------
-   * What the panel is drawn ON: the opaque base, unless Windows' own acrylic
+   * What the panel is drawn ON: the opaque base, unless Windows' own glass
    * is live behind the window (`html[data-material="acrylic"]`, below), when
-   * it is a translucent tint over that acrylic. Its own token rather than
+   * it is transparent (the glass carries its own tint). Its own token rather than
    * --ink-900, which is also an INK (the filled freshness chip's text). */
   --panel-base: var(--ink-900);
 
@@ -426,29 +426,25 @@
 }
 
 /* ------------------------------------------------------------ acrylic */
-/* REAL WINDOWS 11 ACRYLIC BEHIND THE PANEL (concept "A · Gerçek Windows
- * camı", 2026-10-21). Main sets the window's backdrop to the flyout acrylic
- * and says so in Preferences.material; app.ts paints it on <html>. The page
- * is transparent over it, so the sheet becomes a TINT over the acrylic and
- * the cards light translucent plates on the tint. Everything else stays: the
- * opaque card colours above are the fallback (Windows 10, "Saydamlığı
- * azalt", Windows' transparency off, high contrast, a refused material).
+/* WINDOWS' OWN GLASS BEHIND THE PANEL (concept "A · Gerçek Windows camı",
+ * 2026-10-21; the "Saydamlık" slider, 2026-10-22). Main gives the fitted
+ * window Windows' accent backdrop — frosted at the lower half of the slider,
+ * clear at the upper — and says so in Preferences.material ('acrylic', the
+ * contract's name for "see-through"); app.ts paints it on <html>. The TINT
+ * is main's too: the backdrop's GradientColor carries the panel colour at
+ * the slider's alpha (src/core/panel-material.js panelAccent), so the sheet
+ * here is TRANSPARENT and adds nothing over it. The cards light translucent
+ * plates on the glass. Everything else stays: the opaque card colours above
+ * are the fallback (Windows 10, the slider at 0, Windows' transparency off,
+ * high contrast, a glass Windows refused).
  *
  * The header and the tab band lose their in-app blur here — glass on glass
  * is the stacking the design report rules out, and the window is the glass
  * now — and panel.css stops the list running under them.
  *
- * SIZED FOR CONTRAST, NOT FOR LOOKS. The mockup's 55 % tint was drawn over a
- * CSS blur of a dark wallpaper. Measured on this machine (Windows 11 26200,
- * scratch spike): DWM's dark acrylic alone paints #929292 over a white
- * window and (0,183,0) over a pure green one, so at 55 % the meta ink sat at
- * 2.2:1 on a card. The tint is the smallest that keeps every TEXT ink at
- * 4.5:1 or better on the worst backdrop (white for dark, black for light;
- * nine flat colours tried), with the two inks that still fell short lifted
- * one step for acrylic only. Then MEASURED off the screen with the real panel
- * over a white, a pure green and a black window — the composite of DWM's
- * acrylic, this tint and the card plate: dark card #404042 and base #333336
- * over white, light base #E2E2E3 over black. Worst case, card or base:
+ * CONTRAST IS THE SLIDER'S NOW. The table below was measured for the 82 %
+ * page tint of the first glass (Windows 11 26200, scratch spike), over the
+ * worst backdrops — a white window for dark, a black one for light:
  *
  *                   dark (white behind)     light (black behind)
  *   ink-100         9.50                    13.00
@@ -458,29 +454,20 @@
  *   tint-text       4.60  (#69B1FF)          5.02  (#005CB9)
  *   figures, card   spent 3.04 … watch 7.33  calm 4.87 … spent 6.33
  *
- * The figures are the 24px semibold hero, large text (3:1), as on the opaque
- * card; the ramp itself does not move (the tray mirrors it byte for byte).
+ * The two inks that fell short there are lifted one step for the glass only,
+ * below. The owner then asked, twice, for more transparency than that
+ * ("sadece renk griye dönüyor", "biraz daha artır"), and the slider hands
+ * the choice to the user: its left end (frosted, the tint at 0xE6) is about
+ * the measured look, its default (45, frosted at 0x52) is far thinner, and
+ * its right end is a clear pane with no tint at all, where text over a white
+ * or busy window is as readable as that window lets it be — the price of
+ * the look asked for. 0, Windows' own setting and high contrast give the
+ * opaque base, measured as before.
  *
- * LOWERED FOR LOOKS, 2026-10-22. At 82 % the owner saw a grey panel, not a
- * glass one ("sadece renk griye dönüyor"): DWM's acrylic is already a heavy
- * blur and luminosity layer, so the tint has to be thin for anything behind
- * to show. Shot on the real panel over a colourful window at 82 / 55 / 40 /
- * 20 / 0 %: from 20 % the colours come through and the text on the cards
- * still reads. Lowered again the same day for the minimal panel, whose rows
- * sit on one plate: "saydamlığı biraz daha artırmamız lazım". The tint is
- * now 10 % dark / 15 % light and the plate 5 % / 30 % (the light plate was
- * 70 %, an opaque white sheet over the whole list); most of what is left is
- * DWM's own acrylic. "biraz daha artır": 2 % dark / 5 % light and the plate
- * 4 % / 20 %, as thin as it goes; past this only the material itself could
- * change. The table above was for 82 %: over a white or black window
- * the small inks now fall under 4.5:1, which is the price of the look the
- * owner asked for. "Saydamlık" off (and Windows' own setting, and high
- * contrast) gives the opaque base, measured as before.
- *
- * Off as soon as the renderer knows transparency is to be reduced, before
- * main has switched the window: a tint over an opaque base still reads. */
+ * Off as soon as the renderer knows the panel is to be opaque, before main
+ * has switched the window: an opaque base over glass still reads. */
 :root[data-material="acrylic"]:not([data-reduce-transparency]) {
-  --panel-base: rgba(30, 30, 34, .02);
+  --panel-base: transparent;
   --ink-800: rgba(255, 255, 255, .04);
   --ink-400: #AEAEB2;
   --tint-text: #69B1FF;
@@ -489,7 +476,6 @@
   --glass-ctl: rgba(255, 255, 255, .08);
 }
 :root[data-material="acrylic"][data-theme="light"]:not([data-reduce-transparency]) {
-  --panel-base: rgba(246, 246, 248, .05);
   --ink-800: rgba(255, 255, 255, .2);
   --ink-400: #5E5E63;
   --tint-text: #005CB9;
@@ -501,7 +487,7 @@
  * shadow, when Windows asks for less transparency (Settings → Kişiselleştirme
  * → Renkler → Saydamlık efektleri) or for high contrast. Both reach Chromium
  * as media features, so this needs nothing from main and follows a change
- * live. The panel's own "Saydamlık" switched off adds the same through
+ * live. The panel's own "Saydamlık" at 0 adds the same through
  * `html[data-reduce-transparency]` (app.ts). Re-pointing the tokens rather
  * than overriding components keeps it one rule wide, in both themes. */
 :root[data-reduce-transparency] {
