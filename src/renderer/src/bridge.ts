@@ -15,7 +15,6 @@
 
 import type {
   AnchorPayload,
-  Gauge,
   LanguageChoice,
   Layout,
   Preferences,
@@ -113,17 +112,12 @@ export interface Bridge {
    */
   setTrayView(view: TrayView): Promise<boolean>;
   /**
-   * Persist Görünüm → Gösterge, bars or rings (IPC.SET_GAUGE). Same
-   * all-or-nothing promise: `false` means main wrote NOTHING.
-   */
-  setGauge(gauge: Gauge): Promise<boolean>;
-  /**
    * Persist Görünüm → "Saydamlığı azalt" (IPC.SET_REDUCE_TRANSPARENCY). Same
    * all-or-nothing promise: `false` means main wrote NOTHING.
    */
   setReduceTransparency(reduce: boolean): Promise<boolean>;
   /**
-   * Persist Görünüm → Düzen, list, focus or tiles (IPC.SET_LAYOUT). Same
+   * Persist Görünüm → Düzen, the short list or the ring tiles (IPC.SET_LAYOUT). Same
    * all-or-nothing promise: `false` means main wrote NOTHING.
    */
   setLayout(layout: Layout): Promise<boolean>;
@@ -172,7 +166,6 @@ function nullBridge(): Bridge {
     setAutostart: async () => false,
     setSetupCoachDismissed: async () => false,
     setTrayView: async () => false,
-    setGauge: async () => false,
     setReduceTransparency: async () => false,
     setLayout: async () => false,
     setStripStyle: async () => false,
@@ -446,20 +439,6 @@ export function createBridge(): Bridge {
     },
 
     /** Mirrors setTrayView: any failure is a real instruction to revert. */
-    async setGauge(gauge: Gauge): Promise<boolean> {
-      if (typeof api.setGauge !== 'function') {
-        missing('setGauge');
-        return false;
-      }
-      try {
-        const result = await api.setGauge(gauge);
-        return !!result && result.ok === true;
-      } catch {
-        return false;
-      }
-    },
-
-    /** Mirrors setGauge: any failure is a real instruction to revert. */
     async setReduceTransparency(reduce: boolean): Promise<boolean> {
       if (typeof api.setReduceTransparency !== 'function') {
         missing('setReduceTransparency');
@@ -473,7 +452,7 @@ export function createBridge(): Bridge {
       }
     },
 
-    /** Mirrors setGauge: any failure is a real instruction to revert. */
+    /** Mirrors setTrayView: any failure is a real instruction to revert. */
     async setLayout(layout: Layout): Promise<boolean> {
       if (typeof api.setLayout !== 'function') {
         missing('setLayout');
@@ -487,7 +466,7 @@ export function createBridge(): Bridge {
       }
     },
 
-    /** Mirrors setGauge: any failure is a real instruction to revert. */
+    /** Mirrors setTrayView: any failure is a real instruction to revert. */
     async setStripStyle(style: StripStyle): Promise<boolean> {
       if (typeof api.setStripStyle !== 'function') {
         missing('setStripStyle');

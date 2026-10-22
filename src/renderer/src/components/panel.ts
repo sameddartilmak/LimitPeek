@@ -1,6 +1,6 @@
 /**
- * The panel shell: header, an optional status strip, one ordered card list,
- * the toasts, and the footer.
+ * The panel shell: header, an optional status strip, one ordered list of
+ * tools, and the toasts.
  *
  * Cards are reconciled by provider id rather than rebuilt, so the meter keeps
  * its element across snapshots and the 400ms fill transition actually has
@@ -16,43 +16,41 @@
  * one live region. An unconnected card still reads as one: grey mark, no meter,
  * its own "bağlı değil" explanation.
  *
- * THE SHELL (UI plan 2026-09-29)
- * ------------------------------
- *   header   fixed; the freshness marker is a dot while live and a chip when not
+ * THE SHELL (UI plan 2026-09-29, made minimal 2026-10-22)
+ * -------------------------------------------------------
+ *   header   fixed: the brand and three small icons — refresh, pin, settings.
+ *            The freshness marker draws nothing while live and a chip when not
  *   strip    "Bağlantı yok" while the background service is unreachable — the
- *            ONE place that condition is stated; the footer no longer repeats it
+ *            ONE place that condition is stated
  *   list     the only thing that scrolls; the first-run card sits above it
  *   toasts   outcomes of the user's own actions: a success leaves after 3 s, an
  *            error stays until closed
- *   footer   "Son tarama" and "Yenile", nothing else; the pin's promise moved
- *            into the pin's own tooltip
  *
- * THREE LAYOUTS, ONE LIST (Görünüm → Düzen)
- * ----------------------------------------
- * "Liste", "Öne çıkan" and "Kutucuklar" are the SAME cards in the same list,
+ * The footer ("Son tarama 09:59" and a big "Yenile") is gone: the refresh is
+ * the header's icon, and the last scan is that icon's tooltip and name.
+ *
+ * TWO LAYOUTS, ONE LIST (Görünüm → Düzen)
+ * --------------------------------------
+ * "Sade liste" and "Halka kutuları" are the SAME cards in the same list,
  * reconciled the same way; html[data-layout] restyles them (layout-*.css).
- * This file adds only what CSS cannot: in "Öne çıkan" the tool closest to its
- * limit moves to the top of the list and is marked as the hero (components/
- * layouts.ts pickHero); outside the list the cards cannot be dragged, a click
- * on a card opens its details, and open details are a sheet over the other
- * tools with "‹ Tüm araçlar" above it; and in "Kutucuklar" the footer's
- * refresh moves into the quick tiles under the grid. The user's order is
- * never rewritten by any of it: the hero is a display order, nothing else.
+ * This file adds only what CSS cannot: a click on a tool opens its details,
+ * and open details are a sheet over the other tools with "‹ Tüm araçlar"
+ * above it; and only the short list can be dragged into a new order (the
+ * tiles follow the stored order, as "Kutucuklar" did). The user's order is
+ * never rewritten by anything but that drag.
  */
 
-import type { Gauge, LanguageChoice, Layout, ProviderSnapshot, StripStyle, ThemeChoice, TrayView } from '../../../shared/contract.js';
+import type { LanguageChoice, Layout, ProviderSnapshot, StripStyle, ThemeChoice, TrayView } from '../../../shared/contract.js';
 import { defaultPlacement, FITTED_MAX_HEIGHT, fittedPlacement, placePanel, type PanelPlacement } from '../anchor.js';
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
-import { clockTime } from '../format.js';
 import { language, t } from '../i18n.js';
 import { createReorder, type ReorderHandle } from '../reorder.js';
-import { isDrawable } from './meter.js';
 import { enabledOf, type PanelState, type PanelView, type SettingsTab } from '../store.js';
 import { createHeader, type HeaderHandle } from './header.js';
 import { providerMark } from './logo.js';
 import { createSettings, type SettingsHandle } from './settings.js';
 import { createOnboarding, type OnboardingHandle } from './onboarding.js';
-import { createQuickTiles, createSheetBack, detailsAreSheet, pickHero, type QuickTilesHandle } from './layouts.js';
+import { createSheetBack } from './layouts.js';
 import {
   createRow,
   createSkeletonRow,
@@ -83,7 +81,6 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   /** The user stated the plan they are on for this tool, or cleared it. */
   onPlanLabel(providerId: string, label: string): void;
   onPinToggle(pinned: boolean): void;
-  onClose(): void;
   onRefresh(): void;
   /** Swap between the usage list and the settings view. */
   onSettingsToggle(): void;
@@ -101,15 +98,13 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onAutostartChange(enabled: boolean): void;
   /** The user picked Görünüm: tray icon or taskbar strip. Optimistic. */
   onTrayViewChange(view: TrayView): void;
-  /** The user picked Görünüm → Gösterge: bars or rings. Optimistic. */
-  onGaugeChange(gauge: Gauge): void;
   /** The user flipped Görünüm → "Saydamlığı azalt". Optimistic. */
   onReduceTransparencyChange(reduce: boolean): void;
-  /** The user picked Görünüm → Düzen: list, focus or tiles. Optimistic. */
+  /** The user picked Görünüm → Düzen: the short list or the ring tiles. Optimistic. */
   onLayoutChange(layout: Layout): void;
   /** The user picked Görünüm → Şerit stili. Optimistic. */
   onStripStyleChange(style: StripStyle): void;
-  /** The user pressed a card's "Ayrıntılar". */
+  /** The user opened or closed a tool's details (a click on it, or "Ayrıntılar"). */
   onToggleExpand(providerId: string): void;
   /** "Bağla" on the first-run card: the same consent path, drawn in the card. */
   onCoachConnect(providerId: string): void;
@@ -194,28 +189,13 @@ function closeIcon(): SVGElement {
   );
 }
 
-/** The refresh arrow. It turns while a refresh is in flight; the label says so too. */
-function refreshIcon(): SVGElement {
-  return svg(
-    'svg',
-    { viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': 'true', focusable: 'false', class: 'foot__refresh-icon' },
-    svg('path', {
-      d: 'M13 8a5 5 0 1 1-1.5-3.55M13.25 2.5v2.75H10.5',
-      stroke: 'currentColor',
-      'stroke-width': '1.5',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-    }),
-  );
-}
-
 export function createPanel(ctx: PanelContext): PanelHandle {
   const rows = new Map<string, RowHandle>();
 
   const header: HeaderHandle = createHeader({
     onPinToggle: ctx.onPinToggle,
-    onClose: ctx.onClose,
     onSettingsToggle: () => ctx.onSettingsToggle(),
+    onRefresh: () => ctx.onRefresh(),
   });
 
   const settings: SettingsHandle = createSettings({
@@ -228,7 +208,6 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onLanguage: (choice) => ctx.onLanguageChange(choice),
     onAutostart: (enabled) => ctx.onAutostartChange(enabled),
     onTrayView: (view) => ctx.onTrayViewChange(view),
-    onGauge: (gauge) => ctx.onGaugeChange(gauge),
     onReduceTransparency: (reduce) => ctx.onReduceTransparencyChange(reduce),
     onLayout: (layout) => ctx.onLayoutChange(layout),
     onStripStyle: (style) => ctx.onStripStyleChange(style),
@@ -323,7 +302,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onConnect: (id) => ctx.onCoachConnect(id),
   });
 
-  // Outside the list, a tool's open details are a sheet: this is the way back.
+  // A tool's open details are a sheet over the others: this is the way back.
   const sheetBack = createSheetBack(() => {
     const open = lastState?.expandedProviderId;
     if (open) ctx.onToggleExpand(open);
@@ -419,34 +398,10 @@ export function createPanel(ctx: PanelContext): PanelHandle {
 
   const toasts = el('div', { class: 'toasts' }, coach, refreshBubble, notice);
 
-  // --- footer: last scan and refresh, nothing else -------------------------
-  const scanText = el('span', { class: 'foot__scan' }, '');
-  const refreshLabel = el('span', { class: 'foot__refresh-label' }, t('panel.refresh'));
-  const refreshButton = el(
-    'button',
-    { type: 'button', class: 'btn foot__refresh', 'aria-label': t('panel.refreshLabel') },
-    refreshIcon(),
-    refreshLabel,
-  ) as HTMLButtonElement;
-  on(refreshButton, 'click', () => ctx.onRefresh());
-  const foot = el(
-    'div',
-    { class: 'foot' },
-    scanText,
-    el('span', { class: 'foot__spacer' }),
-    refreshButton,
-  );
-
-  // "Kutucuklar": Tema, Şerit, Ayarlar and Yenile under the grid, in the
-  // footer's place (its refresh becomes the "Yenile" tile).
-  const quick: QuickTilesHandle = createQuickTiles({
-    onTheme: (theme) => ctx.onThemeChange(theme),
-    onTrayView: (view) => ctx.onTrayViewChange(view),
-    onSettings: () => ctx.onSettingsToggle(),
-    onRefresh: () => ctx.onRefresh(),
-  });
-
-  const footBand = el('div', { class: 'panel__band panel__band--foot' }, toasts, liveRegion, foot, quick.el);
+  // Under the list: the toasts and the reorder announcements, nothing else.
+  // The footer that stood here ("Son tarama", "Yenile") became the header's
+  // refresh icon; with no toast showing, this band is empty and takes no room.
+  const footBand = el('div', { class: 'panel__band panel__band--foot' }, toasts, liveRegion);
   footBand.style.setProperty('--band-delay', '80ms');
 
   const root = el(
@@ -508,8 +463,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onDragEnd: () => {
       if (lastState) render(lastState, lastNow);
     },
-    // Only the list rearranges; the other layouts follow the stored order.
-    enabled: () => (lastState ? lastState.bridgeAvailable && lastState.layout === 'list' : false),
+    // Only the short list rearranges; the tiles follow the stored order.
+    enabled: () => (lastState ? lastState.bridgeAvailable && lastState.layout === 'sade' : false),
   });
 
   /** Provider id currently at index 0, i.e. the one main draws the tray from. */
@@ -526,8 +481,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     isTrayRow: (id) => id === trayRowId,
     isExpanded: (id) => lastState?.expandedProviderId === id,
     onToggleExpand: (id) => ctx.onToggleExpand(id),
-    canReorder: () => (lastState?.layout ?? 'list') === 'list',
-    opensOnCard: (id) => !!lastState && detailsAreSheet(lastState.layout) && lastState.expandedProviderId !== id,
+    canReorder: () => (lastState?.layout ?? 'sade') === 'sade',
+    opensOnCard: (id) => !!lastState && lastState.expandedProviderId !== id,
     get generatedAt(): string | null {
       return ctx.generatedAt;
     },
@@ -626,7 +581,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       root.style.setProperty('--hdr-h', `${headerHeight}px`);
     }
 
-    const size = { width: root.offsetWidth || 400, height: root.offsetHeight || 0 };
+    const size = { width: root.offsetWidth || 320, height: root.offsetHeight || 0 };
     reportHeight(state.frame);
     const placement = fitted
       ? fittedPlacement(state.anchor)
@@ -806,27 +761,6 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     }
   }
 
-  /**
-   * The one painter of a refresh control, the footer's or the "Yenile"
-   * tile's: while the first scan runs it says so and waits; while the
-   * service is unreachable it cannot do anything and its tooltip says why;
-   * its accessible name follows the words on it.
-   */
-  function paintRefresh(button: HTMLButtonElement, label: HTMLElement, state: PanelState, title: string | null): void {
-    const scanning = !state.hasData && state.bridgeAvailable;
-    button.disabled = state.refreshing || !state.bridgeAvailable || scanning;
-    const busy = state.refreshing || scanning;
-    setAttr(button, 'data-busy', busy ? 'true' : null);
-    const busyText = scanning ? t('panel.scanning') : state.refreshing ? t('panel.refreshing') : null;
-    setText(label, busyText ?? t('panel.refresh'));
-    // The accessible name follows the words on the button. It was the fixed
-    // "Şimdi yenile", which overrode the visible "Yenileniyor", so a screen
-    // reader was offered the action the button was in the middle of doing.
-    setAttr(button, 'aria-label', busyText ?? t('panel.refreshLabel'));
-    setAttr(button, 'aria-busy', busy ? 'true' : null);
-    setAttr(button, 'title', !state.bridgeAvailable ? t('panel.refreshOffline') : title ?? t('panel.refreshLabel'));
-  }
-
   function render(state: PanelState, now: number): void {
     lastState = state;
     lastNow = now;
@@ -837,13 +771,6 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     const providers = visibleOf(state);
     // The tray icon follows the first ENABLED provider.
     trayRowId = providers.length > 0 ? providers[0].id : null;
-
-    // "Öne çıkan": the tool closest to its limit leads the list. A display
-    // order only, never written back (state.order and the drag are the list's).
-    const hero = state.layout === 'focus' ? pickHero(providers, now) : null;
-    const shown = hero
-      ? [...providers.filter((p) => p.id === hero.id), ...providers.filter((p) => p.id !== hero.id)]
-      : providers;
 
     header.update(state, now);
 
@@ -859,16 +786,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
           rows.delete(id);
         }
       }
-      syncList(rowList, shown, now);
+      syncList(rowList, providers, now);
     }
-    for (const [id, handle] of rows) {
-      const isHero = hero !== null && hero.id === id;
-      setAttr(handle.el, 'data-hero', isHero ? 'true' : null);
-      setAttr(handle.el, 'data-lead', isHero ? hero.lead : null);
-      setAttr(handle.el, 'data-kicker', isHero ? t('layout.focus.kicker') : null);
-    }
-    // The list's name says what its order is: the tray's, or the hero first.
-    setAttr(rowList, 'aria-label', hero ? t('layout.focus.rowsLabel') : t('panel.rowsLabel'));
 
     // --- the first-run introduction: it owns the list area while it runs ---
     onboarding.update(state);
@@ -898,8 +817,8 @@ export function createPanel(ctx: PanelContext): PanelHandle {
       emptyAction.disabled = nothingKnown && (state.refreshing || !state.bridgeAvailable);
     }
 
-    // --- details as a sheet, outside the list ---
-    const sheetId = !inSettings && !introducing && detailsAreSheet(state.layout) ? state.expandedProviderId : null;
+    // --- details as a sheet over the other tools ---
+    const sheetId = !inSettings && !introducing ? state.expandedProviderId : null;
     const sheet = sheetId !== null && rows.has(sheetId) && !rowList.hidden;
     setAttr(rowList, 'data-sheet', sheet ? 'true' : null);
     if (!sheet && sheetBack.contains(document.activeElement)) root.focus({ preventScroll: true });
@@ -911,22 +830,9 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     renderNotice(state);
     placeConsent(state);
 
-    // --- footer ---
-    // "Kutucuklar" on the usage view: the quick tiles take the footer's place
-    // and their "Yenile" is the refresh. Everywhere else the footer as ever.
-    const quickTiles = state.layout === 'tiles' && !inSettings && !introducing;
-    quick.el.hidden = !quickTiles;
-    foot.hidden = quickTiles;
-    if (quickTiles) quick.update(state);
+    // --- the refresh, in the header ---
     // Hidden in both empty states: each offers its own one action.
-    refreshButton.hidden = !emptyState.hidden;
-    quick.refreshButton.hidden = !emptyState.hidden;
-    paintRefresh(refreshButton, refreshLabel, state, null);
-
-    const generatedAt = state.snapshot?.generatedAt ?? null;
-    const lastScan = generatedAt ? t('panel.lastScan', { time: clockTime(generatedAt) }) : t('panel.noScan');
-    setText(scanText, lastScan);
-    paintRefresh(quick.refreshButton, quick.refreshLabel, state, lastScan);
+    header.setRefreshHidden(!emptyState.hidden);
 
     // Only when we know we are NOT pointing at a measured tray icon.
     coach.hidden = ctx.coachDismissed || state.anchor?.anchorSource !== 'cursor';

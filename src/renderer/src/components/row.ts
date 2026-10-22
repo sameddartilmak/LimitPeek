@@ -45,6 +45,7 @@ import {
   burnRate,
   clockTime,
   compact,
+  countdown,
   mixWithin,
   parseInstant,
   sinceCapture,
@@ -57,7 +58,7 @@ import { createCost, type CostHandle } from './cost.js';
 import { experimentalTag } from './experimental.js';
 import { createQuotas, type QuotaHandle } from './quotas.js';
 import { gripDots, providerMark } from './logo.js';
-import { createMeter, isDrawable, meterStateStep, type MeterHandle } from './meter.js';
+import { absenceFigure, createMeter, isDrawable, meterStateStep, percentLabel, type MeterHandle } from './meter.js';
 
 /** The id of the hidden paragraph in the panel that explains how to reorder. */
 export const REORDER_HELP_ID = 'reorder-help';
@@ -90,16 +91,17 @@ export interface RowContext {
   onToggleExpand?(providerId: string): void;
   /**
    * Can this card be dragged and moved with Alt+Arrow? Optional: absent
-   * means yes. False in "Öne çıkan" and "Kutucuklar", which follow the stored
-   * order but only the list rearranges it: the mark stays as the tool's
-   * logo, and stops being a control.
+   * means yes. False in "Halka kutuları", which follows the stored order but
+   * only the short list rearranges it: the mark stays as the tool's logo, and
+   * stops being a control.
    */
   canReorder?(providerId: string): boolean;
   /**
    * Does a click anywhere on this card open its details? Optional: absent
-   * means no (the list, where "Ayrıntılar" is its own button). True for a
-   * closed tile or focus row, where the whole card is the way in; the
-   * "Ayrıntılar" button stays the keyboard's way in (Enter / Space).
+   * means no ("Ayrıntılar" is then its own button). True for every closed
+   * line and tile, where the whole card is the way in; the "Ayrıntılar"
+   * button stays the keyboard's way in (Enter / Space). Every closed card also
+   * carries its hover line (`data-tip`, see rowTip).
    */
   opensOnCard?(providerId: string): boolean;
   /** Snapshot.generatedAt, used for the "as of" line on stale rows. */
@@ -416,45 +418,120 @@ function measureKind(p: ProviderSnapshot, pending = false): MeasureKind {
   return 'none';
 }
 
-function buildMeasure(p: ProviderSnapshot, pending: boolean): HTMLElement {
+interface MeasureCopy {
+  kind: MeasureKind;
+  value: string;
+  caption: string;
+  title: string;
+}
+
+/** The main measure's words, apart from its element: the hover line reads them too. */
+function measureCopy(p: ProviderSnapshot, pending: boolean): MeasureCopy {
   const kind = measureKind(p, pending);
-  const value = el('span', { class: 'row__primary-value u-num' });
-  const caption = el('span', { class: 'row__primary-caption' });
-  const root = el('div', { class: 'row__primary', 'data-kind': kind }, value, caption);
+  const out: MeasureCopy = { kind, value: '', caption: '', title: '' };
   switch (kind) {
     case 'pending':
-      setText(value, t('row.tokens.pending'));
+      out.value = t('row.tokens.pending');
       break;
     case 'tokens': {
       const week = p.weeklyTokens;
       if (week) {
-        setText(value, tokens(week.billable));
-        setText(caption, weeklyWindowName(p));
+        out.value = tokens(week.billable);
+        out.caption = weeklyWindowName(p);
       } else if (p.tokens) {
-        setText(value, tokens(p.tokens.billable));
-        setText(caption, t('row.measure.fiveHour'));
+        out.value = tokens(p.tokens.billable);
+        out.caption = t('row.measure.fiveHour');
       }
-      const title = tokensTitle(p);
-      if (title) setAttr(root, 'title', title);
+      out.title = tokensTitle(p);
       break;
     }
     case 'cost':
       // Never a bare amount: the tool's own figure, framed as not a bill.
-      setText(value, usd((p.weeklyCost as NonNullable<ProviderSnapshot['weeklyCost']>).totalUsd));
-      setText(caption, t('row.measure.reportedCost'));
+      out.value = usd((p.weeklyCost as NonNullable<ProviderSnapshot['weeklyCost']>).totalUsd);
+      out.caption = t('row.measure.reportedCost');
       break;
     case 'absent':
-      setText(value, t('row.usageLogAbsent'));
-      setAttr(root, 'title', t('row.usageLogAbsentDetail', { provider: p.displayName }));
+      out.value = t('row.usageLogAbsent');
+      out.title = t('row.usageLogAbsentDetail', { provider: p.displayName });
       break;
     case 'uncounted':
-      setText(value, t('row.tokens.uncounted'));
+      out.value = t('row.tokens.uncounted');
       break;
     default:
-      setText(value, t('row.noTokens'));
+      out.value = t('row.noTokens');
   }
-  caption.hidden = caption.textContent === '';
+  return out;
+}
+
+function buildMeasure(p: ProviderSnapshot, pending: boolean): HTMLElement {
+  const copy = measureCopy(p, pending);
+  const value = el('span', { class: 'row__primary-value u-num' }, copy.value);
+  const caption = el('span', { class: 'row__primary-caption' }, copy.caption);
+  const root = el('div', { class: 'row__primary', 'data-kind': copy.kind }, value, caption);
+  if (copy.title) setAttr(root, 'title', copy.title);
+  caption.hidden = copy.caption === '';
   return root;
+}
+
+// --------------------------------------------------------------- hover line
+
+/**
+ * One window in the hover line: "5 saatlik 2 sa 13 dk sonra sıfırlanır".
+ *
+ * The compact layouts print only "5sa %62" on the card (owner, 2026-10-22: no
+ * countdown on the line), so WHEN the window resets moved here and into the
+ * details. A window without a reset instant states its figure, or the word
+ * printed in its place ("bildirilmiyor"), so no window drops out of the line
+ * silently. A window that is not in the snapshot at all has nothing to name.
+ */
+function windowTip(kind: '5h' | '7d', usage: WindowUsage | null, now: number): string | null {
+  if (!usage) return null;
+  const window = t(kind === '5h' ? 'meter.window5h.short' : 'meter.window7d.short');
+  const resetsAt = parseInstant(usage.resetsAt);
+  if (resetsAt !== null) {
+    const left = resetsAt - now;
+    return left < 1000
+      ? t('row.tip.resetting', { window })
+      : t('row.tip.resets', { window, duration: countdown(left) });
+  }
+  return t('row.tip.figure', { window, figure: isDrawable(usage) ? percentLabel(usage) : absenceFigure(usage) });
+}
+
+/**
+ * The closed card's hover line, shown 400 ms after the pointer settles on it
+ * and at once when the keyboard lands on its "Ayrıntılar" (tooltip.ts):
+ *
+ *     Codex CLI
+ *     5 saatlik 2 sa 13 dk sonra sıfırlanır
+ *     Haftalık 3 gün 4 sa sonra sıfırlanır
+ *
+ * It always opens with the tool's name, because the ring tiles print none. A tool with no window says what its card says instead:
+ * why it is not connected, or its main measure.
+ *
+ * Written as `data-tip`, not `title`: a title would also become the list
+ * item's accessible description, and a screen reader already hears every
+ * one of these facts in the meters' own sentences.
+ */
+function rowTip(p: ProviderSnapshot, pending: boolean, now: number): string | null {
+  if (p.status === 'loading') return null;
+  const parts: string[] = [];
+  if (p.status === 'passive') {
+    parts.push(p.setupAction?.detail || t('row.notConnected'));
+  } else if (publishesQuota(p)) {
+    for (const part of [windowTip('5h', p.fiveHour, now), windowTip('7d', p.sevenDay, now)]) {
+      if (part) parts.push(part);
+    }
+  } else {
+    const measure = measureCopy(p, pending);
+    parts.push(measure.caption ? `${measure.value} ${measure.caption}` : measure.value);
+  }
+  // The experimental pill is not drawn on a closed line or tile (layouts.css),
+  // so its sentence is said here, where the pointer already is.
+  if (p.experimental) parts.push(t('row.tip.experimental', { detail: t('provider.experimentalDetail') }));
+  // One line per window, under the name: the bubble keeps line breaks
+  // (panel.css .tip, pre-line), and a wrapped run-on sentence would break a
+  // countdown across two lines.
+  return parts.length > 0 ? t('row.tip.lead', { name: p.displayName, windows: parts.join('\n') }) : p.displayName;
 }
 
 // ---------------------------------------------------------------- builders
@@ -833,6 +910,9 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
   let shapeKey = '';
   let current: ProviderSnapshot = provider;
   let lastCtx: RowContext = ctx;
+  /** The effective snapshot last drawn (status and expiry applied), for the tick's hover line. */
+  let drawn: ProviderSnapshot = provider;
+  let drawnPending = false;
 
   function rebuild(p: ProviderSnapshot, context: RowContext, atNow: number): void {
     // Every optional ref is cleared here rather than in each builder, so a node
@@ -943,6 +1023,12 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
   function tick(atNow: number): void {
     // Both window countdowns live in the meter and are repainted by it.
     if (refs.meter) refs.meter.tick(atNow);
+    // The hover line counts down with them, on a closed card only: an open
+    // one shows every countdown itself, and a tip over the whole sheet would
+    // cover the details it opened. A tool that is not connected has one too
+    // (it opens no details): in the ring tiles its name is not printed.
+    const closed = root.getAttribute('data-expanded') !== 'true';
+    setAttr(root, 'data-tip', closed ? rowTip(drawn, drawnPending, atNow) : null);
     if (refs.staleAge) {
       const since = parseInstant(refs.staleAge.getAttribute('data-since'));
       if (since !== null) {
@@ -974,6 +1060,8 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     // Pending and sourceIncomplete decide which words the token line and the
     // main measure use, so both are structure.
     const pending = context.isPending(p.id);
+    drawn = p;
+    drawnPending = pending;
     const nextShape = `${shapeKeyOf(p)}|${pending ? 'pending' : 'read'}|${p.weeklyCost?.sourceIncomplete ? 'incomplete' : 'complete'}|${publishesQuota(p) ? '' : measureKind(p, pending)}`;
     if (nextShape !== shapeKey) {
       shapeKey = nextShape;

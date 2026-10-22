@@ -549,9 +549,10 @@ export const SCENARIOS: readonly Scenario[] = [
     }),
   },
   {
-    // The ring gauge's harder states side by side (Görünüm → Gösterge →
-    // Halka): one window with no figure, an estimate, and an estimate that is
-    // also out of date. Bars draw them too; the rings are what this is for.
+    // The rings' harder states side by side (Görünüm → Düzen → Halka
+    // kutuları): one window with no figure, an estimate, and an estimate that
+    // is also out of date. The short list draws them too; the rings are what
+    // this is for.
     id: 'halka-durumlari',
     label: 'Halka durumları',
     bridgeAvailable: true,

@@ -3,10 +3,10 @@ const { isReduceTransparency } = require('../core/reduce-transparency');
 
 /**
  * The SET_REDUCE_TRANSPARENCY handler: Settings → Genel → Görünüm,
- * "Saydamlığı azalt". Split out of `index.js` for the reason `gauge-ipc.js`
- * is: `test/reduce-transparency.test.js` drives this exact function.
+ * "Saydamlığı azalt". Split out of `index.js` so
+ * `test/reduce-transparency.test.js` can drive this exact function.
  *
- * Persist-then-push, synchronous end to end like SET_GAUGE, so two rapid
+ * Persist-then-push, synchronous end to end like SET_LAYOUT, so two rapid
  * flips cannot interleave two read-modify-write cycles over one settings
  * object and one file. The value must be a real boolean, never coerced:
  * anything else is a bug or a hostile message.
@@ -36,7 +36,7 @@ function createSetReduceTransparencyHandler({ fromPanel, getSettings, save, push
       log.warn('reduce transparency could not be persisted; nothing changed');
       return { ok: false };
     }
-    // Best effort, like SET_GAUGE's: the renderer already shows the change,
+    // Best effort, like SET_LAYOUT's: the renderer already shows the change,
     // so a push that fails costs an echo, not a disagreement.
     try { push(); } catch (err) {
       log.warn(`reduce transparency push failed: code=${(err && err.code) || 'UNKNOWN'}`);

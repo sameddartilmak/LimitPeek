@@ -13,8 +13,8 @@
  *            in the state colour, that figure and its time left on top, and
  *            the weekly figure in a small chip at the right.
  *
- * Strip-only: the panel's gauge (bars or rings) no longer reaches the strip.
- * A sibling of `gauge.js`, for the same reason: the value comes out of a
+ * Strip-only: the panel's layouts do not reach the strip. A sibling of
+ * `layout.js`, for the same reason: the value comes out of a
  * hand-editable settings file, so anything that is not one of the three
  * literals lands on the default here and the strip page never has to guess.
  */

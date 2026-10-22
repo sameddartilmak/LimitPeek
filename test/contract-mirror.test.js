@@ -158,9 +158,9 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // 21 with setTrayView (2026-10-20): Görünüm, tray icon or taskbar strip. A
   // local settings write; the strip itself speaks only IPC_STRIP, below.
   assert.ok(declared.has('setTrayView'), 'contract.ts should declare setTrayView()');
-  // 22 with setGauge (2026-10-21): Görünüm → Gösterge, bars or activity
-  // rings. A local settings write for the panel alone; no network.
-  assert.ok(declared.has('setGauge'), 'contract.ts should declare setGauge()');
+  // 22 with setGauge (2026-10-21), and 21 again without it (2026-10-22): the
+  // Gösterge choice went with the old layouts.
+  assert.equal(declared.has('setGauge'), false, 'setGauge() belonged to the removed Gösterge setting');
   for (const gone of ['requestKeyEntry', 'removeKey', 'openTokenPage', 'refreshKey']) {
     assert.equal(declared.has(gone), false, `${gone}() belonged to the removed key feature`);
   }
@@ -171,11 +171,11 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // panel, so main sizes it to the panel's height. Fire-and-forget, local.
   assert.ok(declared.has('setPanelHeight'), 'contract.ts should declare setPanelHeight()');
   // 24 with setLayout and 25 with setStripStyle (2026-10-21): Görünüm →
-  // Düzen (list, focus, tiles) and Şerit stili (plain, rings, fill). Local
+  // Düzen (now sade, halka) and Şerit stili (plain, rings, fill). Local
   // settings writes; no network.
   assert.ok(declared.has('setLayout'), 'contract.ts should declare setLayout()');
   assert.ok(declared.has('setStripStyle'), 'contract.ts should declare setStripStyle()');
-  assert.equal(declared.size, 26, `expected the 26 declared methods, saw ${[...declared].join(',')}`);
+  assert.equal(declared.size, 25, `expected the 25 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const IPC_STRIP = { ... } as const;`. */

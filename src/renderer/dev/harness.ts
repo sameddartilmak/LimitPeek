@@ -66,13 +66,12 @@ let prefs: Preferences = {
   trayView: 'tray',
   stripAvailable: true,
   stripNoRoom: false,
-  gauge: 'bar',
   reduceTransparency: false,
   systemReducedTransparency: false,
   // A browser page has no acrylic and no fitted window: the canvas look.
   material: 'none',
   frame: 'canvas',
-  layout: 'list',
+  layout: 'sade',
   stripStyle: 'plain',
 };
 let prefsCb: ((p: Preferences) => void) | null = null;
@@ -281,14 +280,6 @@ function makeBridge(scenario: Scenario): Bridge {
     },
 
     /** Persist, then push, like setTrayView. */
-    async setGauge(gauge: 'bar' | 'ring'): Promise<boolean> {
-      log(`setGauge(${gauge})`);
-      prefs = { ...prefs, gauge };
-      prefsCb?.(prefs);
-      return true;
-    },
-
-    /** Persist, then push, like setGauge. */
     async setReduceTransparency(reduce: boolean): Promise<boolean> {
       log(`setReduceTransparency(${reduce})`);
       prefs = { ...prefs, reduceTransparency: reduce };
@@ -296,8 +287,8 @@ function makeBridge(scenario: Scenario): Bridge {
       return true;
     },
 
-    /** Persist, then push, like setGauge. */
-    async setLayout(layout: 'list' | 'focus' | 'tiles'): Promise<boolean> {
+    /** Persist, then push, like setTrayView. */
+    async setLayout(layout: 'sade' | 'halka'): Promise<boolean> {
       log(`setLayout(${layout})`);
       prefs = { ...prefs, layout };
       prefsCb?.(prefs);
@@ -580,10 +571,9 @@ controls.appendChild(logBox);
  * URL parameters, for screenshots of a given state without clicking through:
  *   ?s=<scenario id>  &theme=light|dark  &lang=en  &coach=done
  *   &view=settings  &tab=providers|usage|general  &expand=<provider id>
- *   &gauge=ring (Görünüm → Gösterge: rings instead of bars)
  *   &rt=1 (Görünüm → "Saydamlığı azalt" on)  &rtsys=1 (Windows asks for it)
  *   &frame=fitted  &material=acrylic (the Windows 11 window and its acrylic)
- *   &layout=focus|tiles (Görünüm → Düzen)
+ *   &layout=halka (Görünüm → Düzen: the ring tiles; the short list otherwise)
  *   &strip=plain|rings|fill (the strip chosen, in that style, as if this
  *           machine could show it, so Görünüm → "Şerit stili" is on screen)
  *   &shot=1 (the panel alone, no controls)
@@ -598,9 +588,6 @@ if (langParam === 'en' || langParam === 'zh') {
   prefs = { ...prefs, language: langParam, resolvedLanguage: langParam, formatLocale: defaultFormatLocale(langParam) };
 }
 if (params.get('coach') === 'done') prefs = { ...prefs, setupCoachDismissed: true };
-// ?gauge=ring: the activity rings instead of bars, through the same
-// preference the Settings control writes (app.ts paints it in frame one).
-if (params.get('gauge') === 'ring') prefs = { ...prefs, gauge: 'ring' };
 // ?rt=1 / ?rtsys=1: the glass opaque, by the user's switch or by Windows.
 if (params.get('rt') === '1') prefs = { ...prefs, reduceTransparency: true };
 if (params.get('rtsys') === '1') prefs = { ...prefs, systemReducedTransparency: true };
@@ -608,10 +595,10 @@ if (params.get('rtsys') === '1') prefs = { ...prefs, systemReducedTransparency: 
 // (with bare=1 the page behind stands in for the desktop under the acrylic).
 if (params.get('frame') === 'fitted') prefs = { ...prefs, frame: 'fitted' };
 if (params.get('material') === 'acrylic') prefs = { ...prefs, material: 'acrylic' };
-// ?layout=focus|tiles: through the same preference the Settings control
+// ?layout=halka: through the same preference the Settings control
 // writes (app.ts paints html[data-layout] in frame one).
 const layoutParam = params.get('layout');
-if (layoutParam === 'focus' || layoutParam === 'tiles') prefs = { ...prefs, layout: layoutParam };
+if (layoutParam === 'halka') prefs = { ...prefs, layout: layoutParam };
 const stripParam = params.get('strip');
 if (stripParam === 'plain' || stripParam === 'rings' || stripParam === 'fill') {
   prefs = { ...prefs, trayView: 'strip', stripAvailable: true, stripStyle: stripParam };

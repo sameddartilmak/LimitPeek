@@ -48,7 +48,6 @@ const { TaskbarStrip } = require('./taskbar-strip');
 const { DisplayLayer } = require('./taskbar-display');
 const { createSetTrayViewHandler } = require('./tray-view-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
-const { createSetGaugeHandler } = require('./gauge-ipc');
 const { createSetReduceTransparencyHandler } = require('./reduce-transparency-ipc');
 const { panelFrameFor, acrylicAvailable, createPanelLook } = require('../core/panel-material');
 const win32 = require('./win32');
@@ -621,17 +620,6 @@ function registerIpc() {
     getSettings: () => settings,
     save: (s) => settingsStore.save(userDataDir(), s),
     apply: applyTrayView,
-    push: pushPreferences,
-    log,
-  }));
-
-  // Görünüm: bars or activity rings. Persist, then push; rollback on a failed
-  // write. Panel only (the strip has its own style, below), so nothing to
-  // apply in main. Tested in gauge-ipc.js's suite.
-  ipcMain.handle(IPC.SET_GAUGE, createSetGaugeHandler({
-    fromPanel,
-    getSettings: () => settings,
-    save: (s) => settingsStore.save(userDataDir(), s),
     push: pushPreferences,
     log,
   }));

@@ -246,10 +246,16 @@
   --s-8: 32px;
 
   /* --- geometry -------------------------------------------------------- */
-  /* 400px inside the 480x720 window (UI plan 2026-09-29), and never wider
-   * than the window minus a 16px margin each side: a work area too small for
-   * 480 gets a narrower window, and the panel follows it down. */
-  --panel-w: min(400px, calc(100vw - 32px));
+  /* 320px since the minimal redesign (owner, 2026-10-22: "panel çok büyük";
+   * 400px before): one width for both layouts AND the settings view, which
+   * was measured at it and fits — the segmented choices, the tool list and
+   * the usage history all hold without a cut word. One width means the
+   * window never changes width under the pointer when the view switches.
+   * Never wider than the window minus a 16px margin each side: a work area
+   * too small for the 480 canvas gets a narrower window, and the panel
+   * follows it down. A fitted window is this wide (FITTED_WIDTH in
+   * src/main/panel-window.js). */
+  --panel-w: min(320px, calc(100vw - 32px));
   /* A live row is now name + two window blocks + meta; the min-height is a
    * floor for rows that report less, not the height of a full one. */
   --row-live-h: 64px;

@@ -1294,14 +1294,6 @@ export const IPC = {
    */
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   /**
-   * renderer -> main invoke(gauge: Gauge). Persists how the panel draws each
-   * tool's two windows in the list layout ('bar' | 'ring'), then pushes
-   * PREFERENCES. Panel only: nothing is applied in main (the strip has its own
-   * style, SET_STRIP_STYLE). Anything but the two literals is refused.
-   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
-   */
-  SET_GAUGE: 'prefs:set-gauge',
-  /**
    * renderer -> main invoke(reduce: boolean). Persists "Saydamlığı azalt",
    * the panel's glass drawn opaque, then pushes PREFERENCES. Panel only:
    * nothing is applied in main. Anything but a real boolean is refused.
@@ -1318,9 +1310,10 @@ export const IPC = {
   PANEL_SIZE: 'panel:size',
   /**
    * renderer -> main invoke(layout: Layout). Persists how the panel lays out
-   * the tools ('list' | 'focus' | 'tiles'), then pushes PREFERENCES. Panel
-   * only: nothing is applied in main. Anything but the three literals is
-   * refused.
+   * the tools ('sade' | 'halka'), then pushes PREFERENCES. Panel only:
+   * nothing is applied in main. Anything but the two literals is refused,
+   * the old 'list' / 'focus' / 'tiles' included (only a settings file is
+   * migrated, src/core/layout.js).
    * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
    */
   SET_LAYOUT: 'prefs:set-layout',
@@ -1374,14 +1367,6 @@ export type LanguageChoice = 'tr' | 'en' | 'zh' | 'system';
 export type TrayView = 'tray' | 'strip';
 
 /**
- * How the panel draws a tool's two usage windows in the list layout. 'bar'
- * (the default) is two bars side by side; 'ring' is two concentric activity
- * rings, five-hour outside and weekly inside. The other layouts always draw
- * rings; the tray icon and the taskbar strip do not follow it.
- */
-export type Gauge = 'bar' | 'ring';
-
-/**
  * What is behind the panel (src/core/panel-material.js). 'acrylic': the real
  * Windows 11 acrylic, live behind a transparent page, so the panel draws a
  * translucent base and translucent cards over it. 'none': nothing; the panel
@@ -1399,13 +1384,16 @@ export type PanelMaterial = 'acrylic' | 'none';
 export type PanelFrame = 'fitted' | 'canvas';
 
 /**
- * How the panel lays out the tools. 'list' (the default) is one card per
- * tool; 'focus' ("Öne çıkan") puts the tool closest to its limit on top as a
- * large double ring with a compact row per other tool; 'tiles'
- * ("Kutucuklar") is a two-column grid of ring tiles with quick tiles under
- * it. All three follow the same stored order and draw the same row states.
+ * How the panel lays out the tools (the minimal redesign, 2026-10-22).
+ * 'sade' ("Sade liste", the default) is one short line per tool: its logo,
+ * its name and its two figures. 'halka' ("Halka kutuları") is a three-column
+ * grid of small tiles, each a ring for the five-hour window with the tool's
+ * logo in it. Both follow the same stored order, draw the same row states and
+ * open a tool's details as a sheet. A settings file from 0.6.38 or earlier
+ * may still say 'list', 'focus' or 'tiles'; main reads those as 'sade',
+ * 'sade' and 'halka' before they reach the renderer.
  */
-export type Layout = 'list' | 'focus' | 'tiles';
+export type Layout = 'sade' | 'halka';
 
 /**
  * How the taskbar strip draws a tile. 'plain' (the default) is the mini bars;
@@ -1474,12 +1462,6 @@ export interface Preferences {
    */
   stripNoRoom: boolean;
   /**
-   * Settings → Genel → Görünüm → Gösterge. Anything that is not a Gauge is
-   * 'bar'. Read in frame one, like the theme: a gauge applied after first
-   * paint is a visible flash of bars turning into rings.
-   */
-  gauge: Gauge;
-  /**
    * Settings → Genel → Görünüm → "Saydamlığı azalt": the panel's glass (the
    * header, the settings tab band) drawn opaque. Only a real `true` is on.
    * Read in frame one, like the theme.
@@ -1508,9 +1490,10 @@ export interface Preferences {
    */
   frame: PanelFrame;
   /**
-   * Settings → Genel → Görünüm → Düzen. Anything that is not a Layout is
-   * 'list'. Read in frame one, like the theme: a layout applied after first
-   * paint is a visible flash of the list turning into tiles.
+   * Settings → Genel → Görünüm → Düzen. 'tiles' is 'halka'; anything else
+   * that is not a Layout is 'sade'. Read in frame one, like the theme: a
+   * layout applied after first paint is a visible flash of the list turning
+   * into tiles.
    */
   layout: Layout;
   /**
@@ -1631,8 +1614,6 @@ export interface UsageNotchApi {
   setSetupCoachDismissed(dismissed: boolean): Promise<{ ok: boolean }>;
   /** Persist where the usage is shown outside the panel. See IPC.SET_TRAY_VIEW. */
   setTrayView(view: TrayView): Promise<{ ok: boolean }>;
-  /** Persist bars or rings for the panel's windows. See IPC.SET_GAUGE. */
-  setGauge(gauge: Gauge): Promise<{ ok: boolean }>;
   /** Persist "Saydamlığı azalt". See IPC.SET_REDUCE_TRANSPARENCY. */
   setReduceTransparency(reduce: boolean): Promise<{ ok: boolean }>;
   /** Persist the panel's layout. See IPC.SET_LAYOUT. */

@@ -7,7 +7,6 @@ const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeLanguage, DEFAULT_LANGUAGE } = require('../core/language');
 const { migratePlanLabels } = require('../core/plan-labels');
 const { sanitizeTrayView, DEFAULT_TRAY_VIEW } = require('../core/tray-view');
-const { sanitizeGauge, DEFAULT_GAUGE } = require('../core/gauge');
 const { sanitizeReduceTransparency, DEFAULT_REDUCE_TRANSPARENCY } = require('../core/reduce-transparency');
 const { sanitizeLayout, DEFAULT_LAYOUT } = require('../core/layout');
 const { sanitizeStripStyle, DEFAULT_STRIP_STYLE } = require('../core/strip-style');
@@ -78,14 +77,10 @@ const DEFAULTS = Object.freeze({
    * An unknown value is 'tray', see `src/core/tray-view.js`.
    */
   trayView: DEFAULT_TRAY_VIEW,
-  /**
-   * 'bar' | 'ring': how the panel draws each tool's two windows (Settings →
-   * Genel → Görünüm → Gösterge). 'bar' is the look every earlier version had;
-   * 'ring' is two concentric activity rings. The list layout only, and the
-   * panel only (the strip has its own `stripStyle`). An unknown value is
-   * 'bar', see `src/core/gauge.js`.
-   */
-  gauge: DEFAULT_GAUGE,
+  // No `gauge` any more ("Gösterge: Çubuk / Halka", removed with the old
+  // layouts, 2026-10-22: the short list draws no bars, the ring tiles always
+  // rings). A file that still carries one keeps it on disk until the next
+  // save; `load` below simply never reads it.
   /**
    * Settings → Genel → Görünüm → "Saydamlığı azalt": the panel's glass
    * (header, settings tab band) drawn opaque. Off by default; only a real
@@ -94,11 +89,11 @@ const DEFAULTS = Object.freeze({
    */
   reduceTransparency: DEFAULT_REDUCE_TRANSPARENCY,
   /**
-   * 'list' | 'focus' | 'tiles': how the panel lays out the tools (Settings →
-   * Genel → Görünüm → Düzen). 'list' is the cards every earlier version had;
-   * 'focus' puts the tool closest to its limit on top as a large ring, 'tiles'
-   * is a two-column grid. Panel only. An unknown value is 'list', see
-   * `src/core/layout.js`.
+   * 'sade' | 'halka': how the panel lays out the tools (Settings → Genel →
+   * Görünüm → Düzen). 'sade' is one short line per tool, 'halka' a grid of
+   * small ring tiles. Panel only. The three layouts of 0.6.38 and earlier
+   * ('list', 'focus', 'tiles') are read as their successors; anything else is
+   * 'sade', see `src/core/layout.js`.
    */
   layout: DEFAULT_LAYOUT,
   /**
@@ -159,14 +154,12 @@ function load(userDataDir) {
     // Absent (every file written before the strip existed), a typo or a
     // future value: the tray icon, the look the user already has.
     trayView: sanitizeTrayView(raw.trayView),
-    // Absent (every file written before the rings existed), a typo or a
-    // future value: the bars, the look the user already has.
-    gauge: sanitizeGauge(raw.gauge),
     // Absent (every file written before the glass existed) or not a real
     // boolean: the glass, the look the trial ships with.
     reduceTransparency: sanitizeReduceTransparency(raw.reduceTransparency),
-    // Absent (every file written before the layouts existed), a typo or a
-    // future value: the list, the look the user already has.
+    // An old layout ('list', 'focus', 'tiles') reads as its successor, so an
+    // update keeps the user's list or grid; absent, a typo or a future value:
+    // the short list, the default.
     layout: sanitizeLayout(raw.layout),
     // Absent (every file written before the strip styles existed), a typo or
     // a future value: the plain bars, the look the strip already has.

@@ -11,7 +11,7 @@ const { FakeElement, installDom, mirrorRenderer, walk } = require('./helpers/fak
  * camı"), driven through the REAL `mountApp` on test/helpers/fake-dom.js:
  *
  *   1. `html[data-material]` and `html[data-frame]` are painted in frame one
- *      from initialPreferences(), like the gauge, and follow every push —
+ *      from initialPreferences(), like the layout, and follow every push —
  *      main states what the window IS, so a push is adopted at once.
  *   2. A fitted window is the panel: the panel sits at the window's edge
  *      nearest the taskbar, and its height goes to main (setPanelHeight). A
@@ -153,14 +153,14 @@ test.describe('the stylesheets: acrylic tokens over an opaque fallback', () => {
     assert.match(panel, /html\[data-frame="fitted"\] \.panel__tail \{ display: none; \}/);
   });
 
-  test('the figures are 650 in the state colour, and Yenile is a filled capsule', () => {
+  test('the figures are 650 in the state colour, and the refresh is a header icon that turns while it works', () => {
     const pct = block(css('row.css'), '.win__pct {');
     assert.match(pct, /font-weight: 650;/);
     assert.match(pct, /color: var\(--state, var\(--ink-100\)\);/);
-    const refresh = block(css('panel.css'), '.btn.foot__refresh {');
-    assert.match(refresh, /background: var\(--tint-fill\);/);
-    assert.match(refresh, /color: var\(--on-tint\);/);
-    assert.match(refresh, /border-radius: 999px;/);
+    // The footer's filled "Yenile" capsule went with the footer (2026-10-22).
+    const panel = css('panel.css');
+    assert.doesNotMatch(panel, /\.foot__refresh/);
+    assert.match(panel, /\.iconbtn\[data-busy="true"\] \.iconbtn__spin \{ animation: spin 900ms linear infinite; \}/);
   });
 });
 

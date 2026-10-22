@@ -36,7 +36,7 @@ const SYSTEM = /^(Canvas|CanvasText|ButtonText|Highlight|HighlightText|GrayText|
 
 test('every colour in the high-contrast blocks is a system colour', () => {
   // The layouts' own passes too (Görünüm → Düzen).
-  for (const file of ['panel.css', 'row.css', 'layouts.css', 'layout-focus.css', 'layout-tiles.css']) {
+  for (const file of ['panel.css', 'row.css', 'layouts.css', 'layout-sade.css', 'layout-halka.css']) {
     const block = forcedBlock(css(file));
     assert.doesNotMatch(block, /#[0-9A-Fa-f]{3,8}\b|rgba?\(/, `${file}: a literal colour in high contrast`);
     for (const m of block.matchAll(/(?:^|[;{]\s*)(background(?:-color)?|color|border-color|--state|--ring-ink|--glyph-dim):\s*([^;]+);/gm)) {
@@ -49,15 +49,15 @@ test('the meters opt out of the forcing and draw the reading in Highlight on an 
   const block = forcedBlock(css('row.css'));
   assert.match(block, /\.rail \{\s*forced-color-adjust: none;\s*background: Canvas;\s*box-shadow: inset 0 0 0 1px CanvasText;/);
   assert.match(block, /\.rail__fill \{ --state: Highlight; background-color: Highlight; \}/);
-  assert.match(block, /--ring-ink: Highlight;/);
   assert.match(block, /\.row \{ border: 1px solid CanvasText; \}/);
 });
 
-test('the layouts\' bars are row.css\'s meters: no layout rule paints a bar, so its high-contrast pass holds', () => {
-  // "Öne çıkan" and "Kutucuklar" in bars only place and size the .rail; a
-  // colour set there would outrank row.css's forced-colors rules (a media
-  // query adds no specificity) and put the ramp back on an outlined track.
-  for (const file of ['layouts.css', 'layout-focus.css', 'layout-tiles.css']) {
+test('the short list hides the bars and never paints one, so row.css\'s high-contrast pass holds', () => {
+  // "Sade liste" only hides and places the .rail; a colour set there would
+  // outrank row.css's forced-colors rules (a media query adds no specificity)
+  // and put the ramp back on an outlined track. "Halka kutuları" draws its
+  // ring itself and carries its own high-contrast pass (next test).
+  for (const file of ['layouts.css', 'layout-sade.css']) {
     const text = css(file).replace(/\/\*[\s\S]*?\*\//g, '');
     for (const m of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
       // Split the list at top-level commas only, not inside :has(a, b).
@@ -75,6 +75,14 @@ test('the layouts\' bars are row.css\'s meters: no layout rule paints a bar, so 
       assert.doesNotMatch(m[2], /\b(background(-color|-image)?|box-shadow|color|opacity|forced-color-adjust)\s*:/, `${file}: ${selectors[0]}`);
     }
   }
+});
+
+test('the ring tiles draw their ring in the system palette: a tinted groove, the sweep in Highlight', () => {
+  const block = forcedBlock(css('layout-halka.css'));
+  assert.match(block, /\.win--5h \.rail,[\s\S]*?\{\s*background: color-mix\(in srgb, CanvasText 30%, Canvas\);\s*box-shadow: none;/);
+  assert.match(block, /\.rail \.rail__fill \{ --ring-ink: Highlight; background-color: transparent; \}/);
+  // The empty groove of a window with no figure, and of a tool not connected.
+  assert.match(block, /\.row:not\(\[data-expanded\]\)::after \{ forced-color-adjust: none; background: GrayText; \}/);
 });
 
 test('a selected segment and an "on" switch keep their fill, in Highlight', () => {

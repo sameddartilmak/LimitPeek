@@ -56,6 +56,12 @@ export type WindowKind = '5h' | '7d';
 interface WindowCopy {
   /** The label printed above the bar. */
   label: string;
+  /**
+   * The two- or three-character tag the compact layouts print before the
+   * figure ("5sa %62 · 7g %41"). Printed only there (layout-*.css); the full
+   * label is what the details and every spoken sentence use.
+   */
+  tag: string;
   /** The name a screen reader hears for the meter. */
   spoken: string;
 }
@@ -71,8 +77,8 @@ function copyFor(kind: WindowKind): WindowCopy {
   // side as equal columns, and the full name is still what a screen reader
   // hears and what the details and the tooltip say.
   return kind === '5h'
-    ? { label: t('meter.window5h.short'), spoken: t('meter.window5h.spoken') }
-    : { label: t('meter.window7d.short'), spoken: t('meter.window7d.spoken') };
+    ? { label: t('meter.window5h.short'), tag: t('meter.window5h.tag'), spoken: t('meter.window5h.spoken') }
+    : { label: t('meter.window7d.short'), tag: t('meter.window7d.tag'), spoken: t('meter.window7d.spoken') };
 }
 
 /**
@@ -154,6 +160,15 @@ function absenceTable(): Partial<Record<WindowAbsence, AbsenceCopy>> {
     spoken: (label) => t('meter.awaiting.spoken', { label }),
   },
   };
+}
+
+/**
+ * The word printed in place of a figure, for a caller outside the block: the
+ * row's hover line says "Haftalık bildirilmiyor" with the same word the block
+ * prints, from the same table, so the two can never name one absence twice.
+ */
+export function absenceFigure(usage: WindowUsage | null | undefined): string {
+  return absenceCopy(usage).figure;
 }
 
 function absenceCopy(usage: WindowUsage | null | undefined): AbsenceCopy {
@@ -282,13 +297,17 @@ function createBlock(
   const spokenText = note ? `${copy.spoken}, ${note}` : copy.spoken;
 
   const label = el('span', { class: 'win__label' }, labelText);
+  // The compact tag, "5sa" / "7g". In the head, so it is aria-hidden with the
+  // label it abbreviates: the meter's sentence (or the group's) already names
+  // the window in full, and a screen reader must not hear "5sa" as a word.
+  const tag = el('span', { class: 'win__tag' }, copy.tag);
   const pct = el(
     'span',
     { class: drawable ? 'win__pct' : 'win__pct win__pct--none' },
     drawable ? null : NO_FIGURE(),
   );
 
-  const head = el('div', { class: 'win__head' }, label, el('span', { class: 'win__gap' }), pct);
+  const head = el('div', { class: 'win__head' }, label, tag, el('span', { class: 'win__gap' }), pct);
 
   // The reset countdown, beneath the bar. It is painted for every block that
   // has a reset instant — including one we cannot put a percentage on, because
