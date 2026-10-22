@@ -466,7 +466,11 @@
  * blur and luminosity layer, so the tint has to be thin for anything behind
  * to show. Shot on the real panel over a colourful window at 82 / 55 / 40 /
  * 20 / 0 %: from 20 % the colours come through and the text on the cards
- * still reads. The table above was for 82 %: over a white or black window
+ * still reads. Lowered again the same day for the minimal panel, whose rows
+ * sit on one plate: "saydamlığı biraz daha artırmamız lazım". The tint is
+ * now 10 % dark / 15 % light and the plate 5 % / 30 % (the light plate was
+ * 70 %, an opaque white sheet over the whole list); most of what is left is
+ * DWM's own acrylic. The table above was for 82 %: over a white or black window
  * the small inks now fall under 4.5:1, which is the price of the look the
  * owner asked for. "Saydamlık" off (and Windows' own setting, and high
  * contrast) gives the opaque base, measured as before.
@@ -474,8 +478,8 @@
  * Off as soon as the renderer knows transparency is to be reduced, before
  * main has switched the window: a tint over an opaque base still reads. */
 :root[data-material="acrylic"]:not([data-reduce-transparency]) {
-  --panel-base: rgba(30, 30, 34, .25);
-  --ink-800: rgba(255, 255, 255, .07);
+  --panel-base: rgba(30, 30, 34, .1);
+  --ink-800: rgba(255, 255, 255, .05);
   --ink-400: #AEAEB2;
   --tint-text: #69B1FF;
   --glass: transparent;
@@ -483,8 +487,8 @@
   --glass-ctl: rgba(255, 255, 255, .08);
 }
 :root[data-material="acrylic"][data-theme="light"]:not([data-reduce-transparency]) {
-  --panel-base: rgba(246, 246, 248, .4);
-  --ink-800: rgba(255, 255, 255, .7);
+  --panel-base: rgba(246, 246, 248, .15);
+  --ink-800: rgba(255, 255, 255, .3);
   --ink-400: #5E5E63;
   --tint-text: #005CB9;
   --glass-ctl: rgba(255, 255, 255, .6);
