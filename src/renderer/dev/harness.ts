@@ -66,7 +66,6 @@ let prefs: Preferences = {
   trayView: 'tray',
   stripAvailable: true,
   stripNoRoom: false,
-  gauge: 'bar',
   reduceTransparency: false,
   systemReducedTransparency: false,
   // A browser page has no acrylic and no fitted window: the canvas look.
@@ -281,14 +280,6 @@ function makeBridge(scenario: Scenario): Bridge {
     },
 
     /** Persist, then push, like setTrayView. */
-    async setGauge(gauge: 'bar' | 'ring'): Promise<boolean> {
-      log(`setGauge(${gauge})`);
-      prefs = { ...prefs, gauge };
-      prefsCb?.(prefs);
-      return true;
-    },
-
-    /** Persist, then push, like setGauge. */
     async setReduceTransparency(reduce: boolean): Promise<boolean> {
       log(`setReduceTransparency(${reduce})`);
       prefs = { ...prefs, reduceTransparency: reduce };
@@ -296,7 +287,7 @@ function makeBridge(scenario: Scenario): Bridge {
       return true;
     },
 
-    /** Persist, then push, like setGauge. */
+    /** Persist, then push, like setTrayView. */
     async setLayout(layout: 'sade' | 'halka'): Promise<boolean> {
       log(`setLayout(${layout})`);
       prefs = { ...prefs, layout };
@@ -580,7 +571,6 @@ controls.appendChild(logBox);
  * URL parameters, for screenshots of a given state without clicking through:
  *   ?s=<scenario id>  &theme=light|dark  &lang=en  &coach=done
  *   &view=settings  &tab=providers|usage|general  &expand=<provider id>
- *   &gauge=ring (Görünüm → Gösterge: rings instead of bars)
  *   &rt=1 (Görünüm → "Saydamlığı azalt" on)  &rtsys=1 (Windows asks for it)
  *   &frame=fitted  &material=acrylic (the Windows 11 window and its acrylic)
  *   &layout=halka (Görünüm → Düzen: the ring tiles; the short list otherwise)
@@ -598,9 +588,6 @@ if (langParam === 'en' || langParam === 'zh') {
   prefs = { ...prefs, language: langParam, resolvedLanguage: langParam, formatLocale: defaultFormatLocale(langParam) };
 }
 if (params.get('coach') === 'done') prefs = { ...prefs, setupCoachDismissed: true };
-// ?gauge=ring: the activity rings instead of bars, through the same
-// preference the Settings control writes (app.ts paints it in frame one).
-if (params.get('gauge') === 'ring') prefs = { ...prefs, gauge: 'ring' };
 // ?rt=1 / ?rtsys=1: the glass opaque, by the user's switch or by Windows.
 if (params.get('rt') === '1') prefs = { ...prefs, reduceTransparency: true };
 if (params.get('rtsys') === '1') prefs = { ...prefs, systemReducedTransparency: true };

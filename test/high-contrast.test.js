@@ -49,7 +49,6 @@ test('the meters opt out of the forcing and draw the reading in Highlight on an 
   const block = forcedBlock(css('row.css'));
   assert.match(block, /\.rail \{\s*forced-color-adjust: none;\s*background: Canvas;\s*box-shadow: inset 0 0 0 1px CanvasText;/);
   assert.match(block, /\.rail__fill \{ --state: Highlight; background-color: Highlight; \}/);
-  assert.match(block, /--ring-ink: Highlight;/);
   assert.match(block, /\.row \{ border: 1px solid CanvasText; \}/);
 });
 

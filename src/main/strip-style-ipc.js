@@ -3,10 +3,10 @@ const { isStripStyle } = require('../core/strip-style');
 
 /**
  * The SET_STRIP_STYLE handler: Settings → Genel → Görünüm, "Şerit stili:
- * Sade / Halkalı / Dolgulu". Split out of `index.js` for the reason
- * `gauge-ipc.js` is: `test/strip-style.test.js` drives this exact function.
+ * Sade / Halkalı / Dolgulu". Split out of `index.js` so
+ * `test/strip-style.test.js` can drive this exact function.
  *
- * Persist-then-push, synchronous end to end like SET_GAUGE, so two rapid
+ * Persist-then-push, synchronous end to end like SET_LAYOUT, so two rapid
  * picks cannot interleave two read-modify-write cycles over one settings
  * object and one file. The value is checked against the three literals, never
  * coerced: anything else is a bug or a hostile message.
@@ -41,7 +41,7 @@ function createSetStripStyleHandler({ fromPanel, getSettings, save, apply = () =
     try { apply(style); } catch (err) {
       log.warn(`strip style could not be applied: code=${(err && err.code) || 'UNKNOWN'}`);
     }
-    // Best effort, like SET_GAUGE's: the renderer already shows the new
+    // Best effort, like SET_LAYOUT's: the renderer already shows the new
     // choice, so a push that fails costs an echo, not a disagreement.
     try { push(); } catch (err) {
       log.warn(`strip style push failed: code=${(err && err.code) || 'UNKNOWN'}`);

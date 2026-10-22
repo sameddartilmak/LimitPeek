@@ -100,6 +100,40 @@ test.describe('the value', () => {
   });
 });
 
+test.describe('"Gösterge" is gone with the old layouts, end to end', () => {
+  const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
+
+  test('no module, no channel, no preload method, no preference', () => {
+    assert.equal(fs.existsSync(path.join(ROOT, 'src', 'core', 'gauge.js')), false);
+    assert.equal(fs.existsSync(path.join(ROOT, 'src', 'main', 'gauge-ipc.js')), false);
+    for (const file of [['src', 'shared', 'contract.ts'], ['src', 'shared', 'contract.js'], ['src', 'main', 'preload.js'], ['src', 'main', 'index.js']]) {
+      assert.doesNotMatch(read(...file), /SET_GAUGE|setGauge|prefs:set-gauge/, file.join('/'));
+    }
+    assert.doesNotMatch(read('src', 'shared', 'contract.ts'), /export type Gauge\b|^\s*gauge: Gauge;/m);
+  });
+
+  test('an old settings file that still says "gauge" loads without it, and the preferences carry none', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ gauge: 'ring', layout: 'tiles' }));
+    const s = settingsStore.load(dir);
+    assert.equal('gauge' in s, false);
+    assert.equal(s.layout, 'halka');
+    assert.equal('gauge' in settingsStore.DEFAULTS, false);
+    const base = { currentLocale: () => ({ language: 'tr', resolvedLanguage: 'tr', formatLocale: 'tr-TR' }), readOs: () => ({}) };
+    assert.equal('gauge' in createPreferences({ ...base, getSettings: () => ({ gauge: 'ring' }) })(), false);
+  });
+
+  test('the renderer writes no html[data-gauge] and styles nothing by it', () => {
+    assert.doesNotMatch(read('src', 'renderer', 'src', 'app.ts'), /dataset\.gauge\s*=/);
+    for (const f of fs.readdirSync(path.join(ROOT, 'src', 'renderer', 'styles'))) {
+      assert.doesNotMatch(read('src', 'renderer', 'styles', f), /data-gauge/, f);
+    }
+    for (const lang of ['tr', 'en', 'zh']) {
+      assert.doesNotMatch(read('src', 'shared', 'i18n', lang, 'renderer.json'), /"settings\.gauge\.|"app\.gaugeNotSaved"/, lang);
+    }
+  });
+});
+
 test.describe('SET_LAYOUT', () => {
   function rig({ fromPanel = true, saves = [], stored = 'sade', pushThrows = false } = {}) {
     const calls = [];

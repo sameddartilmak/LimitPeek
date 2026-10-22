@@ -13,12 +13,12 @@ const { FakeElement, installDom, mirrorRenderer, walk } = require('./helpers/fak
  *      that opened the view is hidden, and the keyboard meets back, refresh,
  *      pin, then the tabs (the header has no close since the minimal redesign). Closing the view puts the brand and the button
  *      back, and focus on the button.
- *   2. "Saydamlık" (stored as reduceTransparency) is optimistic like the gauge: the document flips on
+ *   2. "Saydamlık" (stored as reduceTransparency) is optimistic like the layout: the document flips on
  *      the gesture, a refusal puts the old value back and says so, and
  *      Windows' own request (systemReducedTransparency) keeps the glass off
  *      whatever the switch says.
- *   3. Two small accessibility details from the report: "Yenile" names what
- *      it is doing while it does it, and the rings keep the meters' values.
+ *   3. Two small accessibility details from the report: the refresh names what
+ *      it is doing while it does it, and the ring tiles keep the meters' values.
  */
 
 let mirror;
@@ -220,12 +220,13 @@ test.describe('small details', () => {
     }
   });
 
-  test('in ring mode every window is still a meter with its value and its sentence', async () => {
-    const app = mount({ gauge: 'ring' }, { snapshot: SNAP });
+  test('in the ring tiles every window is still a meter with its value and its sentence', async () => {
+    const app = mount({ layout: 'halka' }, { snapshot: SNAP });
     try {
       app.handle.applySnapshot(SNAP);
       await tick();
-      assert.equal(document.documentElement.dataset.gauge, 'ring');
+      assert.equal(document.documentElement.dataset.layout, 'halka');
+      assert.equal(document.documentElement.dataset.gauge, undefined, 'no gauge on the document any more');
       const meters = walk(app.container).filter((n) => n.getAttribute('role') === 'meter');
       assert.deepEqual(meters.map((m) => m.getAttribute('aria-valuenow')), ['62', '41']);
       for (const m of meters) {

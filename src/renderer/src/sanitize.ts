@@ -29,7 +29,6 @@ import type {
   ProviderSnapshot,
   RefreshNotice,
   TrayView,
-  Gauge,
   PanelMaterial,
   PanelFrame,
   Layout,
@@ -1079,9 +1078,8 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   const trayView: TrayView = source.trayView === 'strip' ? 'strip' : 'tray';
   const stripAvailable = source.stripAvailable !== false;
   const stripNoRoom = source.stripNoRoom === true;
-  // Gösterge: anything but 'ring' is the bars, as main's own load() says; a
-  // main from before the rings sends nothing and gets the bars it always drew.
-  const gauge: Gauge = source.gauge === 'ring' ? 'ring' : 'bar';
+  // No `gauge` any more (Gösterge went with the old layouts): a main from
+  // before then still sends one, and it is simply not read.
   // Saydamlığı azalt, and Windows asking for it: only a real `true` either
   // way, so a main from before the glass sends nothing and gets the glass.
   const reduceTransparency = source.reduceTransparency === true;
@@ -1100,7 +1098,7 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   const stripStyle: StripStyle = source.stripStyle === 'rings' || source.stripStyle === 'fill' ? source.stripStyle : 'plain';
   return {
     theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed,
-    trayView, stripAvailable, stripNoRoom, gauge, reduceTransparency, systemReducedTransparency,
+    trayView, stripAvailable, stripNoRoom, reduceTransparency, systemReducedTransparency,
     material, frame, layout, stripStyle,
   };
 }

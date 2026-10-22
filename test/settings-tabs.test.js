@@ -540,70 +540,36 @@ test.describe('Görünüm: "Tepsi simgesi" or "Görev çubuğu şeridi", on the 
   });
 });
 
-// ------------------------------------------------ Görünüm: bars or activity rings
+// ------------------------------------------------ Görünüm: no "Gösterge" any more
 
-test.describe('Görünüm → "Gösterge": "Çubuk" or "Halka", on the "Genel" tab', () => {
-  function mountGauge() {
-    const picked = [];
+test.describe('Görünüm has no "Gösterge" any more: the two layouts draw no bars and always rings', () => {
+  function mountLooks() {
     const handle = settingsMod.createSettings({
       onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
-      onDisconnect() {}, onTrayView() {},
-      onGauge(gauge) { picked.push(gauge); },
+      onDisconnect() {}, onTrayView() {}, onLayout() {},
     });
-    const group = walk(handle.el).find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--gauge'));
-    assert.ok(group, 'no gauge group');
-    const radios = walk(group).filter((el) => el.tagName === 'INPUT');
-    return { handle, group, radios, picked };
+    return { handle };
   }
 
-  test('two native radios in a group named "Gösterge", in "Panel görünümü" after the theme, before the taskbar group', () => {
-    const { handle, group, radios } = mountGauge();
-    assert.deepEqual(radios.map((r) => [r.getAttribute('type'), r.getAttribute('value')]), [['radio', 'bar'], ['radio', 'ring']]);
-    const labels = walk(group).filter((el) => el.tagName === 'LABEL').map((el) => el.textContent);
-    assert.deepEqual(labels, ['Çubuk', 'Halka']);
-    assert.equal(walk(group).find((el) => el.tagName === 'LEGEND').textContent, 'Gösterge');
-    const general = walk(handle.el).find((el) => el.getAttribute('role') === 'tabpanel' && walk(el).includes(group));
-    assert.ok(general, 'not on a tab panel');
+  test('no gauge group, no gauge radio, and "Düzen" in "Panel görünümü" after the theme, before the taskbar group', () => {
+    const { handle } = mountLooks();
+    assert.equal(walk(handle.el).some((el) => (el.getAttribute('class') || '').includes('theme--gauge')), false);
+    assert.equal(walk(handle.el).some((el) => el.tagName === 'INPUT' && /gauge/.test(el.getAttribute('name') || '')), false);
+    const layout = walk(handle.el).find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--layout'));
+    const general = walk(handle.el).find((el) => el.getAttribute('role') === 'tabpanel' && walk(el).includes(layout));
     const kids = walk(general);
     const theme = kids.find((el) => el.tagName === 'FIELDSET' && el.getAttribute('class') === 'theme');
     const panelHeading = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Panel görünümü');
     const taskbarHeading = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Görev çubuğu');
-    const trayView = kids.find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--tray-view'));
-    const language = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Dil');
-    assert.ok(kids.indexOf(panelHeading) < kids.indexOf(theme) && kids.indexOf(theme) < kids.indexOf(group));
-    assert.ok(kids.indexOf(group) < kids.indexOf(taskbarHeading) && kids.indexOf(taskbarHeading) < kids.indexOf(trayView));
-    assert.ok(kids.indexOf(trayView) < kids.indexOf(language));
+    assert.ok(kids.indexOf(panelHeading) < kids.indexOf(theme) && kids.indexOf(theme) < kids.indexOf(layout));
+    assert.ok(kids.indexOf(layout) < kids.indexOf(taskbarHeading));
   });
 
-  test('every choice shows its name above it: "Tema", "Düzen", "Gösterge", "Kullanım nerede görünsün", "Şerit stili"', () => {
-    const { handle } = mountGauge();
+  test('every choice shows its name above it: "Tema", "Düzen", "Kullanım nerede görünsün", "Şerit stili"', () => {
+    const { handle } = mountLooks();
     const legends = walk(handle.el).filter((el) => el.tagName === 'LEGEND');
     const shown = legends.filter((el) => el.getAttribute('class') === 'theme__label').map((el) => el.textContent);
-    assert.deepEqual(shown, ['Tema', 'Düzen', 'Gösterge', 'Kullanım nerede görünsün', 'Şerit stili']);
-  });
-
-  test('the help line says which ring is which', () => {
-    const { group } = mountGauge();
-    const help = walk(group).find((el) => el.tagName === 'P');
-    assert.match(help.textContent, /dış halka 5 saatlik, iç halka haftalık/);
-    assert.equal(group.getAttribute('aria-describedby'), help.getAttribute('id'));
-  });
-
-  test('the checked radio follows the state, a pick tells the app, pending and revert are on the group', () => {
-    const { handle, group, radios, picked } = mountGauge();
-    handle.render(state({ gauge: 'bar', gaugePending: false, gaugeReverted: false }), []);
-    assert.deepEqual(radios.map((r) => r.checked), [true, false]);
-    radios[1].checked = true;
-    radios[1].dispatch('change');
-    assert.deepEqual(picked, ['ring']);
-    handle.render(state({ gauge: 'ring', gaugePending: true, gaugeReverted: false }), []);
-    assert.deepEqual(radios.map((r) => r.checked), [false, true]);
-    assert.equal(group.getAttribute('data-pending'), 'true');
-    assert.equal(group.getAttribute('aria-busy'), 'true');
-    handle.render(state({ gauge: 'bar', gaugePending: false, gaugeReverted: true }), []);
-    assert.deepEqual(radios.map((r) => r.checked), [true, false]);
-    assert.equal(group.getAttribute('data-pending'), null);
-    assert.equal(group.getAttribute('data-revert'), 'true');
+    assert.deepEqual(shown, ['Tema', 'Düzen', 'Kullanım nerede görünsün', 'Şerit stili']);
   });
 });
 
@@ -614,7 +580,7 @@ test.describe('Görünüm → "Saydamlık": a switch on the "Genel" tab, on whil
     const flipped = [];
     const handle = settingsMod.createSettings({
       onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
-      onDisconnect() {}, onTrayView() {}, onGauge() {},
+      onDisconnect() {}, onTrayView() {},
       onReduceTransparency(reduce) { flipped.push(reduce); },
     });
     const row = walk(handle.el).find((el) => (el.getAttribute('class') || '').includes('settings__item--glass'));
@@ -634,9 +600,9 @@ test.describe('Görünüm → "Saydamlık": a switch on the "Genel" tab, on whil
     assert.ok(general, 'not on a tab panel');
     assert.equal(general.getAttribute('data-tab'), 'general');
     const kids = walk(general);
-    const gauge = kids.find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--gauge'));
+    const layout = kids.find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--layout'));
     const language = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Dil');
-    assert.ok(kids.indexOf(gauge) < kids.indexOf(row) && kids.indexOf(row) < kids.indexOf(language));
+    assert.ok(kids.indexOf(layout) < kids.indexOf(row) && kids.indexOf(row) < kids.indexOf(language));
   });
 
   test('the switch shows the opposite of the stored flag, a press tells the app, pending and revert are on the row', () => {
@@ -675,22 +641,21 @@ test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', 
     const picked = { layout: [], strip: [] };
     const handle = settingsMod.createSettings({
       onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
-      onDisconnect() {}, onTrayView() {}, onGauge() {}, onReduceTransparency() {},
+      onDisconnect() {}, onTrayView() {}, onReduceTransparency() {},
       onLayout(layout) { picked.layout.push(layout); },
       onStripStyle(style) { picked.strip.push(style); },
     });
     const group = (name) => walk(handle.el).find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes(name));
     const layout = group('theme--layout');
     const strip = group('theme--strip-style');
-    const gauge = group('theme--gauge');
-    assert.ok(layout && strip && gauge, 'a group is missing');
+    assert.ok(layout && strip, 'a group is missing');
     const radios = (g) => walk(g).filter((el) => el.tagName === 'INPUT');
     const labels = (g) => walk(g).filter((el) => el.tagName === 'LABEL').map((el) => el.textContent);
-    return { handle, layout, strip, gauge, radios, labels, picked };
+    return { handle, layout, strip, radios, labels, picked };
   }
 
   test('"Düzen: Sade liste / Halka kutuları": two native radios, with a help line', () => {
-    const { handle, layout, gauge, radios, labels } = mountLooks();
+    const { handle, layout, radios, labels } = mountLooks();
     assert.deepEqual(radios(layout).map((r) => [r.getAttribute('type'), r.getAttribute('value')]),
       [['radio', 'sade'], ['radio', 'halka']]);
     assert.deepEqual(labels(layout), ['Sade liste', 'Halka kutuları']);
@@ -699,7 +664,7 @@ test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', 
     assert.match(help.textContent, /^Sade liste: her araç tek satırda/);
     assert.equal(layout.getAttribute('aria-describedby'), help.getAttribute('id'));
     const kids = walk(walk(handle.el).find((el) => el.getAttribute('data-tab') === 'general' && el.getAttribute('role') === 'tabpanel'));
-    assert.ok(kids.indexOf(layout) > -1 && kids.indexOf(layout) < kids.indexOf(gauge), 'the layout comes before the gauge it governs');
+    assert.ok(kids.indexOf(layout) > -1, 'on the Genel tab');
   });
 
   test('a pick tells the app; pending and revert are on the group', () => {
@@ -715,21 +680,6 @@ test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', 
     handle.render(state({ layout: 'sade', layoutReverted: true }), []);
     assert.deepEqual(radios(layout).map((r) => r.checked), [true, false]);
     assert.equal(layout.getAttribute('data-revert'), 'true');
-  });
-
-  test('the gauge shows in every layout, right under "Düzen", with its choice and its ring help line', () => {
-    const { handle, layout, gauge, radios } = mountLooks();
-    assert.equal(layout.parentNode, gauge.parentNode);
-    const siblings = layout.parentNode.childNodes;
-    assert.equal(siblings.indexOf(gauge), siblings.indexOf(layout) + 1, '"Gösterge" is not right under "Düzen"');
-    for (const l of ['sade', 'halka']) {
-      for (const g of ['bar', 'ring']) {
-        handle.render(state({ layout: l, gauge: g }), []);
-        assert.equal(gauge.hidden, false, `${l} / ${g}`);
-        assert.deepEqual(radios(gauge).map((r) => r.checked), [g === 'bar', g === 'ring'], `${l} / ${g}`);
-        assert.equal(walk(gauge).find((el) => el.tagName === 'P').textContent, 'Halkada dış halka 5 saatlik, iç halka haftalık kullanım.');
-      }
-    }
   });
 
   test('"Şerit stili: Sade / Halkalı / Dolgulu" sits under the tray / strip choice and shows only with the strip', () => {

@@ -1294,14 +1294,6 @@ export const IPC = {
    */
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   /**
-   * renderer -> main invoke(gauge: Gauge). Persists how the panel draws each
-   * tool's two windows in the list layout ('bar' | 'ring'), then pushes
-   * PREFERENCES. Panel only: nothing is applied in main (the strip has its own
-   * style, SET_STRIP_STYLE). Anything but the two literals is refused.
-   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
-   */
-  SET_GAUGE: 'prefs:set-gauge',
-  /**
    * renderer -> main invoke(reduce: boolean). Persists "Saydamlığı azalt",
    * the panel's glass drawn opaque, then pushes PREFERENCES. Panel only:
    * nothing is applied in main. Anything but a real boolean is refused.
@@ -1373,14 +1365,6 @@ export type LanguageChoice = 'tr' | 'en' | 'zh' | 'system';
  * one tile per tool. The tray icon stays in both.
  */
 export type TrayView = 'tray' | 'strip';
-
-/**
- * How the panel draws a tool's two usage windows in the list layout. 'bar'
- * (the default) is two bars side by side; 'ring' is two concentric activity
- * rings, five-hour outside and weekly inside. The other layouts always draw
- * rings; the tray icon and the taskbar strip do not follow it.
- */
-export type Gauge = 'bar' | 'ring';
 
 /**
  * What is behind the panel (src/core/panel-material.js). 'acrylic': the real
@@ -1477,12 +1461,6 @@ export interface Preferences {
    * Anything that is not `true` reaches the renderer as `false`.
    */
   stripNoRoom: boolean;
-  /**
-   * Settings → Genel → Görünüm → Gösterge. Anything that is not a Gauge is
-   * 'bar'. Read in frame one, like the theme: a gauge applied after first
-   * paint is a visible flash of bars turning into rings.
-   */
-  gauge: Gauge;
   /**
    * Settings → Genel → Görünüm → "Saydamlığı azalt": the panel's glass (the
    * header, the settings tab band) drawn opaque. Only a real `true` is on.
@@ -1636,8 +1614,6 @@ export interface UsageNotchApi {
   setSetupCoachDismissed(dismissed: boolean): Promise<{ ok: boolean }>;
   /** Persist where the usage is shown outside the panel. See IPC.SET_TRAY_VIEW. */
   setTrayView(view: TrayView): Promise<{ ok: boolean }>;
-  /** Persist bars or rings for the panel's windows. See IPC.SET_GAUGE. */
-  setGauge(gauge: Gauge): Promise<{ ok: boolean }>;
   /** Persist "Saydamlığı azalt". See IPC.SET_REDUCE_TRANSPARENCY. */
   setReduceTransparency(reduce: boolean): Promise<{ ok: boolean }>;
   /** Persist the panel's layout. See IPC.SET_LAYOUT. */

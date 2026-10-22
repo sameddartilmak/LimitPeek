@@ -8,7 +8,6 @@
 
 import type {
   AnchorPayload,
-  Gauge,
   LanguageChoice,
   PanelFrame,
   PanelMaterial,
@@ -212,17 +211,8 @@ export interface PanelState {
   /** True while the strip finds no room on the taskbar. */
   stripNoRoom: boolean;
   /**
-   * Görünüm → Gösterge: bars or activity rings. Optimistic, like `theme`: the
-   * document flips on the gesture and main is asked afterwards.
-   */
-  gauge: Gauge;
-  /** True while a setGauge call is in flight. */
-  gaugePending: boolean;
-  /** Set briefly when main refused the change and the radio went back. */
-  gaugeReverted: boolean;
-  /**
    * Görünüm → "Saydamlığı azalt": the glass drawn opaque. Optimistic, like
-   * `gauge`: the document flips on the gesture and main is asked afterwards.
+   * `layout`: the document flips on the gesture and main is asked afterwards.
    */
   reduceTransparency: boolean;
   /** True while a setReduceTransparency call is in flight. */
@@ -236,7 +226,7 @@ export interface PanelState {
   /** The window's shape, fixed per process (Preferences.frame). */
   frame: PanelFrame;
   /**
-   * Görünüm → Düzen: the short list or the ring tiles. Optimistic, like `gauge`: the
+   * Görünüm → Düzen: the short list or the ring tiles. Optimistic, like `theme`: the
    * document flips on the gesture and main is asked afterwards.
    */
   layout: Layout;
@@ -295,9 +285,6 @@ const INITIAL: PanelState = {
   trayViewReverted: false,
   stripAvailable: true,
   stripNoRoom: false,
-  gauge: 'bar',
-  gaugePending: false,
-  gaugeReverted: false,
   reduceTransparency: false,
   reduceTransparencyPending: false,
   reduceTransparencyReverted: false,

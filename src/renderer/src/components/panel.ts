@@ -40,7 +40,7 @@
  * never rewritten by anything but that drag.
  */
 
-import type { Gauge, LanguageChoice, Layout, ProviderSnapshot, StripStyle, ThemeChoice, TrayView } from '../../../shared/contract.js';
+import type { LanguageChoice, Layout, ProviderSnapshot, StripStyle, ThemeChoice, TrayView } from '../../../shared/contract.js';
 import { defaultPlacement, FITTED_MAX_HEIGHT, fittedPlacement, placePanel, type PanelPlacement } from '../anchor.js';
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { language, t } from '../i18n.js';
@@ -98,8 +98,6 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onAutostartChange(enabled: boolean): void;
   /** The user picked Görünüm: tray icon or taskbar strip. Optimistic. */
   onTrayViewChange(view: TrayView): void;
-  /** The user picked Görünüm → Gösterge: bars or rings. Optimistic. */
-  onGaugeChange(gauge: Gauge): void;
   /** The user flipped Görünüm → "Saydamlığı azalt". Optimistic. */
   onReduceTransparencyChange(reduce: boolean): void;
   /** The user picked Görünüm → Düzen: the short list or the ring tiles. Optimistic. */
@@ -210,7 +208,6 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onLanguage: (choice) => ctx.onLanguageChange(choice),
     onAutostart: (enabled) => ctx.onAutostartChange(enabled),
     onTrayView: (view) => ctx.onTrayViewChange(view),
-    onGauge: (gauge) => ctx.onGaugeChange(gauge),
     onReduceTransparency: (reduce) => ctx.onReduceTransparencyChange(reduce),
     onLayout: (layout) => ctx.onLayoutChange(layout),
     onStripStyle: (style) => ctx.onStripStyleChange(style),

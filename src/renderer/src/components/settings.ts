@@ -45,7 +45,6 @@
  */
 
 import type {
-  Gauge,
   LanguageChoice,
   Layout,
   PeriodModelCost,
@@ -84,8 +83,6 @@ const LANGUAGE_TITLE_ID = 'settings-language-title';
 const LANGUAGE_HELP_ID = 'settings-language-help';
 const TRAY_VIEW_TITLE_ID = 'settings-tray-view-title';
 const TRAY_VIEW_HELP_ID = 'settings-tray-view-help';
-const GAUGE_TITLE_ID = 'settings-gauge-title';
-const GAUGE_HELP_ID = 'settings-gauge-help';
 const LAYOUT_TITLE_ID = 'settings-layout-title';
 const LAYOUT_HELP_ID = 'settings-layout-help';
 const STRIP_STYLE_TITLE_ID = 'settings-strip-style-title';
@@ -119,8 +116,6 @@ export interface SettingsContext {
   onAutostart(enabled: boolean): void;
   /** The user picked tray icon or taskbar strip. Optimistic; the app owns the revert. */
   onTrayView(view: TrayView): void;
-  /** The user picked bars or rings. Optimistic; the app owns the revert. */
-  onGauge(gauge: Gauge): void;
   /** The user flipped "Saydamlığı azalt". Optimistic; the app owns the revert. */
   onReduceTransparency(reduce: boolean): void;
   /** The user picked list, focus or tiles. Optimistic; the app owns the revert. */
@@ -790,70 +785,6 @@ function createTrayViewControl(ctx: SettingsContext): TrayViewHandleLocal {
     setText(help, t(unavailable
       ? 'settings.trayView.unavailable'
       : noRoom ? 'settings.trayView.noRoom' : 'settings.trayView.help'));
-  }
-
-  return { el: root, update };
-}
-
-/**
- * Görünüm, third part: "Gösterge", how the panel draws each tool's two
- * windows. "Çubuk" (the default, two bars side by side) or "Halka" (two
- * concentric activity rings, row.css), in every layout. The theme's
- * native-radio fieldset and CSS again, under the same "Görünüm" heading,
- * right under "Düzen". The help line says which ring is which, because that
- * is the one thing about the rings a user cannot read off the picture the
- * first time.
- */
-interface GaugeHandleLocal {
-  el: HTMLElement;
-  update(state: PanelState): void;
-}
-
-function createGaugeControl(ctx: SettingsContext): GaugeHandleLocal {
-  const CHOICES: ReadonlyArray<{ v: Gauge; key: MessageKey }> = [
-    { v: 'bar', key: 'settings.gauge.bar' },
-    { v: 'ring', key: 'settings.gauge.ring' },
-  ];
-
-  const inputs = new Map<Gauge, HTMLInputElement>();
-  const options = el('div', { class: 'theme__opts' });
-
-  for (const choice of CHOICES) {
-    const id = 'gauge-' + choice.v;
-    const input = el('input', {
-      type: 'radio',
-      name: 'usage-notch-gauge',
-      id,
-      value: choice.v,
-      class: 'theme__radio',
-    }) as HTMLInputElement;
-    const label = el('label', { class: 'theme__opt', for: id }, t(choice.key));
-    on(input, 'change', () => {
-      if (input.checked) ctx.onGauge(choice.v);
-    });
-    inputs.set(choice.v, input);
-    options.appendChild(input);
-    options.appendChild(label);
-  }
-
-  const help = el('p', { class: 'theme__help', id: GAUGE_HELP_ID }, t('settings.gauge.help'));
-
-  const root = el(
-    'fieldset',
-    { class: 'theme theme--gauge', 'aria-describedby': GAUGE_HELP_ID },
-    el('legend', { class: 'theme__label', id: GAUGE_TITLE_ID }, t('settings.gauge.legend')),
-    help,
-    options,
-  );
-
-  function update(state: PanelState): void {
-    for (const [choice, input] of inputs) {
-      const on_ = state.gauge === choice;
-      if (input.checked !== on_) input.checked = on_;
-    }
-    setAttr(root, 'data-pending', state.gaugePending ? 'true' : null);
-    setAttr(root, 'data-revert', state.gaugeReverted ? 'true' : null);
-    setAttr(root, 'aria-busy', state.gaugePending ? 'true' : null);
   }
 
   return { el: root, update };
@@ -1975,7 +1906,6 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   const trayView = createTrayViewControl(ctx);
   const stripStyle = createStripStyleControl(ctx);
   const layout = createLayoutControl(ctx);
-  const gauge = createGaugeControl(ctx);
   const glass = createGlassControl(ctx);
   const autostart = createAutostartControl(ctx);
   // The first-run introduction, on request: it runs once, so this is the way
@@ -1997,7 +1927,6 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
           el('h3', { class: 'settings__heading' }, t('settings.heading.panel')),
           theme.el,
           layout.el,
-          gauge.el,
           glass.el,
           el('h3', { class: 'settings__heading' }, t('settings.heading.taskbar')),
           trayView.el,
@@ -2089,7 +2018,6 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     trayView.update(state);
     stripStyle.update(state);
     layout.update(state);
-    gauge.update(state);
     glass.update(state);
     autostart.update(state);
     // The FULL snapshot list, not the added subset: a model row names its tool

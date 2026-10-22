@@ -7,7 +7,6 @@
  */
 
 import type {
-  Gauge,
   LanguageChoice,
   PanelFrame,
   PanelMaterial,
@@ -75,23 +74,17 @@ function applyLocale(prefs: Preferences | null): void {
 }
 
 /**
- * Görünüm → Gösterge on the document: row.css draws the activity rings under
- * `html[data-gauge="ring"]` and the bars otherwise. Written in frame one, like
- * the theme, or a ring user sees bars turn into rings on every launch.
- */
-function paintGauge(gauge: Gauge): void {
-  document.documentElement.dataset.gauge = gauge;
-}
-
-/**
  * Görünüm → Düzen on the document: `html[data-layout]` selects the short
  * list's styles or the ring tiles' (layout-sade.css, layout-halka.css).
  * Written in frame one, before the panel exists, so a tiles user never sees
- * the list for one frame. The gauge is written with it, in the same frame.
+ * the list for one frame.
+ *
+ * There is no `html[data-gauge]` any more: "Gösterge: Çubuk / Halka" went
+ * with the old layouts (2026-10-22). The short list draws no bars and the
+ * ring tiles always draw rings, so the choice no longer meant anything.
  */
-function paintLayout(layout: Layout, gauge: Gauge): void {
+function paintLayout(layout: Layout): void {
   document.documentElement.dataset.layout = layout;
-  paintGauge(gauge);
 }
 
 /**
@@ -99,7 +92,7 @@ function paintLayout(layout: Layout, gauge: Gauge): void {
  * surface opaque under `html[data-reduce-transparency]`. Set when the user
  * asked OR Windows did (reduced transparency, high contrast; the CSS media
  * features say the same live, this covers what main measured). Frame one,
- * like the gauge, or the glass flashes before it goes opaque.
+ * like the layout, or the glass flashes before it goes opaque.
  */
 function paintGlass(reduce: boolean, system: boolean): void {
   if (reduce || system) document.documentElement.dataset.reduceTransparency = 'true';
@@ -110,7 +103,7 @@ function paintGlass(reduce: boolean, system: boolean): void {
  * What main has behind the panel, and the window's shape, on the document:
  * tokens.css draws the translucent base and cards under
  * `html[data-material="acrylic"]`, panel.css fills a `data-frame="fitted"`
- * window with the panel. Frame one, like the gauge: a translucent panel
+ * window with the panel. Frame one, like the layout: a translucent panel
  * painted before main's answer would show the desktop through an opaque
  * window as black, and an opaque one over live acrylic would hide it.
  */
@@ -133,7 +126,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const initialPrefs = bridge.initialPreferences();
   applyLocale(initialPrefs);
   const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
-  paintLayout(initialPrefs?.layout ?? 'sade', initialPrefs?.gauge ?? 'bar');
+  paintLayout(initialPrefs?.layout ?? 'sade');
   paintGlass(initialPrefs?.reduceTransparency === true, initialPrefs?.systemReducedTransparency === true);
   paintMaterial(initialPrefs?.material ?? 'none', initialPrefs?.frame ?? 'canvas');
   store.set({
@@ -146,7 +139,6 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     trayView: initialPrefs?.trayView ?? 'tray',
     stripAvailable: initialPrefs?.stripAvailable ?? true,
     stripNoRoom: initialPrefs?.stripNoRoom ?? false,
-    gauge: initialPrefs?.gauge ?? 'bar',
     reduceTransparency: initialPrefs?.reduceTransparency === true,
     systemReducedTransparency: initialPrefs?.systemReducedTransparency === true,
     material: initialPrefs?.material ?? 'none',
@@ -215,7 +207,6 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onLanguageChange: (choice) => void applyLanguage(choice),
     onAutostartChange: (enabled) => void applyAutostart(enabled),
     onTrayViewChange: (view) => void applyTrayView(view),
-    onGaugeChange: (gauge) => void applyGauge(gauge),
     onReduceTransparencyChange: (reduce) => void applyReduceTransparency(reduce),
     onLayoutChange: (layout) => void applyLayout(layout),
     onStripStyleChange: (style) => void applyStripStyle(style),
@@ -647,7 +638,6 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     acceptLanguage(prefs);
     acceptAutostart(prefs);
     acceptTrayView(prefs);
-    acceptGauge(prefs);
     acceptReduceTransparency(prefs);
     // Not the user's to revert: main states what the window IS, so the
     // document follows at once, request in flight or not.
@@ -771,62 +761,15 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     if (prefs.trayView !== store.get().trayView) store.set({ trayView: prefs.trayView });
   }
 
-  // --- Görünüm: bars or activity rings -------------------------------------
-
-  /** The newest gauge asked of main. Same shape as trayViewRequest. */
-  let gaugeRequest: { gauge: Gauge; at: number } | null = null;
-  /** Same role as `confirmedTheme`: what main is known to hold. */
-  let confirmedGauge: Gauge = store.get().gauge;
-
-  /**
-   * Optimistic, then reconciled, exactly like applyTheme: the meters change on
-   * the gesture and main is asked afterwards. `{ok:false}` means nothing
-   * changed anywhere, so the OLD gauge goes back on the document as well as in
-   * the radio group: leaving rings on screen would show a setting that will
-   * not survive a restart.
-   */
-  async function applyGauge(next: Gauge): Promise<void> {
-    if (next === store.get().gauge) return;
-
-    const request = { gauge: next, at: Date.now() };
-    gaugeRequest = request;
-    paintGauge(next);
-    store.set({ gauge: next, gaugePending: true, gaugeReverted: false, notice: null });
-
-    const ok = await bridge.setGauge(next);
-    if (ok) confirmedGauge = next;
-
-    if (gaugeRequest !== request) return;
-    gaugeRequest = null;
-    store.set({ gaugePending: false });
-    if (ok) return;
-
-    paintGauge(confirmedGauge);
-    store.set({ gauge: confirmedGauge, gaugeReverted: true });
-    say(t('app.gaugeNotSaved'), 'error');
-    window.setTimeout(() => {
-      if (store.get().gaugeReverted) store.set({ gaugeReverted: false });
-    }, 1_600);
-  }
-
-  /** Main's value, pushed. Adopted unless a pick is still in flight. */
-  function acceptGauge(prefs: Preferences): void {
-    confirmedGauge = prefs.gauge;
-    if (gaugeRequest !== null) return;
-    if (prefs.gauge === store.get().gauge) return;
-    paintGauge(prefs.gauge);
-    store.set({ gauge: prefs.gauge });
-  }
-
   // --- Görünüm: the short list or the ring tiles ----------------------------
 
-  /** The newest layout asked of main. Same shape as gaugeRequest. */
+  /** The newest layout asked of main. Same shape as trayViewRequest. */
   let layoutRequest: { layout: Layout; at: number } | null = null;
-  /** Same role as `confirmedGauge`: what main is known to hold. */
+  /** Same role as `confirmedTheme`: what main is known to hold. */
   let confirmedLayout: Layout = store.get().layout;
 
   /**
-   * Optimistic, then reconciled, exactly like applyGauge: the panel changes
+   * Optimistic, then reconciled, exactly like applyTheme: the panel changes
    * layout on the gesture and main is asked afterwards. `{ok:false}` puts the
    * OLD layout back on the document as well as in the radio group. An open
    * sheet is closed first: the user is in Settings, and coming back to the
@@ -837,7 +780,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
 
     const request = { layout: next, at: Date.now() };
     layoutRequest = request;
-    paintLayout(next, store.get().gauge);
+    paintLayout(next);
     store.set({ layout: next, layoutPending: true, layoutReverted: false, notice: null, expandedProviderId: null });
 
     const ok = await bridge.setLayout(next);
@@ -848,7 +791,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     store.set({ layoutPending: false });
     if (ok) return;
 
-    paintLayout(confirmedLayout, store.get().gauge);
+    paintLayout(confirmedLayout);
     store.set({ layout: confirmedLayout, layoutReverted: true, expandedProviderId: null });
     say(t('app.layoutNotSaved'), 'error');
     window.setTimeout(() => {
@@ -861,7 +804,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     confirmedLayout = prefs.layout;
     if (layoutRequest !== null) return;
     if (prefs.layout === store.get().layout) return;
-    paintLayout(prefs.layout, store.get().gauge);
+    paintLayout(prefs.layout);
     store.set({ layout: prefs.layout, expandedProviderId: null });
   }
 
@@ -908,13 +851,13 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
 
   // --- Görünüm: "Saydamlığı azalt" -----------------------------------------
 
-  /** The newest value asked of main. Same shape as gaugeRequest. */
+  /** The newest value asked of main. Same shape as layoutRequest. */
   let glassRequest: { reduce: boolean; at: number } | null = null;
-  /** Same role as `confirmedGauge`: what main is known to hold. */
+  /** Same role as `confirmedLayout`: what main is known to hold. */
   let confirmedReduce: boolean = store.get().reduceTransparency;
 
   /**
-   * Optimistic, then reconciled, exactly like applyGauge: the glass goes
+   * Optimistic, then reconciled, exactly like applyLayout: the glass goes
    * opaque (or comes back) on the gesture and main is asked afterwards.
    * `{ok:false}` puts the old value back on the document as well as on the
    * switch, so the screen never shows a choice that will not survive a

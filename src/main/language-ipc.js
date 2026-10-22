@@ -3,7 +3,6 @@ const { isLanguage, resolveLanguage } = require('../core/language');
 const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeAutostart, DEFAULT_AUTOSTART } = require('./autostart-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
-const { sanitizeGauge } = require('../core/gauge');
 const { sanitizeReduceTransparency } = require('../core/reduce-transparency');
 const { sanitizeLayout } = require('../core/layout');
 const { sanitizeStripStyle } = require('../core/strip-style');
@@ -203,8 +202,6 @@ function createPreferences({
       stripAvailable: stripAvailable() !== false,
       // Only a real `true`: the strip is wanted but the taskbar has no room.
       stripNoRoom: stripNoRoom() === true,
-      // Görünüm → Gösterge, re-sanitised: anything but 'ring' is the bars.
-      gauge: sanitizeGauge(settings && settings.gauge),
       // Görünüm → "Saydamlığı azalt", re-sanitised: only a real `true` is on.
       reduceTransparency: sanitizeReduceTransparency(settings && settings.reduceTransparency),
       // Windows asks for it (reduced transparency, high contrast). Only a real

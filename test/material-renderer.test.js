@@ -11,7 +11,7 @@ const { FakeElement, installDom, mirrorRenderer, walk } = require('./helpers/fak
  * camı"), driven through the REAL `mountApp` on test/helpers/fake-dom.js:
  *
  *   1. `html[data-material]` and `html[data-frame]` are painted in frame one
- *      from initialPreferences(), like the gauge, and follow every push —
+ *      from initialPreferences(), like the layout, and follow every push —
  *      main states what the window IS, so a push is adopted at once.
  *   2. A fitted window is the panel: the panel sits at the window's edge
  *      nearest the taskbar, and its height goes to main (setPanelHeight). A

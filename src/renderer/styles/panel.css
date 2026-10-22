@@ -1354,7 +1354,7 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
   min-inline-size: 0;
 }
 
-/* Each choice's name, above its options: "Tema", "Düzen", "Gösterge"... The
+/* Each choice's name, above its options: "Tema", "Düzen", "Şerit stili"... The
  * float takes a legend out of the fieldset's border slot so it lays out like
  * any block. */
 .theme__label {

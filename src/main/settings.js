@@ -7,7 +7,6 @@ const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeLanguage, DEFAULT_LANGUAGE } = require('../core/language');
 const { migratePlanLabels } = require('../core/plan-labels');
 const { sanitizeTrayView, DEFAULT_TRAY_VIEW } = require('../core/tray-view');
-const { sanitizeGauge, DEFAULT_GAUGE } = require('../core/gauge');
 const { sanitizeReduceTransparency, DEFAULT_REDUCE_TRANSPARENCY } = require('../core/reduce-transparency');
 const { sanitizeLayout, DEFAULT_LAYOUT } = require('../core/layout');
 const { sanitizeStripStyle, DEFAULT_STRIP_STYLE } = require('../core/strip-style');
@@ -78,14 +77,10 @@ const DEFAULTS = Object.freeze({
    * An unknown value is 'tray', see `src/core/tray-view.js`.
    */
   trayView: DEFAULT_TRAY_VIEW,
-  /**
-   * 'bar' | 'ring': how the panel draws each tool's two windows (Settings →
-   * Genel → Görünüm → Gösterge). 'bar' is the look every earlier version had;
-   * 'ring' is two concentric activity rings. The list layout only, and the
-   * panel only (the strip has its own `stripStyle`). An unknown value is
-   * 'bar', see `src/core/gauge.js`.
-   */
-  gauge: DEFAULT_GAUGE,
+  // No `gauge` any more ("Gösterge: Çubuk / Halka", removed with the old
+  // layouts, 2026-10-22: the short list draws no bars, the ring tiles always
+  // rings). A file that still carries one keeps it on disk until the next
+  // save; `load` below simply never reads it.
   /**
    * Settings → Genel → Görünüm → "Saydamlığı azalt": the panel's glass
    * (header, settings tab band) drawn opaque. Off by default; only a real
@@ -159,9 +154,6 @@ function load(userDataDir) {
     // Absent (every file written before the strip existed), a typo or a
     // future value: the tray icon, the look the user already has.
     trayView: sanitizeTrayView(raw.trayView),
-    // Absent (every file written before the rings existed), a typo or a
-    // future value: the bars, the look the user already has.
-    gauge: sanitizeGauge(raw.gauge),
     // Absent (every file written before the glass existed) or not a real
     // boolean: the glass, the look the trial ships with.
     reduceTransparency: sanitizeReduceTransparency(raw.reduceTransparency),

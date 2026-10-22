@@ -34,7 +34,6 @@ const CH = {
   SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
   PANEL_HIT: 'panel:hit',
   SET_TRAY_VIEW: 'prefs:set-tray-view',
-  SET_GAUGE: 'prefs:set-gauge',
   SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
   PANEL_SIZE: 'panel:size',
   SET_LAYOUT: 'prefs:set-layout',
@@ -227,16 +226,6 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   setTrayView: (view) => ipcRenderer.invoke(CH.SET_TRAY_VIEW, String(view)),
-
-  /**
-   * Persists how the panel draws each tool's windows: 'bar' or 'ring'.
-   * Coerced to a string for convenience only; main checks it against the two
-   * literals. `{ok:false}` means nothing changed anywhere.
-   *
-   * @param {'bar'|'ring'} gauge
-   * @returns {Promise<{ok:boolean}>}
-   */
-  setGauge: (gauge) => ipcRenderer.invoke(CH.SET_GAUGE, String(gauge)),
 
   /**
    * Persists "Saydamlığı azalt": the panel's glass drawn opaque. Passed as
