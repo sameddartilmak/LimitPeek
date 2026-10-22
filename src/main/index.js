@@ -48,8 +48,8 @@ const { TaskbarStrip } = require('./taskbar-strip');
 const { DisplayLayer } = require('./taskbar-display');
 const { createSetTrayViewHandler } = require('./tray-view-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
-const { createSetReduceTransparencyHandler } = require('./reduce-transparency-ipc');
-const { panelFrameFor, acrylicAvailable, createPanelLook } = require('../core/panel-material');
+const { createSetTransparencyHandler } = require('./transparency-ipc');
+const { panelFrameFor, createPanelLook } = require('../core/panel-material');
 const win32 = require('./win32');
 const { createSetLayoutHandler } = require('./layout-ipc');
 const { createSetStripStyleHandler } = require('./strip-style-ipc');
@@ -199,9 +199,10 @@ const preferences = createPreferences({
   storeBuild: () => isStoreBuild(),
   stripAvailable: () => !strip || strip.available(),
   stripNoRoom: () => Boolean(strip && strip.status() === 'no-room'),
-  // Windows' "Saydamlık efektleri" off, or high contrast on: the panel's glass
-  // goes opaque (Görünüm → "Saydamlığı azalt" says why). Re-read on every
-  // build; nativeTheme 'updated' below pushes when either moves.
+  // Windows' "Saydamlık efektleri" off, or high contrast on: the panel goes
+  // opaque and the "Saydamlık" slider is disabled (its help line says why).
+  // Re-read on every build; nativeTheme 'updated' below pushes when either
+  // moves.
   systemReducedTransparency: () => systemReducedTransparency(),
   material: () => (panel ? panel.material() : 'none'),
   frame: () => PANEL_FRAME,
@@ -209,15 +210,15 @@ const preferences = createPreferences({
 
 /**
  * The panel window's shape and material (src/core/panel-material.js): on
- * Windows 11 the window IS the panel, with Windows' acrylic behind it unless
- * transparency is to be reduced; on Windows 10 the transparent canvas as
+ * Windows 11 the window IS the panel, with Windows' glass behind it as
+ * see-through as the "Saydamlık" slider says (opaque at 0, or while Windows
+ * asks for less transparency); on Windows 10 the transparent canvas as
  * before. The shape is fixed for the process; the look is rebuilt from the
  * settings and Windows' state every time it is asked for.
  */
 const PANEL_FRAME = panelFrameFor(process.platform, os.release());
 const panelLook = createPanelLook({
   frame: PANEL_FRAME,
-  available: acrylicAvailable(process.platform, os.release()),
   getSettings: () => settings,
   systemReduced: () => systemReducedTransparency(),
   systemDark: () => nativeTheme.shouldUseDarkColors,
@@ -254,7 +255,7 @@ function refreshLocale() {
 
 /**
  * Every PREFERENCES push is also the moment the window's look is re-applied
- * (a theme, "Saydamlığı azalt" or Windows' transparency moved), and the
+ * (a theme, the "Saydamlık" slider or Windows' transparency moved), and the
  * window goes first: the push says which material is live, so it must be.
  */
 function pushPreferences() {
@@ -624,9 +625,10 @@ function registerIpc() {
     log,
   }));
 
-  // Görünüm: "Saydamlığı azalt". Persist, then push; rollback on a failed
-  // write. Panel only. Tested in reduce-transparency-ipc.js's suite.
-  ipcMain.handle(IPC.SET_REDUCE_TRANSPARENCY, createSetReduceTransparencyHandler({
+  // Görünüm: the "Saydamlık" slider. Persist, then push (which applies it to
+  // the window); rollback on a failed write. Panel only. Tested in
+  // transparency.test.js.
+  ipcMain.handle(IPC.SET_TRANSPARENCY, createSetTransparencyHandler({
     fromPanel,
     getSettings: () => settings,
     save: (s) => settingsStore.save(userDataDir(), s),
@@ -1007,10 +1009,10 @@ function bootstrap() {
     if (collector && collector.snapshot) updateTray(collector.snapshot);
     // Electron has just written Windows' app mode into the panel window's
     // dark-mode attribute; the panel's own theme goes back on, and a
-    // 'system' theme follows the flip into the acrylic's tint.
+    // 'system' theme follows the flip into the glass's tint.
     if (panel) panel.setLook(panelLook());
     // High contrast or "Saydamlık efektleri" moved: the settings screen says
-    // why the glass is off. Pushed only on a change, not on every theme event.
+    // why the panel is opaque and the slider disabled. Pushed only on a change, not on every theme event.
     const glassOff = systemReducedTransparency();
     if (glassOff !== systemGlassOff) {
       systemGlassOff = glassOff;

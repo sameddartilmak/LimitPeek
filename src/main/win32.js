@@ -43,7 +43,9 @@ const log = require('../core/log');
  * taskbar's colour, to choose dark or light ink). Both are KnownDLLs, so
  * `koffi.load` cannot be handed a planted copy from the app folder. dwmapi
  * DwmSetWindowAttribute sets four attributes of the PANEL's own window (see
- * `loadDwm` for why its name is safe too). Nothing
+ * `loadDwm` for why its name is safe too), and user32
+ * SetWindowCompositionAttribute one more on that same window, its accent
+ * backdrop: the glass behind the panel. Nothing
  * here writes to another process's window, opens a file, a socket or a
  * process; koffi's runtime JavaScript has no network module either (scanned by
  * test/contract-mirror.test.js).
@@ -95,6 +97,9 @@ const DWMWCP_ROUND = 2;
 /** DwmSetWindowAttribute: DWM draws the window's frame effects — its shadow. */
 const DWMWA_NCRENDERING_POLICY = 2;
 const DWMNCRP_ENABLED = 2;
+/** SetWindowCompositionAttribute: WCA_ACCENT_POLICY, and its 16-byte ACCENT_POLICY. */
+const WCA_ACCENT_POLICY = 19;
+const ACCENT_POLICY_SIZE = 16;
 
 /** undefined: not tried yet; null: tried and unavailable; object: ready. */
 let api;
@@ -285,7 +290,7 @@ function makeApi(f) {
 
 /**
  * The panel's fitted window (panel-window.js) takes its backdrop, corners and
- * shadow from Windows, and four of Windows' choices there have to be OURS:
+ * shadow from Windows, and these of Windows' choices there have to be OURS:
  *
  *   - the corners and the shadow. A frameless window with Electron's default
  *     thick frame gets both, and with them Windows' INVISIBLE resize borders:
@@ -294,18 +299,25 @@ function makeApi(f) {
  *     it was swallowed. With `thickFrame: false` the window is exactly the
  *     panel, and Electron then asks DWM for square corners and no frame;
  *     these two ask for the rounding and the shadow back.
- *   - light or dark acrylic. DWM tints the backdrop by the window's immersive
- *     dark mode, which Electron sets from `nativeTheme.shouldUseDarkColors` —
- *     Windows' app mode, not the panel's own theme. A user who chose "Açık" on
- *     a dark Windows would get light text on dark glass turned light. Electron
- *     writes its value again on every nativeTheme change, so the panel writes
- *     its own after each one (index.js).
+ *   - light or dark. The window's immersive dark mode, which Electron sets
+ *     from `nativeTheme.shouldUseDarkColors` — Windows' app mode, not the
+ *     panel's own theme — and which DWM reads for the frame it draws. A user
+ *     who chose "Açık" on a dark Windows would get a dark frame round a light
+ *     panel. Electron writes its value again on every nativeTheme change, so
+ *     the panel writes its own after each one (index.js), and the glass's
+ *     tint with it.
  *   - the hairline. Windows draws the ACCENT colour there on an active window
  *     when the user has accent borders on; a coloured frame the moment the
  *     panel is clicked.
+ *   - the glass itself (`setAccent`): user32's SetWindowCompositionAttribute
+ *     with WCA_ACCENT_POLICY, frosted or clear and tinted by the "Saydamlık"
+ *     level (src/core/panel-material.js, `panelAccent`, says which, and why
+ *     not Electron's `backgroundMaterial`). Undocumented, but stable since
+ *     Windows 10 1803; it writes OUR window's attribute only, and a refusal is
+ *     answered with the opaque base (panel-window.js).
  *
  * Bound separately from `load()`: a failure here costs these refinements (a
- * square, shadowless panel, still acrylic), never the strip, and the strip's
+ * square, shadowless, opaque panel), never the strip, and the strip's
  * failure never costs them. dwmapi.dll is not a KnownDLL, but Chromium has already loaded it
  * into this process (it composites through DWM), and LoadLibrary hands back a
  * module that is already loaded by name before it searches any folder — so the
@@ -322,9 +334,28 @@ function bindDwm() {
   // eslint-disable-next-line global-require
   const koffi = require('koffi');
   const dwmapi = koffi.load('dwmapi.dll');
+  // A KnownDLL, as for the strip (header).
+  const user32 = koffi.load('user32.dll');
+  // WINDOWCOMPOSITIONATTRIBDATA; pvData is handed a Buffer holding the
+  // ACCENT_POLICY: the binding the spike measured (2026-10-22).
+  koffi.struct('UN_WCAD', { Attrib: 'int32', pvData: 'void *', cbData: 'size_t' });
   return {
     DwmSetWindowAttribute: dwmapi.func('int __stdcall DwmSetWindowAttribute(intptr h, uint attr, _In_ uint32_t* value, uint size)'),
+    SetWindowCompositionAttribute: user32.func('bool __stdcall SetWindowCompositionAttribute(intptr h, UN_WCAD *data)'),
   };
+}
+
+/**
+ * ACCENT_POLICY { int32 AccentState, int32 AccentFlags, uint32 GradientColor
+ * (0xAABBGGRR), int32 AnimationId }, as the 16 bytes Windows reads.
+ */
+function accentPolicyBuffer({ state, flags, color }) {
+  const buf = Buffer.alloc(ACCENT_POLICY_SIZE);
+  buf.writeInt32LE(state | 0, 0);
+  buf.writeInt32LE(flags | 0, 4);
+  buf.writeUInt32LE(color >>> 0, 8);
+  buf.writeInt32LE(0, 12);
+  return buf;
 }
 
 /** `#RRGGBB` -> COLORREF (0x00BBGGRR), or null for anything else. */
@@ -337,12 +368,21 @@ function colorrefOfHex(hex) {
 function makeDwm(f) {
   const set = (h, attr, value) => f.DwmSetWindowAttribute(h, attr, [value >>> 0], 4) === 0;
   return {
-    /** Dark (true) or light acrylic behind `hwnd`. True when Windows took it. */
+    /** Dark (true) or light frame for `hwnd`. True when Windows took it. */
     setDarkMode: guard('setDarkMode', (h, dark) => Boolean(h) && set(h, DWMWA_USE_IMMERSIVE_DARK_MODE, dark ? 1 : 0), false),
     /** Rounded corners and the frame shadow. True when Windows took both. */
     setFlyoutShape: guard('setFlyoutShape', (h) => Boolean(h)
       && set(h, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND)
       && set(h, DWMWA_NCRENDERING_POLICY, DWMNCRP_ENABLED), false),
+    /**
+     * The glass behind `hwnd`: an accent from panel-material.js's
+     * `panelAccent` ({state, flags, color}); state 0 takes it away. True when
+     * Windows took it.
+     */
+    setAccent: guard('setAccent', (h, accent) => Boolean(h) && Boolean(accent)
+      && Boolean(f.SetWindowCompositionAttribute(h, {
+        Attrib: WCA_ACCENT_POLICY, pvData: accentPolicyBuffer(accent), cbData: ACCENT_POLICY_SIZE,
+      })), false),
     /** The window's hairline, `#RRGGBB`. True when Windows took it. */
     setBorderColour: guard('setBorderColour', (h, hex) => {
       const ref = colorrefOfHex(hex);
@@ -381,5 +421,6 @@ function __resetForTest() {
 }
 
 module.exports = {
-  load, loadDwm, handleOf, hexOfColorref, colorrefOfHex, __resetForTest, MOVE_FLAGS, RAISE_FLAGS,
+  load, loadDwm, handleOf, hexOfColorref, colorrefOfHex, accentPolicyBuffer, makeDwm, __resetForTest,
+  MOVE_FLAGS, RAISE_FLAGS,
 };

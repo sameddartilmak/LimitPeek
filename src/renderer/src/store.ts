@@ -21,6 +21,7 @@ import type {
 } from '../../shared/contract.js';
 import { CADENCE } from '../../shared/contract.js';
 import { DEFAULT_THEME } from './theme.js';
+import { DEFAULT_TRANSPARENCY } from './sanitize.js';
 
 /** An open consent prompt. Set only while the user is being asked. */
 export interface ConsentRequest {
@@ -211,14 +212,15 @@ export interface PanelState {
   /** True while the strip finds no room on the taskbar. */
   stripNoRoom: boolean;
   /**
-   * Görünüm → "Saydamlığı azalt": the glass drawn opaque. Optimistic, like
-   * `layout`: the document flips on the gesture and main is asked afterwards.
+   * Görünüm → "Saydamlık", 0 (opaque) to 100 (clear glass). Optimistic, like
+   * `layout`: it follows the slider on every step, and main is asked
+   * afterwards (throttled while the slider is dragged, app.ts).
    */
-  reduceTransparency: boolean;
-  /** True while a setReduceTransparency call is in flight. */
-  reduceTransparencyPending: boolean;
-  /** Set briefly when main refused the change and the switch went back. */
-  reduceTransparencyReverted: boolean;
+  transparency: number;
+  /** True while a setTransparency call is in flight. */
+  transparencyPending: boolean;
+  /** Set briefly when main refused the change and the slider went back. */
+  transparencyReverted: boolean;
   /** Windows asks for less transparency (or high contrast): glass off anyway. */
   systemReducedTransparency: boolean;
   /** What main has behind the panel right now (Preferences.material). */
@@ -285,9 +287,9 @@ const INITIAL: PanelState = {
   trayViewReverted: false,
   stripAvailable: true,
   stripNoRoom: false,
-  reduceTransparency: false,
-  reduceTransparencyPending: false,
-  reduceTransparencyReverted: false,
+  transparency: DEFAULT_TRANSPARENCY,
+  transparencyPending: false,
+  transparencyReverted: false,
   systemReducedTransparency: false,
   material: 'none',
   frame: 'canvas',

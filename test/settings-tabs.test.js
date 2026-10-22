@@ -273,7 +273,7 @@ function state(over = {}) {
     themeReverted: false, language: 'system', languagePending: false, languageReverted: false,
     autostart: true, autostartPending: false, autostartReverted: false, autostartByWindows: false,
     enabledOverride: {}, enabledPending: [], revertedId: null, planPending: [], planReverted: null,
-    trayView: 'tray', layout: 'list', stripStyle: 'plain',
+    trayView: 'tray', layout: 'list', stripStyle: 'plain', transparency: 45,
     ...over,
   };
 }
@@ -575,62 +575,101 @@ test.describe('Görünüm has no "Gösterge" any more: the two layouts draw no b
 
 // ------------------------------------------------------- Görünüm: "Saydamlık"
 
-test.describe('Görünüm → "Saydamlık": a switch on the "Genel" tab, on while the panel is see-through', () => {
+test.describe('Görünüm → "Saydamlık": a slider on the "Genel" tab, from "Düz" to "Saydam"', () => {
   function mountGlass() {
-    const flipped = [];
+    const moved = [];
     const handle = settingsMod.createSettings({
       onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
       onDisconnect() {}, onTrayView() {},
-      onReduceTransparency(reduce) { flipped.push(reduce); },
+      onTransparency(level, final) { moved.push([level, final]); },
     });
     const row = walk(handle.el).find((el) => (el.getAttribute('class') || '').includes('settings__item--glass'));
     assert.ok(row, 'no "Saydamlık" row');
-    const control = walk(row).find((el) => el.getAttribute('role') === 'switch');
-    return { handle, row, control, flipped };
+    const control = walk(row).find((el) => el.tagName === 'INPUT');
+    const figure = walk(row).find((el) => (el.getAttribute('class') || '').includes('glass-slider__value'));
+    return { handle, row, control, figure, moved };
   }
 
-  test('a real switch named "Saydamlık", after "Gösterge" and before "Dil"', () => {
+  test('a native range from 0 to 100 in steps of 5, named "Saydamlık", "Düz" on the left and "Saydam" on the right', () => {
     const { handle, row, control } = mountGlass();
-    assert.equal(control.tagName, 'BUTTON');
+    assert.equal(control.getAttribute('type'), 'range');
+    assert.deepEqual(['min', 'max', 'step'].map((k) => control.getAttribute(k)), ['0', '100', '5']);
+    assert.equal(walk(row).some((el) => el.getAttribute('role') === 'switch'), false, 'the old switch is gone');
     const name = findById(handle.el, control.getAttribute('aria-labelledby'));
     assert.equal(name.textContent, 'Saydamlık');
     const help = findById(handle.el, control.getAttribute('aria-describedby'));
-    assert.match(help.textContent, /buzlu cam gibi saydam görünür; kapatınca zemin düz olur\. Windows'ta yüksek kontrast açıksa kendiliğinden kapanır/);
+    assert.equal(help.textContent, 'Sola çekince panel düzleşir, sağa çekince saydamlaşır; yarıyı geçince buzlanma da kalkar.');
+    const ends = walk(row).filter((el) => (el.getAttribute('class') || '').includes('glass-slider__end'));
+    assert.deepEqual(ends.map((el) => el.textContent), ['Düz', 'Saydam']);
+    assert.ok(ends.every((el) => el.getAttribute('aria-hidden') === 'true'), 'the ends are for the eye; the value is announced');
+    const kids = walk(row);
+    assert.ok(kids.indexOf(ends[0]) < kids.indexOf(control) && kids.indexOf(control) < kids.indexOf(ends[1]));
     const general = walk(handle.el).find((el) => el.getAttribute('role') === 'tabpanel' && walk(el).includes(row));
     assert.ok(general, 'not on a tab panel');
     assert.equal(general.getAttribute('data-tab'), 'general');
-    const kids = walk(general);
-    const layout = kids.find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--layout'));
-    const language = kids.find((el) => el.tagName === 'H3' && el.textContent === 'Dil');
-    assert.ok(kids.indexOf(layout) < kids.indexOf(row) && kids.indexOf(row) < kids.indexOf(language));
+    const all = walk(general);
+    const layout = all.find((el) => el.tagName === 'FIELDSET' && (el.getAttribute('class') || '').includes('theme--layout'));
+    const language = all.find((el) => el.tagName === 'H3' && el.textContent === 'Dil');
+    assert.ok(all.indexOf(layout) < all.indexOf(row) && all.indexOf(row) < all.indexOf(language));
   });
 
-  test('the switch shows the opposite of the stored flag, a press tells the app, pending and revert are on the row', () => {
-    const { handle, row, control, flipped } = mountGlass();
-    // Stored reduceTransparency: false is the glass on, so the switch is on.
-    handle.render(state({ reduceTransparency: false }), []);
-    assert.equal(control.getAttribute('aria-checked'), 'true');
-    control.click();
-    assert.deepEqual(flipped, [true], 'turning the transparency off reduces it');
-    handle.render(state({ reduceTransparency: true, reduceTransparencyPending: true }), []);
-    assert.equal(control.getAttribute('aria-checked'), 'false');
+  test('the slider and its figure show the stored level; the fill follows', () => {
+    const { handle, control, figure } = mountGlass();
+    handle.render(state({ transparency: 45 }), []);
+    assert.equal(control.value, '45');
+    assert.equal(figure.textContent, '%45');
+    assert.equal(figure.getAttribute('aria-hidden'), 'true');
+    assert.equal(control.getAttribute('aria-valuetext'), '%45');
+    assert.equal(control.style.getPropertyValue('--fill'), '45%');
+    handle.render(state({ transparency: 100 }), []);
+    assert.equal(control.value, '100');
+    assert.equal(figure.textContent, '%100');
+  });
+
+  test('a step tells the app while dragging, \'change\' as final; pending and revert are on the row', () => {
+    const { handle, row, control, moved } = mountGlass();
+    handle.render(state({ transparency: 45 }), []);
+    control.value = '60';
+    control.dispatch('input');
+    control.value = '65';
+    control.dispatch('change');
+    assert.deepEqual(moved, [[60, false], [65, true]]);
+    // A value that is not a level never reaches the app.
+    control.value = 'abc';
+    control.dispatch('input');
+    control.value = '47.5';
+    control.dispatch('change');
+    assert.deepEqual(moved, [[60, false], [65, true]]);
+    handle.render(state({ transparency: 65, transparencyPending: true }), []);
     assert.equal(control.getAttribute('aria-busy'), 'true');
-    assert.equal(row.getAttribute('data-pending'), 'true');
-    control.click();
-    assert.deepEqual(flipped, [true, false], 'turning it back on');
-    handle.render(state({ reduceTransparency: false, reduceTransparencyReverted: true }), []);
-    assert.equal(control.getAttribute('aria-checked'), 'true');
-    assert.equal(row.getAttribute('data-pending'), null);
+    handle.render(state({ transparency: 45, transparencyReverted: true }), []);
+    assert.equal(control.value, '45');
+    assert.equal(control.getAttribute('aria-busy'), null);
     assert.equal(row.getAttribute('data-revert'), 'true');
   });
 
-  test('while Windows asks for it, the line under the switch says why the glass is already off', () => {
-    const { handle, control } = mountGlass();
+  test('while Windows asks for less, the slider is disabled and the line under it says why', () => {
+    const { handle, row, control, figure } = mountGlass();
     const help = findById(handle.el, control.getAttribute('aria-describedby'));
-    handle.render(state({ systemReducedTransparency: true }), []);
+    handle.render(state({ transparency: 70, systemReducedTransparency: true }), []);
+    assert.equal(control.getAttribute('disabled'), '');
+    assert.equal(row.getAttribute('data-disabled'), 'true');
+    assert.equal(figure.textContent, '', 'no figure for a level that is not in effect');
     assert.match(help.textContent, /saydamlık efektleri kapalı ya da yüksek kontrast açık; bu yüzden panel şu an saydam değil/);
-    handle.render(state({ systemReducedTransparency: false }), []);
-    assert.match(help.textContent, /buzlu cam gibi saydam/);
+    handle.render(state({ transparency: 70, systemReducedTransparency: false }), []);
+    assert.equal(control.getAttribute('disabled'), null);
+    assert.equal(row.getAttribute('data-disabled'), null);
+    assert.equal(figure.textContent, '%70');
+    assert.match(help.textContent, /^Sola çekince panel düzleşir/);
+  });
+
+  test('the stylesheet draws the range like the switches and in system colours under high contrast', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'styles', 'panel.css'), 'utf8');
+    assert.match(css, /\.glass-slider__input::-webkit-slider-runnable-track \{[^}]*linear-gradient\(to right, var\(--tint\) 0 var\(--fill, 45%\), var\(--switch-off\)/);
+    assert.match(css, /\.glass-slider__input::-webkit-slider-thumb \{[^}]*background: var\(--knob\);/);
+    const forced = css.slice(css.indexOf('@media (forced-colors: active) {'));
+    assert.match(forced, /\.glass-slider__input::-webkit-slider-thumb \{ forced-color-adjust: none; background: Highlight;/);
+    assert.match(forced, /\.glass-slider__input:disabled::-webkit-slider-thumb \{ background: GrayText;/);
   });
 });
 
@@ -641,7 +680,7 @@ test.describe('Görünüm → "Düzen" and "Şerit stili", on the "Genel" tab', 
     const picked = { layout: [], strip: [] };
     const handle = settingsMod.createSettings({
       onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
-      onDisconnect() {}, onTrayView() {}, onReduceTransparency() {},
+      onDisconnect() {}, onTrayView() {}, onTransparency() {},
       onLayout(layout) { picked.layout.push(layout); },
       onStripStyle(style) { picked.strip.push(style); },
     });

@@ -34,7 +34,7 @@ const CH = {
   SET_SETUP_COACH_DISMISSED: 'prefs:set-setup-coach-dismissed',
   PANEL_HIT: 'panel:hit',
   SET_TRAY_VIEW: 'prefs:set-tray-view',
-  SET_REDUCE_TRANSPARENCY: 'prefs:set-reduce-transparency',
+  SET_TRANSPARENCY: 'prefs:set-transparency',
   PANEL_SIZE: 'panel:size',
   SET_LAYOUT: 'prefs:set-layout',
   SET_STRIP_STYLE: 'prefs:set-strip-style',
@@ -228,14 +228,14 @@ contextBridge.exposeInMainWorld('usageNotch', {
   setTrayView: (view) => ipcRenderer.invoke(CH.SET_TRAY_VIEW, String(view)),
 
   /**
-   * Persists "Saydamlığı azalt": the panel's glass drawn opaque. Passed as
-   * the boolean it is (`=== true`, never truthiness); main checks it is a real
-   * boolean. `{ok:false}` means nothing changed anywhere.
+   * Persists the "Saydamlık" slider, 0 (opaque) to 100 (clear glass). Only a
+   * number crosses (anything else as null); main checks it is an integer
+   * from 0 to 100. `{ok:false}` means nothing changed anywhere.
    *
-   * @param {boolean} reduce
+   * @param {number} level
    * @returns {Promise<{ok:boolean}>}
    */
-  setReduceTransparency: (reduce) => ipcRenderer.invoke(CH.SET_REDUCE_TRANSPARENCY, reduce === true),
+  setTransparency: (level) => ipcRenderer.invoke(CH.SET_TRANSPARENCY, typeof level === 'number' ? level : null),
 
   /**
    * Persists how the panel lays out the tools: 'list', 'focus' or 'tiles'.

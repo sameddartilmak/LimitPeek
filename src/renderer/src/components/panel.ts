@@ -98,8 +98,11 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   onAutostartChange(enabled: boolean): void;
   /** The user picked Görünüm: tray icon or taskbar strip. Optimistic. */
   onTrayViewChange(view: TrayView): void;
-  /** The user flipped Görünüm → "Saydamlığı azalt". Optimistic. */
-  onReduceTransparencyChange(reduce: boolean): void;
+  /**
+   * The user moved Görünüm → "Saydamlık", 0–100; `final` is the slider's
+   * 'change' (let go, or a key). Optimistic.
+   */
+  onTransparencyChange(level: number, final: boolean): void;
   /** The user picked Görünüm → Düzen: the short list or the ring tiles. Optimistic. */
   onLayoutChange(layout: Layout): void;
   /** The user picked Görünüm → Şerit stili. Optimistic. */
@@ -208,7 +211,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onLanguage: (choice) => ctx.onLanguageChange(choice),
     onAutostart: (enabled) => ctx.onAutostartChange(enabled),
     onTrayView: (view) => ctx.onTrayViewChange(view),
-    onReduceTransparency: (reduce) => ctx.onReduceTransparencyChange(reduce),
+    onTransparency: (level, final) => ctx.onTransparencyChange(level, final),
     onLayout: (layout) => ctx.onLayoutChange(layout),
     onStripStyle: (style) => ctx.onStripStyleChange(style),
     onBack: () => ctx.onSettingsToggle(),

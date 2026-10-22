@@ -112,10 +112,10 @@ export interface Bridge {
    */
   setTrayView(view: TrayView): Promise<boolean>;
   /**
-   * Persist Görünüm → "Saydamlığı azalt" (IPC.SET_REDUCE_TRANSPARENCY). Same
+   * Persist Görünüm → "Saydamlık", 0–100 (IPC.SET_TRANSPARENCY). Same
    * all-or-nothing promise: `false` means main wrote NOTHING.
    */
-  setReduceTransparency(reduce: boolean): Promise<boolean>;
+  setTransparency(level: number): Promise<boolean>;
   /**
    * Persist Görünüm → Düzen, the short list or the ring tiles (IPC.SET_LAYOUT). Same
    * all-or-nothing promise: `false` means main wrote NOTHING.
@@ -166,7 +166,7 @@ function nullBridge(): Bridge {
     setAutostart: async () => false,
     setSetupCoachDismissed: async () => false,
     setTrayView: async () => false,
-    setReduceTransparency: async () => false,
+    setTransparency: async () => false,
     setLayout: async () => false,
     setStripStyle: async () => false,
     close: () => {},
@@ -439,13 +439,13 @@ export function createBridge(): Bridge {
     },
 
     /** Mirrors setTrayView: any failure is a real instruction to revert. */
-    async setReduceTransparency(reduce: boolean): Promise<boolean> {
-      if (typeof api.setReduceTransparency !== 'function') {
-        missing('setReduceTransparency');
+    async setTransparency(level: number): Promise<boolean> {
+      if (typeof api.setTransparency !== 'function') {
+        missing('setTransparency');
         return false;
       }
       try {
-        const result = await api.setReduceTransparency(reduce);
+        const result = await api.setTransparency(level);
         return !!result && result.ok === true;
       } catch {
         return false;

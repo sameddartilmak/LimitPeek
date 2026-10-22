@@ -25,7 +25,7 @@ import { captureExpired } from './components/row.js';
 import { createPanel, type PanelContext } from './components/panel.js';
 import { trimMessage } from './format.js';
 import { formatLocale, language, setLocale, t } from './i18n.js';
-import { defaultFormatLocale, fallbackLanguage, pendingUsageOf } from './sanitize.js';
+import { DEFAULT_TRANSPARENCY, defaultFormatLocale, fallbackLanguage, pendingUsageOf } from './sanitize.js';
 import { freshnessOf, shouldDegrade, Store, type NoticeTone, type SettingsTab } from './store.js';
 import { createTheme, DEFAULT_THEME } from './theme.js';
 import { installTooltips } from './tooltip.js';
@@ -88,11 +88,11 @@ function paintLayout(layout: Layout): void {
 }
 
 /**
- * Görünüm → "Saydamlığı azalt" on the document: tokens.css turns every glass
- * surface opaque under `html[data-reduce-transparency]`. Set when the user
- * asked OR Windows did (reduced transparency, high contrast; the CSS media
- * features say the same live, this covers what main measured). Frame one,
- * like the layout, or the glass flashes before it goes opaque.
+ * The opaque panel on the document: tokens.css turns every glass surface
+ * opaque under `html[data-reduce-transparency]`. Set when the user pulled
+ * "Saydamlık" to 0 OR Windows asked (reduced transparency, high contrast; the
+ * CSS media features say the same live, this covers what main measured).
+ * Frame one, like the layout, or the glass flashes before it goes opaque.
  */
 function paintGlass(reduce: boolean, system: boolean): void {
   if (reduce || system) document.documentElement.dataset.reduceTransparency = 'true';
@@ -105,7 +105,7 @@ function paintGlass(reduce: boolean, system: boolean): void {
  * `html[data-material="acrylic"]`, panel.css fills a `data-frame="fitted"`
  * window with the panel. Frame one, like the layout: a translucent panel
  * painted before main's answer would show the desktop through an opaque
- * window as black, and an opaque one over live acrylic would hide it.
+ * window as black, and an opaque one over live glass would hide it.
  */
 function paintMaterial(material: PanelMaterial, frame: PanelFrame): void {
   document.documentElement.dataset.material = material;
@@ -127,7 +127,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   applyLocale(initialPrefs);
   const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
   paintLayout(initialPrefs?.layout ?? 'sade');
-  paintGlass(initialPrefs?.reduceTransparency === true, initialPrefs?.systemReducedTransparency === true);
+  paintGlass(initialPrefs?.transparency === 0, initialPrefs?.systemReducedTransparency === true);
   paintMaterial(initialPrefs?.material ?? 'none', initialPrefs?.frame ?? 'canvas');
   store.set({
     theme: theme.choice(),
@@ -139,7 +139,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     trayView: initialPrefs?.trayView ?? 'tray',
     stripAvailable: initialPrefs?.stripAvailable ?? true,
     stripNoRoom: initialPrefs?.stripNoRoom ?? false,
-    reduceTransparency: initialPrefs?.reduceTransparency === true,
+    transparency: initialPrefs?.transparency ?? DEFAULT_TRANSPARENCY,
     systemReducedTransparency: initialPrefs?.systemReducedTransparency === true,
     material: initialPrefs?.material ?? 'none',
     frame: initialPrefs?.frame ?? 'canvas',
@@ -207,7 +207,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onLanguageChange: (choice) => void applyLanguage(choice),
     onAutostartChange: (enabled) => void applyAutostart(enabled),
     onTrayViewChange: (view) => void applyTrayView(view),
-    onReduceTransparencyChange: (reduce) => void applyReduceTransparency(reduce),
+    onTransparencyChange: (level, final) => applyTransparency(level, final),
     onLayoutChange: (layout) => void applyLayout(layout),
     onStripStyleChange: (style) => void applyStripStyle(style),
     coachDismissed: false,
@@ -638,7 +638,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     acceptLanguage(prefs);
     acceptAutostart(prefs);
     acceptTrayView(prefs);
-    acceptReduceTransparency(prefs);
+    acceptTransparency(prefs);
     // Not the user's to revert: main states what the window IS, so the
     // document follows at once, request in flight or not.
     if (prefs.material !== store.get().material || prefs.frame !== store.get().frame) {
@@ -849,56 +849,106 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     if (prefs.stripStyle !== store.get().stripStyle) store.set({ stripStyle: prefs.stripStyle });
   }
 
-  // --- Görünüm: "Saydamlığı azalt" -----------------------------------------
-
-  /** The newest value asked of main. Same shape as layoutRequest. */
-  let glassRequest: { reduce: boolean; at: number } | null = null;
-  /** Same role as `confirmedLayout`: what main is known to hold. */
-  let confirmedReduce: boolean = store.get().reduceTransparency;
+  // --- Görünüm: "Saydamlık" ------------------------------------------------
 
   /**
-   * Optimistic, then reconciled, exactly like applyLayout: the glass goes
-   * opaque (or comes back) on the gesture and main is asked afterwards.
-   * `{ok:false}` puts the old value back on the document as well as on the
-   * switch, so the screen never shows a choice that will not survive a
-   * restart.
+   * How often a DRAGGED slider asks main for its value. Each ask persists the
+   * level and re-applies the window's glass, so the panel follows the hand
+   * at this rate; faster only adds writes. The slider's own 'change' — the
+   * hand let go, or a key press — is asked for at once.
    */
-  async function applyReduceTransparency(next: boolean): Promise<void> {
-    if (next === store.get().reduceTransparency) return;
+  const TRANSPARENCY_SEND_MS = 80;
+  /** The newest value asked of main. Same shape as layoutRequest. */
+  let glassRequest: { level: number; at: number } | null = null;
+  /** Same role as `confirmedLayout`: what main is known to hold. */
+  let confirmedLevel: number = store.get().transparency;
+  /** The last value handed to main, asked or confirmed: a step is never asked twice. */
+  let sentLevel: number = confirmedLevel;
+  /** When the last ask went out, for the throttle. */
+  let glassSentAt = 0;
+  /** A step held back by the throttle, sent when it runs out. */
+  let glassTimer: number | null = null;
 
-    const request = { reduce: next, at: Date.now() };
+  function cancelGlassTimer(): void {
+    if (glassTimer === null) return;
+    window.clearTimeout(glassTimer);
+    glassTimer = null;
+  }
+  disposers.push(cancelGlassTimer);
+
+  /**
+   * Optimistic, then reconciled, like applyLayout: the store (and with it the
+   * figure beside the slider, and the opaque header at 0) follows every step
+   * at once, and main is asked afterwards — at most every
+   * TRANSPARENCY_SEND_MS while the slider is dragged, with the newest step
+   * always sent last. `final` is the slider's 'change': no waiting.
+   */
+  function applyTransparency(next: number, final: boolean): void {
+    // The slider is disabled then; a step that still arrives changes nothing.
+    if (store.get().systemReducedTransparency) return;
+    if (next !== store.get().transparency) {
+      paintGlass(next === 0, false);
+      store.set({ transparency: next, transparencyReverted: false, notice: null });
+    }
+    cancelGlassTimer();
+    const wait = final ? 0 : glassSentAt + TRANSPARENCY_SEND_MS - Date.now();
+    if (wait <= 0) {
+      void sendTransparency(next);
+      return;
+    }
+    glassTimer = window.setTimeout(() => {
+      glassTimer = null;
+      void sendTransparency(store.get().transparency);
+    }, wait);
+  }
+
+  /**
+   * One ask. `{ok:false}` on the newest ask puts main's value back on the
+   * document as well as on the slider, so the screen never shows a level that
+   * will not survive a restart; a step still held back is dropped with it.
+   */
+  async function sendTransparency(level: number): Promise<void> {
+    if (level === sentLevel) return;
+    sentLevel = level;
+    glassSentAt = Date.now();
+    const request = { level, at: glassSentAt };
     glassRequest = request;
-    paintGlass(next, store.get().systemReducedTransparency);
-    store.set({ reduceTransparency: next, reduceTransparencyPending: true, reduceTransparencyReverted: false, notice: null });
+    store.set({ transparencyPending: true });
 
-    const ok = await bridge.setReduceTransparency(next);
-    if (ok) confirmedReduce = next;
+    const ok = await bridge.setTransparency(level);
+    if (ok) confirmedLevel = level;
 
     if (glassRequest !== request) return;
     glassRequest = null;
-    store.set({ reduceTransparencyPending: false });
+    store.set({ transparencyPending: false });
     if (ok) return;
 
-    paintGlass(confirmedReduce, store.get().systemReducedTransparency);
-    store.set({ reduceTransparency: confirmedReduce, reduceTransparencyReverted: true });
-    say(t('app.reduceTransparencyNotSaved'), 'error');
+    cancelGlassTimer();
+    sentLevel = confirmedLevel;
+    paintGlass(confirmedLevel === 0, store.get().systemReducedTransparency);
+    store.set({ transparency: confirmedLevel, transparencyReverted: true });
+    say(t('app.transparencyNotSaved'), 'error');
     window.setTimeout(() => {
-      if (store.get().reduceTransparencyReverted) store.set({ reduceTransparencyReverted: false });
+      if (store.get().transparencyReverted) store.set({ transparencyReverted: false });
     }, 1_600);
   }
 
   /**
    * Main's values, pushed. Windows' half is adopted at once (it is not the
-   * user's to revert); the user's half unless a flip is still in flight.
+   * user's to revert); the user's half unless a step is still in flight or
+   * held back — a push that crossed the drag would pull the slider out from
+   * under the hand.
    */
-  function acceptReduceTransparency(prefs: Preferences): void {
-    confirmedReduce = prefs.reduceTransparency;
+  function acceptTransparency(prefs: Preferences): void {
+    confirmedLevel = prefs.transparency;
     const system = prefs.systemReducedTransparency;
-    const reduce = glassRequest !== null ? store.get().reduceTransparency : prefs.reduceTransparency;
+    const busy = glassRequest !== null || glassTimer !== null;
+    if (!busy) sentLevel = prefs.transparency;
+    const level = busy ? store.get().transparency : prefs.transparency;
     const current = store.get();
-    if (reduce === current.reduceTransparency && system === current.systemReducedTransparency) return;
-    paintGlass(reduce, system);
-    store.set({ reduceTransparency: reduce, systemReducedTransparency: system });
+    if (level === current.transparency && system === current.systemReducedTransparency) return;
+    paintGlass(level === 0, system);
+    store.set({ transparency: level, systemReducedTransparency: system });
   }
 
   // --- language -----------------------------------------------------------
