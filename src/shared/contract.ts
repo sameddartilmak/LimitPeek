@@ -1311,15 +1311,6 @@ export const IPC = {
    */
   PANEL_SIZE: 'panel:size',
   /**
-   * renderer -> main invoke(layout: Layout). Persists how the panel lays out
-   * the tools ('sade' | 'halka'), then pushes PREFERENCES. Panel only:
-   * nothing is applied in main. Anything but the two literals is refused,
-   * the old 'list' / 'focus' / 'tiles' included (only a settings file is
-   * migrated, src/core/layout.js).
-   * Returns { ok: boolean }; on false nothing changed and the renderer reverts.
-   */
-  SET_LAYOUT: 'prefs:set-layout',
-  /**
    * renderer -> main invoke(style: StripStyle). Persists how the taskbar strip
    * draws its tiles ('plain' | 'rings' | 'fill'), hands it to the strip (which
    * re-sends its tiles to the same window, no rebuild), then pushes
@@ -1385,18 +1376,6 @@ export type PanelMaterial = 'acrylic' | 'none';
  * shadow and tail inside it.
  */
 export type PanelFrame = 'fitted' | 'canvas';
-
-/**
- * How the panel lays out the tools (the minimal redesign, 2026-10-22).
- * 'sade' ("Sade liste", the default) is one short line per tool: its logo,
- * its name and its two figures. 'halka' ("Halka kutuları") is a three-column
- * grid of small tiles, each a ring for the five-hour window with the tool's
- * logo in it. Both follow the same stored order, draw the same row states and
- * open a tool's details as a sheet. A settings file from 0.6.38 or earlier
- * may still say 'list', 'focus' or 'tiles'; main reads those as 'sade',
- * 'sade' and 'halka' before they reach the renderer.
- */
-export type Layout = 'sade' | 'halka';
 
 /**
  * How the taskbar strip draws a tile. 'plain' (the default) is the mini bars;
@@ -1494,13 +1473,6 @@ export interface Preferences {
    * shape every earlier version had.
    */
   frame: PanelFrame;
-  /**
-   * Settings → Genel → Görünüm → Düzen. 'tiles' is 'halka'; anything else
-   * that is not a Layout is 'sade'. Read in frame one, like the theme: a
-   * layout applied after first paint is a visible flash of the list turning
-   * into tiles.
-   */
-  layout: Layout;
   /**
    * Settings → Genel → Görünüm → Şerit stili. Anything that is not a
    * StripStyle is 'plain'. The panel only shows and stores it; the strip
@@ -1621,8 +1593,6 @@ export interface UsageNotchApi {
   setTrayView(view: TrayView): Promise<{ ok: boolean }>;
   /** Persist the "Saydamlık" level. See IPC.SET_TRANSPARENCY. */
   setTransparency(level: number): Promise<{ ok: boolean }>;
-  /** Persist the panel's layout. See IPC.SET_LAYOUT. */
-  setLayout(layout: Layout): Promise<{ ok: boolean }>;
   /** Persist the taskbar strip's tile style. See IPC.SET_STRIP_STYLE. */
   setStripStyle(style: StripStyle): Promise<{ ok: boolean }>;
   /**

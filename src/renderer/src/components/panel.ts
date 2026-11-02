@@ -29,18 +29,16 @@
  * The footer ("Son tarama 09:59" and a big "Yenile") is gone: the refresh is
  * the header's icon, and the last scan is that icon's tooltip and name.
  *
- * TWO LAYOUTS, ONE LIST (Görünüm → Düzen)
- * --------------------------------------
- * "Sade liste" and "Halka kutuları" are the SAME cards in the same list,
- * reconciled the same way; html[data-layout] restyles them (layout-*.css).
- * This file adds only what CSS cannot: a click on a tool opens its details,
- * and open details are a sheet over the other tools with "‹ Tüm araçlar"
- * above it; and only the short list can be dragged into a new order (the
- * tiles follow the stored order, as "Kutucuklar" did). The user's order is
- * never rewritten by anything but that drag.
+ * ONE LIST, ONE LINE PER TOOL
+ * ---------------------------
+ * Every tool is its full card (row.ts), drawn closed as one short line
+ * (list.css). This file adds only what CSS cannot: a click on a tool opens
+ * its details, and open details are a sheet over the other tools with
+ * "‹ Tüm araçlar" above it. The logo is the drag grip, and the user's order
+ * is never rewritten by anything but that drag.
  */
 
-import type { LanguageChoice, Layout, ProviderSnapshot, StripStyle, ThemeChoice, TrayView } from '../../../shared/contract.js';
+import type { LanguageChoice, ProviderSnapshot, StripStyle, ThemeChoice, TrayView } from '../../../shared/contract.js';
 import { defaultPlacement, FITTED_MAX_HEIGHT, fittedPlacement, placePanel, type PanelPlacement } from '../anchor.js';
 import { el, on, replaceChildrenWith, setAttr, setText, svg } from '../dom.js';
 import { language, t } from '../i18n.js';
@@ -50,7 +48,7 @@ import { createHeader, type HeaderHandle } from './header.js';
 import { providerMark } from './logo.js';
 import { createSettings, type SettingsHandle } from './settings.js';
 import { createOnboarding, type OnboardingHandle } from './onboarding.js';
-import { createSheetBack } from './layouts.js';
+import { createSheetBack } from './sheet-back.js';
 import {
   createRow,
   createSkeletonRow,
@@ -103,8 +101,6 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
    * 'change' (let go, or a key). Optimistic.
    */
   onTransparencyChange(level: number, final: boolean): void;
-  /** The user picked Görünüm → Düzen: the short list or the ring tiles. Optimistic. */
-  onLayoutChange(layout: Layout): void;
   /** The user picked Görünüm → Şerit stili. Optimistic. */
   onStripStyleChange(style: StripStyle): void;
   /** The user opened or closed a tool's details (a click on it, or "Ayrıntılar"). */
@@ -212,7 +208,6 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onAutostart: (enabled) => ctx.onAutostartChange(enabled),
     onTrayView: (view) => ctx.onTrayViewChange(view),
     onTransparency: (level, final) => ctx.onTransparencyChange(level, final),
-    onLayout: (layout) => ctx.onLayoutChange(layout),
     onStripStyle: (style) => ctx.onStripStyleChange(style),
     onBack: () => ctx.onSettingsToggle(),
     onTab: (tab) => ctx.onSettingsTab(tab),
@@ -466,8 +461,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onDragEnd: () => {
       if (lastState) render(lastState, lastNow);
     },
-    // Only the short list rearranges; the tiles follow the stored order.
-    enabled: () => (lastState ? lastState.bridgeAvailable && lastState.layout === 'sade' : false),
+    enabled: () => (lastState ? lastState.bridgeAvailable : false),
   });
 
   /** Provider id currently at index 0, i.e. the one main draws the tray from. */
@@ -484,7 +478,6 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     isTrayRow: (id) => id === trayRowId,
     isExpanded: (id) => lastState?.expandedProviderId === id,
     onToggleExpand: (id) => ctx.onToggleExpand(id),
-    canReorder: () => (lastState?.layout ?? 'sade') === 'sade',
     opensOnCard: (id) => !!lastState && lastState.expandedProviderId !== id,
     get generatedAt(): string | null {
       return ctx.generatedAt;

@@ -57,8 +57,8 @@ interface WindowCopy {
   /** The label printed above the bar. */
   label: string;
   /**
-   * The two- or three-character tag the compact layouts print before the
-   * figure ("5sa %62 · 7g %41"). Printed only there (layout-*.css); the full
+   * The two- or three-character tag the closed line prints before the
+   * figure ("5sa %62 · 7g %41"). Printed only there (list.css); the full
    * label is what the details and every spoken sentence use.
    */
   tag: string;

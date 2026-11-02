@@ -51,7 +51,6 @@ const { sanitizeTrayView } = require('../core/tray-view');
 const { createSetTransparencyHandler } = require('./transparency-ipc');
 const { panelFrameFor, createPanelLook } = require('../core/panel-material');
 const win32 = require('./win32');
-const { createSetLayoutHandler } = require('./layout-ipc');
 const { createSetStripStyleHandler } = require('./strip-style-ipc');
 
 // userData is %APPDATA%\usage-notch by name, whatever the product is called
@@ -629,16 +628,6 @@ function registerIpc() {
   // the window); rollback on a failed write. Panel only. Tested in
   // transparency.test.js.
   ipcMain.handle(IPC.SET_TRANSPARENCY, createSetTransparencyHandler({
-    fromPanel,
-    getSettings: () => settings,
-    save: (s) => settingsStore.save(userDataDir(), s),
-    push: pushPreferences,
-    log,
-  }));
-
-  // Görünüm: "Düzen", list, focus or tiles. Persist, then push; rollback on a
-  // failed write. Panel only. Tested in layout-ipc.js's suite.
-  ipcMain.handle(IPC.SET_LAYOUT, createSetLayoutHandler({
     fromPanel,
     getSettings: () => settings,
     save: (s) => settingsStore.save(userDataDir(), s),

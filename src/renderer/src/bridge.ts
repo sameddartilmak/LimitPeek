@@ -16,7 +16,6 @@
 import type {
   AnchorPayload,
   LanguageChoice,
-  Layout,
   Preferences,
   Snapshot,
   StripStyle,
@@ -117,11 +116,6 @@ export interface Bridge {
    */
   setTransparency(level: number): Promise<boolean>;
   /**
-   * Persist Görünüm → Düzen, the short list or the ring tiles (IPC.SET_LAYOUT). Same
-   * all-or-nothing promise: `false` means main wrote NOTHING.
-   */
-  setLayout(layout: Layout): Promise<boolean>;
-  /**
    * Persist Görünüm → Şerit stili (IPC.SET_STRIP_STYLE). Same all-or-nothing
    * promise: `false` means main wrote NOTHING.
    */
@@ -167,7 +161,6 @@ function nullBridge(): Bridge {
     setSetupCoachDismissed: async () => false,
     setTrayView: async () => false,
     setTransparency: async () => false,
-    setLayout: async () => false,
     setStripStyle: async () => false,
     close: () => {},
     pin: () => {},
@@ -446,20 +439,6 @@ export function createBridge(): Bridge {
       }
       try {
         const result = await api.setTransparency(level);
-        return !!result && result.ok === true;
-      } catch {
-        return false;
-      }
-    },
-
-    /** Mirrors setTrayView: any failure is a real instruction to revert. */
-    async setLayout(layout: Layout): Promise<boolean> {
-      if (typeof api.setLayout !== 'function') {
-        missing('setLayout');
-        return false;
-      }
-      try {
-        const result = await api.setLayout(layout);
         return !!result && result.ok === true;
       } catch {
         return false;

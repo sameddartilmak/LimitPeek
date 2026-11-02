@@ -71,7 +71,6 @@ let prefs: Preferences = {
   // A browser page has no acrylic and no fitted window: the canvas look.
   material: 'none',
   frame: 'canvas',
-  layout: 'sade',
   stripStyle: 'plain',
 };
 let prefsCb: ((p: Preferences) => void) | null = null;
@@ -286,14 +285,6 @@ function makeBridge(scenario: Scenario): Bridge {
     async setTransparency(level: number): Promise<boolean> {
       log(`setTransparency(${level})`);
       prefs = { ...prefs, transparency: level, material: glassParam && level > 0 ? 'acrylic' : 'none' };
-      prefsCb?.(prefs);
-      return true;
-    },
-
-    /** Persist, then push, like setTrayView. */
-    async setLayout(layout: 'sade' | 'halka'): Promise<boolean> {
-      log(`setLayout(${layout})`);
-      prefs = { ...prefs, layout };
       prefsCb?.(prefs);
       return true;
     },
@@ -577,7 +568,6 @@ controls.appendChild(logBox);
  *   &tp=0..100 (Görünüm → "Saydamlık"; 0 is the opaque panel)
  *   &rtsys=1 (Windows asks for less transparency: opaque, the slider disabled)
  *   &frame=fitted  &material=acrylic (the Windows 11 window and its glass)
- *   &layout=halka (Görünüm → Düzen: the ring tiles; the short list otherwise)
  *   &strip=plain|rings|fill (the strip chosen, in that style, as if this
  *           machine could show it, so Görünüm → "Şerit stili" is on screen)
  *   &shot=1 (the panel alone, no controls)
@@ -601,10 +591,6 @@ if (params.get('rtsys') === '1') prefs = { ...prefs, systemReducedTransparency: 
 if (params.get('frame') === 'fitted') prefs = { ...prefs, frame: 'fitted' };
 const glassParam = params.get('material') === 'acrylic';
 if (glassParam && prefs.transparency > 0) prefs = { ...prefs, material: 'acrylic' };
-// ?layout=halka: through the same preference the Settings control
-// writes (app.ts paints html[data-layout] in frame one).
-const layoutParam = params.get('layout');
-if (layoutParam === 'halka') prefs = { ...prefs, layout: layoutParam };
 const stripParam = params.get('strip');
 if (stripParam === 'plain' || stripParam === 'rings' || stripParam === 'fill') {
   prefs = { ...prefs, trayView: 'strip', stripAvailable: true, stripStyle: stripParam };

@@ -8,7 +8,6 @@ const { sanitizeLanguage, DEFAULT_LANGUAGE } = require('../core/language');
 const { migratePlanLabels } = require('../core/plan-labels');
 const { sanitizeTrayView, DEFAULT_TRAY_VIEW } = require('../core/tray-view');
 const { transparencyFromSettings, DEFAULT_TRANSPARENCY } = require('../core/transparency');
-const { sanitizeLayout, DEFAULT_LAYOUT } = require('../core/layout');
 const { sanitizeStripStyle, DEFAULT_STRIP_STYLE } = require('../core/strip-style');
 
 /**
@@ -89,14 +88,10 @@ const DEFAULTS = Object.freeze({
    * opaque without touching this.
    */
   transparency: DEFAULT_TRANSPARENCY,
-  /**
-   * 'sade' | 'halka': how the panel lays out the tools (Settings → Genel →
-   * Görünüm → Düzen). 'sade' is one short line per tool, 'halka' a grid of
-   * small ring tiles. Panel only. The three layouts of 0.6.38 and earlier
-   * ('list', 'focus', 'tiles') are read as their successors; anything else is
-   * 'sade', see `src/core/layout.js`.
-   */
-  layout: DEFAULT_LAYOUT,
+  // No `layout` any more ("Düzen: Sade liste / Halka kutuları", removed
+  // 2026-11-02: the ring tiles went, and one layout is not a choice). A file
+  // that still carries one keeps it on disk until the next save; `load` below
+  // simply never reads it.
   /**
    * 'plain' | 'rings' | 'fill': how the taskbar strip draws a tile (Settings →
    * Genel → Görünüm → Şerit stili). 'plain' is the bars the strip always had.
@@ -160,10 +155,6 @@ function load(userDataDir) {
     // anything else is the default glass. The old key is not carried on, so
     // the next save drops it.
     transparency: transparencyFromSettings(raw),
-    // An old layout ('list', 'focus', 'tiles') reads as its successor, so an
-    // update keeps the user's list or grid; absent, a typo or a future value:
-    // the short list, the default.
-    layout: sanitizeLayout(raw.layout),
     // Absent (every file written before the strip styles existed), a typo or
     // a future value: the plain bars, the look the strip already has.
     stripStyle: sanitizeStripStyle(raw.stripStyle),

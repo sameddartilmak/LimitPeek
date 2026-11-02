@@ -31,7 +31,6 @@ import type {
   TrayView,
   PanelMaterial,
   PanelFrame,
-  Layout,
   StripStyle,
   RowStatus,
   SetupAction,
@@ -1078,8 +1077,9 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   const trayView: TrayView = source.trayView === 'strip' ? 'strip' : 'tray';
   const stripAvailable = source.stripAvailable !== false;
   const stripNoRoom = source.stripNoRoom === true;
-  // No `gauge` any more (Gösterge went with the old layouts): a main from
-  // before then still sends one, and it is simply not read.
+  // No `gauge` and no `layout` any more (Gösterge, then Düzen, went when one
+  // layout was left): a main from before then still sends them, and they are
+  // simply not read.
   // Saydamlık: an integer from 0 to 100, as main's own load() says (a number
   // rounded and clamped, anything else the default). A main from before the
   // slider sends the old switch instead: its `reduceTransparency: true` is
@@ -1091,17 +1091,14 @@ export function sanitizePreferences(raw: unknown): Preferences | null {
   // a look that is right over any window.
   const material: PanelMaterial = source.material === 'acrylic' ? 'acrylic' : 'none';
   const frame: PanelFrame = source.frame === 'fitted' ? 'fitted' : 'canvas';
-  // Düzen and Şerit stili: anything but the other literals is the default, as
-  // main's own load() says; a main from before them sends nothing and gets the
-  // short list and the plain strip. A main from before the two layouts may
-  // still say 'tiles', the grid, which is 'halka' now (src/core/layout.js
-  // maps a settings file the same way); its two lists are the short list.
-  const layout: Layout = source.layout === 'halka' || source.layout === 'tiles' ? 'halka' : 'sade';
+  // Şerit stili: anything but the other literals is the default, as main's
+  // own load() says; a main from before it sends nothing and gets the plain
+  // strip.
   const stripStyle: StripStyle = source.stripStyle === 'rings' || source.stripStyle === 'fill' ? source.stripStyle : 'plain';
   return {
     theme, language, resolvedLanguage, formatLocale, autostart, autostartByWindows, setupCoachDismissed,
     trayView, stripAvailable, stripNoRoom, transparency, systemReducedTransparency,
-    material, frame, layout, stripStyle,
+    material, frame, stripStyle,
   };
 }
 

@@ -36,7 +36,6 @@ const CH = {
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   SET_TRANSPARENCY: 'prefs:set-transparency',
   PANEL_SIZE: 'panel:size',
-  SET_LAYOUT: 'prefs:set-layout',
   SET_STRIP_STYLE: 'prefs:set-strip-style',
 };
 
@@ -236,16 +235,6 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * @returns {Promise<{ok:boolean}>}
    */
   setTransparency: (level) => ipcRenderer.invoke(CH.SET_TRANSPARENCY, typeof level === 'number' ? level : null),
-
-  /**
-   * Persists how the panel lays out the tools: 'list', 'focus' or 'tiles'.
-   * Coerced to a string for convenience only; main checks it against the
-   * two literals. `{ok:false}` means nothing changed anywhere.
-   *
-   * @param {'sade'|'halka'} layout
-   * @returns {Promise<{ok:boolean}>}
-   */
-  setLayout: (layout) => ipcRenderer.invoke(CH.SET_LAYOUT, String(layout)),
 
   /**
    * Persists how the taskbar strip draws its tiles: 'plain', 'rings' or
