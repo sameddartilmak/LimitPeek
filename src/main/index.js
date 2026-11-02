@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { Worker } = require('node:worker_threads');
 const { app, ipcMain, dialog, nativeTheme, BrowserWindow } = require('electron');
 
 const { IPC, IPC_EXT, IPC_STRIP } = require('../shared/contract');
@@ -901,6 +902,9 @@ function bootstrap() {
     frame: PANEL_FRAME,
     look: panelLook(),
     dwm: () => win32.loadDwm(),
+    // The Liquid Glass follows the screen from a thread of its own
+    // (glass-worker.js): started on the first open with the glass on.
+    glassWorker: () => new Worker(path.join(__dirname, 'glass-worker.js')),
     onVisibilityChange: (visible) => {
       if (!visible) collector.setPanelOpen(false);
     },

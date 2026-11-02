@@ -615,3 +615,81 @@ test.describe('the picture follows the screen while the panel is open (LIVE)', (
     panel.destroy();
   });
 });
+
+test.describe('the LIVE copy on a thread of its own (glass-worker.js)', () => {
+  const { EventEmitter } = require('node:events');
+  /** A recording stand-in for worker_threads.Worker. */
+  function fakeWorker() {
+    const w = new EventEmitter();
+    w.posted = [];
+    w.terminated = false;
+    w.postMessage = (m) => w.posted.push(m);
+    w.terminate = () => { w.terminated = true; };
+    return w;
+  }
+  const frame = (seq, fill = 5) => {
+    const bgra = new Uint8Array(4 * 4 * 4).fill(fill);
+    return { type: 'frame', seq, width: 4, height: 4, bgra: bgra.buffer };
+  };
+
+  test('an open tells the thread where the window is; its frames go to the page; main runs no timer', () => {
+    const worker = fakeWorker();
+    const { panel } = fitted({ look: { transparency: 100, dark: true }, glassWorker: () => worker });
+    panel.open(TRAY, () => {});
+    const follow = worker.posted.find((m) => m.type === 'follow');
+    assert.ok(follow, 'told where to look');
+    assert.equal(follow.hwnd, 4242);
+    assert.ok(follow.ring.width > follow.rect.width, 'the ring is outside the window');
+    assert.equal(panel._liveTimer, null, 'the thread looks, not main');
+    const before = backdrops(panel).length;
+    worker.emit('message', frame(follow.seq));
+    const sent = backdrops(panel).slice(before);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].image.bgra.length, 64);
+    assert.deepEqual([sent[0].x, sent[0].y], [0, 0]);
+    panel.destroy();
+    assert.equal(worker.terminated, true, 'the thread goes with the window');
+  });
+
+  test('a new height re-tells the thread; a frame for the old place is dropped; a close pauses it', () => {
+    const worker = fakeWorker();
+    const { panel } = fitted({ look: { transparency: 100, dark: true }, glassWorker: () => worker });
+    panel.open(TRAY, () => {});
+    const first = worker.posted.filter((m) => m.type === 'follow').at(-1);
+    panel.setContentHeight(500);
+    const second = worker.posted.filter((m) => m.type === 'follow').at(-1);
+    assert.ok(second.seq > first.seq);
+    const before = backdrops(panel).length;
+    worker.emit('message', frame(first.seq));
+    assert.equal(backdrops(panel).length, before, 'a frame of the old place is not drawn');
+    worker.emit('message', { ...frame(second.seq), bgra: new ArrayBuffer(3) });
+    assert.equal(backdrops(panel).length, before, 'a frame that is not its size is not drawn');
+    panel.hide();
+    assert.equal(worker.posted.at(-1).type, 'pause');
+    worker.emit('message', frame(second.seq));
+    assert.equal(backdrops(panel).filter(Boolean).length, before, 'nothing after the close');
+    panel.destroy();
+  });
+
+  test('a thread that fails falls back to main looking, once, and is not started again', () => {
+    const warnings = [];
+    const warn = log.warn;
+    log.warn = (m) => warnings.push(m);
+    try {
+      let made = 0;
+      const worker = fakeWorker();
+      const { panel } = fitted({ look: { transparency: 100, dark: true }, glassWorker: () => { made += 1; return worker; } });
+      panel.open(TRAY, () => {});
+      worker.emit('message', { type: 'failed', code: 'NO_DWM' });
+      assert.equal(worker.terminated, true);
+      assert.ok(panel._liveTimer, 'main looks itself now');
+      assert.equal(warnings.filter((w) => w.includes('glass thread unavailable')).length, 1);
+      panel.hide();
+      panel.open(TRAY, () => {});
+      assert.equal(made, 1, 'never started again');
+      panel.destroy();
+    } finally {
+      log.warn = warn;
+    }
+  });
+});
