@@ -30,18 +30,18 @@ const { parentPort } = require('node:worker_threads');
 const win32 = require('./win32');
 
 /**
- * The pace. Each look waits for Windows' next composed frame (win32
- * waitForFrame, DwmFlush), so a copy lands on a frame the screen showed;
- * the gaps below cap it, because a fast display composes far more often
- * than the glass needs (measured here: 147 frames a second). A copy itself
- * takes about one composed frame (the BitBlt waits for DWM), so a moving
- * screen is followed every other frame: about 73 copies a second at 147 Hz,
- * every frame at 60 Hz (the owner, 2026-11-02, after 48 a second: "biraz
- * daha akıcı"). A still one is looked at (the ring alone) about 30 times a
- * second, so motion that starts is caught within a frame or two. Without
- * frames to wait for, a plain timer at the same gaps.
+ * The pace. A copy of the screen takes about one composed frame (the BitBlt
+ * waits for DWM: 7 ms on the 147 Hz display measured here), so while the
+ * screen moves the copies run back to back and follow EVERY frame the
+ * display shows (the owner, 2026-11-02, after 48 and then 70 a second: "biraz
+ * daha akıcı", twice). MOVING_GAP_MS only stops a copy that did not wait for
+ * DWM from spinning faster than any display. A still screen is looked at
+ * (the ring alone) about 30 times a second, waiting on Windows' composed
+ * frames in between (win32 waitForFrame, DwmFlush), so motion that starts
+ * is caught within a frame or two. Without frames to wait for, a plain timer
+ * at the same gaps.
  */
-const MOVING_GAP_MS = 8;
+const MOVING_GAP_MS = 5;
 const STILL_GAP_MS = 33;
 /**
  * How long the screen counts as moving after the last change. A drag, a
@@ -98,13 +98,14 @@ function tick() {
   timer = null;
   if (!place) return;
   const gap = moving ? MOVING_GAP_MS : STILL_GAP_MS;
-  const paced = dwm.waitForFrame();
-  if (paced && Date.now() - lastLook < gap) {
-    // Too soon on a fast display: the next frame, letting messages in between.
-    timer = setImmediate(tick);
+  const since = performance.now() - lastLook;
+  if (since < gap) {
+    // Too soon: the next composed frame, letting messages in between; with
+    // no frames to wait for, a timer for the rest of the gap.
+    timer = dwm.waitForFrame() ? setImmediate(tick) : setTimeout(tick, Math.max(1, Math.ceil(gap - since)));
     return;
   }
-  lastLook = Date.now();
+  lastLook = performance.now();
   try {
     if (moving || ringMoved()) {
       const shot = dwm.captureBehind(place.hwnd, place.rect);
@@ -125,7 +126,7 @@ function tick() {
   } catch {
     // A copy that throws is a tick without a picture; win32 already guards.
   }
-  timer = paced ? setImmediate(tick) : setTimeout(tick, moving ? MOVING_GAP_MS : STILL_GAP_MS);
+  timer = setImmediate(tick);
 }
 
 function cancel() {
