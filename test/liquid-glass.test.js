@@ -50,6 +50,7 @@ function gdi({ blt = true, lines = null } = {}) {
   const f = {
     DwmSetWindowAttribute: () => 0,
     SetWindowCompositionAttribute: () => true,
+    SetWindowDisplayAffinity: (h, a) => { calls.push(['Affinity', h, a]); return true; },
     GetDC: (h) => { calls.push(['GetDC', h]); return 11; },
     ReleaseDC: (h, dc) => { calls.push(['ReleaseDC', h, dc]); return 1; },
     CreateCompatibleDC: () => { calls.push(['CreateCompatibleDC']); return 22; },
@@ -92,6 +93,29 @@ test.describe('win32 captureScreen', () => {
       assert.equal(makeDwm(f).captureScreen(bad), null, JSON.stringify(bad));
       assert.deepEqual(calls, [], JSON.stringify(bad));
     }
+  });
+
+  test('captureBehind leaves our window out for the copy only, and puts it back on every path', () => {
+    const { f, calls } = gdi();
+    const shot = makeDwm(f).captureBehind(4242, { x: 10, y: 10, width: 8, height: 8 });
+    assert.equal(shot.width, 8);
+    const names = calls.map((c) => c[0]);
+    assert.deepEqual(calls[0], ['Affinity', 4242, 0x11], 'WDA_EXCLUDEFROMCAPTURE first');
+    assert.deepEqual(calls.at(-1), ['Affinity', 4242, 0], 'and back to WDA_NONE last');
+    assert.ok(names.indexOf('BitBlt') > 0 && names.indexOf('BitBlt') < names.length - 1);
+
+    const failing = gdi({ blt: false });
+    assert.equal(makeDwm(failing.f).captureBehind(4242, { x: 0, y: 0, width: 4, height: 4 }), null);
+    assert.deepEqual(failing.calls.at(-1), ['Affinity', 4242, 0], 'reset after a failed copy too');
+
+    const refused = gdi();
+    refused.f.SetWindowDisplayAffinity = () => false;
+    assert.equal(makeDwm(refused.f).captureBehind(4242, { x: 0, y: 0, width: 4, height: 4 }), null);
+    assert.deepEqual(refused.calls, [], 'no affinity, no copy: it would copy the panel itself');
+
+    const none = gdi();
+    assert.equal(makeDwm(none.f).captureBehind(0, { x: 0, y: 0, width: 4, height: 4 }), null);
+    assert.deepEqual(none.calls, []);
   });
 
   test('a throwing binding is a missing picture, never a throw', () => {
@@ -213,7 +237,8 @@ test.describe('glass.ts refract', () => {
 // ---------------------------------------------------------- the stylesheet
 
 test.describe('the glass layer in panel.css', () => {
-  const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles', 'panel.css'), 'utf8');
+  // Line endings as git checked them out: compare on \n either way.
+  const css = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles', 'panel.css'), 'utf8').replace(/\r\n/g, '\n');
   const LIVE = 'html[data-material="acrylic"][data-frame="fitted"]:not([data-reduce-transparency]) .glass';
 
   test('not drawn at all unless the window is clear and fitted, and nobody asked for less', () => {

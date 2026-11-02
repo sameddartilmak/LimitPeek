@@ -60,8 +60,21 @@ const { handleOf } = require('./win32');
  * TALLEST panel would cover at this anchor, so a panel that grows later
  * (Settings, a sheet) still has what is behind it. It goes to the page with
  * IPC.BACKDROP, then only its position again whenever the window moves over
- * it, and the page is told to drop it when the panel closes. Never taken for
- * a panel already on screen (it would copy itself), never stored.
+ * it, and the page is told to drop it when the panel closes.
+ *
+ * LIVE (owner, 2026-11-02: "panli sabitleyip arkada başka bişey hareket
+ * ettirdiğimde sabit kalıyor arkası"). While the panel is open the screen
+ * under it is followed (`_liveTick`, every BACKDROP_LIVE_MS). Seeing under
+ * the panel means leaving the window out of a copy (win32 captureBehind),
+ * and for that instant it is out of EVERY capture — a screenshot or a
+ * recording the user takes then has no panel (seen in the first live shot,
+ * 2026-11-02). So it is done only when something moved: each tick first
+ * copies a thin ring just OUTSIDE the panel (BACKDROP_RING, the panel left
+ * in), and only when that ring changed is the region under the window
+ * copied with the window out, and sent if it differs. A still desktop costs
+ * one small copy a tick and never hides the panel from anything; something
+ * that moves only fully behind the panel without touching the ring is not
+ * followed until something else does. Never stored.
  *
  * A fitted window grows and shrinks with the panel: the renderer reports the
  * panel's height (IPC.PANEL_SIZE, `setContentHeight`) and the window follows,
@@ -90,6 +103,14 @@ const SYNTHETIC_TRAY_SIZE = 16;
  * height only lasts until the renderer's first report.
  */
 const FITTED_WIDTH = 320;
+/**
+ * How often the screen under an open glass panel is copied again (LIVE,
+ * header): ten times a second follows a moving window closely enough, and a
+ * copy is about 4 ms of the main thread for the panel's region.
+ */
+const BACKDROP_LIVE_MS = 100;
+/** The ring outside the panel each LIVE tick looks at, in DIP px. */
+const BACKDROP_RING = 6;
 const FITTED_MAX_HEIGHT = 680;
 const FITTED_GAP = 12;
 const FITTED_START_HEIGHT = 420;
@@ -274,6 +295,10 @@ class PanelWindow {
      * Taken on an open with the glass live, dropped on every conceal.
      */
     this._backdrop = null;
+    /** The LIVE copy's timer while an open panel has the glass. */
+    this._liveTimer = null;
+    /** The last ring outside the panel a LIVE tick saw (panel-window header). */
+    this._ring = null;
     this.win = null;
     this.pinned = false;
     this._hideTimer = null;
@@ -511,6 +536,7 @@ class PanelWindow {
     // The fitted window follows its content from here (setContentHeight).
     this._place = fitted ? { anchorPoint, edge, work, tray } : null;
     if (captured) this._sendBackdrop(true);
+    if (fitted) this._startLive();
 
     // Report what the OS actually gave us, not what we asked for. On a
     // fractional scale factor Chromium rounds the size through physical
@@ -624,8 +650,10 @@ class PanelWindow {
     if (material !== this._material) {
       this._material = material;
       log.trace('panel.material', { material, transparency: this._transparency });
-      // No glass, no picture: the page drops the one it holds.
+      // No glass, no picture: the page drops the one it holds. Glass turned
+      // on while the panel is open: follow the screen from now on.
       if (material === 'none') this._dropBackdrop();
+      else if (this._open) this._startLive();
     }
     this._applyDwm();
   }
@@ -674,11 +702,82 @@ class PanelWindow {
     });
   }
 
-  /** Forget the picture, here and in the page. */
+  /** Forget the picture, here and in the page, and stop following the screen. */
   _dropBackdrop() {
+    this._stopLive();
     if (!this._backdrop) return;
     this._backdrop = null;
     this.send(IPC.BACKDROP, null);
+  }
+
+  /** Follow the screen under the open panel (LIVE, header). Idempotent. */
+  _startLive() {
+    if (this._liveTimer || this.frame !== 'fitted' || this._material !== 'acrylic') return;
+    this._liveTimer = setInterval(() => this._liveTick(), BACKDROP_LIVE_MS);
+  }
+
+  _stopLive() {
+    this._ring = null;
+    if (!this._liveTimer) return;
+    clearInterval(this._liveTimer);
+    this._liveTimer = null;
+  }
+
+  /**
+   * One LIVE tick (header): the ring just outside the panel, and when it
+   * changed (or there is none yet), the region under the window as it is
+   * now, the window left out of that copy. Sent when it differs from the
+   * picture the page has (another size, or other pixels).
+   */
+  _liveTick() {
+    if (!this._open || this._material !== 'acrylic' || !this.win || this.win.isDestroyed()) {
+      this._stopLive();
+      return;
+    }
+    const dwm = this._dwm ? this._dwm() : null;
+    const hwnd = handleOf(this.win);
+    if (!dwm || typeof dwm.captureBehind !== 'function' || typeof dwm.captureScreen !== 'function' || !hwnd) return;
+    const rect = this.win.getBounds();
+    if (!this._ringMoved(dwm, rect)) return;
+    let shot = null;
+    try {
+      shot = dwm.captureBehind(hwnd, screen.dipToScreenRect(this.win, rect));
+    } catch (err) {
+      log.warn(`panel live backdrop failed: code=${(err && err.code) || 'UNKNOWN'}`);
+    }
+    if (!shot) return;
+    const held = this._backdrop && this._backdrop.shot;
+    if (held && held.width === shot.width && held.height === shot.height && held.bgra.equals(shot.bgra)) return;
+    this._backdrop = { rect, shot };
+    this._sendBackdrop(true);
+  }
+
+  /**
+   * Did anything change in the ring just outside the window since the last
+   * tick? A copy of the window's rect grown by BACKDROP_RING, the panel IN it
+   * (nothing is hidden for this one), compared on the ring only: the panel's
+   * own pixels change with every hover and are not the screen behind. The
+   * first tick, and any change of size, counts as a change.
+   */
+  _ringMoved(dwm, rect) {
+    const outer = {
+      x: rect.x - BACKDROP_RING,
+      y: rect.y - BACKDROP_RING,
+      width: rect.width + 2 * BACKDROP_RING,
+      height: rect.height + 2 * BACKDROP_RING,
+    };
+    let probe = null;
+    try {
+      probe = dwm.captureScreen(screen.dipToScreenRect(this.win, outer));
+    } catch (err) {
+      log.warn(`panel live ring failed: code=${(err && err.code) || 'UNKNOWN'}`);
+    }
+    if (!probe) return false;
+    const before = this._ring;
+    this._ring = probe;
+    if (!before || before.width !== probe.width || before.height !== probe.height) return true;
+    const ring = Math.max(1, Math.round((BACKDROP_RING * probe.width) / outer.width));
+    return !sameRing(before.bgra, probe.bgra, probe.width, probe.height, ring);
   }
 
   /** win32 setAccent on our window. False when it cannot be had or was refused. */
@@ -1310,9 +1409,29 @@ class PanelWindow {
   destroy() {
     this.cancelHide('destroy');
     this._stopPointerWatch();
+    this._stopLive();
     if (this.win && !this.win.isDestroyed()) this.win.destroy();
     this.win = null;
   }
+}
+
+/**
+ * Two equal-sized BGRA copies compared on their outer `ring` pixels only: the
+ * top and bottom bands whole, and the sides between them.
+ */
+function sameRing(a, b, width, height, ring) {
+  const stride = width * 4;
+  const band = Math.min(ring, height) * stride;
+  if (a.compare(b, 0, band, 0, band) !== 0) return false;
+  const bottom = Math.max(0, height - ring) * stride;
+  if (a.compare(b, bottom, a.length, bottom, b.length) !== 0) return false;
+  const side = Math.min(ring, width) * 4;
+  for (let y = ring; y < height - ring; y++) {
+    const row = y * stride;
+    if (a.compare(b, row, row + side, row, row + side) !== 0) return false;
+    if (a.compare(b, row + stride - side, row + stride, row + stride - side, row + stride) !== 0) return false;
+  }
+  return true;
 }
 
 /** Half-open on both axes, so the last pixel inside is inside. */
