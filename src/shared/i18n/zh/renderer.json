@@ -324,20 +324,15 @@
   "settings.plan.auto": "自动（{plan}）",
   "row.planSpokenTool": "从工具读取的套餐：",
 
-  "settings.layout.legend": "布局",
-  "settings.layout.sade": "简洁列表",
-  "settings.layout.halka": "圆环磁贴",
-  "settings.layout.help": "简洁列表：每个工具一行，百分比显示在旁边。圆环磁贴：工具并排显示，圆环表示 5 小时用量。两种布局中点击工具都可打开详情。",
   "settings.stripStyle.legend": "任务栏条样式",
   "settings.stripStyle.plain": "简洁",
   "settings.stripStyle.rings": "圆环",
   "settings.stripStyle.fill": "填充",
   "settings.stripStyle.help": "任务栏中磁贴的外观。",
-  "app.layoutNotSaved": "无法保存布局设置，已恢复之前的选择。",
   "app.stripStyleNotSaved": "无法保存任务栏条样式，已恢复之前的选择。",
 
-  "layout.sheet.back": "全部工具",
-  "layout.sheet.backLabel": "关闭详情并返回全部工具",
+  "sheet.back": "全部工具",
+  "sheet.backLabel": "关闭详情并返回全部工具",
 
   "meter.window5h.tag": "5时",
   "meter.window7d.tag": "7天",

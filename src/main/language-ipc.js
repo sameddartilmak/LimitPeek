@@ -4,7 +4,6 @@ const { sanitizeTheme, DEFAULT_THEME } = require('../core/theme');
 const { sanitizeAutostart, DEFAULT_AUTOSTART } = require('./autostart-ipc');
 const { sanitizeTrayView } = require('../core/tray-view');
 const { sanitizeTransparency } = require('../core/transparency');
-const { sanitizeLayout } = require('../core/layout');
 const { sanitizeStripStyle } = require('../core/strip-style');
 
 /**
@@ -212,9 +211,6 @@ function createPreferences({
       // literals; anything else is the opaque canvas every earlier version had.
       material: material() === 'acrylic' ? 'acrylic' : 'none',
       frame: frame() === 'fitted' ? 'fitted' : 'canvas',
-      // Görünüm → Düzen, re-sanitised: an old value reads as its successor,
-      // anything else is the short list ('sade').
-      layout: sanitizeLayout(settings && settings.layout),
       // Görünüm → Şerit stili, re-sanitised: anything but 'rings' or 'fill' is plain.
       stripStyle: sanitizeStripStyle(settings && settings.stripStyle),
     };

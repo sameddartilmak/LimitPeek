@@ -11,7 +11,6 @@ import type {
   LanguageChoice,
   PanelFrame,
   PanelMaterial,
-  Layout,
   ProviderSnapshot,
   RefreshNotice,
   Snapshot,
@@ -213,7 +212,7 @@ export interface PanelState {
   stripNoRoom: boolean;
   /**
    * Görünüm → "Saydamlık", 0 (opaque) to 100 (clear glass). Optimistic, like
-   * `layout`: it follows the slider on every step, and main is asked
+   * `theme`: it follows the slider on every step, and main is asked
    * afterwards (throttled while the slider is dragged, app.ts).
    */
   transparency: number;
@@ -227,15 +226,6 @@ export interface PanelState {
   material: PanelMaterial;
   /** The window's shape, fixed per process (Preferences.frame). */
   frame: PanelFrame;
-  /**
-   * Görünüm → Düzen: the short list or the ring tiles. Optimistic, like `theme`: the
-   * document flips on the gesture and main is asked afterwards.
-   */
-  layout: Layout;
-  /** True while a setLayout call is in flight. */
-  layoutPending: boolean;
-  /** Set briefly when main refused the change and the radio went back. */
-  layoutReverted: boolean;
   /**
    * Görünüm → Şerit stili. Optimistic, like `trayView`: the radio moves on
    * the gesture, main redraws the strip and the radio goes back if it refuses.
@@ -293,9 +283,6 @@ const INITIAL: PanelState = {
   systemReducedTransparency: false,
   material: 'none',
   frame: 'canvas',
-  layout: 'sade',
-  layoutPending: false,
-  layoutReverted: false,
   stripStyle: 'plain',
   stripStylePending: false,
   stripStyleReverted: false,

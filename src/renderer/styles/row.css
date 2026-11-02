@@ -386,9 +386,9 @@
   text-overflow: ellipsis;
 }
 
-/* "5sa" / "7g": the compact layouts' tag in front of the figure (meter.ts).
+/* "5sa" / "7g": the closed line's tag in front of the figure (meter.ts).
  * A card drawn in full — a tool's open details — names its windows in full
- * above, so the tag is drawn only by layout-sade.css and layout-halka.css. */
+ * above, so the tag is drawn only by list.css. */
 .win__tag { display: none; }
 
 /* The figure. The one thing in the row allowed to carry the state ramp, and it
@@ -1248,8 +1248,7 @@
  * ramp: an outlined Canvas track, the reading in Highlight, the tick in
  * Canvas. The user's own colours, so the contrast is theirs; the figure beside
  * it still prints the value, the "≈" and the "itibarıyla" line still say
- * estimate and stale, and the hatch still lies over a stale fill. The ring
- * tiles draw their ring the same way, in their own pass (layout-halka.css). */
+ * estimate and stale, and the hatch still lies over a stale fill. */
 @media (forced-colors: active) {
   .row { border: 1px solid CanvasText; }
   .row__chip, .tag-experimental { border: 1px solid CanvasText; }

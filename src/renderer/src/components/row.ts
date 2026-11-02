@@ -90,16 +90,9 @@ export interface RowContext {
   /** The user pressed this card's "Ayrıntılar". The panel keeps one open. */
   onToggleExpand?(providerId: string): void;
   /**
-   * Can this card be dragged and moved with Alt+Arrow? Optional: absent
-   * means yes. False in "Halka kutuları", which follows the stored order but
-   * only the short list rearranges it: the mark stays as the tool's logo, and
-   * stops being a control.
-   */
-  canReorder?(providerId: string): boolean;
-  /**
    * Does a click anywhere on this card open its details? Optional: absent
    * means no ("Ayrıntılar" is then its own button). True for every closed
-   * line and tile, where the whole card is the way in; the "Ayrıntılar"
+   * line, where the whole card is the way in; the "Ayrıntılar"
    * button stays the keyboard's way in (Enter / Space). Every closed card also
    * carries its hover line (`data-tip`, see rowTip).
    */
@@ -478,8 +471,8 @@ function buildMeasure(p: ProviderSnapshot, pending: boolean): HTMLElement {
 /**
  * One window in the hover line: "5 saatlik 2 sa 13 dk sonra sıfırlanır".
  *
- * The compact layouts print only "5sa %62" on the card (owner, 2026-10-22: no
- * countdown on the line), so WHEN the window resets moved here and into the
+ * The panel's line prints only "5sa %62" (owner, 2026-10-22: no countdown on
+ * the line), so WHEN the window resets moved here and into the
  * details. A window without a reset instant states its figure, or the word
  * printed in its place ("bildirilmiyor"), so no window drops out of the line
  * silently. A window that is not in the snapshot at all has nothing to name.
@@ -505,8 +498,9 @@ function windowTip(kind: '5h' | '7d', usage: WindowUsage | null, now: number): s
  *     5 saatlik 2 sa 13 dk sonra sıfırlanır
  *     Haftalık 3 gün 4 sa sonra sıfırlanır
  *
- * It always opens with the tool's name, because the ring tiles print none. A tool with no window says what its card says instead:
- * why it is not connected, or its main measure.
+ * It always opens with the tool's name, so the bubble says whose times these
+ * are wherever it lands. A tool with no window says what its card says
+ * instead: why it is not connected, or its main measure.
  *
  * Written as `data-tip`, not `title`: a title would also become the list
  * item's accessible description, and a screen reader already hears every
@@ -525,7 +519,7 @@ function rowTip(p: ProviderSnapshot, pending: boolean, now: number): string | nu
     const measure = measureCopy(p, pending);
     parts.push(measure.caption ? `${measure.value} ${measure.caption}` : measure.value);
   }
-  // The experimental pill is not drawn on a closed line or tile (layouts.css),
+  // The experimental pill is not drawn on a closed line (list.css),
   // so its sentence is said here, where the pointer already is.
   if (p.experimental) parts.push(t('row.tip.experimental', { detail: t('provider.experimentalDetail') }));
   // One line per window, under the name: the bubble keeps line breaks
@@ -876,7 +870,7 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     el('span', { class: 'row__more-chev', 'aria-hidden': 'true' }, chevron()),
   ) as HTMLButtonElement;
   on(moreButton, 'click', () => ctx.onToggleExpand?.(current.id));
-  // A closed tile or focus row opens on a click anywhere on it, except on a
+  // A closed line opens on a click anywhere on it, except on a
   // control of its own ("Bağla", "Yeniden dene"), which keeps its action, and
   // inside the setup question drawn in it (panel.ts placeConsent).
   on(root, 'click', (event: MouseEvent) => {
@@ -983,13 +977,8 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
 
     // --- the grip -------------------------------------------------------
     const tray = context.isTrayRow(p.id);
-    // Outside the list the mark is the tool's logo and nothing else: not a
-    // tab stop, not announced as a drag handle, no "drag to move" tooltip.
-    const movable = context.canReorder?.(p.id) ?? true;
-    setAttr(refs.grip, 'data-tray', tray && movable ? 'true' : null);
+    setAttr(refs.grip, 'data-tray', tray ? 'true' : null);
     setAttr(refs.grip, 'aria-label', t('row.gripLabel', { name: p.displayName }));
-    setAttr(refs.grip, 'aria-hidden', movable ? null : 'true');
-    setAttr(refs.grip, 'aria-describedby', movable ? REORDER_HELP_ID : null);
     // The tray consequence is stated on the control that causes it, honestly:
     // a provider with no five-hour window drives an empty ring, not a donut.
     const title = t('row.gripTitle', { name: p.displayName });
@@ -998,8 +987,8 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
         ? t('row.gripTray')
         : t('row.gripTrayNoData')
       : '';
-    setAttr(refs.grip, 'title', movable ? (trayNote ? `${title} ${trayNote}` : title) : null);
-    refs.grip.disabled = p.status === 'loading' || !movable;
+    setAttr(refs.grip, 'title', trayNote ? `${title} ${trayNote}` : title);
+    refs.grip.disabled = p.status === 'loading';
     context.attachGrip(refs.grip, p.id, p.displayName);
 
     // --- "Ayrıntılar" ----------------------------------------------------
@@ -1026,7 +1015,7 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
     // The hover line counts down with them, on a closed card only: an open
     // one shows every countdown itself, and a tip over the whole sheet would
     // cover the details it opened. A tool that is not connected has one too
-    // (it opens no details): in the ring tiles its name is not printed.
+    // (it opens no details): the line can cut its reason short.
     const closed = root.getAttribute('data-expanded') !== 'true';
     setAttr(root, 'data-tip', closed ? rowTip(drawn, drawnPending, atNow) : null);
     if (refs.staleAge) {

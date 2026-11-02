@@ -345,20 +345,15 @@
   "settings.plan.auto": "Automatic ({plan})",
   "row.planSpokenTool": "Plan read from the tool:",
 
-  "settings.layout.legend": "Layout",
-  "settings.layout.sade": "Simple list",
-  "settings.layout.halka": "Ring tiles",
-  "settings.layout.help": "Simple list: one line per tool, its percentages beside it. Ring tiles: tools side by side, 5-hour usage in a ring. In both, click a tool to open its details.",
   "settings.stripStyle.legend": "Strip style",
   "settings.stripStyle.plain": "Plain",
   "settings.stripStyle.rings": "Rings",
   "settings.stripStyle.fill": "Fill",
   "settings.stripStyle.help": "How the tiles in the taskbar look.",
-  "app.layoutNotSaved": "The layout setting could not be saved. The previous choice was restored.",
   "app.stripStyleNotSaved": "The strip style could not be saved. The previous choice was restored.",
 
-  "layout.sheet.back": "All tools",
-  "layout.sheet.backLabel": "Close details and return to all tools",
+  "sheet.back": "All tools",
+  "sheet.backLabel": "Close details and return to all tools",
 
   "meter.window5h.tag": "5h",
   "meter.window7d.tag": "7d",

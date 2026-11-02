@@ -46,7 +46,6 @@
 
 import type {
   LanguageChoice,
-  Layout,
   PeriodModelCost,
   PeriodUsage,
   ProviderSnapshot,
@@ -83,8 +82,6 @@ const LANGUAGE_TITLE_ID = 'settings-language-title';
 const LANGUAGE_HELP_ID = 'settings-language-help';
 const TRAY_VIEW_TITLE_ID = 'settings-tray-view-title';
 const TRAY_VIEW_HELP_ID = 'settings-tray-view-help';
-const LAYOUT_TITLE_ID = 'settings-layout-title';
-const LAYOUT_HELP_ID = 'settings-layout-help';
 const STRIP_STYLE_TITLE_ID = 'settings-strip-style-title';
 const STRIP_STYLE_HELP_ID = 'settings-strip-style-help';
 const GLASS_NAME_ID = 'settings-glass-name';
@@ -121,8 +118,6 @@ export interface SettingsContext {
    * dragged, true on its 'change'. Optimistic; the app owns the revert.
    */
   onTransparency(level: number, final: boolean): void;
-  /** The user picked list, focus or tiles. Optimistic; the app owns the revert. */
-  onLayout(layout: Layout): void;
   /** The user picked the strip's tile style. Optimistic; the app owns the revert. */
   onStripStyle(style: StripStyle): void;
   /** Leave settings and go back to the usage list. */
@@ -853,40 +848,6 @@ function createChoiceGroup<V extends string>(opts: {
     setAttr(root, 'aria-busy', pending ? 'true' : null);
   }
   return { el: root, inputs, help, paint };
-}
-
-/**
- * Görünüm → "Düzen": "Sade liste" (the default, one short line per tool with
- * its two figures) or "Halka kutuları" (small tiles side by side, a ring for
- * the five-hour window in each). The two the owner picked from the minimal
- * mockups (2026-10-22); the help line says in one sentence what each is, and
- * that a tool opens its details on a click in both.
- */
-interface LayoutHandleLocal {
-  el: HTMLElement;
-  update(state: PanelState): void;
-}
-
-function createLayoutControl(ctx: SettingsContext): LayoutHandleLocal {
-  const group = createChoiceGroup<Layout>({
-    name: 'layout',
-    className: 'theme--layout',
-    titleId: LAYOUT_TITLE_ID,
-    helpId: LAYOUT_HELP_ID,
-    legend: 'settings.layout.legend',
-    help: 'settings.layout.help',
-    choices: [
-      { v: 'sade', key: 'settings.layout.sade' },
-      { v: 'halka', key: 'settings.layout.halka' },
-    ],
-    onPick: (layout) => ctx.onLayout(layout),
-  });
-  return {
-    el: group.el,
-    update(state: PanelState): void {
-      group.paint(state.layout, state.layoutPending, state.layoutReverted);
-    },
-  };
 }
 
 /**
@@ -1950,7 +1911,6 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   const languageControl = createLanguageControl(ctx);
   const trayView = createTrayViewControl(ctx);
   const stripStyle = createStripStyleControl(ctx);
-  const layout = createLayoutControl(ctx);
   const glass = createGlassControl(ctx);
   const autostart = createAutostartControl(ctx);
   // The first-run introduction, on request: it runs once, so this is the way
@@ -1971,7 +1931,6 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
           // Two groups: how the panel looks, then what the taskbar shows.
           el('h3', { class: 'settings__heading' }, t('settings.heading.panel')),
           theme.el,
-          layout.el,
           glass.el,
           el('h3', { class: 'settings__heading' }, t('settings.heading.taskbar')),
           trayView.el,
@@ -2062,7 +2021,6 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
     languageControl.update(state);
     trayView.update(state);
     stripStyle.update(state);
-    layout.update(state);
     glass.update(state);
     autostart.update(state);
     // The FULL snapshot list, not the added subset: a model row names its tool

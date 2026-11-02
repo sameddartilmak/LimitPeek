@@ -10,7 +10,6 @@ import type {
   LanguageChoice,
   PanelFrame,
   PanelMaterial,
-  Layout,
   Preferences,
   ProviderSnapshot,
   SetupAction,
@@ -74,25 +73,11 @@ function applyLocale(prefs: Preferences | null): void {
 }
 
 /**
- * Görünüm → Düzen on the document: `html[data-layout]` selects the short
- * list's styles or the ring tiles' (layout-sade.css, layout-halka.css).
- * Written in frame one, before the panel exists, so a tiles user never sees
- * the list for one frame.
- *
- * There is no `html[data-gauge]` any more: "Gösterge: Çubuk / Halka" went
- * with the old layouts (2026-10-22). The short list draws no bars and the
- * ring tiles always draw rings, so the choice no longer meant anything.
- */
-function paintLayout(layout: Layout): void {
-  document.documentElement.dataset.layout = layout;
-}
-
-/**
  * The opaque panel on the document: tokens.css turns every glass surface
  * opaque under `html[data-reduce-transparency]`. Set when the user pulled
  * "Saydamlık" to 0 OR Windows asked (reduced transparency, high contrast; the
  * CSS media features say the same live, this covers what main measured).
- * Frame one, like the layout, or the glass flashes before it goes opaque.
+ * Frame one, like the theme, or the glass flashes before it goes opaque.
  */
 function paintGlass(reduce: boolean, system: boolean): void {
   if (reduce || system) document.documentElement.dataset.reduceTransparency = 'true';
@@ -103,7 +88,7 @@ function paintGlass(reduce: boolean, system: boolean): void {
  * What main has behind the panel, and the window's shape, on the document:
  * tokens.css draws the translucent base and cards under
  * `html[data-material="acrylic"]`, panel.css fills a `data-frame="fitted"`
- * window with the panel. Frame one, like the layout: a translucent panel
+ * window with the panel. Frame one, like the theme: a translucent panel
  * painted before main's answer would show the desktop through an opaque
  * window as black, and an opaque one over live glass would hide it.
  */
@@ -126,7 +111,6 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const initialPrefs = bridge.initialPreferences();
   applyLocale(initialPrefs);
   const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
-  paintLayout(initialPrefs?.layout ?? 'sade');
   paintGlass(initialPrefs?.transparency === 0, initialPrefs?.systemReducedTransparency === true);
   paintMaterial(initialPrefs?.material ?? 'none', initialPrefs?.frame ?? 'canvas');
   store.set({
@@ -143,7 +127,6 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     systemReducedTransparency: initialPrefs?.systemReducedTransparency === true,
     material: initialPrefs?.material ?? 'none',
     frame: initialPrefs?.frame ?? 'canvas',
-    layout: initialPrefs?.layout ?? 'sade',
     stripStyle: initialPrefs?.stripStyle ?? 'plain',
   });
   disposers.push(() => theme.destroy());
@@ -208,7 +191,6 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onAutostartChange: (enabled) => void applyAutostart(enabled),
     onTrayViewChange: (view) => void applyTrayView(view),
     onTransparencyChange: (level, final) => applyTransparency(level, final),
-    onLayoutChange: (layout) => void applyLayout(layout),
     onStripStyleChange: (style) => void applyStripStyle(style),
     coachDismissed: false,
     onReorder: (ids) => void applyOrder(ids),
@@ -645,7 +627,6 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       paintMaterial(prefs.material, prefs.frame);
       store.set({ material: prefs.material, frame: prefs.frame });
     }
-    acceptLayout(prefs);
     acceptStripStyle(prefs);
     // Main's persisted answer. Only ever moves the card SHUT from here: a push
     // that crossed a "Şimdi değil" in flight must not re-open it under the user.
@@ -761,53 +742,6 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     if (prefs.trayView !== store.get().trayView) store.set({ trayView: prefs.trayView });
   }
 
-  // --- Görünüm: the short list or the ring tiles ----------------------------
-
-  /** The newest layout asked of main. Same shape as trayViewRequest. */
-  let layoutRequest: { layout: Layout; at: number } | null = null;
-  /** Same role as `confirmedTheme`: what main is known to hold. */
-  let confirmedLayout: Layout = store.get().layout;
-
-  /**
-   * Optimistic, then reconciled, exactly like applyTheme: the panel changes
-   * layout on the gesture and main is asked afterwards. `{ok:false}` puts the
-   * OLD layout back on the document as well as in the radio group. An open
-   * sheet is closed first: the user is in Settings, and coming back to the
-   * new layout should show the new layout, not one tool's details.
-   */
-  async function applyLayout(next: Layout): Promise<void> {
-    if (next === store.get().layout) return;
-
-    const request = { layout: next, at: Date.now() };
-    layoutRequest = request;
-    paintLayout(next);
-    store.set({ layout: next, layoutPending: true, layoutReverted: false, notice: null, expandedProviderId: null });
-
-    const ok = await bridge.setLayout(next);
-    if (ok) confirmedLayout = next;
-
-    if (layoutRequest !== request) return;
-    layoutRequest = null;
-    store.set({ layoutPending: false });
-    if (ok) return;
-
-    paintLayout(confirmedLayout);
-    store.set({ layout: confirmedLayout, layoutReverted: true, expandedProviderId: null });
-    say(t('app.layoutNotSaved'), 'error');
-    window.setTimeout(() => {
-      if (store.get().layoutReverted) store.set({ layoutReverted: false });
-    }, 1_600);
-  }
-
-  /** Main's value, pushed. Adopted unless a pick is still in flight. */
-  function acceptLayout(prefs: Preferences): void {
-    confirmedLayout = prefs.layout;
-    if (layoutRequest !== null) return;
-    if (prefs.layout === store.get().layout) return;
-    paintLayout(prefs.layout);
-    store.set({ layout: prefs.layout, expandedProviderId: null });
-  }
-
   // --- Görünüm: the taskbar strip's style -----------------------------------
 
   /** The newest strip style asked of main. Same shape as trayViewRequest. */
@@ -858,9 +792,9 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
    * hand let go, or a key press — is asked for at once.
    */
   const TRANSPARENCY_SEND_MS = 80;
-  /** The newest value asked of main. Same shape as layoutRequest. */
+  /** The newest value asked of main. Same shape as stripStyleRequest. */
   let glassRequest: { level: number; at: number } | null = null;
-  /** Same role as `confirmedLayout`: what main is known to hold. */
+  /** Same role as `confirmedStripStyle`: what main is known to hold. */
   let confirmedLevel: number = store.get().transparency;
   /** The last value handed to main, asked or confirmed: a step is never asked twice. */
   let sentLevel: number = confirmedLevel;
@@ -877,7 +811,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   disposers.push(cancelGlassTimer);
 
   /**
-   * Optimistic, then reconciled, like applyLayout: the store (and with it the
+   * Optimistic, then reconciled, like applyStripStyle: the store (and with it the
    * figure beside the slider, and the opaque header at 0) follows every step
    * at once, and main is asked afterwards — at most every
    * TRANSPARENCY_SEND_MS while the slider is dragged, with the newest step
@@ -1146,7 +1080,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
       panel.focusView('main');
       return;
     }
-    // Then a tool's details, a sheet over the other tools in both layouts:
+    // Then a tool's details, a sheet over the other tools:
     // Esc is the way back to them, as in settings. With no sheet open, Esc
     // closes the panel, the way it always did (the header has no close
     // button any more; Esc and a click outside are the ways out).

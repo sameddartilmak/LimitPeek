@@ -324,20 +324,15 @@
   "settings.plan.auto": "Otomatik ({plan})",
   "row.planSpokenTool": "Araçtan okunan plan:",
 
-  "settings.layout.legend": "Düzen",
-  "settings.layout.sade": "Sade liste",
-  "settings.layout.halka": "Halka kutuları",
-  "settings.layout.help": "Sade liste: her araç tek satırda, yüzdeleri yanında. Halka kutuları: araçlar yan yana, 5 saatlik kullanım halkada. İkisinde de bir araca tıklayınca ayrıntıları açılır.",
   "settings.stripStyle.legend": "Şerit stili",
   "settings.stripStyle.plain": "Sade",
   "settings.stripStyle.rings": "Halkalı",
   "settings.stripStyle.fill": "Dolgulu",
   "settings.stripStyle.help": "Görev çubuğundaki kutucukların görünümü.",
-  "app.layoutNotSaved": "Düzen ayarı kaydedilemedi. Önceki seçim geri alındı.",
   "app.stripStyleNotSaved": "Şerit stili kaydedilemedi. Önceki seçim geri alındı.",
 
-  "layout.sheet.back": "Tüm araçlar",
-  "layout.sheet.backLabel": "Ayrıntıları kapat ve tüm araçlara dön",
+  "sheet.back": "Tüm araçlar",
+  "sheet.backLabel": "Ayrıntıları kapat ve tüm araçlara dön",
 
   "meter.window5h.tag": "5sa",
   "meter.window7d.tag": "7g",

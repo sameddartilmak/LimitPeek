@@ -1,0 +1,346 @@
+/* The panel's list: every tool is ONE 36px line on one grouped plate, iOS
+ * style, the figures coloured by their state (the "Sade liste" mockup the
+ * owner picked as B, 2026-10-22; the only way the panel draws its tools
+ * since "Halka kutuları" went, 2026-11-02):
+ *
+ *     [logo] Claude Code              5sa %62 · 7g %41
+ *     [logo] Codex CLI                5sa %18 · 7g %57
+ *     [logo] Antigravity              5sa %84 · 7g bildirilmiyor
+ *
+ * Each line is the tool's own card (row.ts) with `display: contents` laid
+ * onto one grid, so its meters, its words and its states are the card's:
+ *
+ *     logo | name | (unused) | (space) | 5sa | %62 | · 7g | %41
+ *
+ * A click on a tool opens its details as a sheet: the card drawn in full by
+ * row.css, alone, with "‹ Tüm araçlar" above it. Every cue in row.css (the
+ * estimate's sign and desaturation, the stale ink and hatch, the error's
+ * drain, the skeleton, high contrast, reduced motion) holds on the line too;
+ * this file only re-lays the same elements.
+ *
+ * What a line cannot hold goes on a second, short line under the name, in
+ * the order the card has it: the stale chip ("Güncel değil · 22 dk"), a
+ * connect action on a tool that already reads, the error and its retry, a
+ * not-connected tool's reason when it also has a button. Nothing a state
+ * says is dropped. What a closed line does not draw, and where it went
+ * (owner, 2026-10-22):
+ *
+ *   the plan chip ("Max 20x")        in the details
+ *   "Ayrıntılar"                     a click on the tool; the button stays
+ *                                    in the DOM as the keyboard's way in
+ *   the bars                         the figures, coloured by their state
+ *   the reset countdowns             the hover line (row.ts rowTip) and the
+ *                                    details; still in every meter's sentence
+ *   the stale "itibarıyla" line      the "Güncel değil · 22 dk" chip says it
+ *   the Claude stale hint            in the details
+ *   the experimental pill            the hover line and the details
+ *
+ * A thing a screen reader needs is never `display: none` here: the bars hold
+ * role=meter and a block's foot carries its spoken countdown, so both are
+ * visually hidden (`.u-sr`'s recipe) and stay in the accessibility tree.
+ *
+ * THE PLATE. The lines sit on one rounded plate in the card token
+ * (--ink-800), not on cards of their own: over the window's glass, as thin
+ * as the "Saydamlık" slider makes it (tokens.css), bare text on the base reads against
+ * whatever is behind the window, and the plate is the one surface that keeps
+ * it readable without raising the tint again. A window material that
+ * restyles the cards restyles the plate with them.
+ *
+ * The logo is still the drag grip (row.ts), so the list is where the user
+ * sets the order. */
+
+/* ------------------------------------------------------- a closed tool */
+/* The whole tool opens its details (row.ts, data-opens). "Ayrıntılar" stays
+ * in the DOM as the keyboard's way in, Enter or Space, but is not drawn: the
+ * tool draws its focus ring instead, so the ring outlines what opens. */
+.row:not([data-expanded]) > .row__more {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  min-height: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.row[data-opens="true"] { cursor: pointer; }
+.row:not([data-expanded]):has(> .row__more:focus-visible) {
+  outline: 2px solid var(--tint);
+  outline-offset: 1px;
+}
+/* The details themselves never open inside a closed tool. */
+.row:not([data-expanded]) > .row__detail { display: none !important; }
+/* The plan is the user's own label, not a reading: it waits in the details.
+ * So does the stale Claude hint, which is a sentence, and the window's full
+ * name, which the tag ("5sa") stands in for. */
+.row:not([data-expanded]) .row__plan,
+.row:not([data-expanded]) .row__stalehint,
+.row:not([data-expanded]) .row__gap,
+.row:not([data-expanded]) .win__label,
+.row:not([data-expanded]) .win__gap { display: none; }
+.row:not([data-expanded]) .win__tag {
+  display: inline;
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+/* The figure at the line's size, coloured by its own window's state
+ * (row.css .win[data-state]); "bilinmiyor" and its siblings in the meta ink. */
+.row:not([data-expanded]) .win__pct {
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.row:not([data-expanded]) .win__pct.win__pct--none {
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  color: var(--ink-400);
+}
+/* Bars and countdowns, out of sight and still read (see the note above);
+ * and the experimental pill, whose sentence the hover line says (row.ts
+ * rowTip) and whose hidden explanation a screen reader still hears. */
+.row:not([data-expanded]) .tag-experimental,
+.row:not([data-expanded]) .meter .win__foot,
+.row:not([data-expanded]) .meter .rail {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------ details, as a sheet */
+/* A tool's details are its full card, alone: the other tools step out of the
+ * list and "‹ Tüm araçlar" (sheet-back.ts) sits above it. */
+.rows[data-sheet="true"] {
+  display: flex;
+  flex-direction: column;
+}
+.rows[data-sheet="true"] > .row:not([data-expanded]) { display: none; }
+
+.sheet-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+  margin: 0 var(--s-3) 0;
+  padding: 0 var(--s-2) 0 2px;
+  border: 0;
+  border-radius: var(--radius-ctl);
+  background: transparent;
+  color: var(--tint-text);
+  font: inherit;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-hover) linear;
+}
+.sheet-back:hover { background: var(--fill-2); }
+.sheet-back svg { width: 16px; height: 16px; display: block; }
+.sheet-back[hidden] { display: none; }
+
+/* ---------------------------------------------------- the line, the plate */
+.rows:not([data-sheet="true"]) {
+  gap: 0;
+  margin: 0 var(--s-2) var(--s-2);
+  padding: var(--s-1);
+  border-radius: var(--radius-card);
+  background: var(--ink-800);
+}
+
+.row:not([data-expanded]) {
+  grid-template-columns: 20px minmax(0, max-content) minmax(0, max-content) minmax(var(--s-2), 1fr) auto auto auto auto;
+  grid-template-rows: 36px;
+  align-items: center;
+  column-gap: 0;
+  row-gap: 0;
+  min-height: 36px;
+  padding: 0 var(--s-2);
+  border-radius: var(--radius-ctl);
+  /* The plate is the surface; a line is drawn on it, not as a card of its own. */
+  background: transparent;
+}
+.row[data-opens="true"]:hover { background: var(--fill-2); }
+.row:not([data-expanded]) .row__body,
+.row:not([data-expanded]) .row__line,
+.row:not([data-expanded]) .meter,
+.row:not([data-expanded]) .meter > .win,
+.row:not([data-expanded]) .meter .win__head { display: contents; }
+
+/* --- the logo: the tool's mark, still the grip ----------------------------- */
+.row:not([data-expanded]) > .grip {
+  grid-column: 1;
+  grid-row: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: transparent;
+}
+.row:not([data-expanded]) .mark { width: 20px; height: 20px; }
+/* The dot that says "the tray draws this one", smaller on the smaller mark. */
+.row:not([data-expanded]) .grip[data-tray="true"]::after {
+  top: -2px; right: -3px;
+  width: 5px; height: 5px;
+  border-color: var(--ink-900);
+}
+
+/* --- the name ------------------------------------------------------------- */
+.row:not([data-expanded]) .row__name {
+  grid-column: 2;
+  grid-row: 1;
+  margin-left: 9px;
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+/* The experimental pill is not on the line: the tools that carry it (Kimi,
+ * Qwen Code, Grok Build) print their main measure with its window's name
+ * there, and at 320px the pill cut both the name and itself to "…". It says
+ * its sentence in the hover line instead (row.ts rowTip), a screen reader
+ * still hears it (hidden from sight only, above), and the pill itself is in
+ * the details and in Settings. */
+
+/* --- the figures: "5sa %62 · 7g %41" -------------------------------------- */
+.row:not([data-expanded]) .win--5h .win__tag { grid-column: 5; grid-row: 1; }
+.row:not([data-expanded]) .win--5h .win__pct { grid-column: 6; grid-row: 1; }
+.row:not([data-expanded]) .win--7d .win__tag { grid-column: 7; grid-row: 1; }
+.row:not([data-expanded]) .win--7d .win__pct { grid-column: 8; grid-row: 1; }
+.row:not([data-expanded]) .win__tag { margin-right: 3px; }
+/* The dot between the two windows, only where there are two. */
+.row:not([data-expanded]) .win--5h ~ .win--7d .win__tag::before {
+  content: "·";
+  margin: 0 5px 0 4px;
+  color: var(--ink-500);
+}
+
+/* A tool with no quota (Kimi, Qwen Code, Grok Build): its main measure where
+ * the figures are, its window named first like a tag ("Kota haftası 6,2 Mn
+ * token"). */
+.row:not([data-expanded]) .row__primary {
+  grid-column: 5 / -1;
+  grid-row: 1;
+  justify-self: end;
+  flex-direction: row-reverse;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  column-gap: 4px;
+  min-width: 0;
+}
+.row:not([data-expanded]) .row__primary-value {
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.row:not([data-expanded]) .row__primary-caption {
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+.row:not([data-expanded]) .row__primary[data-kind="absent"] .row__primary-value,
+.row:not([data-expanded]) .row__primary[data-kind="none"] .row__primary-value,
+.row:not([data-expanded]) .row__primary[data-kind="uncounted"] .row__primary-value,
+.row:not([data-expanded]) .row__primary[data-kind="pending"] .row__primary-value {
+  font-size: var(--fs-micro);
+  font-weight: 500;
+}
+
+/* --- the second line: everything a state has to say beside the figures --- */
+/* Auto-placed under the name, one item per line, in the card's own order. */
+.row:not([data-expanded]) .row__chip,
+.row:not([data-expanded]) .row__err,
+.row:not([data-expanded]) .row__meta,
+.row:not([data-expanded]) .row__action {
+  grid-column: 2 / -1;
+  justify-self: start;
+  margin: -6px 0 8px 9px;
+}
+.row:not([data-expanded]) .row__chip {
+  padding: 0 var(--s-2) 0 6px;
+  background: transparent;
+  color: var(--ink-300);
+}
+.row:not([data-expanded]) .row__err {
+  justify-self: stretch;
+  min-width: 0;
+  font-size: var(--fs-micro);
+}
+.row:not([data-expanded]) .row__err .btn { margin-left: auto; }
+.row:not([data-expanded]) .row__action {
+  height: 22px;
+  padding: 0 var(--s-2);
+  font-size: var(--fs-micro);
+}
+.row:not([data-expanded]) .row__meta {
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--fs-micro);
+}
+.row:not([data-expanded]) > .consent {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--s-2);
+}
+
+/* --- a tool that is not connected ----------------------------------------- */
+/* Its button where the figures are; its reason on the line under it. With no
+ * button, the reason itself takes the figures' place. */
+.row--passive:not([data-expanded]) { min-height: 36px; }
+.row--passive:not([data-expanded]) .row__name { color: var(--ink-300); font-weight: 400; }
+.row--passive:not([data-expanded]) .row__action {
+  grid-column: 5 / -1;
+  grid-row: 1;
+  justify-self: end;
+  margin: 0;
+}
+.row--passive:not([data-expanded]):not(:has(.row__action)) .row__meta {
+  grid-column: 5 / -1;
+  grid-row: 1;
+  justify-self: end;
+  margin: 0 0 0 var(--s-2);
+}
+.row--passive:not([data-expanded]) .row__meta-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- loading: the line's own shapes, so nothing moves when data lands ----- */
+.row[data-status="loading"]:not([data-expanded]) .grip--empty {
+  grid-column: 1;
+  grid-row: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--ink-700);
+}
+.row[data-status="loading"] .sk--name { grid-column: 2; grid-row: 1; width: 86px; margin-left: 9px; }
+.row[data-status="loading"] .meter .win:first-child .sk--label { grid-column: 5; grid-row: 1; width: 18px; height: 8px; margin-right: 4px; }
+.row[data-status="loading"] .meter .win:first-child .sk--pct { grid-column: 6; grid-row: 1; width: 26px; height: 11px; }
+.row[data-status="loading"] .meter .win + .win .sk--label { grid-column: 7; grid-row: 1; width: 14px; height: 8px; margin: 0 4px 0 12px; }
+.row[data-status="loading"] .meter .win + .win .sk--pct { grid-column: 8; grid-row: 1; width: 26px; height: 11px; }
+.row[data-status="loading"] .meter .sk--rail { display: none; }
+
+/* --------------------------------------------------------- high contrast */
+/* The plate is the one box, outlined; the lines in it lose row.css's card
+ * outline, and the one under the pointer takes the system's Highlight. */
+@media (forced-colors: active) {
+  .row:not([data-expanded]):has(> .row__more:focus-visible) {
+    outline-color: Highlight;
+  }
+  .row:not([data-expanded]) .win__tag,
+  .row:not([data-expanded]) .win__pct.win__pct--none { color: CanvasText; }
+  .sheet-back { color: LinkText; }
+
+  .rows:not([data-sheet="true"]) { border: 1px solid CanvasText; }
+  .row:not([data-expanded]) { border: 0; }
+  .row[data-opens="true"]:hover { background: Canvas; outline: 1px solid Highlight; outline-offset: -1px; }
+  .row:not([data-expanded]) .row__chip { border: 0; }
+}

@@ -42,7 +42,6 @@ const IPC = {
   SET_TRAY_VIEW: 'prefs:set-tray-view',
   SET_TRANSPARENCY: 'prefs:set-transparency',
   PANEL_SIZE: 'panel:size',
-  SET_LAYOUT: 'prefs:set-layout',
   SET_STRIP_STYLE: 'prefs:set-strip-style',
 };
 

@@ -247,7 +247,7 @@
 
   /* --- geometry -------------------------------------------------------- */
   /* 320px since the minimal redesign (owner, 2026-10-22: "panel çok büyük";
-   * 400px before): one width for both layouts AND the settings view, which
+   * 400px before): one width for the list AND the settings view, which
    * was measured at it and fits — the segmented choices, the tool list and
    * the usage history all hold without a cut word. One width means the
    * window never changes width under the pointer when the view switches.

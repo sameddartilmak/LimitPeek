@@ -402,7 +402,6 @@ export type ScenarioId =
   | 'ilk-calistirma'
   | 'yukleniyor'
   | 'tahmini'
-  | 'halka-durumlari'
   | 'bos'
   | 'hicbiri-ekli'
   | 'kopuk';
@@ -544,45 +543,6 @@ export const SCENARIOS: readonly Scenario[] = [
           weeklyTokenFloorCauses: [],
           burnRatePerHour: 31_000,
           byModel: [],
-        },
-      ],
-    }),
-  },
-  {
-    // The rings' harder states side by side (Görünüm → Düzen → Halka
-    // kutuları): one window with no figure, an estimate, and an estimate that
-    // is also out of date. The short list draws them too; the rings are what
-    // this is for.
-    id: 'halka-durumlari',
-    label: 'Halka durumları',
-    bridgeAvailable: true,
-    snapshot: () => ({
-      generatedAt: iso(-8_000),
-      pendingUsage: [],
-      providers: [
-        {
-          ...claudeOk(38, 0),
-          id: 'antigravity',
-          displayName: 'Antigravity',
-          accent: '#B892E8',
-          planLabel: null,
-          sevenDay: { usedPercentage: null, certainty: 'unknown', resetsAt: null, absence: 'not-supplied' },
-          byModel: [],
-          weeklyCost: null,
-        },
-        {
-          ...claudeOk(),
-          fiveHour: estimated(62, 54, 71, FIVE_H_RESET()),
-          sevenDay: estimated(41, 36, 48, SEVEN_D_RESET()),
-        },
-        {
-          ...claudeStaleCapture(),
-          id: 'codex',
-          displayName: 'Codex CLI',
-          accent: '#7FB3D5',
-          planLabel: 'Plus',
-          fiveHour: { ...estimated(77, 70, 84, FIVE_H_RESET()), capturedAt: iso(-39 * 60_000) },
-          sevenDay: { ...estimated(52, 47, 58, SEVEN_D_RESET()), capturedAt: iso(-39 * 60_000) },
         },
       ],
     }),

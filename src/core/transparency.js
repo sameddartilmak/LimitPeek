@@ -18,7 +18,7 @@
  *
  * Replaces the boolean `reduceTransparency` of 0.6.41 and earlier: a file that
  * asked for less transparency (`true`) reads as 0, the same opaque panel; any
- * other file gets the default. A sibling of `layout.js` for the same reason:
+ * other file gets the default. A sibling of `strip-style.js` for the same reason:
  * the value comes out of a hand-editable settings file, so anything odd lands
  * on a real level here and nothing downstream has to decide.
  */

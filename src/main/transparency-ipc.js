@@ -6,7 +6,7 @@ const { isTransparency } = require('../core/transparency');
  * slider. Split out of `index.js` so `test/transparency.test.js` can drive
  * this exact function.
  *
- * Persist-then-push, synchronous end to end like SET_LAYOUT, so two rapid
+ * Persist-then-push, synchronous end to end like SET_STRIP_STYLE, so two rapid
  * steps cannot interleave two read-modify-write cycles over one settings
  * object and one file — and the slider sends a step every few tens of
  * milliseconds while it is dragged. The value must be an integer from 0 to
@@ -38,7 +38,7 @@ function createSetTransparencyHandler({ fromPanel, getSettings, save, push, log 
       log.warn('transparency could not be persisted; nothing changed');
       return { ok: false };
     }
-    // Best effort, like SET_LAYOUT's: the renderer already shows the change,
+    // Best effort, like SET_STRIP_STYLE's: the renderer already shows the change,
     // so a push that fails costs an echo, not a disagreement.
     try { push(); } catch (err) {
       log.warn(`transparency push failed: code=${(err && err.code) || 'UNKNOWN'}`);
