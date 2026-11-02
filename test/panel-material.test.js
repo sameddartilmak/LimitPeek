@@ -49,8 +49,15 @@ function fitted(options = {}, { refuse = false, throws = false, blind = false } 
     captureScreen: (rect) => {
       shots.push(rect);
       if (blind) return null;
-      return { width: rect.width, height: rect.height, bgra: Buffer.alloc(rect.width * rect.height * 4, 7) };
+      return { width: rect.width, height: rect.height, bgra: Buffer.alloc(rect.width * rect.height * 4, dwm.screen) };
     },
+    /** The LIVE copy: the screen's "content" is `dwm.screen`, a byte. */
+    captureBehind: (h, rect) => {
+      shots.push({ behind: h, ...rect });
+      if (blind) return null;
+      return { width: rect.width, height: rect.height, bgra: Buffer.alloc(rect.width * rect.height * 4, dwm.screen) };
+    },
+    screen: 7,
     setAccent: (h, a) => {
       accents.push({ h, ...a });
       if (throws) throw Object.assign(new Error('x'), { code: 'EACCENT' });
@@ -537,6 +544,65 @@ test.describe('the picture behind the glass (IPC.BACKDROP)', () => {
     panel.open(TRAY, () => {});
     panel.setLook({ transparency: 0, dark: true });
     assert.equal(backdrops(panel).at(-1), null);
+    panel.destroy();
+  });
+});
+
+test.describe('the picture follows the screen while the panel is open (LIVE)', () => {
+  test('a tick copies the region under the window, the window left out, and sends it only when it changed', () => {
+    const { panel, shots, dwm } = fitted({ look: { transparency: 100, dark: true } });
+    panel.open(TRAY, () => {});
+    const opened = backdrops(panel).length;
+    panel._liveTick();
+    const behind = shots.filter((r) => r.behind);
+    assert.equal(behind.length, 1, 'the first tick has no ring to compare: it looks');
+    assert.equal(behind[0].behind, 4242, 'our window is the one left out');
+    const at = panel.win.getBounds();
+    const k = electron.fake.screen.getDisplayNearestPoint().scaleFactor || 1;
+    assert.equal(behind[0].height, Math.round(at.height * k), 'the window as it is now, not the tallest panel');
+    const first = backdrops(panel).slice(opened);
+    assert.equal(first.length, 1, 'another size: sent');
+    assert.deepEqual([first[0].x, first[0].y], [0, 0]);
+    assert.ok(first[0].image);
+    panel._liveTick();
+    assert.equal(backdrops(panel).length, opened + 1, 'the same screen: nothing sent');
+    assert.equal(shots.filter((r) => r.behind).length, 1, 'a still ring never hides the panel from a capture');
+    dwm.screen = 99;
+    panel._liveTick();
+    assert.equal(shots.filter((r) => r.behind).length, 2, 'the ring moved: one copy with the panel left out');
+    assert.equal(backdrops(panel).length, opened + 2, 'the screen moved: sent');
+    // The ring is the window grown by its width, the panel in it.
+    const ring = shots.filter((r) => !r.behind).at(-1);
+    assert.equal(ring.width, Math.round((panel.win.getBounds().width + 12) * k));
+    panel.destroy();
+  });
+
+  test('it starts with the open, stops with the close and with the glass, and never runs on an opaque panel', () => {
+    const { panel } = fitted({ look: { transparency: 100, dark: true } });
+    panel.open(TRAY, () => {});
+    assert.ok(panel._liveTimer, 'following the screen');
+    panel.hide();
+    assert.equal(panel._liveTimer, null, 'stopped with the close');
+    panel.open(TRAY, () => {});
+    assert.ok(panel._liveTimer);
+    panel.setLook({ transparency: 0, dark: true });
+    assert.equal(panel._liveTimer, null, 'stopped with the glass');
+    panel.setLook({ transparency: 100, dark: true });
+    assert.ok(panel._liveTimer, 'the glass back on an open panel follows the screen again');
+    panel.destroy();
+    assert.equal(panel._liveTimer, null, 'stopped with the window');
+
+    const off = fitted({ look: { transparency: 0, dark: true } });
+    off.panel.open(TRAY, () => {});
+    assert.equal(off.panel._liveTimer, null);
+    off.panel.destroy();
+  });
+
+  test('a failed copy sends nothing and keeps the picture the page has', () => {
+    const { panel } = fitted({ look: { transparency: 100, dark: true } }, { blind: true });
+    panel.open(TRAY, () => {});
+    panel._liveTick();
+    assert.deepEqual(backdrops(panel), []);
     panel.destroy();
   });
 });

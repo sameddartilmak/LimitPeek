@@ -46,10 +46,12 @@ const log = require('../core/log');
  * `loadDwm` for why its name is safe too), and user32
  * SetWindowCompositionAttribute one more on that same window, its accent
  * backdrop: a clear window under the panel's glass. And gdi32 BitBlt READS
- * the screen region the panel is about to cover, once per open, so the page
- * can draw the glass from it (`captureScreen`, below): the pixels stay in
- * this process's memory, go to the panel's own sandboxed page and nowhere
- * else, and are dropped when the panel closes. Nothing
+ * the screen region the panel is about to cover, and while it is open the
+ * region under it, so the page can draw the glass from it (`captureScreen`,
+ * `captureBehind`, below): the pixels stay in this process's memory, go to
+ * the panel's own sandboxed page and nowhere else, and are dropped when the
+ * panel closes. user32 SetWindowDisplayAffinity hides OUR window from that
+ * one copy, for the length of the copy. Nothing
  * here writes to another process's window, opens a file, a socket or a
  * process; koffi's runtime JavaScript has no network module either (scanned by
  * test/contract-mirror.test.js).
@@ -111,6 +113,12 @@ const DWMWA_COLOR_NONE = 0xFFFFFFFE;
 const SRCCOPY = 0x00CC0020;
 /** BITMAPINFOHEADER is 40 bytes; one RGBQUAD after it, which 32 bpp leaves unread. */
 const BITMAPINFO_SIZE = 44;
+/**
+ * SetWindowDisplayAffinity: the window is drawn on the monitor but left out of
+ * every screen capture (Windows 10 2004 and up). 0 puts it back.
+ */
+const WDA_EXCLUDEFROMCAPTURE = 0x11;
+const WDA_NONE = 0;
 /** The biggest region `captureScreen` copies, per side, in physical pixels. */
 const CAPTURE_MAX_SIDE = 4096;
 /** SetWindowCompositionAttribute: WCA_ACCENT_POLICY, and its 16-byte ACCENT_POLICY. */
@@ -360,6 +368,7 @@ function bindDwm() {
   return {
     DwmSetWindowAttribute: dwmapi.func('int __stdcall DwmSetWindowAttribute(intptr h, uint attr, _In_ uint32_t* value, uint size)'),
     SetWindowCompositionAttribute: user32.func('bool __stdcall SetWindowCompositionAttribute(intptr h, UN_WCAD *data)'),
+    SetWindowDisplayAffinity: user32.func('bool __stdcall SetWindowDisplayAffinity(intptr h, uint32 affinity)'),
     GetDC: user32.func('intptr __stdcall GetDC(intptr h)'),
     ReleaseDC: user32.func('int __stdcall ReleaseDC(intptr h, intptr dc)'),
     CreateCompatibleDC: gdi32.func('intptr __stdcall CreateCompatibleDC(intptr dc)'),
@@ -440,6 +449,26 @@ function makeDwm(f) {
     captureScreen: guard('captureScreen', (rect) => {
       const box = captureBox(rect);
       return box ? copyScreen(f, box) : null;
+    }, null),
+    /**
+     * `captureScreen` of the region UNDER `hwnd` while it is on screen: the
+     * window is left out of screen captures for the length of the copy only
+     * (measured, 2026-11-02: the very next BitBlt already shows what is
+     * behind it, and the one after the reset shows the window again), so a
+     * screenshot or a recording the user takes still has the panel in it.
+     * The affinity is put back on every path.
+     *
+     * @returns {{width: number, height: number, bgra: Buffer}|null}
+     */
+    captureBehind: guard('captureBehind', (hwnd, rect) => {
+      const box = captureBox(rect);
+      if (!hwnd || !box) return null;
+      if (!f.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)) return null;
+      try {
+        return copyScreen(f, box);
+      } finally {
+        f.SetWindowDisplayAffinity(hwnd, WDA_NONE);
+      }
     }, null),
   };
 }

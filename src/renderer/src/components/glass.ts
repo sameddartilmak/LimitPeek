@@ -18,12 +18,12 @@
  * Done here, in plain arrays, not with an SVG filter: a displacement map
  * needs an `<feImage href>`, and dom.ts allows no href anywhere — a
  * guardrail worth more than a shorter file. The work is one pass over the
- * panel's own pixels per open and per resize, about 10–20 ms.
+ * panel's own pixels per picture and per resize; main sends a new picture
+ * only when the screen under the panel changed (panel-window.js, LIVE).
  *
- * The picture is the screen as it was when the panel opened; it is not
- * refreshed while the panel stays open (a window moving behind a pinned
- * panel is not followed). It lives only in this page's memory and is
- * dropped when the panel closes (main sends null).
+ * The picture follows the screen while the panel is open (main copies the
+ * region under it again and sends it when it changed). It lives only in this
+ * page's memory and is dropped when the panel closes (main sends null).
  *
  * Purely decorative: aria-hidden, no pointer events, and absent unless the
  * window really is clear (`html[data-material="acrylic"][data-frame="fitted"]`,
@@ -167,87 +167,105 @@ export function refract(src: Source, cssW: number, cssH: number): { width: numbe
   const s = src.scale > 0 && Number.isFinite(src.scale) ? src.scale : 1;
   const w = Math.max(1, Math.round(cssW * s));
   const h = Math.max(1, Math.round(cssH * s));
+  const n = w * h;
 
-  // 1. The window's region, clamped into the picture.
-  const cut = new Float32Array(w * h * 3);
+  // 1. The window's region, clamped into the picture, one plane per channel
+  //    (the blur below runs a plane at a time with no per-pixel branching).
+  const red = new Float32Array(n);
+  const green = new Float32Array(n);
+  const blue = new Float32Array(n);
   for (let y = 0; y < h; y++) {
     const sy = clamp(y + src.originY, 0, src.height - 1);
+    const row = sy * src.width;
     for (let x = 0; x < w; x++) {
-      const sx = clamp(x + src.originX, 0, src.width - 1);
-      const i = (sy * src.width + sx) * 4;
-      const o = (y * w + x) * 3;
-      cut[o] = src.rgba[i];
-      cut[o + 1] = src.rgba[i + 1];
-      cut[o + 2] = src.rgba[i + 2];
+      const i = (row + clamp(x + src.originX, 0, src.width - 1)) * 4;
+      const o = y * w + x;
+      red[o] = src.rgba[i];
+      green[o] = src.rgba[i + 1];
+      blue[o] = src.rgba[i + 2];
     }
   }
 
   // 2. Softened: a box blur, twice, close to a small Gaussian.
   const r = Math.max(1, Math.round(BLUR_RADIUS * s));
-  const soft = boxBlur(boxBlur(cut, w, h, r), w, h, r);
+  const scratch = new Float32Array(n);
+  for (const plane of [red, green, blue]) {
+    for (let pass = 0; pass < 2; pass++) {
+      blurRows(plane, scratch, w, h, r);
+      blurColumns(scratch, plane, w, h, r);
+    }
+  }
 
-  // 3. Bent at the rim, then saturated.
-  const rgba = new Uint8ClampedArray(w * h * 4);
+  // 3. Bent at the rim, then saturated. Only the band along the rim reads
+  //    from elsewhere; inside it every pixel reads straight through.
+  const rgba = new Uint8ClampedArray(n * 4);
   const radius = GLASS_RADIUS * s;
   const band = LENS_BAND * s;
   const depth = LENS_DEPTH * s;
   const cx = w / 2;
   const cy = h / 2;
+  const reach = band + radius;
   for (let y = 0; y < h; y++) {
+    const inRows = y >= reach && y < h - reach;
     for (let x = 0; x < w; x++) {
-      const px = x + 0.5 - cx;
-      const py = y + 0.5 - cy;
-      // Signed distance to the rounded rect's edge: negative inside.
-      const qx = Math.abs(px) - (cx - radius);
-      const qy = Math.abs(py) - (cy - radius);
-      const d = Math.min(Math.max(qx, qy), 0) + Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) - radius;
-      const t = clamp01(1 + d / band);
-      const k = t * t * depth;
-      const n = Math.hypot(px / cx, py / cy) || 1;
-      // Read from further in: the edge's picture is pulled outward.
-      const sx = clamp(Math.round(x - (k * (px / cx)) / n), 0, w - 1);
-      const sy = clamp(Math.round(y - (k * (py / cy)) / n), 0, h - 1);
-      const i = (sy * w + sx) * 3;
-      const red = soft[i];
-      const green = soft[i + 1];
-      const blue = soft[i + 2];
-      const grey = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+      let i = y * w + x;
+      if (!inRows || x < reach || x >= w - reach) {
+        const px = x + 0.5 - cx;
+        const py = y + 0.5 - cy;
+        // Signed distance to the rounded rect's edge: negative inside.
+        const qx = Math.abs(px) - (cx - radius);
+        const qy = Math.abs(py) - (cy - radius);
+        const ox = qx > 0 ? qx : 0;
+        const oy = qy > 0 ? qy : 0;
+        const d = Math.min(qx > qy ? qx : qy, 0) + Math.sqrt(ox * ox + oy * oy) - radius;
+        const t = clamp01(1 + d / band);
+        if (t > 0) {
+          const nx = px / cx;
+          const ny = py / cy;
+          const k = (t * t * depth) / (Math.sqrt(nx * nx + ny * ny) || 1);
+          // Read from further in: the edge's picture is pulled outward.
+          i = clamp(Math.round(y - k * ny), 0, h - 1) * w + clamp(Math.round(x - k * nx), 0, w - 1);
+        }
+      }
+      const rv = red[i];
+      const gv = green[i];
+      const bv = blue[i];
+      const grey = 0.2126 * rv + 0.7152 * gv + 0.0722 * bv;
       const o = (y * w + x) * 4;
-      rgba[o] = grey + (red - grey) * SATURATION;
-      rgba[o + 1] = grey + (green - grey) * SATURATION;
-      rgba[o + 2] = grey + (blue - grey) * SATURATION;
+      rgba[o] = grey + (rv - grey) * SATURATION;
+      rgba[o + 1] = grey + (gv - grey) * SATURATION;
+      rgba[o + 2] = grey + (bv - grey) * SATURATION;
       rgba[o + 3] = 255;
     }
   }
   return { width: w, height: h, rgba };
 }
 
-/** A separable box blur of an RGB float image, edges clamped. */
-function boxBlur(src: Float32Array, w: number, h: number, r: number): Float32Array {
-  const tmp = new Float32Array(src.length);
-  const out = new Float32Array(src.length);
+/** One plane's rows box-blurred into `out`, edges clamped: a running sum. */
+function blurRows(src: Float32Array, out: Float32Array, w: number, h: number, r: number): void {
   const span = 2 * r + 1;
   for (let y = 0; y < h; y++) {
-    for (let c = 0; c < 3; c++) {
-      let sum = 0;
-      for (let k = -r; k <= r; k++) sum += src[(y * w + clamp(k, 0, w - 1)) * 3 + c];
-      for (let x = 0; x < w; x++) {
-        tmp[(y * w + x) * 3 + c] = sum / span;
-        sum += src[(y * w + clamp(x + r + 1, 0, w - 1)) * 3 + c] - src[(y * w + clamp(x - r, 0, w - 1)) * 3 + c];
-      }
+    const row = y * w;
+    let sum = 0;
+    for (let k = -r; k <= r; k++) sum += src[row + clamp(k, 0, w - 1)];
+    for (let x = 0; x < w; x++) {
+      out[row + x] = sum / span;
+      sum += src[row + (x + r + 1 < w ? x + r + 1 : w - 1)] - src[row + (x - r > 0 ? x - r : 0)];
     }
   }
+}
+
+/** One plane's columns box-blurred into `out`, edges clamped. */
+function blurColumns(src: Float32Array, out: Float32Array, w: number, h: number, r: number): void {
+  const span = 2 * r + 1;
   for (let x = 0; x < w; x++) {
-    for (let c = 0; c < 3; c++) {
-      let sum = 0;
-      for (let k = -r; k <= r; k++) sum += tmp[(clamp(k, 0, h - 1) * w + x) * 3 + c];
-      for (let y = 0; y < h; y++) {
-        out[(y * w + x) * 3 + c] = sum / span;
-        sum += tmp[(clamp(y + r + 1, 0, h - 1) * w + x) * 3 + c] - tmp[(clamp(y - r, 0, h - 1) * w + x) * 3 + c];
-      }
+    let sum = 0;
+    for (let k = -r; k <= r; k++) sum += src[clamp(k, 0, h - 1) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = sum / span;
+      sum += src[(y + r + 1 < h ? y + r + 1 : h - 1) * w + x] - src[(y - r > 0 ? y - r : 0) * w + x];
     }
   }
-  return out;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
