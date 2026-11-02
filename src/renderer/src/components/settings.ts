@@ -114,10 +114,10 @@ export interface SettingsContext {
   /** The user picked tray icon or taskbar strip. Optimistic; the app owns the revert. */
   onTrayView(view: TrayView): void;
   /**
-   * The user turned "Saydamlık" on (100) or off (0). Optimistic; the app
-   * owns the revert.
+   * The user moved "Saydamlık", 0–100: `final` false while the slider is
+   * dragged, true on its 'change'. Optimistic; the app owns the revert.
    */
-  onTransparency(level: number): void;
+  onTransparency(level: number, final: boolean): void;
   /** The user picked the strip's tile style. Optimistic; the app owns the revert. */
   onStripStyle(style: StripStyle): void;
   /** Leave settings and go back to the usage list. */
@@ -888,15 +888,28 @@ function createStripStyleControl(ctx: SettingsContext): StripStyleHandleLocal {
 }
 
 /**
- * Görünüm, last part: "Saydamlık", the Liquid Glass on or off (owner,
- * 2026-11-02: the glass is one look now, Apple's, so there is nothing to
- * slide). A switch row like "Windows açılışında başlat": a
- * `button[role=switch]`, announced as one, Space and Enter already operate
- * it. The stored value is still a level (src/core/transparency.js): on
- * writes 100, off writes 0, and any level a slider left behind reads as on.
+ * Görünüm, last part: "Saydamlık", a SLIDER from "Düz" (0, the opaque panel)
+ * to "Saydam" (100, the clearest Liquid Glass). The owner asked for the bar
+ * back over the Liquid Glass's on/off switch (2026-11-02: "saydamlığı
+ * ayarlama yapmamız lazım ayarlarda yine"). Every level above 0 is the same
+ * clear window (src/core/panel-material.js); what the level changes is the
+ * glass the page draws (app.ts glassLook): up to GLASS_LOOK_LEVEL a frosted
+ * veil thins away, past it the tint itself thins, so the right end really is
+ * see-through.
+ *
+ * A native `input[type=range]`, so the keyboard (arrows by one step, Home and
+ * End), the accessible name and the value all come from the platform; the
+ * figure beside the name is for the eye and the input's aria-valuetext says
+ * the same aloud. In steps of 5: twenty-one looks is plenty to choose from,
+ * and a step is a write to disk while the slider is dragged.
+ *
+ * LIVE: every 'input' goes to the app at once, which moves the store (and
+ * the glass, and the figure) and asks main at a throttled rate; 'change' —
+ * let go, or a key — is the final value, sent without waiting (app.ts
+ * applyTransparency).
  *
  * While Windows itself asks for less transparency (or high contrast is on)
- * the panel is opaque whatever the switch says: the switch is disabled and
+ * the panel is opaque whatever the slider says: the slider is disabled and
  * the line under it says why instead of the usual help — a control that
  * seems to do nothing must say why.
  */
@@ -905,43 +918,67 @@ interface GlassHandleLocal {
   update(state: PanelState): void;
 }
 
-/** The level the switch writes when it turns the glass on. */
-const GLASS_ON = 100;
+/** One step of the slider; see above. */
+const GLASS_STEP = 5;
 
 function createGlassControl(ctx: SettingsContext): GlassHandleLocal {
   const name = el('span', { class: 'settings__name', id: GLASS_NAME_ID }, t('settings.glass.label'));
+  // The figure is for the eye; the input announces it as its own value.
+  const figure = el('span', { class: 'glass-slider__value', 'aria-hidden': 'true' }, '');
   const hint = el('span', { class: 'settings__meta', id: GLASS_HELP_ID }, t('settings.glass.help'));
-  const control = el('button', {
-    type: 'button',
-    class: 'switch',
-    role: 'switch',
-    'aria-checked': 'false',
+  const input = el('input', {
+    type: 'range',
+    class: 'glass-slider__input',
+    min: '0',
+    max: '100',
+    step: String(GLASS_STEP),
     'aria-labelledby': GLASS_NAME_ID,
     'aria-describedby': GLASS_HELP_ID,
-  }) as HTMLButtonElement;
-  control.appendChild(el('span', { class: 'switch__track', 'aria-hidden': 'true' }));
+  }) as HTMLInputElement;
 
   const root = el(
     'div',
-    { class: 'settings__item settings__item--autostart settings__item--glass' },
-    el('span', { class: 'settings__text' }, name, hint),
-    control,
+    { class: 'settings__item settings__item--glass' },
+    el('span', { class: 'settings__text glass-slider__head' }, name, figure),
+    el(
+      'div',
+      { class: 'glass-slider' },
+      el('span', { class: 'glass-slider__end', 'aria-hidden': 'true' }, t('settings.glass.solid')),
+      input,
+      el('span', { class: 'glass-slider__end', 'aria-hidden': 'true' }, t('settings.glass.clear')),
+    ),
+    hint,
   );
 
-  on(control, 'click', () => {
-    // The rendered state, not a captured one, as the autostart switch does.
-    const lit = control.getAttribute('aria-checked') === 'true';
-    ctx.onTransparency(lit ? 0 : GLASS_ON);
+  /** The input's value as a level, or null when it is not one. */
+  const read = (): number | null => {
+    const n = Number(input.value);
+    return Number.isInteger(n) && n >= 0 && n <= 100 ? n : null;
+  };
+  on(input, 'input', () => {
+    const level = read();
+    if (level !== null) ctx.onTransparency(level, false);
+  });
+  on(input, 'change', () => {
+    const level = read();
+    if (level !== null) ctx.onTransparency(level, true);
   });
 
   function update(state: PanelState): void {
     const system = state.systemReducedTransparency;
-    const glass = state.transparency > 0;
+    const level = state.transparency;
+    const shown = t('settings.glass.value', { n: level });
     setText(hint, t(system ? 'settings.glass.bySystem' : 'settings.glass.help'));
-    setAttr(control, 'aria-checked', glass ? 'true' : 'false');
-    setAttr(control, 'disabled', system ? '' : null);
-    setAttr(root, 'data-enabled', glass && !system ? 'true' : 'false');
-    setAttr(control, 'aria-busy', state.transparencyPending ? 'true' : null);
+    // Only when it differs: writing the value the thumb already has would
+    // be harmless, but a drag must never meet a write of its own past.
+    if (input.value !== String(level)) input.value = String(level);
+    setText(figure, system ? '' : shown);
+    setAttr(input, 'aria-valuetext', shown);
+    setAttr(input, 'disabled', system ? '' : null);
+    // The filled part of the track, for the stylesheet.
+    input.style.setProperty('--fill', `${level}%`);
+    setAttr(root, 'data-disabled', system ? 'true' : null);
+    setAttr(input, 'aria-busy', state.transparencyPending ? 'true' : null);
     setAttr(root, 'data-pending', state.transparencyPending ? 'true' : null);
     setAttr(root, 'data-revert', state.transparencyReverted ? 'true' : null);
   }

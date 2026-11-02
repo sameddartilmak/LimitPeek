@@ -1,20 +1,22 @@
 'use strict';
 
 /**
- * Settings → Genel → Görünüm, "Saydamlık": whether the panel is glass.
+ * Settings → Genel → Görünüm, "Saydamlık": a slider from 0 to 100.
  *
  *   0       opaque: the plain panel base, and the in-app glass (the header,
  *           the settings tab band) drawn opaque too.
  *   1–100   the Liquid Glass (owner, 2026-11-02: "apple'daki liquid glass
  *           varya onu istiyorum"): a clear window and the glass the page
- *           draws over the screen behind it (panel-material.js).
+ *           draws over the screen behind it (panel-material.js). The level
+ *           is how see-through that glass is (renderer app.ts glassLook):
+ *           frosted near the left end, the approved look at 80, clearest at
+ *           100.
  *
- * A level and not a boolean because it was a 0–100 slider for a while
- * (2026-10-22): frosted, then clear, by Windows' own glasses. The owner did
- * not like either half, so the switch that replaced it writes 0 or 100, and a
- * level a slider stored (45 by default) reads as "on". Kept as a level so
- * those files need no migration, and so the switch's two values are plain
- * numbers the IPC already checks.
+ * It was a slider over Windows' own glasses first (2026-10-22), a switch
+ * writing 0 or 100 when the Liquid Glass came, and a slider again over the
+ * Liquid Glass (owner, 2026-11-02: "saydamlığı ayarlama yapmamız lazım
+ * ayarlarda yine"). Every one of those wrote a level here, so no file needs
+ * a migration.
  *
  * What the value does to the WINDOW is `panelAccent` in panel-material.js;
  * this file only says which values exist. Panel-only, and only the user's own
@@ -29,7 +31,7 @@
  * on a real level here and nothing downstream has to decide.
  */
 
-/** The glass, on: any level above 0 is (the slider's old default). */
+/** The glass on and a little frosted, for a panel nobody has set yet. */
 const DEFAULT_TRANSPARENCY = 45;
 const MIN_TRANSPARENCY = 0;
 const MAX_TRANSPARENCY = 100;
