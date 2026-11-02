@@ -15,6 +15,7 @@
 
 import type {
   AnchorPayload,
+  BackdropPayload,
   LanguageChoice,
   Preferences,
   Snapshot,
@@ -23,7 +24,7 @@ import type {
   TrayView,
   UsageNotchApi,
 } from '../../shared/contract.js';
-import { sanitizeAnchor, sanitizePreferences, sanitizeSnapshot } from './sanitize.js';
+import { sanitizeAnchor, sanitizeBackdrop, sanitizePreferences, sanitizeSnapshot } from './sanitize.js';
 import { t } from './i18n.js';
 
 export interface SetupResult {
@@ -45,6 +46,12 @@ export interface Bridge {
    * still opens, it just does not re-animate.
    */
   onPanelVisibility(listener: (open: boolean) => void): () => void;
+  /**
+   * The picture the panel's glass is drawn from (IPC.BACKDROP): a payload, or
+   * null to drop it. A malformed payload is never delivered. A preload
+   * without it degrades to a no-op: the glass draws its tint alone.
+   */
+  onBackdrop(listener: (backdrop: BackdropPayload | null) => void): () => void;
   panelOpened(): void;
   requestRefresh(): Promise<Snapshot | null>;
   /**
@@ -146,6 +153,7 @@ function nullBridge(): Bridge {
     onSnapshot: () => () => {},
     onAnchor: () => () => {},
     onPanelVisibility: () => () => {},
+    onBackdrop: () => () => {},
     panelOpened: () => {},
     requestRefresh: async () => null,
     runSetup: async () => ({ ok: false, message: t('bridge.unreachable') }),
@@ -234,6 +242,21 @@ export function createBridge(): Bridge {
         // dropped or malformed payload must resolve to "closed" rather than
         // leave the panel animating toward an undefined state.
         return api.onPanelVisibility((payload) => listener(payload === true));
+      } catch {
+        return () => {};
+      }
+    },
+
+    onBackdrop(listener): () => void {
+      if (typeof api.onBackdrop !== 'function') {
+        missing('onBackdrop');
+        return () => {};
+      }
+      try {
+        return api.onBackdrop((payload) => {
+          const clean = sanitizeBackdrop(payload);
+          if (clean !== undefined) listener(clean);
+        });
       } catch {
         return () => {};
       }

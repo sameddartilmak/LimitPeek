@@ -442,33 +442,32 @@
  * is the stacking the design report rules out, and the window is the glass
  * now — and panel.css stops the list running under them.
  *
- * CONTRAST IS THE SLIDER'S NOW. The table below was measured for the 82 %
- * page tint of the first glass (Windows 11 26200, scratch spike), over the
- * worst backdrops — a white window for dark, a black one for light:
+ * THE LIQUID GLASS (2026-11-02). The window is clear and the page draws the
+ * glass itself (components/glass.ts, the layer in panel.css): the screen
+ * behind, softened, bent at the rim, under the tint below and a bright rim.
+ * The tint is the mockup the owner approved (scratchpad liquid/mock.html):
+ * thin, so the screen behind reads through it, with a soft shadow under the
+ * text so it holds over a busy picture. Until the picture arrives (and if it
+ * never does) the tint is drawn alone and THICK (--glass-tint-bare), so the
+ * first frame is never bare desktop behind the text.
  *
- *                   dark (white behind)     light (black behind)
- *   ink-100         9.50                    13.00
- *   ink-200         8.24                     8.77
- *   ink-300         6.14                     5.82
- *   ink-400         4.68  (#AEAEB2)          4.98  (#5E5E63)
- *   tint-text       4.60  (#69B1FF)          5.02  (#005CB9)
- *   figures, card   spent 3.04 … watch 7.33  calm 4.87 … spent 6.33
- *
- * The two inks that fell short there are lifted one step for the glass only,
- * below. The owner then asked, twice, for more transparency than that
- * ("sadece renk griye dönüyor", "biraz daha artır"), and the slider hands
- * the choice to the user: its left end (frosted, the tint at 0xE6) is about
- * the measured look, its default (45, frosted at 0x52) is far thinner, and
- * its right end is a clear pane with no tint at all, where text over a white
- * or busy window is as readable as that window lets it be — the price of
- * the look asked for. 0, Windows' own setting and high contrast give the
- * opaque base, measured as before.
+ * Contrast over the picture is the picture's: over a white window a thin
+ * dark glass is a light grey, and the text shadow is what carries the words.
+ * That is the look asked for ("aynı buradakini görmek istiyorum"); the
+ * "Saydamlık" switch off, Windows' own setting and high contrast give the
+ * opaque base, measured as before (the table above, for the 82 % tint of the
+ * first glass, still describes the inks lifted below).
  *
  * Off as soon as the renderer knows the panel is to be opaque, before main
  * has switched the window: an opaque base over glass still reads. */
 :root[data-material="acrylic"]:not([data-reduce-transparency]) {
   --panel-base: transparent;
-  --ink-800: rgba(255, 255, 255, .04);
+  --glass-radius: 22px;
+  --glass-tint: linear-gradient(180deg, rgba(40, 40, 46, .30), rgba(20, 20, 24, .38));
+  --glass-tint-bare: rgba(28, 28, 30, .86);
+  --glass-shine: rgba(255, 255, 255, .16);
+  --glass-text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  --ink-800: rgba(255, 255, 255, .07);
   --ink-400: #AEAEB2;
   --tint-text: #69B1FF;
   --glass: transparent;
@@ -476,7 +475,11 @@
   --glass-ctl: rgba(255, 255, 255, .08);
 }
 :root[data-material="acrylic"][data-theme="light"]:not([data-reduce-transparency]) {
-  --ink-800: rgba(255, 255, 255, .2);
+  --glass-tint: linear-gradient(180deg, rgba(255, 255, 255, .46), rgba(246, 246, 248, .56));
+  --glass-tint-bare: rgba(242, 242, 247, .9);
+  --glass-shine: rgba(255, 255, 255, .4);
+  --glass-text-shadow: 0 1px 1px rgba(255, 255, 255, .45);
+  --ink-800: rgba(255, 255, 255, .34);
   --ink-400: #5E5E63;
   --tint-text: #005CB9;
   --glass-ctl: rgba(255, 255, 255, .6);

@@ -21,6 +21,7 @@ import type {
 import type { Bridge } from './bridge.js';
 import { bindVisibility, everySecond } from './clock.js';
 import { captureExpired } from './components/row.js';
+import { createGlass } from './components/glass.js';
 import { createPanel, type PanelContext } from './components/panel.js';
 import { trimMessage } from './format.js';
 import { formatLocale, language, setLocale, t } from './i18n.js';
@@ -190,7 +191,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onLanguageChange: (choice) => void applyLanguage(choice),
     onAutostartChange: (enabled) => void applyAutostart(enabled),
     onTrayViewChange: (view) => void applyTrayView(view),
-    onTransparencyChange: (level, final) => applyTransparency(level, final),
+    onTransparencyChange: (level) => applyTransparency(level),
     onStripStyleChange: (style) => void applyStripStyle(style),
     coachDismissed: false,
     onReorder: (ids) => void applyOrder(ids),
@@ -785,100 +786,50 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
 
   // --- Görünüm: "Saydamlık" ------------------------------------------------
 
-  /**
-   * How often a DRAGGED slider asks main for its value. Each ask persists the
-   * level and re-applies the window's glass, so the panel follows the hand
-   * at this rate; faster only adds writes. The slider's own 'change' — the
-   * hand let go, or a key press — is asked for at once.
-   */
-  const TRANSPARENCY_SEND_MS = 80;
   /** The newest value asked of main. Same shape as stripStyleRequest. */
   let glassRequest: { level: number; at: number } | null = null;
   /** Same role as `confirmedStripStyle`: what main is known to hold. */
   let confirmedLevel: number = store.get().transparency;
-  /** The last value handed to main, asked or confirmed: a step is never asked twice. */
-  let sentLevel: number = confirmedLevel;
-  /** When the last ask went out, for the throttle. */
-  let glassSentAt = 0;
-  /** A step held back by the throttle, sent when it runs out. */
-  let glassTimer: number | null = null;
-
-  function cancelGlassTimer(): void {
-    if (glassTimer === null) return;
-    window.clearTimeout(glassTimer);
-    glassTimer = null;
-  }
-  disposers.push(cancelGlassTimer);
 
   /**
-   * Optimistic, then reconciled, like applyStripStyle: the store (and with it the
-   * figure beside the slider, and the opaque header at 0) follows every step
-   * at once, and main is asked afterwards — at most every
-   * TRANSPARENCY_SEND_MS while the slider is dragged, with the newest step
-   * always sent last. `final` is the slider's 'change': no waiting.
+   * Optimistic, then reconciled, like applyStripStyle: the store (and with it
+   * the switch, and the opaque header at 0) follows the press at once, and
+   * main is asked afterwards. `{ok:false}` on the newest ask puts main's value
+   * back on the document as well as on the switch, so the screen never shows
+   * a look that will not survive a restart.
    */
-  function applyTransparency(next: number, final: boolean): void {
-    // The slider is disabled then; a step that still arrives changes nothing.
+  function applyTransparency(next: number): void {
+    // The switch is disabled then; a press that still arrives changes nothing.
     if (store.get().systemReducedTransparency) return;
-    if (next !== store.get().transparency) {
-      paintGlass(next === 0, false);
-      store.set({ transparency: next, transparencyReverted: false, notice: null });
-    }
-    cancelGlassTimer();
-    const wait = final ? 0 : glassSentAt + TRANSPARENCY_SEND_MS - Date.now();
-    if (wait <= 0) {
-      void sendTransparency(next);
-      return;
-    }
-    glassTimer = window.setTimeout(() => {
-      glassTimer = null;
-      void sendTransparency(store.get().transparency);
-    }, wait);
-  }
-
-  /**
-   * One ask. `{ok:false}` on the newest ask puts main's value back on the
-   * document as well as on the slider, so the screen never shows a level that
-   * will not survive a restart; a step still held back is dropped with it.
-   */
-  async function sendTransparency(level: number): Promise<void> {
-    if (level === sentLevel) return;
-    sentLevel = level;
-    glassSentAt = Date.now();
-    const request = { level, at: glassSentAt };
+    if (next === store.get().transparency && glassRequest === null) return;
+    paintGlass(next === 0, false);
+    store.set({ transparency: next, transparencyReverted: false, transparencyPending: true, notice: null });
+    const request = { level: next, at: Date.now() };
     glassRequest = request;
-    store.set({ transparencyPending: true });
-
-    const ok = await bridge.setTransparency(level);
-    if (ok) confirmedLevel = level;
-
-    if (glassRequest !== request) return;
-    glassRequest = null;
-    store.set({ transparencyPending: false });
-    if (ok) return;
-
-    cancelGlassTimer();
-    sentLevel = confirmedLevel;
-    paintGlass(confirmedLevel === 0, store.get().systemReducedTransparency);
-    store.set({ transparency: confirmedLevel, transparencyReverted: true });
-    say(t('app.transparencyNotSaved'), 'error');
-    window.setTimeout(() => {
-      if (store.get().transparencyReverted) store.set({ transparencyReverted: false });
-    }, 1_600);
+    void (async () => {
+      const ok = await bridge.setTransparency(next);
+      if (ok) confirmedLevel = next;
+      if (glassRequest !== request) return;
+      glassRequest = null;
+      store.set({ transparencyPending: false });
+      if (ok) return;
+      paintGlass(confirmedLevel === 0, store.get().systemReducedTransparency);
+      store.set({ transparency: confirmedLevel, transparencyReverted: true });
+      say(t('app.transparencyNotSaved'), 'error');
+      window.setTimeout(() => {
+        if (store.get().transparencyReverted) store.set({ transparencyReverted: false });
+      }, 1_600);
+    })();
   }
 
   /**
    * Main's values, pushed. Windows' half is adopted at once (it is not the
-   * user's to revert); the user's half unless a step is still in flight or
-   * held back — a push that crossed the drag would pull the slider out from
-   * under the hand.
+   * user's to revert); the user's half unless a press is still in flight.
    */
   function acceptTransparency(prefs: Preferences): void {
     confirmedLevel = prefs.transparency;
     const system = prefs.systemReducedTransparency;
-    const busy = glassRequest !== null || glassTimer !== null;
-    if (!busy) sentLevel = prefs.transparency;
-    const level = busy ? store.get().transparency : prefs.transparency;
+    const level = glassRequest !== null ? store.get().transparency : prefs.transparency;
     const current = store.get();
     if (level === current.transparency && system === current.systemReducedTransparency) return;
     paintGlass(level === 0, system);
@@ -1149,6 +1100,18 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   // reveal after launch finds `data-open` already true and is a no-op, so
   // startup plays exactly one entrance and this never double-fires it.
   disposers.push(bridge.onPanelVisibility((open) => panel.setOpen(open)));
+  // The Liquid Glass (components/glass.ts) behind the whole panel. First in
+  // <body>, OUTSIDE the panel's animated .anchor: the picture has to stay put
+  // on the screen it came from while the content slides in over it.
+  const glass = createGlass();
+  container.parentNode?.insertBefore(glass.el, container);
+  // A bridge from before the glass (a test's, a stale preload) has no
+  // onBackdrop: the glass then draws its tint alone.
+  if (typeof bridge.onBackdrop === 'function') disposers.push(bridge.onBackdrop((backdrop) => glass.apply(backdrop)));
+  disposers.push(() => {
+    glass.destroy();
+    glass.el.remove();
+  });
   // 'system' is a LIVE binding: when Windows flips at sunset the document has
   // already changed underneath us, and the settings copy that names what
   // 'system' currently resolves to has to follow it.

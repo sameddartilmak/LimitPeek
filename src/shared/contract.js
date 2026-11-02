@@ -29,6 +29,7 @@ const IPC = {
   PANEL_PIN: 'panel:pin',
   ANCHOR: 'panel:anchor',
   PANEL_VISIBILITY: 'panel:visibility',
+  BACKDROP: 'panel:backdrop',
   SET_ORDER: 'providers:set-order',
   SET_ENABLED: 'providers:set-enabled',
   PREFERENCES: 'prefs:changed',

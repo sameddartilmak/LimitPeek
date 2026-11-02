@@ -171,6 +171,11 @@ function install() {
       getCursorScreenPoint: () => ({ ...cursor }),
       getAllDisplays: () => [DISPLAY],
       getDisplayNearestPoint: () => DISPLAY,
+      /** DIP to physical, at the one display's scale. */
+      dipToScreenRect: (_win, r) => {
+        const k = DISPLAY.scaleFactor || 1;
+        return { x: Math.round(r.x * k), y: Math.round(r.y * k), width: Math.round(r.width * k), height: Math.round(r.height * k) };
+      },
     },
   };
 

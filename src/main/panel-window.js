@@ -48,10 +48,20 @@ const { handleOf } = require('./win32');
  * window's activation (the backdrop falls back while the window is inactive):
  * the panel turned another colour every time the user clicked somewhere else
  * ("panel dışı bir yere tıklayınca renk değişiyor").
- * The window is now born with `backgroundMaterial: 'none'` and gets its glass
- * from SetWindowCompositionAttribute (win32 setAccent): frosted or clear, its
- * tint set by the "Saydamlık" slider (panel-material.js `panelAccent`), and
- * measured the same inactive as active. The page is transparent over it.
+ * The window is now born with `backgroundMaterial: 'none'`, and the glass
+ * comes from SetWindowCompositionAttribute (win32 setAccent), which measured
+ * the same inactive as active.
+ *
+ * THE LIQUID GLASS (2026-11-02). Windows' own glasses were not what the owner
+ * wanted (panel-material.js says why), so with "Saydamlık" on the accent only
+ * CLEARS the window, and the page draws the glass from a picture of the
+ * screen behind it. The picture is taken here, as the panel opens and while
+ * the window is still parked off-screen (`_captureBackdrop`): the region the
+ * TALLEST panel would cover at this anchor, so a panel that grows later
+ * (Settings, a sheet) still has what is behind it. It goes to the page with
+ * IPC.BACKDROP, then only its position again whenever the window moves over
+ * it, and the page is told to drop it when the panel closes. Never taken for
+ * a panel already on screen (it would copy itself), never stored.
  *
  * A fitted window grows and shrinks with the panel: the renderer reports the
  * panel's height (IPC.PANEL_SIZE, `setContentHeight`) and the window follows,
@@ -258,6 +268,12 @@ class PanelWindow {
      * re-read mid-open would move the panel to wherever the mouse is.
      */
     this._place = null;
+    /**
+     * The picture behind the panel for its glass, while one is held:
+     * `{ rect }` in DIP screen coords and `{ shot }` from win32 captureScreen.
+     * Taken on an open with the glass live, dropped on every conceal.
+     */
+    this._backdrop = null;
     this.win = null;
     this.pinned = false;
     this._hideTimer = null;
@@ -488,10 +504,13 @@ class PanelWindow {
     // Clamped on BOTH axes in every branch (placeNear) — and the renderer's
     // tail-clamp has nothing to clamp against otherwise.
     const fitted = this.frame === 'fitted';
+    // The screen behind, read BEFORE the window moves onto it.
+    const captured = fitted && !this._open && this._captureBackdrop(anchorPoint, edge, work);
     const size = fitted ? this._fittedSize(work) : fitTo(this.width, this.height, work);
     this._placeAcrossDpi(placeNear(anchorPoint, edge, work, size, fitted ? FITTED_GAP : EDGE_MARGIN));
     // The fitted window follows its content from here (setContentHeight).
     this._place = fitted ? { anchorPoint, edge, work, tray } : null;
+    if (captured) this._sendBackdrop(true);
 
     // Report what the OS actually gave us, not what we asked for. On a
     // fractional scale factor Chromium rounds the size through physical
@@ -541,6 +560,8 @@ class PanelWindow {
     const { anchorPoint, edge, work, tray } = this._place;
     const size = this._fittedSize(work);
     this._placeAcrossDpi(placeNear(anchorPoint, edge, work, size, FITTED_GAP));
+    // The window moved over the picture: where the picture now sits in it.
+    this._sendBackdrop(false);
     // A panel still in transit keeps a corridor that matches its new size.
     if (this._transitBox) this._transitBox = this._corridorFrom({ tray });
     log.trace('panel.fit', { height: size.height });
@@ -586,7 +607,7 @@ class PanelWindow {
    */
   _applyLook() {
     const win = this.win;
-    const accent = panelAccent(this._glassBroken ? 0 : this._transparency, this._dark);
+    const accent = panelAccent(this._glassBroken ? 0 : this._transparency);
     let material = accent.state === 0 ? 'none' : 'acrylic';
     // The window's own background first, then the accent over it: the order
     // the spike measured (a transparent window, then the policy).
@@ -597,14 +618,67 @@ class PanelWindow {
       material = 'none';
       // Take back whatever half of it Windows may have applied, and put the
       // base under the page.
-      this._setAccent(panelAccent(0, this._dark));
+      this._setAccent(panelAccent(0));
       win.setBackgroundColor(this._base());
     }
     if (material !== this._material) {
       this._material = material;
       log.trace('panel.material', { material, transparency: this._transparency });
+      // No glass, no picture: the page drops the one it holds.
+      if (material === 'none') this._dropBackdrop();
     }
     this._applyDwm();
+  }
+
+  /**
+   * Copy the screen region the tallest panel would cover at this anchor, for
+   * the glass (header: THE LIQUID GLASS). Only when the glass is live and the
+   * window is off-screen; a failure costs the picture (the page draws its
+   * tint alone), nothing else.
+   *
+   * @returns {boolean} true when a picture is held
+   */
+  _captureBackdrop(anchorPoint, edge, work) {
+    this._backdrop = null;
+    if (this._material !== 'acrylic') return false;
+    const dwm = this._dwm ? this._dwm() : null;
+    if (!dwm || typeof dwm.captureScreen !== 'function') return false;
+    const rect = placeNear(anchorPoint, edge, work, fitTo(FITTED_WIDTH, FITTED_MAX_HEIGHT, work, FITTED_GAP), FITTED_GAP);
+    const startedAt = Date.now();
+    let shot = null;
+    try {
+      shot = dwm.captureScreen(screen.dipToScreenRect(null, rect));
+    } catch (err) {
+      log.warn(`panel backdrop failed: code=${(err && err.code) || 'UNKNOWN'}`);
+    }
+    if (!shot) return false;
+    this._backdrop = { rect, shot };
+    log.trace('panel.backdrop', { ms: Date.now() - startedAt, width: shot.width, height: shot.height });
+    return true;
+  }
+
+  /**
+   * The held picture to the page, as IPC.BACKDROP: its rect in the window's
+   * CSS px (the window's top-left is 0,0), and the pixels when `withImage`.
+   */
+  _sendBackdrop(withImage) {
+    if (!this._backdrop || !this.win || this.win.isDestroyed()) return;
+    const { rect, shot } = this._backdrop;
+    const at = this.win.getBounds();
+    this.send(IPC.BACKDROP, {
+      x: rect.x - at.x,
+      y: rect.y - at.y,
+      width: rect.width,
+      height: rect.height,
+      image: withImage ? { pixelWidth: shot.width, pixelHeight: shot.height, bgra: shot.bgra } : null,
+    });
+  }
+
+  /** Forget the picture, here and in the page. */
+  _dropBackdrop() {
+    if (!this._backdrop) return;
+    this._backdrop = null;
+    this.send(IPC.BACKDROP, null);
   }
 
   /** win32 setAccent on our window. False when it cannot be had or was refused. */
@@ -642,8 +716,14 @@ class PanelWindow {
     if (!dwm || !this.win || this.win.isDestroyed()) return;
     const hwnd = handleOf(this.win);
     if (!hwnd) return;
-    dwm.setFlyoutShape(hwnd);
     dwm.setDarkMode(hwnd, this._dark);
+    // Over the glass the window is clear and square: the page draws the
+    // corners, the rim and the edge (win32 setGlassShape).
+    if (this._material === 'acrylic' && typeof dwm.setGlassShape === 'function') {
+      dwm.setGlassShape(hwnd);
+      return;
+    }
+    dwm.setFlyoutShape(hwnd);
     dwm.setBorderColour(hwnd, PANEL_EDGE[this._dark ? 'dark' : 'light']);
   }
 
@@ -804,6 +884,8 @@ class PanelWindow {
     const { width, height } = this.frame === 'fitted' ? this.win.getBounds() : this;
     this.win.setBounds({ x: OFFSCREEN.x, y: OFFSCREEN.y, width, height });
     log.trace('panel.conceal', { via: 'offscreen' });
+    // The picture behind the glass is of a screen the panel has left.
+    this._dropBackdrop();
     // The pointer is not over a panel that is off-screen; the next reveal
     // starts click-through until the pointer reaches the panel again.
     this.setPointerOverPanel(false);
