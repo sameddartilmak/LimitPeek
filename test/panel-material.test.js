@@ -14,6 +14,7 @@ const {
   placeNear,
 } = require('../src/main/panel-window');
 const material = require('../src/core/panel-material');
+const { IPC } = require('../src/shared/contract');
 const { colorrefOfHex } = require('../src/main/win32');
 
 test.after(() => electron.restore());
@@ -24,24 +25,32 @@ const WORK = { ...DISPLAY.workArea };
 const TRAY = { x: 1800, y: 1032, width: 24, height: 48 };
 
 /**
- * The panel's window MATERIAL (concept "A · Gerçek Windows camı"; the
- * "Saydamlık" slider): a fitted window that is the panel itself, with
- * Windows' accent glass behind it — frosted or clear, as see-through as the
- * level says — or the opaque base whenever the glass is not wanted or not
- * available.
+ * The panel's window MATERIAL (concept "A · Gerçek Windows camı"; the Liquid
+ * Glass, 2026-11-02): a fitted window that is the panel itself, CLEAR with
+ * "Saydamlık" on, so the page can draw the glass over a picture of the screen
+ * behind it that the window takes as it opens — or the opaque base whenever
+ * the glass is not wanted or not available.
  */
 
 /**
  * A fitted panel over a recorded DWM helper. `accents` is every accent asked
- * for; `refuse` makes setAccent answer false, `throws` makes it throw.
+ * for, `shots` every screen copy; `refuse` makes setAccent answer false,
+ * `throws` makes it throw, `blind` makes captureScreen answer null.
  */
-function fitted(options = {}, { refuse = false, throws = false } = {}) {
+function fitted(options = {}, { refuse = false, throws = false, blind = false } = {}) {
   const dwmCalls = [];
   const accents = [];
+  const shots = [];
   const dwm = {
     setFlyoutShape: (h) => dwmCalls.push(['shape', h]),
     setDarkMode: (h, d) => dwmCalls.push(['dark', h, d]),
     setBorderColour: (h, c) => dwmCalls.push(['edge', h, c]),
+    setGlassShape: (h) => dwmCalls.push(['glass', h]),
+    captureScreen: (rect) => {
+      shots.push(rect);
+      if (blind) return null;
+      return { width: rect.width, height: rect.height, bgra: Buffer.alloc(rect.width * rect.height * 4, 7) };
+    },
     setAccent: (h, a) => {
       accents.push({ h, ...a });
       if (throws) throw Object.assign(new Error('x'), { code: 'EACCENT' });
@@ -50,11 +59,12 @@ function fitted(options = {}, { refuse = false, throws = false } = {}) {
   };
   const panel = new PanelWindow({ entry: __filename, frame: 'fitted', dwm: () => dwm, ...options });
   panel.create();
-  return { panel, dwmCalls, accents, dwm };
+  return { panel, dwmCalls, accents, shots, dwm };
 }
 
-const FROSTED = material.ACCENT_FROSTED;
 const CLEAR = material.ACCENT_CLEAR;
+/** The IPC.BACKDROP pushes a panel sent, in order. */
+const backdrops = (panel) => panel.win.webContents.sent.filter((m) => m.channel === IPC.BACKDROP).map((m) => m.payload);
 
 test.describe('which frame and which material (src/core/panel-material.js)', () => {
   test('Windows 11 gets the fitted frame; Windows 10 and anything else keeps the canvas', () => {
@@ -119,51 +129,34 @@ test.describe('which frame and which material (src/core/panel-material.js)', () 
     assert.equal(canvas().transparency, 0);
   });
 
-  test('THE RULE: 0 opaque, 1–55 frosted from 0xE6 to 0x30, 56–100 clear from 0x70 to 0', () => {
-    const a = (level, dark = true) => material.panelAccent(level, dark);
-    assert.deepEqual(a(0), { mode: 'opaque', state: 0, flags: 0, alpha: 0, color: 0 });
-    assert.deepEqual([a(1).mode, a(1).state, a(1).flags, a(1).alpha], ['frosted', FROSTED, 2, 0xE6]);
-    assert.deepEqual([a(55).mode, a(55).state, a(55).alpha], ['frosted', FROSTED, 0x30], '0x30: below it state 4 renders black');
-    assert.deepEqual([a(56).mode, a(56).state, a(56).flags, a(56).alpha], ['clear', CLEAR, 2, 0x70]);
-    assert.deepEqual(a(100), { mode: 'clear', state: CLEAR, flags: 2, alpha: 0, color: 0 }, "truly clear: the spike's 0x00000000");
-    assert.equal(FROSTED, 4);
-    assert.equal(CLEAR, 2);
-    // Linear inside each band, and never thicker as the slider goes right.
-    assert.equal(a(28).alpha, Math.round(0xE6 + (0x30 - 0xE6) * (27 / 54)));
-    assert.equal(a(78).alpha, Math.round(0x70 * (22 / 44)));
-    for (let n = 2; n <= 100; n += 1) {
-      if (n === 56) continue;
-      assert.ok(a(n).alpha <= a(n - 1).alpha, `alpha grew at ${n}`);
+  test('THE RULE: 0 opaque, anything above it a clear window the page draws the glass on', () => {
+    const a = (level) => material.panelAccent(level);
+    assert.deepEqual(a(0), { mode: 'opaque', state: 0, flags: 0, color: 0 });
+    for (const level of [1, 45, 55, 56, 100]) {
+      assert.deepEqual(a(level), { mode: 'liquid', state: CLEAR, flags: 2, color: 0 }, String(level));
     }
-    for (let n = 1; n <= 55; n += 1) assert.ok(a(n).alpha >= 0x30, `frosted below the floor at ${n}`);
+    assert.equal(CLEAR, 2, 'ACCENT_ENABLE_TRANSPARENTGRADIENT');
+    assert.equal('ACCENT_FROSTED' in material, false, "Windows' frosted glass is not used any more");
+    assert.equal('gradientColor' in material, false, 'no tint goes to Windows: the page draws it');
   });
 
-  test("the rule's colour: the theme's tint at the alpha, 0xAABBGGRR", () => {
-    assert.equal(material.panelAccent(1, true).color, 0xE6221E1E, 'dark #1E1E22');
-    assert.equal(material.panelAccent(1, false).color, 0xE6F8F6F6, 'light #F6F6F8');
-    assert.equal(material.panelAccent(56, false).color, 0x70F8F6F6);
-    assert.equal(material.gradientColor('#112233', 0x80), 0x80332211);
-    assert.equal(material.gradientColor('#112233', 0), 0);
-  });
-
-  test('the rule clamps and survives garbage: NaN and strings are the default, out of range is the end', () => {
-    const a = (level) => material.panelAccent(level, true);
+  test('the rule survives garbage: NaN and strings are the default (on), out of range is the end', () => {
+    const a = (level) => material.panelAccent(level);
     assert.deepEqual(a(NaN), a(45));
     assert.deepEqual(a('100'), a(45));
     assert.deepEqual(a(undefined), a(45));
     assert.deepEqual(a(150), a(100));
     assert.deepEqual(a(-10), a(0));
-    assert.deepEqual(a(54.6), a(55));
-    assert.deepEqual(a(55.4), a(55));
+    assert.deepEqual(a(0.4), a(0));
   });
 
   test('the accent policy goes to Windows as the 16 bytes it reads', () => {
     const { accentPolicyBuffer } = require('../src/main/win32');
-    const buf = accentPolicyBuffer(material.panelAccent(1, true));
+    const buf = accentPolicyBuffer(material.panelAccent(100));
     assert.equal(buf.length, 16);
-    assert.equal(buf.readInt32LE(0), 4, 'AccentState');
-    assert.equal(buf.readInt32LE(4), 2, 'AccentFlags');
-    assert.equal(buf.readUInt32LE(8), 0xE6221E1E, 'GradientColor');
+    assert.equal(buf.readInt32LE(0), 2, 'AccentState');
+    assert.equal(buf.readInt32LE(4), 2, 'AccentFlags: with 0 the clear state is a flat grey');
+    assert.equal(buf.readUInt32LE(8), 0, "GradientColor: the spike's 0x00000000, nothing over the screen");
     assert.equal(buf.readInt32LE(12), 0, 'AnimationId');
   });
 
@@ -174,17 +167,17 @@ test.describe('which frame and which material (src/core/panel-material.js)', () 
       DwmSetWindowAttribute: () => 0,
       SetWindowCompositionAttribute: (h, data) => { calls.push({ h, ...data }); return true; },
     });
-    assert.equal(dwm.setAccent(4242, material.panelAccent(80, true)), true);
+    assert.equal(dwm.setAccent(4242, material.panelAccent(80)), true);
     assert.equal(calls[0].h, 4242);
     assert.equal(calls[0].Attrib, 19);
     assert.equal(calls[0].cbData, 16);
     assert.equal(calls[0].pvData.readInt32LE(0), 2);
-    assert.equal(dwm.setAccent(0, material.panelAccent(80, true)), false, 'no window, no call');
+    assert.equal(dwm.setAccent(0, material.panelAccent(80)), false, 'no window, no call');
     assert.equal(calls.length, 1);
     const broken = makeDwm({ DwmSetWindowAttribute: () => 0, SetWindowCompositionAttribute: () => { throw new Error('gone'); } });
-    assert.equal(broken.setAccent(4242, material.panelAccent(80, true)), false, 'a throw is a refusal');
+    assert.equal(broken.setAccent(4242, material.panelAccent(80)), false, 'a throw is a refusal');
     const refused = makeDwm({ DwmSetWindowAttribute: () => 0, SetWindowCompositionAttribute: () => false });
-    assert.equal(refused.setAccent(4242, material.panelAccent(80, true)), false);
+    assert.equal(refused.setAccent(4242, material.panelAccent(80)), false);
   });
 
   test('Preferences carry what the window IS, and only the exact literals', () => {
@@ -221,18 +214,17 @@ test.describe('which frame and which material (src/core/panel-material.js)', () 
 });
 
 test.describe('the fitted window is made the way the spike measured', () => {
-  test('opaque to Windows, its shadow, NO system backdrop, transparent page over the glass', () => {
+  test('opaque to Windows, NO system backdrop, cleared by the accent, the page transparent over it', () => {
     const { panel, accents } = fitted({ look: { transparency: 45, dark: true } });
     const o = panel.win.options;
     assert.equal(o.transparent, false, 'a transparent window gets square corners and no shadow');
     assert.equal(o.thickFrame, false, 'a thick frame brings invisible borders that take clicks beside the panel');
     assert.equal(o.frame, false);
-    assert.equal(o.hasShadow, true);
     assert.equal(o.backgroundMaterial, 'none', "the system backdrop changes colour when the window is inactive");
     assert.equal(o.backgroundColor, '#00000000', 'the page shows the glass through');
     assert.equal(o.width, FITTED_WIDTH);
     assert.equal(panel.material(), 'acrylic');
-    assert.deepEqual(accents.map((a) => [a.h, a.state, a.flags, a.color]), [[4242, FROSTED, 2, material.panelAccent(45, true).color]]);
+    assert.deepEqual(accents.map((a) => [a.h, a.state, a.flags, a.color]), [[4242, CLEAR, 2, 0]]);
     assert.equal(panel.win.colours.at(-1), '#00000000');
     assert.equal(panel.win.materials, undefined, 'never asks Electron for a material');
   });
@@ -260,9 +252,12 @@ test.describe('the fitted window is made the way the spike measured', () => {
     assert.equal(panel.win.colours, undefined, 'nor recolours its transparent frame');
   });
 
-  test('Windows is told the theme and a neutral hairline, on the fitted window only', () => {
-    const { dwmCalls } = fitted({ look: { transparency: 45, dark: true } });
-    assert.deepEqual(dwmCalls, [['shape', 4242], ['dark', 4242, true], ['edge', 4242, material.PANEL_EDGE.dark]]);
+  test('over the glass the frame is square, unshadowed and unlined; opaque, it is the flyout\'s', () => {
+    const { panel, dwmCalls } = fitted({ look: { transparency: 45, dark: true } });
+    assert.deepEqual(dwmCalls, [['dark', 4242, true], ['glass', 4242]], 'the page draws the corners and the rim');
+    dwmCalls.length = 0;
+    panel.setLook({ transparency: 0, dark: true });
+    assert.deepEqual(dwmCalls, [['dark', 4242, true], ['shape', 4242], ['edge', 4242, material.PANEL_EDGE.dark]]);
     const calls = [];
     const canvas = new PanelWindow({ entry: __filename, dwm: () => { calls.push('loaded'); return null; } });
     canvas.create();
@@ -277,32 +272,26 @@ test.describe('the fitted window is made the way the spike measured', () => {
   });
 });
 
-test.describe('the material follows the slider live', () => {
-  test('frosted, clear, opaque and back without reopening, background colour in step', () => {
-    const { panel, accents } = fitted({ look: { transparency: 45, dark: true } });
+test.describe('the material follows the switch live', () => {
+  test('glass, opaque and back without reopening, background colour in step', () => {
+    const { panel, accents } = fitted({ look: { transparency: 100, dark: true } });
     accents.length = 0;
-    assert.equal(panel.setLook({ transparency: 90, dark: true }), 'acrylic');
-    assert.deepEqual(accents.map((a) => a.state), [CLEAR]);
-    assert.equal(panel.win.colours.at(-1), '#00000000');
     assert.equal(panel.setLook({ transparency: 0, dark: true }), 'none');
-    assert.deepEqual(accents.map((a) => a.state), [CLEAR, 0], 'the accent is taken away, not left behind the base');
+    assert.deepEqual(accents.map((a) => a.state), [0], 'the accent is taken away, not left behind the base');
     assert.equal(panel.win.colours.at(-1), material.PANEL_BASE.dark);
-    assert.equal(panel.setLook({ transparency: 20, dark: true }), 'acrylic');
-    assert.deepEqual(accents.map((a) => a.state), [CLEAR, 0, FROSTED]);
-    assert.equal(accents.at(-1).color, material.panelAccent(20, true).color);
+    assert.equal(panel.setLook({ transparency: 100, dark: true }), 'acrylic');
+    assert.deepEqual(accents.map((a) => a.state), [0, CLEAR]);
     assert.equal(panel.win.colours.at(-1), '#00000000');
   });
 
-  test('an unchanged look re-asserts the same accent; a theme flip re-tints the glass', () => {
+  test('an unchanged look re-asserts the same accent; a theme flip re-tells Windows the theme', () => {
     const { panel, dwmCalls, accents } = fitted({ look: { transparency: 45, dark: true } });
     accents.length = 0;
     dwmCalls.length = 0;
     panel.setLook({ transparency: 45, dark: true });
-    assert.deepEqual(accents.map((a) => a.color), [material.panelAccent(45, true).color], 'put back, never trusted');
-    accents.length = 0;
+    assert.deepEqual(accents.map((a) => a.state), [CLEAR], 'put back, never trusted');
     panel.setLook({ transparency: 45, dark: false });
-    assert.deepEqual(accents.map((a) => a.color), [material.panelAccent(45, false).color]);
-    assert.deepEqual(dwmCalls.slice(-3), [['shape', 4242], ['dark', 4242, false], ['edge', 4242, material.PANEL_EDGE.light]]);
+    assert.deepEqual(dwmCalls.slice(-2), [['dark', 4242, false], ['glass', 4242]]);
     panel.setLook({ transparency: 0, dark: false });
     assert.equal(panel.win.colours.at(-1), material.PANEL_BASE.light);
   });
@@ -483,5 +472,71 @@ test.describe('the fitted window takes every click on itself', () => {
     t.mock.timers.tick(POINTER_POLL_MS);
     t.mock.timers.tick(LEAVE_GRACE_MS + 10);
     assert.equal(panel.isVisible(), false);
+  });
+});
+
+test.describe('the picture behind the glass (IPC.BACKDROP)', () => {
+  test('an open with the glass live copies the tallest panel\'s region BEFORE the window moves on, and sends it', () => {
+    const { panel, shots } = fitted({ look: { transparency: 100, dark: true } });
+    const moves = [];
+    const setBounds = panel.win.setBounds.bind(panel.win);
+    panel.win.setBounds = (b) => { moves.push(shots.length); setBounds(b); };
+    panel.open(TRAY, () => {});
+    assert.equal(shots.length, 1);
+    assert.equal(moves[0], 1, 'the screen was read before the first move on screen');
+    // The tallest panel at this anchor, in physical px (the fake display's scale).
+    const k = electron.fake.screen.getDisplayNearestPoint().scaleFactor || 1;
+    assert.equal(shots[0].width, Math.round(FITTED_WIDTH * k));
+    const [first] = backdrops(panel);
+    const at = panel.win.getBounds();
+    assert.ok(first.image, 'the pixels go with the first send');
+    assert.equal(first.image.pixelWidth, shots[0].width);
+    assert.equal(first.image.bgra.length, shots[0].width * shots[0].height * 4);
+    assert.equal(first.x, 0, 'the picture lines up with the window across');
+    assert.ok(first.y <= 0, 'and reaches above a panel shorter than the tallest');
+    assert.equal(first.y + first.height, at.height, 'its bottom is the window\'s, the taskbar side');
+    panel.destroy();
+  });
+
+  test('a height change re-sends only where the picture sits; a close drops it', () => {
+    const { panel } = fitted({ look: { transparency: 100, dark: true } });
+    panel.open(TRAY, () => {});
+    panel.setContentHeight(500);
+    const sent = backdrops(panel);
+    assert.equal(sent.length, 2);
+    assert.equal(sent[1].image, null, 'the pixels are not sent again');
+    assert.equal(sent[1].y + sent[1].height, panel.win.getBounds().height);
+    panel.hide();
+    assert.equal(backdrops(panel).at(-1), null, 'the page drops the picture');
+    panel.destroy();
+  });
+
+  test('nothing is copied with the glass off, for a panel already on screen, or when the copy fails', () => {
+    const off = fitted({ look: { transparency: 0, dark: true } });
+    off.panel.open(TRAY, () => {});
+    assert.deepEqual(off.shots, []);
+    assert.deepEqual(backdrops(off.panel), []);
+    off.panel.destroy();
+
+    const on = fitted({ look: { transparency: 100, dark: true } });
+    on.panel.open(TRAY, () => {});
+    on.panel.open(TRAY, () => {});
+    assert.equal(on.shots.length, 1, 'a second open of a visible panel would copy the panel itself');
+    on.panel.destroy();
+
+    const blind = fitted({ look: { transparency: 100, dark: true } }, { blind: true });
+    blind.panel.open(TRAY, () => {});
+    assert.equal(blind.shots.length, 1);
+    assert.deepEqual(backdrops(blind.panel), [], 'no picture: the page draws its tint alone');
+    assert.equal(blind.panel.material(), 'acrylic', 'the window stays clear');
+    blind.panel.destroy();
+  });
+
+  test('turning the glass off while open drops the picture', () => {
+    const { panel } = fitted({ look: { transparency: 100, dark: true } });
+    panel.open(TRAY, () => {});
+    panel.setLook({ transparency: 0, dark: true });
+    assert.equal(backdrops(panel).at(-1), null);
+    panel.destroy();
   });
 });

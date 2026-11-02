@@ -1227,6 +1227,17 @@ export const IPC = {
    */
   PANEL_VISIBILITY: 'panel:visibility',
   /**
+   * main -> renderer, BackdropPayload | null: the picture the Liquid Glass is
+   * drawn from (components/glass.ts). Sent as the panel opens with the
+   * glass live — a copy of the screen region it is about to cover, taken
+   * while it is still off-screen (panel-window.js, win32 captureScreen) —
+   * then again with `image: null` whenever the window moves over it (a height
+   * change), and `null` when the panel closes or the glass goes off, which
+   * drops the picture. Local pixels for the panel's own page; never stored,
+   * never sent anywhere else.
+   */
+  BACKDROP: 'panel:backdrop',
+  /**
    * renderer -> main invoke(ids: string[]). Persists the user's provider
    * order. Main re-emits an ordered Snapshot and re-renders the tray icon.
    * Returns { ok: boolean }.
@@ -1360,13 +1371,32 @@ export type LanguageChoice = 'tr' | 'en' | 'zh' | 'system';
 export type TrayView = 'tray' | 'strip';
 
 /**
- * What is behind the panel (src/core/panel-material.js). 'acrylic': Windows'
- * own glass (the accent backdrop, frosted or clear as the "Saydamlık" slider
- * says, tinted by main), live behind a transparent page, so the panel draws a
- * transparent base and translucent cards over it. 'none': nothing; the panel
- * draws its opaque base.
+ * What is behind the panel (src/core/panel-material.js). 'acrylic': the
+ * window is clear and the page draws the Liquid Glass over a picture of the
+ * screen behind it (IPC.BACKDROP, components/glass.ts), so the panel draws a
+ * transparent base and translucent cards. 'none': nothing; the panel draws
+ * its opaque base. (The name is from the first glass, Windows' acrylic.)
  */
 export type PanelMaterial = 'acrylic' | 'none';
+
+/**
+ * IPC.BACKDROP: where the picture behind the panel sits, and (on an open)
+ * the picture itself. `x`, `y`, `width`, `height` are the picture's rect in
+ * the WINDOW's CSS px: it covers the tallest panel, so `y` is negative when
+ * the panel is shorter and grows away from the taskbar.
+ */
+export interface BackdropPayload {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /**
+   * The pixels, `pixelWidth` x `pixelHeight`, rows top-down, 4 bytes each in
+   * Windows' B, G, R order (the fourth is not an alpha). Null: the window
+   * moved, the picture is the one already sent.
+   */
+  image: { pixelWidth: number; pixelHeight: number; bgra: Uint8Array } | null;
+}
 
 /**
  * The shape of the panel's window. 'fitted' (Windows 11): the window IS the
@@ -1560,6 +1590,11 @@ export interface UsageNotchApi {
    * only at app start. Returns an unsubscribe function.
    */
   onPanelVisibility(cb: (open: boolean) => void): () => void;
+  /**
+   * Subscribe to the picture behind the panel (IPC.BACKDROP): a payload, or
+   * null to drop it. Returns an unsubscribe function.
+   */
+  onBackdrop(cb: (b: BackdropPayload | null) => void): () => void;
   /** Ask main to refresh now. */
   requestRefresh(): Promise<Snapshot>;
   /**

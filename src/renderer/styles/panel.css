@@ -100,6 +100,74 @@ html[data-frame="fitted"] .panel {
 }
 html[data-frame="fitted"] .panel__tail { display: none; }
 
+/* THE LIQUID GLASS (components/glass.ts, 2026-11-02). Main clears the window
+ * and this layer draws the glass under everything: the picture of the screen
+ * behind (the canvas glass.ts fills), the tint, a soft shine top-left and a
+ * bright rim, stronger top-left like light on a slab of glass. It is first in
+ * <body>, fixed to the window, so it stays put on the screen it came from
+ * while the content slides in over it; z-index -1 puts it under #app and over
+ * the (transparent) page. Its corners are the glass's own, wider than
+ * Windows' 8px: the window is square and clear around them (win32
+ * setGlassShape), so the desktop shows past the curve.
+ *
+ * Only while the window really is clear: the material says so, the window is
+ * the panel (fitted), and nobody asked for less transparency. Anywhere else
+ * the layer is not drawn at all. */
+.glass { display: none; }
+html[data-material="acrylic"][data-frame="fitted"]:not([data-reduce-transparency]) .glass {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: var(--glass-radius);
+  pointer-events: none;
+}
+.glass__shot {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.glass__tint,
+.glass__rim {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.glass__tint { background: var(--glass-tint); }
+.glass[data-ready="false"] .glass__tint { background: var(--glass-tint-bare); }
+.glass__shine {
+  position: absolute;
+  left: -20%;
+  top: -60%;
+  width: 90%;
+  height: 120%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--glass-shine), transparent);
+}
+.glass__rim {
+  box-shadow:
+    inset 1.5px 1.5px 0 rgba(255, 255, 255, .55),
+    inset -1px -1px 0 rgba(255, 255, 255, .18),
+    inset 0 0 0 1px rgba(255, 255, 255, .10),
+    inset 0 0 18px rgba(255, 255, 255, .08);
+}
+/* Windows asking for less transparency or for high contrast reaches the page
+ * as a media feature before main's push does: no glass from that frame on. */
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  html[data-material="acrylic"][data-frame="fitted"]:not([data-reduce-transparency]) .glass { display: none; }
+}
+/* The words over the glass: a soft shadow holds them over a busy picture. */
+html[data-material="acrylic"][data-frame="fitted"]:not([data-reduce-transparency]) .panel {
+  text-shadow: var(--glass-text-shadow);
+}
+/* The header's icons are drawn, not written: the same shadow as a filter. */
+html[data-material="acrylic"][data-frame="fitted"]:not([data-reduce-transparency]) .iconbtn svg {
+  filter: drop-shadow(var(--glass-text-shadow));
+}
+
 /* THE DIALOG ROOT NEVER DRAWS A FOCUS RING.
  *
  * It is focusable only so script can put focus on it — on open, on pinning,
@@ -1324,81 +1392,6 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
 .settings__item--autostart { flex-wrap: nowrap; }
 .settings__item--autostart .switch { flex: none; }
 
-/* "Saydamlık": the slider row (settings.ts createGlassControl). A group of
- * one like the switch rows, laid out as a column: the name with its figure,
- * the slider between "Düz" and "Saydam", then the help line, which wraps. */
-.settings__item--glass {
-  flex-direction: column;
-  align-items: stretch;
-  flex-wrap: nowrap;
-  gap: var(--s-2);
-  margin: var(--s-4) var(--s-4) var(--s-3);
-  border-radius: var(--radius-card);
-  background: var(--ink-800);
-}
-.glass-slider__head {
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s-2);
-}
-.settings__item--glass .settings__name { color: var(--ink-100); }
-.glass-slider__value {
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  color: var(--tint-text);
-  font-variant-numeric: tabular-nums;
-}
-.settings__item--glass > .settings__meta { white-space: normal; }
-.glass-slider {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-}
-.glass-slider__end {
-  flex: none;
-  font-size: var(--fs-meta);
-  color: var(--ink-400);
-}
-/* The range itself, drawn like the switches beside it: a thin track in the
- * switch's off grey, filled with the tint up to the thumb (--fill, which
- * settings.ts sets from the value), and the switch's white knob. Still the
- * native input underneath: arrows move it a step, the global focus ring
- * shows, and forced colours draw it in system colours (below). */
-.glass-slider__input {
-  -webkit-appearance: none;
-  appearance: none;
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 24px;
-  margin: 0;
-  border-radius: 12px;
-  background: transparent;
-  cursor: pointer;
-}
-.glass-slider__input::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(to right, var(--tint) 0 var(--fill, 45%), var(--switch-off) var(--fill, 45%) 100%);
-}
-.glass-slider__input::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 20px; height: 20px;
-  /* Centred on the 4px track: (4 - 20) / 2. */
-  margin-top: -8px;
-  border-radius: 50%;
-  background: var(--knob);
-  box-shadow: var(--shadow-knob);
-  transition: transform var(--dur-hover) var(--ease-open);
-}
-/* The press grows the knob a little, as the switch's stretches. */
-.glass-slider__input:active::-webkit-slider-thumb { transform: scale(1.12); }
-/* Windows decides (high contrast, transparency effects off): the slider is
- * disabled and reads so; the line under it says why. */
-.glass-slider__input:disabled { cursor: default; }
-.settings__item--glass[data-disabled="true"] .glass-slider { opacity: .45; }
-
 @keyframes settings-revert {
   0%, 45% { background: color-mix(in srgb, var(--watch) 22%, var(--ink-800)); }
   100% { background: var(--ink-800); }
@@ -2015,11 +2008,6 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
   /* The transparency slider: the track outlined, the thumb in Highlight
    * (its place is the value; no fill in a system colour is needed for it);
    * disabled, all of it in GrayText. */
-  .glass-slider__input::-webkit-slider-runnable-track { forced-color-adjust: none; background: Canvas; border: 1px solid ButtonText; }
-  .glass-slider__input::-webkit-slider-thumb { forced-color-adjust: none; background: Highlight; border: 1px solid HighlightText; box-shadow: none; }
-  .glass-slider__input:disabled::-webkit-slider-runnable-track { background: Canvas; border-color: GrayText; }
-  .glass-slider__input:disabled::-webkit-slider-thumb { background: GrayText; border-color: GrayText; }
-  .settings__item--glass[data-disabled="true"] .glass-slider { opacity: 1; }
 
   /* The usage chart: columns in the text colour, the chosen one in Highlight. */
   .usage__col-track { forced-color-adjust: none; background: Canvas; }

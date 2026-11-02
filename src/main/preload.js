@@ -21,6 +21,7 @@ const CH = {
   PANEL_PIN: 'panel:pin',
   ANCHOR: 'panel:anchor',
   PANEL_VISIBILITY: 'panel:visibility',
+  BACKDROP: 'panel:backdrop',
   SET_ORDER: 'providers:set-order',
   SET_ENABLED: 'providers:set-enabled',
   PREFERENCES: 'prefs:changed',
@@ -92,6 +93,13 @@ contextBridge.exposeInMainWorld('usageNotch', {
    * IPC.PANEL_VISIBILITY in contract.ts. Returns an unsubscribe.
    */
   onPanelVisibility: (cb) => subscribe(CH.PANEL_VISIBILITY, cb),
+
+  /**
+   * main -> renderer: the picture behind the panel for its glass, a move of
+   * it, or null to drop it. See IPC.BACKDROP in contract.ts. Returns an
+   * unsubscribe.
+   */
+  onBackdrop: (cb) => subscribe(CH.BACKDROP, cb),
 
   /** Panel is visible / the pointer is inside it. Also cancels an auto-hide. */
   panelOpened: () => ipcRenderer.send(CH.PANEL_OPENED),

@@ -1,16 +1,22 @@
 'use strict';
 
 /**
- * Settings → Genel → Görünüm, "Saydamlık": how see-through the panel is, a
- * slider from 0 to 100 (owner, 2026-10-22: "bar şeklinde bir saydamlık barı
- * olsun ... saydamlık full olduğunda harbiden saydam olsun").
+ * Settings → Genel → Görünüm, "Saydamlık": whether the panel is glass.
  *
  *   0       opaque: the plain panel base, and the in-app glass (the header,
  *           the settings tab band) drawn opaque too.
- *   1–55    frosted glass, the tint thinning as the value grows.
- *   56–100  clear glass, no blur, the tint thinning to nothing at 100.
+ *   1–100   the Liquid Glass (owner, 2026-11-02: "apple'daki liquid glass
+ *           varya onu istiyorum"): a clear window and the glass the page
+ *           draws over the screen behind it (panel-material.js).
  *
- * What each value does to the WINDOW is `panelAccent` in panel-material.js;
+ * A level and not a boolean because it was a 0–100 slider for a while
+ * (2026-10-22): frosted, then clear, by Windows' own glasses. The owner did
+ * not like either half, so the switch that replaced it writes 0 or 100, and a
+ * level a slider stored (45 by default) reads as "on". Kept as a level so
+ * those files need no migration, and so the switch's two values are plain
+ * numbers the IPC already checks.
+ *
+ * What the value does to the WINDOW is `panelAccent` in panel-material.js;
  * this file only says which values exist. Panel-only, and only the user's own
  * half of the rule: Windows' reduced transparency and high contrast make the
  * panel opaque whatever this says (`systemReducedTransparency` in the
@@ -23,7 +29,7 @@
  * on a real level here and nothing downstream has to decide.
  */
 
-/** Frosted, the tint thin enough for colours behind to come through. */
+/** The glass, on: any level above 0 is (the slider's old default). */
 const DEFAULT_TRANSPARENCY = 45;
 const MIN_TRANSPARENCY = 0;
 const MAX_TRANSPARENCY = 100;
@@ -48,7 +54,7 @@ function sanitizeTransparency(raw) {
 }
 
 /**
- * The level a settings file asks for. A file written since the slider has
+ * The level a settings file asks for. A file written since 0.6.42 has
  * `transparency`; one written before it may have `reduceTransparency: true`,
  * the old "less transparency" switch, which was the opaque panel: 0. A real
  * `transparency` wins over the old key, which the next save drops.

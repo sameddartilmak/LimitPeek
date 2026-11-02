@@ -211,14 +211,14 @@ export interface PanelState {
   /** True while the strip finds no room on the taskbar. */
   stripNoRoom: boolean;
   /**
-   * Görünüm → "Saydamlık", 0 (opaque) to 100 (clear glass). Optimistic, like
-   * `theme`: it follows the slider on every step, and main is asked
-   * afterwards (throttled while the slider is dragged, app.ts).
+   * Görünüm → "Saydamlık", a level: 0 is the opaque panel, anything above it
+   * the Liquid Glass (src/core/transparency.js). Optimistic, like `theme`:
+   * it follows the switch at once, and main is asked afterwards (app.ts).
    */
   transparency: number;
   /** True while a setTransparency call is in flight. */
   transparencyPending: boolean;
-  /** Set briefly when main refused the change and the slider went back. */
+  /** Set briefly when main refused the change and the switch went back. */
   transparencyReverted: boolean;
   /** Windows asks for less transparency (or high contrast): glass off anyway. */
   systemReducedTransparency: boolean;

@@ -45,7 +45,11 @@ const log = require('../core/log');
  * DwmSetWindowAttribute sets four attributes of the PANEL's own window (see
  * `loadDwm` for why its name is safe too), and user32
  * SetWindowCompositionAttribute one more on that same window, its accent
- * backdrop: the glass behind the panel. Nothing
+ * backdrop: a clear window under the panel's glass. And gdi32 BitBlt READS
+ * the screen region the panel is about to cover, once per open, so the page
+ * can draw the glass from it (`captureScreen`, below): the pixels stay in
+ * this process's memory, go to the panel's own sandboxed page and nowhere
+ * else, and are dropped when the panel closes. Nothing
  * here writes to another process's window, opens a file, a socket or a
  * process; koffi's runtime JavaScript has no network module either (scanned by
  * test/contract-mirror.test.js).
@@ -94,9 +98,21 @@ const DWMWA_BORDER_COLOR = 34;
 /** DwmSetWindowAttribute: Windows 11's rounded corners (DWMWCP_ROUND, 8px). */
 const DWMWA_WINDOW_CORNER_PREFERENCE = 33;
 const DWMWCP_ROUND = 2;
+/** Square: the glass draws its own, larger corners over a clear window. */
+const DWMWCP_DONOTROUND = 1;
 /** DwmSetWindowAttribute: DWM draws the window's frame effects — its shadow. */
 const DWMWA_NCRENDERING_POLICY = 2;
 const DWMNCRP_ENABLED = 2;
+/** No frame effects: a shadow round a clear window outlines its square rect. */
+const DWMNCRP_DISABLED = 1;
+/** DWMWA_BORDER_COLOR: no hairline at all. */
+const DWMWA_COLOR_NONE = 0xFFFFFFFE;
+/** BitBlt: a plain copy. */
+const SRCCOPY = 0x00CC0020;
+/** BITMAPINFOHEADER is 40 bytes; one RGBQUAD after it, which 32 bpp leaves unread. */
+const BITMAPINFO_SIZE = 44;
+/** The biggest region `captureScreen` copies, per side, in physical pixels. */
+const CAPTURE_MAX_SIDE = 4096;
 /** SetWindowCompositionAttribute: WCA_ACCENT_POLICY, and its 16-byte ACCENT_POLICY. */
 const WCA_ACCENT_POLICY = 19;
 const ACCENT_POLICY_SIZE = 16;
@@ -336,12 +352,23 @@ function bindDwm() {
   const dwmapi = koffi.load('dwmapi.dll');
   // A KnownDLL, as for the strip (header).
   const user32 = koffi.load('user32.dll');
+  // A KnownDLL too: the screen copy for the glass.
+  const gdi32 = koffi.load('gdi32.dll');
   // WINDOWCOMPOSITIONATTRIBDATA; pvData is handed a Buffer holding the
   // ACCENT_POLICY: the binding the spike measured (2026-10-22).
   koffi.struct('UN_WCAD', { Attrib: 'int32', pvData: 'void *', cbData: 'size_t' });
   return {
     DwmSetWindowAttribute: dwmapi.func('int __stdcall DwmSetWindowAttribute(intptr h, uint attr, _In_ uint32_t* value, uint size)'),
     SetWindowCompositionAttribute: user32.func('bool __stdcall SetWindowCompositionAttribute(intptr h, UN_WCAD *data)'),
+    GetDC: user32.func('intptr __stdcall GetDC(intptr h)'),
+    ReleaseDC: user32.func('int __stdcall ReleaseDC(intptr h, intptr dc)'),
+    CreateCompatibleDC: gdi32.func('intptr __stdcall CreateCompatibleDC(intptr dc)'),
+    CreateCompatibleBitmap: gdi32.func('intptr __stdcall CreateCompatibleBitmap(intptr dc, int w, int h)'),
+    SelectObject: gdi32.func('intptr __stdcall SelectObject(intptr dc, intptr obj)'),
+    BitBlt: gdi32.func('bool __stdcall BitBlt(intptr dst, int x, int y, int w, int h, intptr src, int sx, int sy, uint32 rop)'),
+    GetDIBits: gdi32.func('int __stdcall GetDIBits(intptr dc, intptr bm, uint32 start, uint32 lines, _Out_ uint8_t *bits, _Inout_ uint8_t *bmi, uint32 usage)'),
+    DeleteObject: gdi32.func('bool __stdcall DeleteObject(intptr obj)'),
+    DeleteDC: gdi32.func('bool __stdcall DeleteDC(intptr dc)'),
   };
 }
 
@@ -388,7 +415,76 @@ function makeDwm(f) {
       const ref = colorrefOfHex(hex);
       return Boolean(h) && ref !== null && set(h, DWMWA_BORDER_COLOR, ref);
     }, false),
+    /**
+     * The glass's frame: square, no shadow, no hairline. The window is clear
+     * and the page draws the glass with its own wider corners and its own
+     * rim; Windows' 8px rounding, its shadow and its hairline would outline
+     * the square window around them. `setFlyoutShape` and `setBorderColour`
+     * put the opaque panel's frame back. True when Windows took all three.
+     */
+    setGlassShape: guard('setGlassShape', (h) => Boolean(h)
+      && set(h, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND)
+      && set(h, DWMWA_NCRENDERING_POLICY, DWMNCRP_DISABLED)
+      && set(h, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE), false),
+    /**
+     * A copy of the screen's pixels in `rect` (PHYSICAL px, as
+     * screen.dipToScreenRect gives them), for the panel's glass: what the
+     * panel is about to cover, read before it moves on screen. A GDI copy of
+     * the composed desktop, about 7 ms for the panel's region (scratch spike,
+     * 2026-11-02). Rows top-down, 4 bytes a pixel in the B, G, R order Windows
+     * keeps; the fourth byte is not an alpha (the page sets its own).
+     *
+     * @param {{x: number, y: number, width: number, height: number}} rect
+     * @returns {{width: number, height: number, bgra: Buffer}|null}
+     */
+    captureScreen: guard('captureScreen', (rect) => {
+      const box = captureBox(rect);
+      return box ? copyScreen(f, box) : null;
+    }, null),
   };
+}
+
+/** A rect `captureScreen` may copy: whole pixels, 1 to CAPTURE_MAX_SIDE a side. */
+function captureBox(rect) {
+  if (!rect || typeof rect !== 'object') return null;
+  const [x, y, width, height] = [rect.x, rect.y, rect.width, rect.height].map((v) => Math.round(Number(v)));
+  if (![x, y, width, height].every(Number.isFinite)) return null;
+  if (width < 1 || height < 1 || width > CAPTURE_MAX_SIDE || height > CAPTURE_MAX_SIDE) return null;
+  return { x, y, width, height };
+}
+
+/**
+ * The BitBlt itself: the screen DC into a memory bitmap, read out as a
+ * top-down 32 bpp DIB. Every handle is released on every path; GetDIBits needs
+ * the bitmap out of the memory DC first.
+ */
+function copyScreen(f, { x, y, width, height }) {
+  const screenDc = num(f.GetDC(0));
+  if (!screenDc) return null;
+  let memDc = 0;
+  let bitmap = 0;
+  try {
+    memDc = num(f.CreateCompatibleDC(screenDc));
+    bitmap = num(f.CreateCompatibleBitmap(screenDc, width, height));
+    if (!memDc || !bitmap) return null;
+    const previous = f.SelectObject(memDc, bitmap);
+    const copied = f.BitBlt(memDc, 0, 0, width, height, screenDc, x, y, SRCCOPY);
+    f.SelectObject(memDc, previous);
+    if (!copied) return null;
+    const bmi = Buffer.alloc(BITMAPINFO_SIZE);
+    bmi.writeUInt32LE(40, 0);
+    bmi.writeInt32LE(width, 4);
+    bmi.writeInt32LE(-height, 8); // negative: top-down rows
+    bmi.writeUInt16LE(1, 12);
+    bmi.writeUInt16LE(32, 14);
+    const bgra = Buffer.alloc(width * height * 4);
+    const lines = f.GetDIBits(memDc, bitmap, 0, height, bgra, bmi, 0);
+    return lines === height ? { width, height, bgra } : null;
+  } finally {
+    if (bitmap) f.DeleteObject(bitmap);
+    if (memDc) f.DeleteDC(memDc);
+    f.ReleaseDC(0, screenDc);
+  }
 }
 
 /** The panel's DWM attributes, or null when they cannot be had. Tried once. */

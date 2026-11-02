@@ -178,7 +178,11 @@ test('the preload exposes exactly the UsageNotchApi surface declared in contract
   // write; no network.
   assert.equal(declared.has('setLayout'), false, 'setLayout() belonged to the removed Düzen setting');
   assert.ok(declared.has('setStripStyle'), 'contract.ts should declare setStripStyle()');
-  assert.equal(declared.size, 24, `expected the 24 declared methods, saw ${[...declared].join(',')}`);
+  // 25 with onBackdrop (2026-11-02): main -> renderer only, the picture of
+  // the screen behind the panel its Liquid Glass is drawn from. Local pixels
+  // to the panel's own page; the renderer can ask for nothing with it.
+  assert.ok(declared.has('onBackdrop'), 'contract.ts should declare onBackdrop()');
+  assert.equal(declared.size, 25, `expected the 25 declared methods, saw ${[...declared].join(',')}`);
 });
 
 /** Parses `export const IPC_STRIP = { ... } as const;`. */

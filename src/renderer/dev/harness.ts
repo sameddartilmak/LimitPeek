@@ -124,6 +124,11 @@ function makeBridge(scenario: Scenario): Bridge {
       return () => {};
     },
 
+    onBackdrop() {
+      // No main, no screen to copy: the harness never draws the Liquid Glass.
+      return () => {};
+    },
+
     panelOpened() {
       log('panelOpened()');
     },

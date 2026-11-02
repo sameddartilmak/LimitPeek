@@ -577,37 +577,30 @@ test.describe('Görünüm has no "Gösterge" and no "Düzen": the panel has one 
 
 // ------------------------------------------------------- Görünüm: "Saydamlık"
 
-test.describe('Görünüm → "Saydamlık": a slider on the "Genel" tab, from "Düz" to "Saydam"', () => {
+test.describe('Görünüm → "Saydamlık": the Liquid Glass on or off, a switch on the "Genel" tab', () => {
   function mountGlass() {
     const moved = [];
     const handle = settingsMod.createSettings({
       onToggle() {}, onTheme() {}, onLanguage() {}, onAutostart() {}, onPlanLabel() {}, onBack() {}, onTab() {},
       onDisconnect() {}, onTrayView() {},
-      onTransparency(level, final) { moved.push([level, final]); },
+      onTransparency(level) { moved.push(level); },
     });
     const row = walk(handle.el).find((el) => (el.getAttribute('class') || '').includes('settings__item--glass'));
     assert.ok(row, 'no "Saydamlık" row');
-    const control = walk(row).find((el) => el.tagName === 'INPUT');
-    const figure = walk(row).find((el) => (el.getAttribute('class') || '').includes('glass-slider__value'));
-    return { handle, row, control, figure, moved };
+    const control = walk(row).find((el) => el.getAttribute('role') === 'switch');
+    return { handle, row, control, moved };
   }
 
-  test('a native range from 0 to 100 in steps of 5, named "Saydamlık", "Düz" on the left and "Saydam" on the right', () => {
+  test('a real switch named "Saydamlık", its help saying where the picture stays, after the theme and before "Dil"', () => {
     const { handle, row, control } = mountGlass();
-    assert.equal(control.getAttribute('type'), 'range');
-    assert.deepEqual(['min', 'max', 'step'].map((k) => control.getAttribute(k)), ['0', '100', '5']);
-    assert.equal(walk(row).some((el) => el.getAttribute('role') === 'switch'), false, 'the old switch is gone');
+    assert.equal(control.tagName, 'BUTTON');
+    assert.equal(walk(row).some((el) => el.tagName === 'INPUT'), false, 'the old slider is gone');
     const name = findById(handle.el, control.getAttribute('aria-labelledby'));
     assert.equal(name.textContent, 'Saydamlık');
     const help = findById(handle.el, control.getAttribute('aria-describedby'));
-    assert.equal(help.textContent, 'Sola çekince panel düzleşir, sağa çekince saydamlaşır; yarıyı geçince buzlanma da kalkar.');
-    const ends = walk(row).filter((el) => (el.getAttribute('class') || '').includes('glass-slider__end'));
-    assert.deepEqual(ends.map((el) => el.textContent), ['Düz', 'Saydam']);
-    assert.ok(ends.every((el) => el.getAttribute('aria-hidden') === 'true'), 'the ends are for the eye; the value is announced');
-    const kids = walk(row);
-    assert.ok(kids.indexOf(ends[0]) < kids.indexOf(control) && kids.indexOf(control) < kids.indexOf(ends[1]));
+    assert.match(help.textContent, /^Panel, arkasındaki ekranı hafif buğulu bir cam gibi gösterir; kapatınca zemin düz olur\./);
+    assert.match(help.textContent, /yalnızca bu bilgisayarda, panel açıkken kullanılır\.$/, 'the screen picture is said, and where it stays');
     const general = walk(handle.el).find((el) => el.getAttribute('role') === 'tabpanel' && walk(el).includes(row));
-    assert.ok(general, 'not on a tab panel');
     assert.equal(general.getAttribute('data-tab'), 'general');
     const all = walk(general);
     const theme = all.find((el) => el.tagName === 'FIELDSET' && el.getAttribute('class') === 'theme');
@@ -615,63 +608,38 @@ test.describe('Görünüm → "Saydamlık": a slider on the "Genel" tab, from "D
     assert.ok(all.indexOf(theme) < all.indexOf(row) && all.indexOf(row) < all.indexOf(language));
   });
 
-  test('the slider and its figure show the stored level; the fill follows', () => {
-    const { handle, control, figure } = mountGlass();
-    handle.render(state({ transparency: 45 }), []);
-    assert.equal(control.value, '45');
-    assert.equal(figure.textContent, '%45');
-    assert.equal(figure.getAttribute('aria-hidden'), 'true');
-    assert.equal(control.getAttribute('aria-valuetext'), '%45');
-    assert.equal(control.style.getPropertyValue('--fill'), '45%');
-    handle.render(state({ transparency: 100 }), []);
-    assert.equal(control.value, '100');
-    assert.equal(figure.textContent, '%100');
-  });
-
-  test('a step tells the app while dragging, \'change\' as final; pending and revert are on the row', () => {
+  test('on for any level above 0; a press sends 0 or 100; pending and revert are on the row', () => {
     const { handle, row, control, moved } = mountGlass();
     handle.render(state({ transparency: 45 }), []);
-    control.value = '60';
-    control.dispatch('input');
-    control.value = '65';
-    control.dispatch('change');
-    assert.deepEqual(moved, [[60, false], [65, true]]);
-    // A value that is not a level never reaches the app.
-    control.value = 'abc';
-    control.dispatch('input');
-    control.value = '47.5';
-    control.dispatch('change');
-    assert.deepEqual(moved, [[60, false], [65, true]]);
-    handle.render(state({ transparency: 65, transparencyPending: true }), []);
+    assert.equal(control.getAttribute('aria-checked'), 'true', "a slider's old level reads as on");
+    control.click();
+    handle.render(state({ transparency: 0 }), []);
+    assert.equal(control.getAttribute('aria-checked'), 'false');
+    control.click();
+    assert.deepEqual(moved, [0, 100]);
+    handle.render(state({ transparency: 100, transparencyPending: true }), []);
     assert.equal(control.getAttribute('aria-busy'), 'true');
-    handle.render(state({ transparency: 45, transparencyReverted: true }), []);
-    assert.equal(control.value, '45');
+    assert.equal(row.getAttribute('data-pending'), 'true');
+    handle.render(state({ transparency: 0, transparencyReverted: true }), []);
+    assert.equal(control.getAttribute('aria-checked'), 'false');
     assert.equal(control.getAttribute('aria-busy'), null);
     assert.equal(row.getAttribute('data-revert'), 'true');
   });
 
-  test('while Windows asks for less, the slider is disabled and the line under it says why', () => {
-    const { handle, row, control, figure } = mountGlass();
+  test('while Windows asks for less, the switch is disabled and the line under it says why', () => {
+    const { handle, control } = mountGlass();
     const help = findById(handle.el, control.getAttribute('aria-describedby'));
-    handle.render(state({ transparency: 70, systemReducedTransparency: true }), []);
+    handle.render(state({ transparency: 100, systemReducedTransparency: true }), []);
     assert.equal(control.getAttribute('disabled'), '');
-    assert.equal(row.getAttribute('data-disabled'), 'true');
-    assert.equal(figure.textContent, '', 'no figure for a level that is not in effect');
     assert.match(help.textContent, /saydamlık efektleri kapalı ya da yüksek kontrast açık; bu yüzden panel şu an saydam değil/);
-    handle.render(state({ transparency: 70, systemReducedTransparency: false }), []);
+    handle.render(state({ transparency: 100, systemReducedTransparency: false }), []);
     assert.equal(control.getAttribute('disabled'), null);
-    assert.equal(row.getAttribute('data-disabled'), null);
-    assert.equal(figure.textContent, '%70');
-    assert.match(help.textContent, /^Sola çekince panel düzleşir/);
+    assert.match(help.textContent, /^Panel, arkasındaki ekranı/);
   });
 
-  test('the stylesheet draws the range like the switches and in system colours under high contrast', () => {
+  test('no slider styles are left behind', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'styles', 'panel.css'), 'utf8');
-    assert.match(css, /\.glass-slider__input::-webkit-slider-runnable-track \{[^}]*linear-gradient\(to right, var\(--tint\) 0 var\(--fill, 45%\), var\(--switch-off\)/);
-    assert.match(css, /\.glass-slider__input::-webkit-slider-thumb \{[^}]*background: var\(--knob\);/);
-    const forced = css.slice(css.indexOf('@media (forced-colors: active) {'));
-    assert.match(forced, /\.glass-slider__input::-webkit-slider-thumb \{ forced-color-adjust: none; background: Highlight;/);
-    assert.match(forced, /\.glass-slider__input:disabled::-webkit-slider-thumb \{ background: GrayText;/);
+    assert.doesNotMatch(css, /glass-slider/);
   });
 });
 

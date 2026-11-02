@@ -14,6 +14,7 @@
 
 import type {
   AnchorPayload,
+  BackdropPayload,
   Certainty,
   LanguageChoice,
   Preferences,
@@ -923,6 +924,34 @@ function rect(raw: unknown): { x: number; y: number; width: number; height: numb
   if (x === null || y === null || width === null || height === null) return null;
   if (width < 0 || height < 0) return null;
   return { x, y, width, height };
+}
+
+/** The biggest picture a backdrop may carry, per side, in pixels (win32.js). */
+const BACKDROP_MAX_SIDE = 4096;
+
+/**
+ * IPC.BACKDROP: the picture behind the panel, its move, or `null` (drop it).
+ * `undefined` for anything malformed, which the caller ignores: a bad payload
+ * must never draw a half-picture, and must not drop a good one either. The
+ * pixels must be exactly `pixelWidth` x `pixelHeight` x 4 bytes.
+ */
+export function sanitizeBackdrop(raw: unknown): BackdropPayload | null | undefined {
+  if (raw === null) return null;
+  const at = rect(raw);
+  if (!at || at.width === 0 || at.height === 0) return undefined;
+  const imageRaw = (raw as Record<string, unknown>).image;
+  if (imageRaw === null || imageRaw === undefined) return { ...at, image: null };
+  if (typeof imageRaw !== 'object') return undefined;
+  const img = imageRaw as Record<string, unknown>;
+  const pixelWidth = img.pixelWidth;
+  const pixelHeight = img.pixelHeight;
+  const bgra = img.bgra;
+  if (!Number.isInteger(pixelWidth) || !Number.isInteger(pixelHeight)) return undefined;
+  const pw = pixelWidth as number;
+  const ph = pixelHeight as number;
+  if (pw < 1 || ph < 1 || pw > BACKDROP_MAX_SIDE || ph > BACKDROP_MAX_SIDE) return undefined;
+  if (!(bgra instanceof Uint8Array) || bgra.length !== pw * ph * 4) return undefined;
+  return { ...at, image: { pixelWidth: pw, pixelHeight: ph, bgra } };
 }
 
 const EDGES = new Set<AnchorPayload['edge']>(['bottom', 'top', 'left', 'right']);

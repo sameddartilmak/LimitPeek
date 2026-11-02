@@ -2,38 +2,43 @@
 
 /**
  * What the panel WINDOW is made of (concept "A · Gerçek Windows camı",
- * 2026-10-21; the slider, 2026-10-22): Windows' own glass behind it, frosted
- * or clear, or a plain opaque base.
+ * 2026-10-21; Liquid Glass, 2026-11-02): see-through, with the glass drawn by
+ * the page itself, or a plain opaque base.
  *
  * Two separate questions, because they change on different clocks:
  *
- *   frame     'fitted'  the window IS the panel: Windows rounds its corners,
- *                       draws its shadow and its backdrop (Windows 11, build
- *                       22000 and up: DWM rounds and shadows a frameless,
- *                       non-transparent window).
+ *   frame     'fitted'  the window IS the panel (Windows 11, build 22000 and
+ *                       up: DWM rounds and shadows a frameless,
+ *                       non-transparent window, and clears it on request).
  *             'canvas'  the window is a transparent frame larger than the
  *                       panel, which draws its own corners, shadow and tail
  *                       (Windows 10, and the shape every earlier version had).
  *             Decided ONCE, from the OS build: a transparent window cannot
  *             become an opaque one after it was created.
  *
- *   material  'acrylic' DWM's accent backdrop behind a fitted window
- *                       (SetWindowCompositionAttribute, win32 setAccent): the
- *                       frosted acrylic blur or the clear gradient, tinted by
- *                       the GradientColor `panelAccent` picks from the
- *                       "Saydamlık" level. The name is the contract's
- *                       (Preferences.material): "the window is see-through".
+ *   material  'acrylic' the window is CLEAR (DWM's accent policy, the
+ *                       transparent gradient at alpha 0: win32 setAccent) and
+ *                       the page draws the glass over a picture of the screen
+ *                       behind the panel, taken as it opens (win32
+ *                       captureScreen, panel-window.js, renderer glass.ts).
+ *                       The name is the contract's (Preferences.material):
+ *                       "the window is see-through".
  *             'none'    the opaque panel base.
- *             Live: the slider (0 is 'none'), Windows' "Saydamlık efektleri"
+ *             Live: the "Saydamlık" switch, Windows' "Saydamlık efektleri"
  *             off and high contrast all move it while the panel is open.
  *
- * Why the accent policy and not Electron's `backgroundMaterial: 'acrylic'`
- * (DWMSBT_TRANSIENTWINDOW, 0.6.41 and earlier): the system backdrop has ONE
- * strength, and it falls back while the window is inactive — the panel
- * changed colour every time the user clicked outside it ("panel dışı bir yere
- * tıklayınca renk değişiyor"). Measured on Windows 11 26200 (scratch spike,
- * 2026-10-22), the accent backdrop looks the same inactive as active, and
- * its strength is ours: the GradientColor's alpha is the tint.
+ * WHY THE PAGE DRAWS THE GLASS. Windows offers two glasses, and the owner
+ * turned both down (2026-10-22 to 11-02): the system acrylic (one heavy
+ * frosted strength, and it falls back to a flat colour while the window is
+ * inactive — "panel dışı bir yere tıklayınca renk değişiyor") and the accent
+ * policy's own (frosted, black below a thick tint, or clear with no blur at
+ * all: "%0'dan %50'ye kadar sadece renk açılıyor, ondan sonra tamamen arkasını
+ * gösteriyor"). What was asked for is Apple's Liquid Glass: the screen behind
+ * softened a little, bent like a lens towards the edges, a bright rim. No
+ * Windows backdrop bends anything, so the page needs the pixels: main copies
+ * the region the panel is about to cover (a GDI BitBlt, about 7 ms) before
+ * the panel moves on screen, and the page draws the glass from that picture.
+ * The window itself is cleared, so its corners can be the glass's own.
  *
  * Pure, so the rule is tested without a window (test/panel-material.test.js).
  */
@@ -59,15 +64,6 @@ const FITTED_MIN_BUILD = 22000;
 const PANEL_BASE = Object.freeze({ dark: '#1C1C1E', light: '#F2F2F7' });
 
 /**
- * The colour of the glass, per theme: the GradientColor's RGB, which DWM lays
- * over the blur (frosted) or over the window behind (clear) at the level's
- * alpha. The same two colours the page's own tint over the system acrylic
- * used to be (rgba(30, 30, 34) / rgba(246, 246, 248), tokens.css until
- * 0.6.41); the page is transparent over the glass now, so the tint is here.
- */
-const PANEL_TINT = Object.freeze({ dark: '#1E1E22', light: '#F6F6F8' });
-
-/**
  * The hairline Windows draws around a fitted window (DWMWA_BORDER_COLOR).
  * Set rather than left to Windows, which paints the ACCENT colour there on an
  * active window when "Başlık çubuklarında ve pencere kenarlıklarında vurgu
@@ -78,34 +74,16 @@ const PANEL_TINT = Object.freeze({ dark: '#1E1E22', light: '#F6F6F8' });
 const PANEL_EDGE = Object.freeze({ dark: '#454548', light: '#D9D9DE' });
 
 /**
- * SetWindowCompositionAttribute's ACCENT_POLICY, the values measured on
- * Windows 11 26200 (scratch spike, 2026-10-22) on the fitted window itself:
- *
- *   ACCENT_ENABLE_ACRYLICBLURBEHIND (4)  frosted glass; colours behind come
- *        through vivid, no grey wash, the SAME while the window is inactive.
- *        Below about 0x30 of alpha it renders BLACK, so 0x30 is its floor.
- *   ACCENT_ENABLE_TRANSPARENTGRADIENT (2)  clear glass, no blur; at alpha 0
- *        the window behind is fully visible, inactive or not.
- *   ACCENT_ENABLE_BLURBEHIND (3) rendered black and is never used.
- *
- * Both need AccentFlags 2 (the gradient colour is drawn): with 0, state 2 is
- * a flat grey.
+ * SetWindowCompositionAttribute's ACCENT_POLICY, measured on Windows 11 26200
+ * (scratch spike, 2026-10-22): ACCENT_ENABLE_TRANSPARENTGRADIENT (2) with
+ * AccentFlags 2 and a GradientColor of 0 clears the window — the desktop
+ * shows wherever the page is transparent, the same while the window is
+ * inactive. (Flags 0 makes it a flat grey; the frosted state 4 and the blur
+ * state 3 are Windows' glasses the owner did not want, see above.)
  */
 const ACCENT_DISABLED = 0;
 const ACCENT_CLEAR = 2;
-const ACCENT_FROSTED = 4;
 const ACCENT_FLAGS = 2;
-
-/**
- * The slider's three bands (src/core/transparency.js) and the alpha each end
- * of a band gives the tint. 1 is nearly the opaque panel, frosted; 55 the
- * thinnest frosted tint that still renders; 56 a clear pane with a light
- * tint, 100 nothing at all. Linear inside a band.
- */
-const FROSTED_LEVELS = Object.freeze({ from: 1, to: 55 });
-const FROSTED_ALPHA = Object.freeze({ from: 0xE6, to: 0x30 });
-const CLEAR_LEVELS = Object.freeze({ from: 56, to: 100 });
-const CLEAR_ALPHA = Object.freeze({ from: 0x70, to: 0x00 });
 
 /** "10.0.26200" -> 26200; 0 for anything that is not a Windows NT 10 release. */
 function windowsBuild(release) {
@@ -119,10 +97,10 @@ function panelFrameFor(platform, release) {
 }
 
 /**
- * How see-through the window should be right now, 0 (opaque) to 100. Only a
- * fitted window has glass at all (a transparent canvas would put the backdrop
+ * The "Saydamlık" level that holds right now, 0 (opaque) or more (the glass).
+ * Only a fitted window has glass at all (a transparent canvas would put it
  * behind its empty margins too), and Windows asking for less transparency
- * wins over the slider.
+ * wins over the switch.
  *
  * @param {{frame: string, transparency?: unknown, systemReduced?: boolean}} input
  */
@@ -131,49 +109,20 @@ function effectiveTransparency({ frame, transparency, systemReduced }) {
   return sanitizeTransparency(transparency);
 }
 
-/** Linear from `alpha.from` at `levels.from` to `alpha.to` at `levels.to`. */
-function along(level, levels, alpha) {
-  const t = (level - levels.from) / (levels.to - levels.from);
-  return Math.round(alpha.from + (alpha.to - alpha.from) * t);
-}
-
 /**
- * THE RULE: a level and a theme -> the accent the window gets. Pure, and
- * total: the level is re-sanitised (a NaN or a string is the default, 150 is
- * 100), so whatever arrives, the answer is one the spike measured.
+ * THE RULE: a level -> the accent the window gets. Pure and total (the level
+ * is re-sanitised: a NaN or a string is the default).
  *
- *   0       { mode: 'opaque',  state: 0 }                the base, no glass
- *   1–55    { mode: 'frosted', state: 4, alpha 0xE6→0x30 }
- *   56–100  { mode: 'clear',   state: 2, alpha 0x70→0x00 }
- *
- * `color` is the GradientColor, 0xAABBGGRR: the theme's PANEL_TINT at
- * `alpha`.
+ *   0      { mode: 'opaque', state: 0 }                    the base, no glass
+ *   1–100  { mode: 'liquid', state: 2, flags: 2, color: 0 } a clear window;
+ *          the page draws the glass
  *
  * @param {unknown} level
- * @param {boolean} dark
- * @returns {{mode: 'opaque'|'frosted'|'clear', state: number, flags: number, alpha: number, color: number}}
+ * @returns {{mode: 'opaque'|'liquid', state: number, flags: number, color: number}}
  */
-function panelAccent(level, dark) {
-  const n = sanitizeTransparency(level);
-  if (n === 0) return { mode: 'opaque', state: ACCENT_DISABLED, flags: 0, alpha: 0, color: 0 };
-  const frosted = n <= FROSTED_LEVELS.to;
-  const alpha = frosted ? along(n, FROSTED_LEVELS, FROSTED_ALPHA) : along(n, CLEAR_LEVELS, CLEAR_ALPHA);
-  return {
-    mode: frosted ? 'frosted' : 'clear',
-    state: frosted ? ACCENT_FROSTED : ACCENT_CLEAR,
-    flags: ACCENT_FLAGS,
-    alpha,
-    color: gradientColor(PANEL_TINT[dark === false ? 'light' : 'dark'], alpha),
-  };
-}
-
-/** `#RRGGBB` and an alpha byte -> 0xAABBGGRR, unsigned. */
-function gradientColor(hex, alpha) {
-  // Nothing at all is 0x00000000, the exact value the spike measured clear.
-  if ((alpha & 0xFF) === 0) return 0;
-  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex));
-  const [r, g, b] = m ? [m[1], m[2], m[3]].map((h) => parseInt(h, 16)) : [0, 0, 0];
-  return ((((alpha & 0xFF) << 24) | (b << 16) | (g << 8) | r) >>> 0);
+function panelAccent(level) {
+  if (sanitizeTransparency(level) === 0) return { mode: 'opaque', state: ACCENT_DISABLED, flags: 0, color: 0 };
+  return { mode: 'liquid', state: ACCENT_CLEAR, flags: ACCENT_FLAGS, color: 0 };
 }
 
 /**
@@ -227,18 +176,15 @@ module.exports = {
   PANEL_FRAMES,
   PANEL_MATERIALS,
   PANEL_BASE,
-  PANEL_TINT,
   PANEL_EDGE,
   FITTED_MIN_BUILD,
   ACCENT_DISABLED,
   ACCENT_CLEAR,
-  ACCENT_FROSTED,
   ACCENT_FLAGS,
   windowsBuild,
   panelFrameFor,
   effectiveTransparency,
   panelAccent,
-  gradientColor,
   panelDark,
   createPanelLook,
   isPanelMaterial,
