@@ -208,6 +208,7 @@ export function createGlass(): GlassHandle {
     'div',
     { class: 'glass', 'aria-hidden': 'true', 'data-ready': 'false' },
     canvas,
+    el('div', { class: 'glass__frost' }),
     el('div', { class: 'glass__tint' }),
     el('div', { class: 'glass__shine' }),
     el('div', { class: 'glass__rim' }),

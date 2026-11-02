@@ -207,13 +207,13 @@ test.describe('the renderer', () => {
 
   test('app.ts writes html[data-reduce-transparency] in frame one at 0, and puts main\'s value back on a refusal', () => {
     const app = read('src', 'renderer', 'src', 'app.ts');
-    assert.match(app, /document\.documentElement\.dataset\.reduceTransparency = 'true';/);
-    assert.match(app, /delete document\.documentElement\.dataset\.reduceTransparency;/);
-    const first = app.indexOf('paintGlass(initialPrefs?.transparency === 0, initialPrefs?.systemReducedTransparency === true);');
+    assert.match(app, /if \(level === 0 \|\| system\) root\.dataset\.reduceTransparency = 'true';/);
+    assert.match(app, /else delete root\.dataset\.reduceTransparency;/);
+    const first = app.indexOf('paintGlass(initialPrefs?.transparency ?? DEFAULT_TRANSPARENCY, initialPrefs?.systemReducedTransparency === true);');
     assert.notEqual(first, -1, 'the frame-one paint is missing');
     assert.ok(first < app.search(/store\.set\(\{\s+theme: theme\.choice\(\)/), 'painted before the first store write');
     assert.ok(first < app.indexOf('createPanel('), 'painted before the panel is built');
-    assert.match(app, /paintGlass\(confirmedLevel === 0, store\.get\(\)\.systemReducedTransparency\);/);
+    assert.match(app, /paintGlass\(confirmedLevel, store\.get\(\)\.systemReducedTransparency\);/);
     assert.match(app, /say\(t\('app\.transparencyNotSaved'\), 'error'\);/);
   });
 

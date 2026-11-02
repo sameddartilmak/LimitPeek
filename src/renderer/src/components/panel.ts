@@ -97,9 +97,10 @@ export interface PanelContext extends Omit<RowContext, 'attachGrip' | 'isTrayRow
   /** The user picked Görünüm: tray icon or taskbar strip. Optimistic. */
   onTrayViewChange(view: TrayView): void;
   /**
-   * The user turned Görünüm → "Saydamlık" on (100) or off (0). Optimistic.
+   * The user moved Görünüm → "Saydamlık", 0–100; `final` on the slider's
+   * 'change'. Optimistic.
    */
-  onTransparencyChange(level: number): void;
+  onTransparencyChange(level: number, final: boolean): void;
   /** The user picked Görünüm → Şerit stili. Optimistic. */
   onStripStyleChange(style: StripStyle): void;
   /** The user opened or closed a tool's details (a click on it, or "Ayrıntılar"). */
@@ -206,7 +207,7 @@ export function createPanel(ctx: PanelContext): PanelHandle {
     onLanguage: (choice) => ctx.onLanguageChange(choice),
     onAutostart: (enabled) => ctx.onAutostartChange(enabled),
     onTrayView: (view) => ctx.onTrayViewChange(view),
-    onTransparency: (level) => ctx.onTransparencyChange(level),
+    onTransparency: (level, final) => ctx.onTransparencyChange(level, final),
     onStripStyle: (style) => ctx.onStripStyleChange(style),
     onBack: () => ctx.onSettingsToggle(),
     onTab: (tab) => ctx.onSettingsTab(tab),

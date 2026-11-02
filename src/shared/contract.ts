@@ -1476,7 +1476,8 @@ export interface Preferences {
   /**
    * Settings → Genel → Görünüm → "Saydamlık": an integer from 0 (the opaque
    * panel, and the in-app glass of the header and the settings tab band drawn
-   * opaque too) to 100 (clear glass). Anything that is not one reaches the
+   * opaque too) to 100 (the clearest Liquid Glass; lower levels frost it).
+   * Anything that is not one reaches the
    * renderer as the default, 45 (src/core/transparency.js). Read in frame
    * one, like the theme.
    */

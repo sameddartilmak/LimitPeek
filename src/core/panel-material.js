@@ -24,7 +24,7 @@
  *                       The name is the contract's (Preferences.material):
  *                       "the window is see-through".
  *             'none'    the opaque panel base.
- *             Live: the "Saydamlık" switch, Windows' "Saydamlık efektleri"
+ *             Live: the "Saydamlık" slider, Windows' "Saydamlık efektleri"
  *             off and high contrast all move it while the panel is open.
  *
  * WHY THE PAGE DRAWS THE GLASS. Windows offers two glasses, and the owner

@@ -74,15 +74,48 @@ function applyLocale(prefs: Preferences | null): void {
 }
 
 /**
- * The opaque panel on the document: tokens.css turns every glass surface
- * opaque under `html[data-reduce-transparency]`. Set when the user pulled
- * "Saydamlık" to 0 OR Windows asked (reduced transparency, high contrast; the
- * CSS media features say the same live, this covers what main measured).
- * Frame one, like the theme, or the glass flashes before it goes opaque.
+ * "Saydamlık" on the document. At 0 (or when Windows asked: reduced
+ * transparency, high contrast; the CSS media features say the same live,
+ * this covers what main measured) the panel is opaque: tokens.css turns every
+ * glass surface opaque under `html[data-reduce-transparency]`. Above 0 the
+ * level is how see-through the Liquid Glass is (glassLook). Frame one, like
+ * the theme, or the glass flashes before it goes opaque.
  */
-function paintGlass(reduce: boolean, system: boolean): void {
-  if (reduce || system) document.documentElement.dataset.reduceTransparency = 'true';
-  else delete document.documentElement.dataset.reduceTransparency;
+function paintGlass(level: number, system: boolean): void {
+  const root = document.documentElement;
+  if (level === 0 || system) root.dataset.reduceTransparency = 'true';
+  else delete root.dataset.reduceTransparency;
+  const look = glassLook(level);
+  root.style.setProperty('--glass-frost', look.frost.toFixed(3));
+  root.style.setProperty('--glass-tint-amount', look.tint.toFixed(3));
+}
+
+/**
+ * The level the glass looks as the owner approved it (2026-11-02, the
+ * mockup in the panel-material history): no frost, the whole tint.
+ */
+export const GLASS_LOOK_LEVEL = 80;
+/** How thick the frost is at the bottom of the slider (level 5): almost solid. */
+const FROST_MAX = 1;
+/** How much of the tint is left at 100: the clearest glass, still with words that read. */
+const TINT_MIN = 0.4;
+
+/**
+ * A "Saydamlık" level as the glass's two dials (panel.css .glass):
+ *   frost  0–FROST_MAX, a veil of the opaque panel colour over the picture;
+ *          thick at the left end, gone at GLASS_LOOK_LEVEL.
+ *   tint   TINT_MIN–1, how much of the glass's own tint is drawn: whole up
+ *          to GLASS_LOOK_LEVEL, thinning to TINT_MIN at 100.
+ * So the slider goes frosted → the approved glass → clear glass, with no
+ * step where nothing changes. Outside 1–100 (0 is the opaque panel, which
+ * draws no glass at all) the nearest end.
+ */
+export function glassLook(level: number): { frost: number; tint: number } {
+  const n = Math.min(100, Math.max(0, Number.isFinite(level) ? level : 0));
+  if (n <= GLASS_LOOK_LEVEL) {
+    return { frost: (FROST_MAX * (GLASS_LOOK_LEVEL - n)) / GLASS_LOOK_LEVEL, tint: 1 };
+  }
+  return { frost: 0, tint: 1 - ((1 - TINT_MIN) * (n - GLASS_LOOK_LEVEL)) / (100 - GLASS_LOOK_LEVEL) };
 }
 
 /**
@@ -112,7 +145,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
   const initialPrefs = bridge.initialPreferences();
   applyLocale(initialPrefs);
   const theme = createTheme(initialPrefs?.theme ?? DEFAULT_THEME);
-  paintGlass(initialPrefs?.transparency === 0, initialPrefs?.systemReducedTransparency === true);
+  paintGlass(initialPrefs?.transparency ?? DEFAULT_TRANSPARENCY, initialPrefs?.systemReducedTransparency === true);
   paintMaterial(initialPrefs?.material ?? 'none', initialPrefs?.frame ?? 'canvas');
   store.set({
     theme: theme.choice(),
@@ -191,7 +224,7 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
     onLanguageChange: (choice) => void applyLanguage(choice),
     onAutostartChange: (enabled) => void applyAutostart(enabled),
     onTrayViewChange: (view) => void applyTrayView(view),
-    onTransparencyChange: (level) => applyTransparency(level),
+    onTransparencyChange: (level, final) => applyTransparency(level, final),
     onStripStyleChange: (style) => void applyStripStyle(style),
     coachDismissed: false,
     onReorder: (ids) => void applyOrder(ids),
@@ -786,53 +819,103 @@ export function mountApp(container: HTMLElement, bridge: Bridge): AppHandle {
 
   // --- Görünüm: "Saydamlık" ------------------------------------------------
 
+  /**
+   * How often a DRAGGED slider asks main for its value. Each ask persists the
+   * level and re-applies the window's glass, so the panel follows the hand
+   * at this rate; faster only adds writes. The slider's own 'change' — the
+   * hand let go, or a key press — is asked for at once.
+   */
+  const TRANSPARENCY_SEND_MS = 80;
   /** The newest value asked of main. Same shape as stripStyleRequest. */
   let glassRequest: { level: number; at: number } | null = null;
   /** Same role as `confirmedStripStyle`: what main is known to hold. */
   let confirmedLevel: number = store.get().transparency;
+  /** The last value handed to main, asked or confirmed: a step is never asked twice. */
+  let sentLevel: number = confirmedLevel;
+  /** When the last ask went out, for the throttle. */
+  let glassSentAt = 0;
+  /** A step held back by the throttle, sent when it runs out. */
+  let glassTimer: number | null = null;
+
+  function cancelGlassTimer(): void {
+    if (glassTimer === null) return;
+    window.clearTimeout(glassTimer);
+    glassTimer = null;
+  }
+  disposers.push(cancelGlassTimer);
 
   /**
-   * Optimistic, then reconciled, like applyStripStyle: the store (and with it
-   * the switch, and the opaque header at 0) follows the press at once, and
-   * main is asked afterwards. `{ok:false}` on the newest ask puts main's value
-   * back on the document as well as on the switch, so the screen never shows
-   * a look that will not survive a restart.
+   * Optimistic, then reconciled, like applyStripStyle: the store (and with it the
+   * figure beside the slider, and the opaque header at 0) follows every step
+   * at once, and main is asked afterwards — at most every
+   * TRANSPARENCY_SEND_MS while the slider is dragged, with the newest step
+   * always sent last. `final` is the slider's 'change': no waiting.
    */
-  function applyTransparency(next: number): void {
-    // The switch is disabled then; a press that still arrives changes nothing.
+  function applyTransparency(next: number, final: boolean): void {
+    // The slider is disabled then; a step that still arrives changes nothing.
     if (store.get().systemReducedTransparency) return;
-    if (next === store.get().transparency && glassRequest === null) return;
-    paintGlass(next === 0, false);
-    store.set({ transparency: next, transparencyReverted: false, transparencyPending: true, notice: null });
-    const request = { level: next, at: Date.now() };
+    if (next !== store.get().transparency) {
+      paintGlass(next, false);
+      store.set({ transparency: next, transparencyReverted: false, notice: null });
+    }
+    cancelGlassTimer();
+    const wait = final ? 0 : glassSentAt + TRANSPARENCY_SEND_MS - Date.now();
+    if (wait <= 0) {
+      void sendTransparency(next);
+      return;
+    }
+    glassTimer = window.setTimeout(() => {
+      glassTimer = null;
+      void sendTransparency(store.get().transparency);
+    }, wait);
+  }
+
+  /**
+   * One ask. `{ok:false}` on the newest ask puts main's value back on the
+   * document as well as on the slider, so the screen never shows a level that
+   * will not survive a restart; a step still held back is dropped with it.
+   */
+  async function sendTransparency(level: number): Promise<void> {
+    if (level === sentLevel) return;
+    sentLevel = level;
+    glassSentAt = Date.now();
+    const request = { level, at: glassSentAt };
     glassRequest = request;
-    void (async () => {
-      const ok = await bridge.setTransparency(next);
-      if (ok) confirmedLevel = next;
-      if (glassRequest !== request) return;
-      glassRequest = null;
-      store.set({ transparencyPending: false });
-      if (ok) return;
-      paintGlass(confirmedLevel === 0, store.get().systemReducedTransparency);
-      store.set({ transparency: confirmedLevel, transparencyReverted: true });
-      say(t('app.transparencyNotSaved'), 'error');
-      window.setTimeout(() => {
-        if (store.get().transparencyReverted) store.set({ transparencyReverted: false });
-      }, 1_600);
-    })();
+    store.set({ transparencyPending: true });
+
+    const ok = await bridge.setTransparency(level);
+    if (ok) confirmedLevel = level;
+
+    if (glassRequest !== request) return;
+    glassRequest = null;
+    store.set({ transparencyPending: false });
+    if (ok) return;
+
+    cancelGlassTimer();
+    sentLevel = confirmedLevel;
+    paintGlass(confirmedLevel, store.get().systemReducedTransparency);
+    store.set({ transparency: confirmedLevel, transparencyReverted: true });
+    say(t('app.transparencyNotSaved'), 'error');
+    window.setTimeout(() => {
+      if (store.get().transparencyReverted) store.set({ transparencyReverted: false });
+    }, 1_600);
   }
 
   /**
    * Main's values, pushed. Windows' half is adopted at once (it is not the
-   * user's to revert); the user's half unless a press is still in flight.
+   * user's to revert); the user's half unless a step is still in flight or
+   * held back — a push that crossed the drag would pull the slider out from
+   * under the hand.
    */
   function acceptTransparency(prefs: Preferences): void {
     confirmedLevel = prefs.transparency;
     const system = prefs.systemReducedTransparency;
-    const level = glassRequest !== null ? store.get().transparency : prefs.transparency;
+    const busy = glassRequest !== null || glassTimer !== null;
+    if (!busy) sentLevel = prefs.transparency;
+    const level = busy ? store.get().transparency : prefs.transparency;
     const current = store.get();
     if (level === current.transparency && system === current.systemReducedTransparency) return;
-    paintGlass(level === 0, system);
+    paintGlass(level, system);
     store.set({ transparency: level, systemReducedTransparency: system });
   }
 

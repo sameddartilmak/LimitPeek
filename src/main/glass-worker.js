@@ -33,13 +33,22 @@ const win32 = require('./win32');
  * The pace. Each look waits for Windows' next composed frame (win32
  * waitForFrame, DwmFlush), so a copy lands on a frame the screen showed;
  * the gaps below cap it, because a fast display composes far more often
- * than the glass needs (measured here: 147 frames a second). A moving screen
- * is followed at up to about 60 copies a second, a still one is looked at
- * (the ring alone) about 20 times a second. Without frames to wait for, a
- * plain timer at the same gaps.
+ * than the glass needs (measured here: 147 frames a second). A copy itself
+ * takes about one composed frame (the BitBlt waits for DWM), so a moving
+ * screen is followed every other frame: about 73 copies a second at 147 Hz,
+ * every frame at 60 Hz (the owner, 2026-11-02, after 48 a second: "biraz
+ * daha akıcı"). A still one is looked at (the ring alone) about 30 times a
+ * second, so motion that starts is caught within a frame or two. Without
+ * frames to wait for, a plain timer at the same gaps.
  */
-const MOVING_GAP_MS = 15;
-const STILL_GAP_MS = 50;
+const MOVING_GAP_MS = 8;
+const STILL_GAP_MS = 33;
+/**
+ * How long the screen counts as moving after the last change. A drag, a
+ * scroll or a video has frames where nothing moved; dropping to the still
+ * pace (and the ring) on each of them made the glass catch up in steps.
+ */
+const MOVING_HOLD_MS = 250;
 
 const dwm = win32.loadDwm();
 if (!dwm || typeof dwm.captureBehind !== 'function' || typeof dwm.captureScreen !== 'function') {
@@ -52,6 +61,8 @@ let lastLook = 0;
 let ring = null;
 let last = null;
 let moving = false;
+/** When the last copy that differed was posted. */
+let lastChange = 0;
 
 /**
  * Two equal-sized BGRA copies compared on their outer `edge` pixels only: the
@@ -99,9 +110,11 @@ function tick() {
       const shot = dwm.captureBehind(place.hwnd, place.rect);
       if (shot) {
         if (last && last.width === shot.width && last.height === shot.height && last.bgra.equals(shot.bgra)) {
-          moving = false;
+          // Still, unless it changed a moment ago (MOVING_HOLD_MS).
+          if (Date.now() - lastChange >= MOVING_HOLD_MS) moving = false;
         } else {
           moving = true;
+          lastChange = Date.now();
           last = shot;
           // A copy goes; the original stays here to compare the next one with.
           const out = new Uint8Array(shot.bgra);

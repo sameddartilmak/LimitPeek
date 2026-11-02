@@ -248,10 +248,16 @@ test.describe('the glass layer in panel.css', () => {
   });
 
   test('the thick tint until the picture arrives; the corners are the glass\'s own', () => {
-    assert.match(css, /\.glass\[data-ready="false"\] \.glass__tint \{ background: var\(--glass-tint-bare\); \}/);
+    assert.match(css, /\.glass\[data-ready="false"\] \.glass__tint \{ background: var\(--glass-tint-bare\); opacity: 1; \}/);
+    assert.match(css, /\.glass\[data-ready="false"\] \.glass__frost \{ display: none; \}/);
     const tokens = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'styles', 'tokens.css'), 'utf8');
     assert.match(tokens, /--glass-radius: 22px;/);
     assert.match(tokens, /--glass-tint-bare: rgba\(28, 28, 30, \.86\);/);
+  });
+
+  test('"Saydamlık" sets the frost and the tint: thicker frost towards "Düz", thinner tint towards "Saydam"', () => {
+    assert.match(css, /\.glass__tint \{ background: var\(--glass-tint\); opacity: var\(--glass-tint-amount, 1\); \}/);
+    assert.match(css, /\.glass__frost \{[^}]*background: var\(--glass-tint-bare\);[^}]*opacity: var\(--glass-frost, 0\);/);
   });
 
   test('app.ts puts the layer in <body>, outside the animated panel', () => {
