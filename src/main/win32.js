@@ -367,6 +367,7 @@ function bindDwm() {
   koffi.struct('UN_WCAD', { Attrib: 'int32', pvData: 'void *', cbData: 'size_t' });
   return {
     DwmSetWindowAttribute: dwmapi.func('int __stdcall DwmSetWindowAttribute(intptr h, uint attr, _In_ uint32_t* value, uint size)'),
+    DwmFlush: dwmapi.func('int __stdcall DwmFlush()'),
     SetWindowCompositionAttribute: user32.func('bool __stdcall SetWindowCompositionAttribute(intptr h, UN_WCAD *data)'),
     SetWindowDisplayAffinity: user32.func('bool __stdcall SetWindowDisplayAffinity(intptr h, uint32 affinity)'),
     GetDC: user32.func('intptr __stdcall GetDC(intptr h)'),
@@ -460,6 +461,14 @@ function makeDwm(f) {
      *
      * @returns {{width: number, height: number, bgra: Buffer}|null}
      */
+    /**
+     * Wait for Windows' next composed frame (DwmFlush): the LIVE glass looks
+     * once per frame the screen actually shows, instead of on a timer that
+     * Windows rounds to its 15.6 ms tick (measured: 37 copies a second at a
+     * 16 ms interval). Blocks the calling thread, so only glass-worker.js
+     * calls it. False when there is no frame to wait for.
+     */
+    waitForFrame: guard('waitForFrame', () => f.DwmFlush() === 0, false),
     captureBehind: guard('captureBehind', (hwnd, rect) => {
       const box = captureBox(rect);
       if (!hwnd || !box) return null;

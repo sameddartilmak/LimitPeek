@@ -78,6 +78,13 @@ const { handleOf } = require('./win32');
  * behind the panel without touching the ring is not followed until something
  * else does. Never stored.
  *
+ * The looking runs on a thread of its own when index.js hands one over
+ * (`glassWorker`, src/main/glass-worker.js): timed from main's event loop the
+ * copies landed late whenever IPC or a scan was busy, and the glass moved in
+ * steps. Main then only tells it where the window is and forwards what it
+ * posts. Without one (a test, or a thread that failed to start or reported
+ * no DWM helper) main looks itself, every BACKDROP_LIVE_MS (`_liveTick`).
+ *
  * A fitted window grows and shrinks with the panel: the renderer reports the
  * panel's height (IPC.PANEL_SIZE, `setContentHeight`) and the window follows,
  * keeping the edge nearest the taskbar where it is. It is still created once,
@@ -303,6 +310,16 @@ class PanelWindow {
     this._backdrop = null;
     /** The LIVE copy's timer while an open panel has the glass. */
     this._liveTimer = null;
+    /** Makes the LIVE thread (glass-worker.js), or absent: main looks itself. */
+    this._glassWorkerFactory = typeof options.glassWorker === 'function' ? options.glassWorker : null;
+    /** The LIVE thread once started; null before, and for good once it failed. */
+    this._glassWorker = null;
+    this._glassWorkerBroken = false;
+    /** Whether the thread is following the window now. */
+    this._following = false;
+    /** The place the thread was last told, and its number: frames name it. */
+    this._liveSeq = 0;
+    this._liveRect = null;
     /** The last ring outside the panel a LIVE tick saw (panel-window header). */
     this._ring = null;
     /** The last LIVE copy under the window differed: the screen is moving. */
@@ -594,8 +611,10 @@ class PanelWindow {
     const { anchorPoint, edge, work, tray } = this._place;
     const size = this._fittedSize(work);
     this._placeAcrossDpi(placeNear(anchorPoint, edge, work, size, FITTED_GAP));
-    // The window moved over the picture: where the picture now sits in it.
+    // The window moved over the picture: where the picture now sits in it,
+    // and the LIVE thread looks at the new place.
     this._sendBackdrop(false);
+    if (this._following) this._followWindow();
     // A panel still in transit keeps a corridor that matches its new size.
     if (this._transitBox) this._transitBox = this._corridorFrom({ tray });
     log.trace('panel.fit', { height: size.height });
@@ -720,16 +739,96 @@ class PanelWindow {
 
   /** Follow the screen under the open panel (LIVE, header). Idempotent. */
   _startLive() {
-    if (this._liveTimer || this.frame !== 'fitted' || this._material !== 'acrylic') return;
+    if (this.frame !== 'fitted' || this._material !== 'acrylic') return;
+    if (this._workerReady()) {
+      this._followWindow();
+      return;
+    }
+    if (this._liveTimer) return;
     this._liveTimer = setInterval(() => this._liveTick(), BACKDROP_LIVE_MS);
   }
 
   _stopLive() {
     this._ring = null;
     this._moving = false;
+    if (this._following && this._glassWorker) this._glassWorker.postMessage({ type: 'pause' });
+    this._following = false;
     if (!this._liveTimer) return;
     clearInterval(this._liveTimer);
     this._liveTimer = null;
+  }
+
+  /** The LIVE thread, started on first use. False when there is none to use. */
+  _workerReady() {
+    if (this._glassWorker) return true;
+    if (!this._glassWorkerFactory || this._glassWorkerBroken) return false;
+    try {
+      const worker = this._glassWorkerFactory();
+      worker.on('message', (msg) => this._onWorkerMessage(msg));
+      worker.on('error', (err) => this._workerFailed(err && err.code));
+      worker.on('exit', () => this._workerFailed('EXIT'));
+      this._glassWorker = worker;
+      return true;
+    } catch (err) {
+      this._workerFailed(err && err.code);
+      return false;
+    }
+  }
+
+  /**
+   * The thread could not look: main looks itself from now on (the fallback,
+   * `_liveTick`), and the thread is not started again in this process.
+   */
+  _workerFailed(code) {
+    if (this._glassWorkerBroken) return;
+    this._glassWorkerBroken = true;
+    log.warn(`panel glass thread unavailable: code=${code || 'UNKNOWN'}`);
+    const worker = this._glassWorker;
+    this._glassWorker = null;
+    const wasFollowing = this._following;
+    this._following = false;
+    if (worker) {
+      try { worker.terminate(); } catch { /* already gone */ }
+    }
+    if (wasFollowing && this._open) this._startLive();
+  }
+
+  /** Tell the thread where the window is now: its rect and its ring, physical px. */
+  _followWindow() {
+    if (!this._glassWorker || !this.win || this.win.isDestroyed()) return;
+    const hwnd = handleOf(this.win);
+    if (!hwnd) return;
+    const rect = this.win.getBounds();
+    const outer = {
+      x: rect.x - BACKDROP_RING,
+      y: rect.y - BACKDROP_RING,
+      width: rect.width + 2 * BACKDROP_RING,
+      height: rect.height + 2 * BACKDROP_RING,
+    };
+    this._liveSeq += 1;
+    this._liveRect = rect;
+    this._following = true;
+    this._glassWorker.postMessage({
+      type: 'follow',
+      seq: this._liveSeq,
+      hwnd,
+      rect: screen.dipToScreenRect(this.win, rect),
+      ring: screen.dipToScreenRect(this.win, outer),
+    });
+  }
+
+  /** A frame from the thread, for the place it was last told; anything else is dropped. */
+  _onWorkerMessage(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'failed') {
+      this._workerFailed(msg.code);
+      return;
+    }
+    if (msg.type !== 'frame' || !this._following || msg.seq !== this._liveSeq) return;
+    if (!this._open || this._material !== 'acrylic') return;
+    if (!(msg.bgra instanceof ArrayBuffer) || msg.bgra.byteLength !== msg.width * msg.height * 4) return;
+    this._backdrop = { rect: this._liveRect, shot: { width: msg.width, height: msg.height, bgra: Buffer.from(msg.bgra) } };
+    this._sendBackdrop(true);
   }
 
   /**
@@ -1425,6 +1524,13 @@ class PanelWindow {
     this.cancelHide('destroy');
     this._stopPointerWatch();
     this._stopLive();
+    if (this._glassWorker) {
+      const worker = this._glassWorker;
+      this._glassWorker = null;
+      // Leaving on purpose: its 'exit' is not a failure.
+      this._glassWorkerBroken = true;
+      try { worker.terminate(); } catch { /* already gone */ }
+    }
     if (this.win && !this.win.isDestroyed()) this.win.destroy();
     this.win = null;
   }
