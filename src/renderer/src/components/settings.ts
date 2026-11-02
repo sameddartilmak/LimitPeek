@@ -792,7 +792,7 @@ function createTrayViewControl(ctx: SettingsContext): TrayViewHandleLocal {
  * One segmented choice under "Görünüm", the theme's native-radio fieldset
  * and CSS: a hidden legend for the group name, the options, the help line
  * as the group's footer, and the pending / revert attributes on the group.
- * Shared by "Düzen" and "Şerit stili", which differ only in their values.
+ * Used by "Şerit stili"; written generic so the next such choice is one call.
  */
 interface ChoiceHandleLocal<V extends string> {
   el: HTMLElement;

@@ -13,7 +13,7 @@ const { FakeElement, installDom, mirrorRenderer, walk } = require('./helpers/fak
  *      that opened the view is hidden, and the keyboard meets back, refresh,
  *      pin, then the tabs (the header has no close since the minimal redesign). Closing the view puts the brand and the button
  *      back, and focus on the button.
- *   2. The "Saydamlık" slider is optimistic like the layout: the store and the
+ *   2. The "Saydamlık" slider is optimistic: the store and the
  *      document follow every step, main is asked at a throttled rate while
  *      it is dragged and at once on 'change', a refusal puts main's value
  *      back and says so, and Windows' own request (systemReducedTransparency)
@@ -321,12 +321,12 @@ test.describe('small details', () => {
     }
   });
 
-  test('in the ring tiles every window is still a meter with its value and its sentence', async () => {
-    const app = mount({ layout: 'halka' }, { snapshot: SNAP });
+  test('every window is still a meter with its value and its sentence', async () => {
+    const app = mount({}, { snapshot: SNAP });
     try {
       app.handle.applySnapshot(SNAP);
       await tick();
-      assert.equal(document.documentElement.dataset.layout, 'halka');
+      assert.equal(document.documentElement.dataset.layout, undefined, 'no layout on the document any more');
       assert.equal(document.documentElement.dataset.gauge, undefined, 'no gauge on the document any more');
       const meters = walk(app.container).filter((n) => n.getAttribute('role') === 'meter');
       assert.deepEqual(meters.map((m) => m.getAttribute('aria-valuenow')), ['62', '41']);
