@@ -564,13 +564,22 @@ test.describe('the picture follows the screen while the panel is open (LIVE)', (
     assert.equal(first.length, 1, 'another size: sent');
     assert.deepEqual([first[0].x, first[0].y], [0, 0]);
     assert.ok(first[0].image);
+    // Just after a change the screen counts as moving: the next tick copies
+    // under the window again, without the ring, finds it still, sends nothing.
     panel._liveTick();
+    assert.equal(shots.filter((r) => r.behind).length, 2);
     assert.equal(backdrops(panel).length, opened + 1, 'the same screen: nothing sent');
-    assert.equal(shots.filter((r) => r.behind).length, 1, 'a still ring never hides the panel from a capture');
+    panel._liveTick();
+    assert.equal(shots.filter((r) => r.behind).length, 2, 'still again: a still ring never hides the panel from a capture');
     dwm.screen = 99;
     panel._liveTick();
-    assert.equal(shots.filter((r) => r.behind).length, 2, 'the ring moved: one copy with the panel left out');
+    assert.equal(shots.filter((r) => r.behind).length, 3, 'the ring moved: one copy with the panel left out');
     assert.equal(backdrops(panel).length, opened + 2, 'the screen moved: sent');
+    const ringsBefore = shots.filter((r) => !r.behind).length;
+    dwm.screen = 100;
+    panel._liveTick();
+    assert.equal(shots.filter((r) => !r.behind).length, ringsBefore, 'while it moves, the ring is skipped');
+    assert.equal(backdrops(panel).length, opened + 3, 'and every changed copy is sent');
     // The ring is the window grown by its width, the panel in it.
     const ring = shots.filter((r) => !r.behind).at(-1);
     assert.equal(ring.width, Math.round((panel.win.getBounds().width + 12) * k));

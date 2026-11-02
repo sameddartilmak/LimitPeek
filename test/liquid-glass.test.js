@@ -259,3 +259,23 @@ test.describe('the glass layer in panel.css', () => {
     assert.match(app, /const glass = createGlass\(\);\s*container\.parentNode\?\.insertBefore\(glass\.el, container\);/);
   });
 });
+
+test.describe('glass.ts on the GPU', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'src', 'components', 'glass.ts'), 'utf8');
+
+  test('the picture goes up as it came and is read swizzled: the CPU touches no pixel', () => {
+    assert.match(src, /gl\.texImage2D\(gl\.TEXTURE_2D, 0, gl\.RGBA, source\.width, source\.height, 0, gl\.RGBA, gl\.UNSIGNED_BYTE, source\.bgra\)/);
+    assert.match(src, /texture2D\(u_src, \(p \+ u_origin\) \/ u_srcSize\)\.bgr/);
+  });
+
+  test('the shader is the same lens as refract: the rounded rect\'s distance, t squared times the depth, inward', () => {
+    assert.match(src, /float t = clamp\(1\.0 \+ d \/ u_band, 0\.0, 1\.0\);/);
+    assert.match(src, /vec2 s = p - \(t \* t \* u_depth\) \* n \/ max\(length\(n\), 0\.0001\);/);
+    assert.match(src, /gl\.uniform1f\(u\.radius, GLASS_RADIUS \* s\);/);
+  });
+
+  test('no WebGL: the 2D fallback, from the same picture', () => {
+    assert.match(src, /if \(gpu === undefined\) gpu = gpuGlass\(canvas\);/);
+    assert.match(src, /if \(!source\.rgba\) source\.rgba = rgbaOfBgra\(source\.bgra\);/);
+  });
+});

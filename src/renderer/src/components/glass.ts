@@ -15,11 +15,12 @@
  *   - a tint, a soft shine top-left and a bright rim (glass.css), drawn by CSS
  *     over the picture.
  *
- * Done here, in plain arrays, not with an SVG filter: a displacement map
- * needs an `<feImage href>`, and dom.ts allows no href anywhere — a
- * guardrail worth more than a shorter file. The work is one pass over the
- * panel's own pixels per picture and per resize; main sends a new picture
- * only when the screen under the panel changed (panel-window.js, LIVE).
+ * Drawn by a WebGL shader (`gpuGlass`), with `refract` — the same three
+ * steps in plain arrays — as the fallback; never with an SVG filter: a
+ * displacement map needs an `<feImage href>`, and dom.ts allows no href
+ * anywhere, a guardrail worth more than a shorter file. Main sends a new
+ * picture only when the screen under the panel changed (panel-window.js,
+ * LIVE).
  *
  * The picture follows the screen while the panel is open (main copies the
  * region under it again and sends it when it changed). It lives only in this
@@ -59,12 +60,146 @@ export interface GlassHandle {
  * inside it.
  */
 interface Source {
-  rgba: Uint8ClampedArray;
+  /** The pixels as main sent them: B, G, R, x. */
+  bgra: Uint8Array;
+  /** The same as RGBA, made only for the 2D fallback, and only once. */
+  rgba: Uint8ClampedArray | null;
   width: number;
   height: number;
   scale: number;
   originX: number;
   originY: number;
+}
+
+/**
+ * The glass on the GPU (2026-11-02, the owner: the live glass "akıcı değil").
+ * The same three steps as `refract` below, as one fragment shader: the rim's
+ * lens, a soft blur (thirteen taps on a golden-angle disk, close to the box
+ * blur's look) and the saturation. The picture is uploaded as it came, B G R
+ * x, and read back swizzled, so the CPU touches no pixel at all; a frame is
+ * an upload and one draw. `refract` stays as the fallback for a page with no
+ * WebGL, and as the pure statement of what the shader does.
+ */
+const VERTEX_SHADER = `
+attribute vec2 a_pos;
+varying vec2 v_uv;
+void main() {
+  v_uv = vec2((a_pos.x + 1.0) * 0.5, (1.0 - a_pos.y) * 0.5);
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+
+const FRAGMENT_SHADER = `
+precision highp float;
+uniform sampler2D u_src;
+uniform vec2 u_srcSize;
+uniform vec2 u_origin;
+uniform vec2 u_size;
+uniform float u_radius;
+uniform float u_band;
+uniform float u_depth;
+uniform float u_blur;
+uniform float u_sat;
+varying vec2 v_uv;
+
+vec3 tap(vec2 p) {
+  return texture2D(u_src, (p + u_origin) / u_srcSize).bgr;
+}
+
+void main() {
+  vec2 p = v_uv * u_size;
+  vec2 c = u_size * 0.5;
+  vec2 q = p - c;
+  vec2 a = abs(q) - (c - u_radius);
+  float d = min(max(a.x, a.y), 0.0) + length(max(a, 0.0)) - u_radius;
+  float t = clamp(1.0 + d / u_band, 0.0, 1.0);
+  vec2 n = q / c;
+  vec2 s = p - (t * t * u_depth) * n / max(length(n), 0.0001);
+  vec3 col = tap(s);
+  for (int i = 0; i < 12; i++) {
+    float f = float(i);
+    float ang = f * 2.39996;
+    col += tap(s + u_blur * sqrt((f + 0.5) / 12.0) * vec2(cos(ang), sin(ang)));
+  }
+  col /= 13.0;
+  float g = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  gl_FragColor = vec4(mix(vec3(g), col, u_sat), 1.0);
+}`;
+
+/** The disk the GPU blur samples, in CSS px: about the look of the box blur run twice. */
+const GPU_BLUR = 3.5;
+
+interface GpuGlass {
+  /** A new picture into the texture. */
+  upload(source: Source): void;
+  /** The glass for a window of cssW x cssH from the texture. */
+  draw(source: Source, cssW: number, cssH: number): void;
+}
+
+function compile(gl: WebGLRenderingContext, type: number, text: string): WebGLShader | null {
+  const shader = gl.createShader(type);
+  if (!shader) return null;
+  gl.shaderSource(shader, text);
+  gl.compileShader(shader);
+  return gl.getShaderParameter(shader, gl.COMPILE_STATUS) ? shader : null;
+}
+
+/** The GPU glass on `canvas`, or null: no WebGL, or the shader did not build. */
+function gpuGlass(canvas: HTMLCanvasElement): GpuGlass | null {
+  const gl = canvas.getContext('webgl', { alpha: false, antialias: false, depth: false, premultipliedAlpha: false }) as WebGLRenderingContext | null;
+  if (!gl) return null;
+  const vs = compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
+  const fs = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
+  const program = gl.createProgram();
+  if (!vs || !fs || !program) return null;
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
+  gl.useProgram(program);
+
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const pos = gl.getAttribLocation(program, 'a_pos');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  // Any size, no mipmaps: clamped and linear is what WebGL 1 allows.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  const at = (name: string): WebGLUniformLocation | null => gl.getUniformLocation(program, name);
+  const u = {
+    srcSize: at('u_srcSize'), origin: at('u_origin'), size: at('u_size'), radius: at('u_radius'),
+    band: at('u_band'), depth: at('u_depth'), blur: at('u_blur'), sat: at('u_sat'),
+  };
+
+  return {
+    upload(source) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, source.width, source.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, source.bgra);
+    },
+    draw(source, cssW, cssH) {
+      const s = source.scale;
+      const w = Math.max(1, Math.round(cssW * s));
+      const h = Math.max(1, Math.round(cssH * s));
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+      gl.viewport(0, 0, w, h);
+      gl.uniform2f(u.srcSize, source.width, source.height);
+      gl.uniform2f(u.origin, source.originX, source.originY);
+      gl.uniform2f(u.size, w, h);
+      gl.uniform1f(u.radius, GLASS_RADIUS * s);
+      gl.uniform1f(u.band, LENS_BAND * s);
+      gl.uniform1f(u.depth, LENS_DEPTH * s);
+      gl.uniform1f(u.blur, GPU_BLUR * s);
+      gl.uniform1f(u.sat, SATURATION);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    },
+  };
 }
 
 export function createGlass(): GlassHandle {
@@ -79,15 +214,33 @@ export function createGlass(): GlassHandle {
   );
 
   let source: Source | null = null;
+  /** Whether the picture changed since it was last uploaded. */
+  let fresh = false;
   let frame = 0;
+  /**
+   * Which way the canvas draws, settled on the first draw (a canvas keeps the
+   * first kind of context it hands out): the GPU when it can, the 2D
+   * fallback when not, nothing at all in a page without a canvas.
+   */
+  let gpu: GpuGlass | null | undefined;
 
   function draw(): void {
     frame = 0;
-    const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
-    if (!source || !ctx || typeof ctx.createImageData !== 'function') return;
+    if (!source || typeof canvas.getContext !== 'function') return;
     const cssW = Math.max(1, Math.round(window.innerWidth));
     const cssH = Math.max(1, Math.round(window.innerHeight));
-    const out = refract(source, cssW, cssH);
+    if (gpu === undefined) gpu = gpuGlass(canvas);
+    if (gpu) {
+      if (fresh) gpu.upload(source);
+      fresh = false;
+      gpu.draw(source, cssW, cssH);
+      root.setAttribute('data-ready', 'true');
+      return;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx || typeof ctx.createImageData !== 'function') return;
+    if (!source.rgba) source.rgba = rgbaOfBgra(source.bgra);
+    const out = refract({ ...source, rgba: source.rgba }, cssW, cssH);
     canvas.width = out.width;
     canvas.height = out.height;
     const image = ctx.createImageData(out.width, out.height);
@@ -103,6 +256,7 @@ export function createGlass(): GlassHandle {
 
   function drop(): void {
     source = null;
+    fresh = false;
     if (frame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
     frame = 0;
     // A zero-sized canvas frees its pixels; nothing of the screen is kept.
@@ -123,13 +277,15 @@ export function createGlass(): GlassHandle {
       }
       if (backdrop.image) {
         source = {
-          rgba: rgbaOfBgra(backdrop.image.bgra),
+          bgra: backdrop.image.bgra,
+          rgba: null,
           width: backdrop.image.pixelWidth,
           height: backdrop.image.pixelHeight,
           scale: backdrop.image.pixelWidth / backdrop.width,
           originX: 0,
           originY: 0,
         };
+        fresh = true;
       }
       if (!source) return;
       // Where the window's top-left is inside the picture, in its pixels: the
@@ -157,13 +313,16 @@ export function rgbaOfBgra(bgra: Uint8Array): Uint8ClampedArray {
   return out;
 }
 
+/** A picture in RGBA, as `refract` reads it. */
+type RgbaSource = Pick<Source, 'width' | 'height' | 'scale' | 'originX' | 'originY'> & { rgba: Uint8ClampedArray };
+
 /**
  * The glass for a window of `cssW` x `cssH` CSS px, from `src`: the window's
  * region cut out of the picture, softened, bent at the rim and saturated.
  * Pure, so it is tested without a canvas. Reads outside the picture clamp to
  * its edge.
  */
-export function refract(src: Source, cssW: number, cssH: number): { width: number; height: number; rgba: Uint8ClampedArray } {
+export function refract(src: RgbaSource, cssW: number, cssH: number): { width: number; height: number; rgba: Uint8ClampedArray } {
   const s = src.scale > 0 && Number.isFinite(src.scale) ? src.scale : 1;
   const w = Math.max(1, Math.round(cssW * s));
   const h = Math.max(1, Math.round(cssH * s));

@@ -72,9 +72,11 @@ const { handleOf } = require('./win32');
  * copies a thin ring just OUTSIDE the panel (BACKDROP_RING, the panel left
  * in), and only when that ring changed is the region under the window
  * copied with the window out, and sent if it differs. A still desktop costs
- * one small copy a tick and never hides the panel from anything; something
- * that moves only fully behind the panel without touching the ring is not
- * followed until something else does. Never stored.
+ * one small copy a tick and never hides the panel from anything; while the
+ * screen keeps moving the ring is skipped, and the region under the window
+ * is copied every tick until it holds still. Something that moves only fully
+ * behind the panel without touching the ring is not followed until something
+ * else does. Never stored.
  *
  * A fitted window grows and shrinks with the panel: the renderer reports the
  * panel's height (IPC.PANEL_SIZE, `setContentHeight`) and the window follows,
@@ -104,11 +106,15 @@ const SYNTHETIC_TRAY_SIZE = 16;
  */
 const FITTED_WIDTH = 320;
 /**
- * How often the screen under an open glass panel is copied again (LIVE,
- * header): ten times a second follows a moving window closely enough, and a
- * copy is about 4 ms of the main thread for the panel's region.
+ * How often the screen under an open glass panel is looked at (LIVE,
+ * header): about the display's own rate (32 updates a second measured while a window
+ * moved behind it). At ten a second the glass followed
+ * a moving window in visible steps ("akıcı değil", owner, 2026-11-02); at a
+ * 33 ms interval it reached 22 a second. Measured with the GPU glass, the
+ * main process spends under 2 % of a core on it while the screen moves, and
+ * a still screen costs the ring copy alone.
  */
-const BACKDROP_LIVE_MS = 100;
+const BACKDROP_LIVE_MS = 16;
 /** The ring outside the panel each LIVE tick looks at, in DIP px. */
 const BACKDROP_RING = 6;
 const FITTED_MAX_HEIGHT = 680;
@@ -299,6 +305,8 @@ class PanelWindow {
     this._liveTimer = null;
     /** The last ring outside the panel a LIVE tick saw (panel-window header). */
     this._ring = null;
+    /** The last LIVE copy under the window differed: the screen is moving. */
+    this._moving = false;
     this.win = null;
     this.pinned = false;
     this._hideTimer = null;
@@ -718,6 +726,7 @@ class PanelWindow {
 
   _stopLive() {
     this._ring = null;
+    this._moving = false;
     if (!this._liveTimer) return;
     clearInterval(this._liveTimer);
     this._liveTimer = null;
@@ -738,7 +747,8 @@ class PanelWindow {
     const hwnd = handleOf(this.win);
     if (!dwm || typeof dwm.captureBehind !== 'function' || typeof dwm.captureScreen !== 'function' || !hwnd) return;
     const rect = this.win.getBounds();
-    if (!this._ringMoved(dwm, rect)) return;
+    // While the screen is moving, the ring is skipped: it would only say so.
+    if (!this._moving && !this._ringMoved(dwm, rect)) return;
     let shot = null;
     try {
       shot = dwm.captureBehind(hwnd, screen.dipToScreenRect(this.win, rect));
@@ -747,7 +757,12 @@ class PanelWindow {
     }
     if (!shot) return;
     const held = this._backdrop && this._backdrop.shot;
-    if (held && held.width === shot.width && held.height === shot.height && held.bgra.equals(shot.bgra)) return;
+    if (held && held.width === shot.width && held.height === shot.height && held.bgra.equals(shot.bgra)) {
+      // Still again: back to looking at the ring first.
+      this._moving = false;
+      return;
+    }
+    this._moving = true;
     this._backdrop = { rect, shot };
     this._sendBackdrop(true);
   }
