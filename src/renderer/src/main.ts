@@ -8,11 +8,13 @@
 
 import { mountApp } from './app.js';
 import { createBridge } from './bridge.js';
+import { installSmoothScroll } from './smooth-scroll.js';
 
 function start(): void {
   const container = document.getElementById('app');
   if (!container) throw new Error('renderer: #app is missing');
   mountApp(container, createBridge());
+  installSmoothScroll(window);
 }
 
 if (document.readyState === 'loading') {
