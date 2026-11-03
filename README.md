@@ -404,3 +404,9 @@ Bu paragraf daha önce "IDE'nin `state.vscdb`'sini okumuyoruz, çünkü
 belgelenmiş bir arayüz değil" diyordu. O karar, yukarıdaki üç koruma şart
 koşularak kullanıcı tarafından tersine çevrildi. Metni silmek yerine
 değiştirdik: reddin niçin kaldırıldığı, reddin kendisi kadar kayda değer.
+
+## Lisans
+
+LimitPeek ücretsiz ve açık kaynaktır; [MIT lisansı](LICENSE) ile dağıtılır.
+Logolar ve yazı tipleri gibi üçüncü taraf bileşenler ile marka bildirimi
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) dosyasındadır.

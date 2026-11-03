@@ -19,13 +19,14 @@
  *
  * And on every page, whatever the config: connect-src 'none', no
  * 'unsafe-inline', form-action 'none' except on index.html, and no link to
- * the private GitHub repository. test/site-config.test.js runs this.
+ * the old private GitHub repository (the open-source repository may be
+ * linked). test/site-config.test.js runs this.
  */
 const fs = require('node:fs');
 const path = require('node:path');
 
 const CONFIG_KEYS = ['version', 'storeUrl', 'waitlistUrl'];
-const PRIVATE_REPO = /github\.com\/sameddartilmak/i;
+const PRIVATE_REPO = /github\.com\/sameddartilmak\/ai-usage-monitor\b/i;
 
 /** The JSON inside <script type="application/json" id="release-config">. */
 function readConfig(html) {

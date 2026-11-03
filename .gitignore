@@ -27,3 +27,12 @@ render-out.txt
 
 # Paketleme sırasında yazılır (scripts/write-build-info.js); commit edilirse hep bir önceki commit'i anlatır.
 src/main/build-info.json
+
+# Sahibin özel notları: satış, marka başvuruları, tasarım raporları. Bilgisayarda
+# kalır, açık kaynak depoya girmez.
+docs/satis-plani.md
+docs/landing-plan.md
+docs/apple-tasarim-raporu.md
+docs/marka-izin-basvurulari*.md
+docs/ekran-goruntuleri/
+.claude/
