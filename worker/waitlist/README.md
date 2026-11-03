@@ -30,7 +30,7 @@ Bütün komutlar ücretsiz; Cloudflare'in ücretsiz planı bu iş için fazlası
 ### 2. Terminali bu klasörde aç
 
 ```powershell
-cd C:\Users\user1\Documents\Projects\windows-ai-usage-monitor\worker\waitlist
+cd worker\waitlist   # proje klasörünün içinden
 ```
 
 Node.js zaten kurulu. `npx` gereken aracı (wrangler) ilk seferde kendisi indirir; "Ok to proceed?" sorarsa `y` yaz.
@@ -118,7 +118,7 @@ https://limitpeek-waitlist.<senin-alt-alanin>.workers.dev
 İkisi uyuşmazsa form kapalı kalır ve şu komut hata verir. Uyuşunca "OK" yazar:
 
 ```powershell
-cd C:\Users\user1\Documents\Projects\windows-ai-usage-monitor
+cd ..\..   # proje klasörüne dön
 node scripts/check-site-config.js
 ```
 
