@@ -12,7 +12,6 @@ export const LIMITS = {
 /* The only values the optional questions accept. Anything else is dropped,
  * so the database never holds free text except the one feature field. */
 export const TOOLS = ['claude-code', 'codex', 'antigravity', 'kimi-code', 'qwen-code', 'grok-build', 'other'];
-export const PRICES = ['none', 'upto3', '3to5', '5to10', 'more'];
 export const LOCALES = ['tr', 'en'];
 
 /* At most this many sign-ups per IP per hour. The IP itself is never stored:
@@ -70,18 +69,15 @@ function one(form, name) {
  * The optional answers, reduced to known values. `form` is anything with
  * get/getAll (URLSearchParams or FormData). Unanswered questions are null.
  *   tools    comma-separated ids from TOOLS, in TOOLS order, no duplicates
- *   price    one of PRICES
  *   feature  cleanText, at most LIMITS.featureMax code points
  *   locale   'tr' or 'en' (the page language, so a mail can match it)
  */
 export function sanitiseAnswers(form) {
   const picked = new Set(form.getAll('tools').filter((v) => typeof v === 'string'));
   const tools = TOOLS.filter((t) => picked.has(t));
-  const price = one(form, 'price');
   const locale = one(form, 'locale');
   return {
     tools: tools.length ? tools.join(',') : null,
-    price: PRICES.includes(price) ? price : null,
     feature: cleanText(one(form, 'feature'), LIMITS.featureMax) || null,
     locale: LOCALES.includes(locale) ? locale : 'tr',
   };

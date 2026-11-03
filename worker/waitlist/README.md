@@ -133,7 +133,7 @@ node scripts/check-site-config.js
 Sitede formu kendi adresinle gönder; teşekkür sayfası açılmalı. Kaydı gör:
 
 ```powershell
-npx wrangler d1 execute limitpeek-waitlist --remote --command "SELECT email, tools, price, feature, locale, created_at FROM subscribers"
+npx wrangler d1 execute limitpeek-waitlist --remote --command "SELECT email, tools, feature, locale, created_at FROM subscribers"
 ```
 
 ## Sonra işine yarayacaklar
@@ -149,7 +149,7 @@ npx wrangler d1 execute limitpeek-waitlist --remote --json --command "SELECT ema
 **Cevapların özeti:**
 
 ```powershell
-npx wrangler d1 execute limitpeek-waitlist --remote --command "SELECT price, COUNT(*) AS kisi FROM subscribers GROUP BY price"
+npx wrangler d1 execute limitpeek-waitlist --remote --command "SELECT feature, COUNT(*) AS kisi FROM subscribers WHERE feature IS NOT NULL GROUP BY feature"
 ```
 
 **Her e-postaya listeden çıkma bağlantısı koy** (gizlilik sayfası bunu söz veriyor):

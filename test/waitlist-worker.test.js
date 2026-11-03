@@ -88,21 +88,21 @@ test('sanitiseAnswers keeps only known values, in a fixed order, once each', () 
     ['tools', 'codex'], ['tools', 'evil<script>'], ['tools', 'claude-code'], ['tools', 'codex'], ['tools', 'other'],
     ['price', '3to5'], ['feature', '  phone\nalerts  '], ['locale', 'en'],
   ]));
-  assert.deepEqual(a, { tools: 'claude-code,codex,other', price: '3to5', feature: 'phone alerts', locale: 'en' });
+  assert.deepEqual(a, { tools: 'claude-code,codex,other', feature: 'phone alerts', locale: 'en' }, 'a price answer (the old question) is dropped');
 });
 
 test('sanitiseAnswers: unanswered or unknown answers are null, locale falls back to tr', () => {
-  assert.deepEqual(lib.sanitiseAnswers(form([])), { tools: null, price: null, feature: null, locale: 'tr' });
+  assert.deepEqual(lib.sanitiseAnswers(form([])), { tools: null, feature: null, locale: 'tr' });
   assert.deepEqual(
     lib.sanitiseAnswers(form([['tools', 'copilot'], ['price', '1000'], ['feature', '\u200b '], ['locale', 'de']])),
-    { tools: null, price: null, feature: null, locale: 'tr' });
+    { tools: null, feature: null, locale: 'tr' });
 });
 
 test('sanitiseAnswers accepts every value the lists define', () => {
   const all = lib.sanitiseAnswers(form(lib.TOOLS.map((t) => ['tools', t])));
   assert.equal(all.tools, lib.TOOLS.join(','));
   assert.ok(all.tools.length <= 120, 'fits the schema CHECK');
-  for (const p of lib.PRICES) assert.equal(lib.sanitiseAnswers(form([['price', p]])).price, p);
+  assert.equal(lib.PRICES, undefined, 'the free app asks no price question');
 });
 
 test('isBot is true only for a filled honeypot', () => {
@@ -213,25 +213,23 @@ test('handler: a sign-up is stored normalised and redirects (303) to thanks.html
   assert.equal(rest.length, 0);
   assert.equal(r.email, 'ada@example.com');
   assert.equal(r.tools, 'claude-code,codex');
-  assert.equal(r.price, 'upto3');
   assert.equal(r.feature, 'phone alerts');
   assert.equal(r.locale, 'en');
   assert.match(r.token, /^[0-9a-f]{64}$/);
   assert.equal(r.created_at, '2026-10-20T12:00:00.000Z');
   assert.equal(r.updated_at, r.created_at);
-  assert.deepEqual(Object.keys(r).sort(), ['created_at', 'email', 'feature', 'locale', 'price', 'token', 'tools', 'updated_at'],
+  assert.deepEqual(Object.keys(r).sort(), ['created_at', 'email', 'feature', 'locale', 'token', 'tools', 'updated_at'],
     'exactly the columns the privacy policy lists');
 });
 
 test('handler: signing up again updates the given answers and keeps the rest', async () => {
   const { env, ctx, rows } = setup();
-  await worker.handle(post([['email', 'ada@example.com'], ['tools', 'codex'], ['price', 'more'], ['feature', 'first']]), env, ctx, NOW);
+  await worker.handle(post([['email', 'ada@example.com'], ['tools', 'codex'], ['feature', 'first']]), env, ctx, NOW);
   const before = rows()[0];
-  const res = await worker.handle(post([['email', 'ADA@example.com'], ['price', 'none'], ['locale', 'en']]), env, ctx, NOW + 60000);
+  const res = await worker.handle(post([['email', 'ADA@example.com'], ['locale', 'en']]), env, ctx, NOW + 60000);
   assert.equal(res.status, 303);
   const all = rows();
   assert.equal(all.length, 1, 'deduplicated on email');
-  assert.equal(all[0].price, 'none');
   assert.equal(all[0].tools, 'codex', 'unanswered this time: kept');
   assert.equal(all[0].feature, 'first');
   assert.equal(all[0].locale, 'en');
@@ -374,9 +372,9 @@ test('site form: field names and option values are exactly what the Worker accep
   const body = m[1];
   const values = (name) => [...body.matchAll(new RegExp(`name="${name}" value="([^"]+)"`, 'g'))].map((x) => x[1]);
   assert.deepEqual(values('tools'), lib.TOOLS);
-  assert.deepEqual(values('price'), lib.PRICES);
+  assert.deepEqual(values('price'), [], 'no price question: the app is free');
   const names = new Set([...body.matchAll(/\bname="([^"]+)"/g)].map((x) => x[1]));
-  assert.deepEqual([...names].sort(), ['email', 'feature', 'locale', 'price', 'tools', 'website']);
+  assert.deepEqual([...names].sort(), ['email', 'feature', 'locale', 'tools', 'website']);
   assert.match(body, /name="email"[^>]*\brequired\b/);
   assert.match(body, new RegExp(`name="feature"[^>]*maxlength="${lib.LIMITS.featureMax}"`));
   assert.match(body, new RegExp(`name="email"[^>]*maxlength="${lib.LIMITS.emailMax}"`));
