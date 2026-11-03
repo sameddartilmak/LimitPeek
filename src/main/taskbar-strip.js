@@ -673,7 +673,16 @@ class TaskbarStrip {
       // The taskbar's own material shows between the tiles.
       transparent: true,
       backgroundColor: '#00000000',
-      resizable: false,
+      // RESIZABLE, though nobody can resize it (no frame, no thick frame):
+      // Electron pins a non-resizable window to its size, and Windows then
+      // clamps every SetWindowPos to it. The strip is created for the tiles
+      // of the moment and must grow when a tool is added — a strip made for
+      // one tile stayed one tile wide over two drawn ones, so the second
+      // tile took no hover and no click, and the panel anchored over the
+      // first (owner, 2026-11-03: Antigravity added to the strip "tıklanmıyor",
+      // "panel daha solda açılıyor"; measured: SetWindowPos to 450 px left a
+      // non-resizable window at 229, a resizable one went to 450).
+      resizable: true,
       movable: false,
       minimizable: false,
       maximizable: false,

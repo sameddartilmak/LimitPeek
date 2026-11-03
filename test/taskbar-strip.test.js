@@ -539,6 +539,9 @@ test.describe('enable and disable', () => {
     assert.equal(o.frame, false);
     assert.equal(o.backgroundColor, '#00000000');
     assert.equal(o.thickFrame, false, 'no resize border or shadow');
+    // Electron pins a non-resizable window to its size and Windows clamps
+    // SetWindowPos to it: the strip could not grow from one tile to two.
+    assert.equal(o.resizable, true, 'the strip can grow when a tile is added');
     assert.equal(o.webPreferences.sandbox, true);
     assert.equal(o.webPreferences.contextIsolation, true);
     assert.equal(o.webPreferences.nodeIntegration, false);
