@@ -6,7 +6,6 @@
 CREATE TABLE IF NOT EXISTS subscribers (
   email      TEXT PRIMARY KEY CHECK (length(email) BETWEEN 3 AND 254), -- lower-cased
   tools      TEXT CHECK (tools IS NULL OR length(tools) <= 120),       -- e.g. 'claude-code,codex'; NULL = not answered
-  price      TEXT CHECK (price IS NULL OR price IN ('none', 'upto3', '3to5', '5to10', 'more')),
   feature    TEXT CHECK (feature IS NULL OR length(feature) <= 200),   -- the one free-text answer
   locale     TEXT NOT NULL DEFAULT 'tr' CHECK (locale IN ('tr', 'en')), -- the page language, for the mail's language
   token      TEXT NOT NULL UNIQUE CHECK (length(token) = 64),           -- random; the unsubscribe link

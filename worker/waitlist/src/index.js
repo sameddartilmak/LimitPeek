@@ -75,15 +75,14 @@ async function subscribe(request, env, ctx, base, nowMs) {
   const a = sanitiseAnswers(form);
   const at = new Date(nowMs).toISOString();
   await env.DB
-    .prepare('INSERT INTO subscribers (email, tools, price, feature, locale, token, created_at, updated_at) '
-      + 'VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7) '
+    .prepare('INSERT INTO subscribers (email, tools, feature, locale, token, created_at, updated_at) '
+      + 'VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6) '
       + 'ON CONFLICT (email) DO UPDATE SET '
       + 'tools = COALESCE(excluded.tools, tools), '
-      + 'price = COALESCE(excluded.price, price), '
       + 'feature = COALESCE(excluded.feature, feature), '
       + 'locale = excluded.locale, '
       + 'updated_at = excluded.updated_at')
-    .bind(email, a.tools, a.price, a.feature, a.locale, newToken(), at)
+    .bind(email, a.tools, a.feature, a.locale, newToken(), at)
     .run();
   return thanks();
 }

@@ -10,7 +10,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0E1211">
 <title>LimitPeek — Yapay zekâ limitlerin, bir bakışta tepside</title>
-<meta name="description" content="Ücretsiz beta. LimitPeek, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.">
+<meta name="description" content="Ücretsiz ve açık kaynak. LimitPeek, Claude Code, Codex ve Antigravity’nin 5 saatlik ve haftalık limitlerini Windows tepsisindeki küçük bir panelde gösterir. Doğrulayamadığı yüzdeyi göstermez.">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
 <!-- Synchronous on purpose: picks the language before first paint. -->
@@ -75,8 +75,8 @@
       <span class="l-en" lang="en">The 5-hour and weekly limits of Claude Code, Codex and Antigravity in one small panel. It never shows a percentage it cannot verify.</span>
     </p>
     <p class="hero__beta drop d3">
-      <span class="l-tr" lang="tr">Beta boyunca ücretsiz. İleride ücretli bir sürüm gelebilir; bir şey değişmeden önce beta kullanıcılarına haber veririz.</span>
-      <span class="l-en" lang="en">Free during the beta. A paid version may come later; beta users will hear from us before anything changes.</span>
+      <span class="l-tr" lang="tr">Ücretsiz ve <a href="https://github.com/sameddartilmak/LimitPeek" rel="noreferrer">açık kaynak</a> (MIT lisansı). Kart, hesap ya da deneme süresi yok.</span>
+      <span class="l-en" lang="en">Free and <a href="https://github.com/sameddartilmak/LimitPeek" rel="noreferrer">open source</a> (MIT licence). No card, no account, no trial clock.</span>
     </p>
     <div class="cta drop d4" id="hero-cta">
       <a class="btn btn--glow" href="#install"><svg class="ico ico--win" aria-hidden="true" focusable="false"><use href="#i-win"/></svg><span class="l-tr" lang="tr">Windows’a kur</span><span class="l-en" lang="en">Install on Windows</span></a>
@@ -446,8 +446,8 @@
 <section class="sec band" id="waitlist" aria-labelledby="h-waitlist">
   <div class="wrap">
     <div class="sec__head rise">
-      <h2 class="h2" id="h-waitlist"><span class="h2__a"><span class="l-tr" lang="tr">Ücretli sürüm çıkınca haber ver.</span><span class="l-en" lang="en">Tell me when the paid version is out.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">İstersen üç soru da cevapla.</span><span class="l-en" lang="en">And three optional questions.</span></span></h2>
-      <p class="lede"><span class="l-tr" lang="tr">Beta ücretsiz. Ücretli bir sürüm gelirse önce bu listeye yazarız. Sorular isteğe bağlı; fiyata ve önceliklere bunlara bakarak karar vereceğiz.</span><span class="l-en" lang="en">The beta is free. If a paid version comes, this list hears first. The questions are optional; they will shape the price and what comes next.</span></p>
+      <h2 class="h2" id="h-waitlist"><span class="h2__a"><span class="l-tr" lang="tr">Yeni sürüm çıkınca haber ver.</span><span class="l-en" lang="en">Tell me when a new version is out.</span></span> <span class="h2__b"><span class="l-tr" lang="tr">İstersen iki soru da cevapla.</span><span class="l-en" lang="en">And two optional questions.</span></span></h2>
+      <p class="lede"><span class="l-tr" lang="tr">Yeni sürümleri ve önemli değişiklikleri bu listeye yazarız. Sorular isteğe bağlı; neyi önce geliştireceğimize bunlara bakarak karar veririz.</span><span class="l-en" lang="en">New versions and important changes go to this list. The questions are optional; they shape what we build next.</span></p>
     </div>
 
     <form class="wl rise" id="waitlist-form" method="post" accept-charset="utf-8">
@@ -475,16 +475,6 @@
           </div>
         </fieldset>
 
-        <fieldset class="wl__q">
-          <legend class="wl__label"><span class="l-tr" lang="tr">Ücretli sürüme ayda ne kadar öderdin?</span><span class="l-en" lang="en">What would you pay per month for a paid version?</span></legend>
-          <div class="opts">
-            <label class="opt"><input type="radio" name="price" value="none"><span><span class="l-tr" lang="tr">Ödemezdim</span><span class="l-en" lang="en">Nothing</span></span></label>
-            <label class="opt"><input type="radio" name="price" value="upto3"><span><span class="l-tr" lang="tr">3 dolara kadar</span><span class="l-en" lang="en">Up to $3</span></span></label>
-            <label class="opt"><input type="radio" name="price" value="3to5"><span><span class="l-tr" lang="tr">3–5 dolar</span><span class="l-en" lang="en">$3–5</span></span></label>
-            <label class="opt"><input type="radio" name="price" value="5to10"><span><span class="l-tr" lang="tr">5–10 dolar</span><span class="l-en" lang="en">$5–10</span></span></label>
-            <label class="opt"><input type="radio" name="price" value="more"><span><span class="l-tr" lang="tr">Daha fazla</span><span class="l-en" lang="en">More</span></span></label>
-          </div>
-        </fieldset>
 
         <div class="wl__field">
           <label class="wl__label" for="wl-feature"><span class="l-tr" lang="tr">En çok hangi özelliği istersin?</span><span class="l-en" lang="en">Which feature do you want most?</span></label>
@@ -501,7 +491,7 @@
 
         <div class="wl__send">
           <button class="btn btn--glow" type="submit"><span class="l-tr" lang="tr">Listeye yaz</span><span class="l-en" lang="en">Add me to the list</span></button>
-          <p class="wl__consent"><span class="l-tr" lang="tr">“Listeye yaz”a basınca e-postan ve cevapların kaydedilir. Yalnızca ücretli sürümü duyurmak ve beta hakkında görüş sormak için yazarız. Her e-postada listeden çıkma bağlantısı olur. Ayrıntılar: <a href="privacy.html#waitlist">Gizlilik politikası</a>.</span><span class="l-en" lang="en">Pressing “Add me to the list” saves your email and answers. We write only to announce the paid version and to ask about the beta. Every email has an unsubscribe link. Details: <a href="privacy.html#waitlist-en">Privacy policy</a>.</span></p>
+          <p class="wl__consent"><span class="l-tr" lang="tr">“Listeye yaz”a basınca e-postan ve cevapların kaydedilir. Yalnızca yeni sürümleri duyurmak ve görüşünü sormak için yazarız. Her e-postada listeden çıkma bağlantısı olur. Ayrıntılar: <a href="privacy.html#waitlist">Gizlilik politikası</a>.</span><span class="l-en" lang="en">Pressing “Add me to the list” saves your email and answers. We write only to announce new versions and to ask for your feedback. Every email has an unsubscribe link. Details: <a href="privacy.html#waitlist-en">Privacy policy</a>.</span></p>
         </div>
       </fieldset>
     </form>
@@ -535,11 +525,11 @@
       </details>
       <details class="q">
         <summary><span class="l-tr" lang="tr">Neden ücretsiz?</span><span class="l-en" lang="en">Why is it free?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
-        <p><span class="l-tr" lang="tr">Çünkü bu bir beta. Önce uygulamanın işine yarayıp yaramadığını ve neyin eksik olduğunu görmek istiyoruz. Beta boyunca deneme süresi, kart ya da hesap yok.</span><span class="l-en" lang="en">Because it is a beta. First we want to see whether the app is useful to you and what is missing. During the beta there is no trial clock, no card and no account.</span></p>
+        <p><span class="l-tr" lang="tr">LimitPeek açık kaynak bir proje ve ücretsiz kalacak. Kodu <a href="https://github.com/sameddartilmak/LimitPeek" rel="noreferrer">GitHub’da</a> herkes inceleyebilir; uygulamanın internete hiçbir şey göndermediğini kendin de doğrulayabilirsin. Deneme süresi, kart ya da hesap yok.</span><span class="l-en" lang="en">LimitPeek is an open-source project and it will stay free. Anyone can read the code <a href="https://github.com/sameddartilmak/LimitPeek" rel="noreferrer">on GitHub</a>, so you can check for yourself that the app sends nothing to the internet. No trial clock, no card, no account.</span></p>
       </details>
       <details class="q">
         <summary><span class="l-tr" lang="tr">Ücretli olacak mı?</span><span class="l-en" lang="en">Will it be paid?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
-        <p><span class="l-tr" lang="tr">İleride ücretli bir sürüm gelebilir. Fiyat, kapsam ve tarih henüz belli değil. Bir şey değişmeden önce beta kullanıcılarına haber veririz: haber listesindeysen e-postayla, değilsen bu sitede ve Store sayfasında.</span><span class="l-en" lang="en">A paid version may come later. Price, scope and date are not decided yet. Beta users will hear from us before anything changes: by email if you are on the waitlist, otherwise on this site and the Store page.</span></p>
+        <p><span class="l-tr" lang="tr">Hayır. LimitPeek ücretsiz ve MIT lisanslı açık kaynak bir uygulama; ücretli bir sürüm planlanmıyor.</span><span class="l-en" lang="en">No. LimitPeek is free, open-source software under the MIT licence; no paid version is planned.</span></p>
       </details>
       <details class="q">
         <summary><span class="l-tr" lang="tr">Betada ne eksik olabilir?</span><span class="l-en" lang="en">What may be missing in the beta?</span><svg class="q__icon" aria-hidden="true"><use href="#i-plus"/></svg></summary>
@@ -579,7 +569,7 @@
     <ul class="foot-site__links">
       <li><a href="privacy.html"><span class="l-tr" lang="tr">Gizlilik</span><span class="l-en" lang="en">Privacy</span></a></li>
       <li><a href="terms.html"><span class="l-tr" lang="tr">Kullanım koşulları</span><span class="l-en" lang="en">Terms</span></a></li>
-      <li><a href="refund.html"><span class="l-tr" lang="tr">İade</span><span class="l-en" lang="en">Refunds</span></a></li>
+      <li><a href="https://github.com/sameddartilmak/LimitPeek" rel="noreferrer"><span class="l-tr" lang="tr">Kaynak kodu</span><span class="l-en" lang="en">Source code</span></a></li>
       <li><a href="assets/fonts/Inter-OFL.txt"><span class="l-tr" lang="tr">Inter lisansı</span><span class="l-en" lang="en">Inter licence</span></a></li>
       <li><a href="assets/fonts/JetBrainsMono-OFL.txt"><span class="l-tr" lang="tr">JetBrains Mono lisansı</span><span class="l-en" lang="en">JetBrains Mono licence</span></a></li>
     </ul>

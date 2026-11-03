@@ -1,4 +1,4 @@
-/* LimitPeek text pages (privacy, terms, refund, thanks, unsubscribed): the
+/* LimitPeek text pages (privacy, terms, thanks, unsubscribed): the
  * only script. It picks TR/EN before first paint and keeps <html lang> and
  * the title in step with the radio. Without it the CSS still switches
  * language from the radio. No network, no storage. */
