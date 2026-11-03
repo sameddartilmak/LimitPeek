@@ -18,10 +18,22 @@
  * contain` stops the search there, as it stops scroll chaining natively.
  */
 
-/** How quickly the glide closes on its target: 63% of the way every TAU. */
-export const SCROLL_TAU_S = 0.085;
+/**
+ * How quickly the glide closes on its target: 63% of the way every TAU. Long
+ * enough that the list keeps coasting after the wheel stops (the owner asked
+ * for "daha kaygan", more slippery, after 0.085 s felt too firm).
+ */
+export const SCROLL_TAU_S = 0.16;
 /** Share of the browser's per-notch distance one notch moves. */
-export const WHEEL_GAIN = 0.7;
+export const WHEEL_GAIN = 0.85;
+/**
+ * Spinning the wheel fast throws the list further, as on a Mac: each notch
+ * that follows the last within STREAK_MS in the same direction moves
+ * STREAK_STEP more, up to STREAK_MAX times a lone notch.
+ */
+export const STREAK_MS = 140;
+export const STREAK_STEP = 0.3;
+export const STREAK_MAX = 2.5;
 /** Closer than this (CSS px) and the glide simply lands. */
 const LAND_PX = 0.5;
 /** Someone else moved the box (scrollbar drag, scrollIntoView, code). */
@@ -58,6 +70,14 @@ export function wheelDistance(e: WheelLike, pageHeight: number): number {
   return e.deltaY * unit * WHEEL_GAIN;
 }
 
+/**
+ * The throw multiplier for this notch. `streak` is how many notches in a row
+ * came within STREAK_MS in the same direction before this one.
+ */
+export function streakBoost(streak: number): number {
+  return Math.min(STREAK_MAX, 1 + Math.max(0, streak) * STREAK_STEP);
+}
+
 /** One frame of the glide: `current` eased toward `target` over `dt` seconds. */
 export function approach(current: number, target: number, dt: number, tau: number = SCROLL_TAU_S): number {
   if (!(dt > 0)) return current;
@@ -83,6 +103,10 @@ interface Glide {
   written: number;
   last: number;
   raf: number;
+  /** Notches in a row, and when and which way the last one went. */
+  streak: number;
+  notchAt: number;
+  notchSign: number;
 }
 
 function scrollsY(el: Element, view: Window): boolean {
@@ -134,11 +158,21 @@ export function installSmoothScroll(view: Window = window): () => void {
     const idle = !g || !g.raf || Math.abs(el.scrollTop - g.written) > FOREIGN_PX;
     if (!g || idle) {
       if (g && g.raf) view.cancelAnimationFrame(g.raf);
-      g = { current: el.scrollTop, target: el.scrollTop, written: el.scrollTop, last: view.performance.now(), raf: 0 };
+      const keep = g && g.raf === 0 ? g : null;
+      g = {
+        current: el.scrollTop, target: el.scrollTop, written: el.scrollTop, last: view.performance.now(), raf: 0,
+        streak: keep ? keep.streak : 0, notchAt: keep ? keep.notchAt : -Infinity, notchSign: keep ? keep.notchSign : 0,
+      };
       glides.set(el, g);
     }
+    const now = view.performance.now();
+    const sign = Math.sign(event.deltaY);
+    g.streak = sign === g.notchSign && now - g.notchAt < STREAK_MS ? g.streak + 1 : 0;
+    g.notchAt = now;
+    g.notchSign = sign;
     const max = el.scrollHeight - el.clientHeight;
-    g.target = nextTarget(g.current, g.target, wheelDistance(event, view.innerHeight), max);
+    const delta = wheelDistance(event, view.innerHeight) * streakBoost(g.streak);
+    g.target = nextTarget(g.current, g.target, delta, max);
     if (!g.raf) {
       g.last = view.performance.now();
       g.raf = view.requestAnimationFrame(frame(el, g));
