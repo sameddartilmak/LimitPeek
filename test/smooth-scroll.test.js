@@ -27,10 +27,13 @@ test('a notched mouse wheel is taken over; touchpad, zoom and sideways are not',
   assert.equal(mod.isNotchedWheel(notch(0)), false);
 });
 
-test('one notch moves less than the browser jump, scaled by WHEEL_GAIN', () => {
-  assert.equal(mod.wheelDistance(notch(200), 600), 200 * mod.WHEEL_GAIN);
-  assert.ok(mod.wheelDistance(notch(200), 600) < 200);
-  assert.equal(mod.wheelDistance(notch(-3, { deltaMode: 1 }), 600), -100 * mod.WHEEL_GAIN);
+test('one notch moves NOTCH_PX, whatever Windows lines-per-notch says', () => {
+  assert.equal(mod.wheelDistance(notch(200), 600), mod.NOTCH_PX, '6 lines');
+  assert.equal(mod.wheelDistance(notch(100), 600), mod.NOTCH_PX, '3 lines');
+  assert.equal(mod.wheelDistance(notch(-200), 600), -mod.NOTCH_PX);
+  assert.equal(mod.wheelDistance(notch(400, { wheelDeltaY: -240 }), 600), 2 * mod.NOTCH_PX, 'two notches in one event');
+  assert.equal(mod.wheelDistance(notch(-3, { deltaMode: 1, wheelDeltaY: undefined }), 600), -mod.NOTCH_PX);
+  assert.ok(mod.NOTCH_PX <= 80, 'a lone notch moves only a little (owner: "az kaydırmayla bile fazla kayıyor")');
 });
 
 test('the glide eases in, never overshoots, and lands', () => {
@@ -43,7 +46,9 @@ test('the glide eases in, never overshoots, and lands', () => {
   const lastMove = steps[steps.length - 1] - steps[steps.length - 2];
   assert.ok(firstMove > lastMove * 10, 'fast at first, soft at the end');
   const ms = steps.length * (1000 / 147);
-  assert.ok(ms > 200 && ms < 700, `a notch settles in a Mac-like time (${ms.toFixed(0)} ms)`);
+  assert.ok(ms > 500 && ms < 1200, `a notch coasts, slippery but not sluggish (${ms.toFixed(0)} ms)`);
+  const half = steps.findIndex((v) => v >= 70) * (1000 / 147);
+  assert.ok(half < 150, `half the way within ${half.toFixed(0)} ms: it answers at once`);
 });
 
 test('a dropped frame does not become a jump', () => {
@@ -99,9 +104,10 @@ test('installed: a notch glides the scrolling box and settles on target', () => 
   const e = f.wheel(row, 200);
   assert.equal(e.defaultPrevented, true);
   f.run(16);
-  assert.ok(box.scrollTop > 0 && box.scrollTop < 140, `moving, not jumped (${box.scrollTop})`);
-  f.run(1000);
-  assert.ok(Math.abs(box.scrollTop - 140) < 1, `settled near 140 (${box.scrollTop})`);
+  const one = mod.NOTCH_PX;
+  assert.ok(box.scrollTop > 0 && box.scrollTop < one / 2, `moving, not jumped (${box.scrollTop})`);
+  f.run(2000);
+  assert.ok(Math.abs(box.scrollTop - one) < 1, `settled near ${one} (${box.scrollTop})`);
   undo();
   assert.equal(f.listeners.wheel, undefined);
 });
@@ -123,6 +129,26 @@ test('installed: someone else scrolling (scrollbar, scrollIntoView) stops the gl
   box.scrollTop = 900;
   f.run(1000);
   assert.equal(box.scrollTop, 900);
+});
+
+test('a fast spin throws further; a slow one does not', () => {
+  assert.equal(mod.streakBoost(0), 1);
+  assert.equal(mod.streakBoost(mod.STREAK_FREE), 1, 'an ordinary short roll is not boosted');
+  assert.ok(mod.streakBoost(mod.STREAK_FREE + 3) > 1.5);
+  assert.equal(mod.streakBoost(50), mod.STREAK_MAX);
+  const spin = (gapMs) => {
+    const f = fakeView();
+    const box = new f.El(null);
+    box.scrollHeight = 20000;
+    mod.installSmoothScroll(f.view);
+    for (let i = 0; i < 8; i++) { f.wheel(box, 200); f.run(gapMs); }
+    f.run(3000);
+    return box.scrollTop;
+  };
+  const slow = spin(400);
+  const fast = spin(40);
+  assert.ok(Math.abs(slow - 8 * mod.NOTCH_PX) < 2, `slow notches add up plainly (${slow})`);
+  assert.ok(fast > slow * 1.4, `fast notches throw further (${fast} vs ${slow})`);
 });
 
 test('the panel installs it', () => {
