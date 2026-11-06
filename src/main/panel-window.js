@@ -107,9 +107,16 @@ const SYNTHETIC_TRAY_SIZE = 16;
  * The fitted window (see the header). 320 wide, the canvas panel's width
  * (`--panel-w` in tokens.css; 400 until the minimal redesign, 2026-10-22, and
  * one width for every view, so it never changes under the pointer); at most
- * 680 tall, the tallest panel the 720 canvas held; 12 from the taskbar and
- * the work-area edges, where Windows 11 puts its own flyouts. The start
+ * 900 tall, and never taller than the work area allows; 12 from the taskbar
+ * and the work-area edges, where Windows 11 puts its own flyouts. The start
  * height only lasts until the renderer's first report.
+ *
+ * The cap was 680, the tallest panel the old 720 canvas held. Claude Code's
+ * open details measure 726 with the header, so the sheet scrolled by 46 px
+ * on a 1536x864 desktop that had room for 792 ("çok ufak bir dikey kaydırma
+ * var, kötü oluyor", owner, 2026-11-06). The window is only as tall as the
+ * panel, so a higher cap costs nothing for a short one; the work area is the
+ * real limit (fitTo).
  */
 const FITTED_WIDTH = 320;
 /**
@@ -124,7 +131,7 @@ const FITTED_WIDTH = 320;
 const BACKDROP_LIVE_MS = 16;
 /** The ring outside the panel each LIVE tick looks at, in DIP px. */
 const BACKDROP_RING = 6;
-const FITTED_MAX_HEIGHT = 680;
+const FITTED_MAX_HEIGHT = 900;
 const FITTED_GAP = 12;
 const FITTED_START_HEIGHT = 420;
 /** A report below this is not a panel (the header alone is 60). */

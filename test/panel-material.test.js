@@ -363,6 +363,23 @@ test.describe('the fitted window is placed where the panel goes', () => {
     assert.equal(at('bottom', { x: 960, y: 1050 }).x, 760);
   });
 
+  test('a tall sheet grows to what a 1536x864 desktop allows instead of scrolling a few px', () => {
+    const { panel } = fitted();
+    const saved = { ...DISPLAY.workArea };
+    try {
+      DISPLAY.workArea = { x: 0, y: 0, width: 1536, height: 816 };
+      DISPLAY.bounds = { x: 0, y: 0, width: 1536, height: 864 };
+      panel.setContentHeight(726); // Claude Code's open details, measured 2026-11-06
+      const anchor = panel.positionFor({ x: 1450, y: 830, width: 24, height: 40 });
+      assert.equal(anchor.maxHeight, 816 - 2 * FITTED_GAP);
+      assert.ok(anchor.maxHeight >= 726, 'the sheet fits, so it does not scroll');
+      assert.equal(panel.win.getBounds().height, 726);
+    } finally {
+      DISPLAY.workArea = saved;
+      DISPLAY.bounds = { x: 0, y: 0, width: 1920, height: 1080 };
+    }
+  });
+
   test('a small work area (150 % laptop) caps the window and reports the cap', () => {
     const { panel } = fitted();
     const saved = { ...DISPLAY.workArea };

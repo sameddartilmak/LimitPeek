@@ -160,7 +160,7 @@ export function placePanel(
  * src/main/panel-window.js; the first open's anchor corrects it on a smaller
  * work area.
  */
-export const FITTED_MAX_HEIGHT = 680;
+export const FITTED_MAX_HEIGHT = 900;
 
 /**
  * A 'fitted' window (Preferences.frame) IS the panel: the panel fills it from
