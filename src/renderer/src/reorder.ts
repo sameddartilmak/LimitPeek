@@ -477,6 +477,11 @@ export function createReorder(host: ReorderHost): ReorderHandle {
     if (session) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     if (!host.enabled()) return;
+    // A disabled grip (a loading card, or the card open alone as a sheet) is
+    // not a grip. Chromium may still deliver pointer events to a disabled
+    // button, so this does not rely on it swallowing them.
+    if (grip instanceof HTMLButtonElement && grip.disabled) return;
+    if (host.list.getAttribute('data-sheet') === 'true') return;
 
     const row = grip.closest('li');
     if (!(row instanceof HTMLElement)) return;
@@ -531,6 +536,7 @@ export function createReorder(host: ReorderHost): ReorderHandle {
 
   function onGripKeyDown(event: KeyboardEvent, id: string, name: string): void {
     if (!event.altKey || event.ctrlKey || event.metaKey) return;
+    if (host.list.getAttribute('data-sheet') === 'true') return;
     const ids = idsOf(host.list);
     const from = ids.indexOf(id);
     if (from < 0) return;

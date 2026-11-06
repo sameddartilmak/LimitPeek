@@ -218,6 +218,30 @@ test.describe('"Ayrıntılar"', () => {
     assert.equal(detail.hidden, true);
   });
 
+  test('the logo drags in the list but not in the open sheet, where the card is alone', () => {
+    let open = null;
+    const c = ctx({ isExpanded: (id) => id === open });
+    const p = provider({ fiveHour: win(62), sevenDay: win(41) });
+    const row = rowMod.createRow(p, c, NOW);
+    const grip = byClass(row.el, 'grip')[0];
+    assert.equal(grip.disabled, false, 'the closed line must still drag');
+    assert.equal(grip.getAttribute('aria-describedby'), rowMod.REORDER_HELP_ID);
+    open = 'claude';
+    row.update(p, c, NOW);
+    assert.equal(grip.disabled, true, 'the open sheet must not offer a drag');
+    assert.equal(grip.getAttribute('aria-describedby'), null);
+    assert.doesNotMatch(grip.getAttribute('title'), /sürükle/);
+    open = null;
+    row.update(p, c, NOW);
+    assert.equal(grip.disabled, false, 'closing the sheet gives the drag back');
+  });
+
+  test('the reorder controller ignores a press in the sheet and on a disabled grip', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'src', 'reorder.ts'), 'utf8');
+    assert.match(src, /grip\.disabled\) return;/);
+    assert.equal((src.match(/getAttribute\('data-sheet'\) === 'true'\) return;/g) || []).length, 2, 'pointer and keyboard paths');
+  });
+
   test('a passive or loading card has no "Ayrıntılar" at all', () => {
     for (const status of ['passive', 'loading']) {
       const row = rowMod.createRow(provider({ status, connected: false }), ctx({ isExpanded: () => true }), NOW);
