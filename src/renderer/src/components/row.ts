@@ -975,27 +975,34 @@ export function createRow(provider: ProviderSnapshot, ctx: RowContext, now: numb
       p.status === 'loading' ? t('row.loadingLabel', { name: p.displayName }) : null,
     );
 
+    // Nothing to detail on a loading or passive card: no "Ayrıntılar" at all,
+    // and a stale "open" state cannot leave a region showing.
+    const hasDetail = p.status !== 'loading' && p.status !== 'passive';
+    const expanded = hasDetail && (context.isExpanded?.(p.id) ?? false);
+
     // --- the grip -------------------------------------------------------
+    // Open details are a sheet with this card alone in it (panel.ts), so there
+    // is nothing to move it past: the logo is just the logo there, not a grip
+    // (owner, 2026-11-06: dragging in the opened panel "bozuk çalışıyor ...
+    // tek model var"). Reordering stays in the list of closed lines.
+    const inSheet = expanded;
     const tray = context.isTrayRow(p.id);
     setAttr(refs.grip, 'data-tray', tray ? 'true' : null);
-    setAttr(refs.grip, 'aria-label', t('row.gripLabel', { name: p.displayName }));
+    setAttr(refs.grip, 'aria-label', inSheet ? p.displayName : t('row.gripLabel', { name: p.displayName }));
+    setAttr(refs.grip, 'aria-describedby', inSheet ? null : REORDER_HELP_ID);
     // The tray consequence is stated on the control that causes it, honestly:
     // a provider with no five-hour window drives an empty ring, not a donut.
-    const title = t('row.gripTitle', { name: p.displayName });
-    const trayNote = tray
+    const title = inSheet ? p.displayName : t('row.gripTitle', { name: p.displayName });
+    const trayNote = tray && !inSheet
       ? p.connected && p.fiveHour != null
         ? t('row.gripTray')
         : t('row.gripTrayNoData')
       : '';
     setAttr(refs.grip, 'title', trayNote ? `${title} ${trayNote}` : title);
-    refs.grip.disabled = p.status === 'loading';
+    refs.grip.disabled = p.status === 'loading' || inSheet;
     context.attachGrip(refs.grip, p.id, p.displayName);
 
     // --- "Ayrıntılar" ----------------------------------------------------
-    // Nothing to detail on a loading or passive card: no control at all, and a
-    // stale "open" state cannot leave a region showing.
-    const hasDetail = p.status !== 'loading' && p.status !== 'passive';
-    const expanded = hasDetail && (context.isExpanded?.(p.id) ?? false);
     moreButton.hidden = !hasDetail;
     setAttr(moreButton, 'aria-expanded', expanded ? 'true' : 'false');
     setAttr(moreButton, 'aria-label', t(expanded ? 'row.detail.hideLabel' : 'row.detail.showLabel', { name: p.displayName }));
