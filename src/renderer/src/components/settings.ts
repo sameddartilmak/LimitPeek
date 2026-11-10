@@ -930,7 +930,15 @@ function createGlassControl(ctx: SettingsContext): GlassHandleLocal {
   const name = el('span', { class: 'settings__name', id: GLASS_NAME_ID }, t('settings.glass.label'));
   // The figure is for the eye; the input announces it as its own value.
   const figure = el('span', { class: 'glass-slider__value', 'aria-hidden': 'true' }, '');
-  const hint = el('span', { class: 'settings__meta', id: GLASS_HELP_ID }, t('settings.glass.help'));
+  // One short line; the privacy sentence (what the screen behind the panel is
+  // used for) is the hint's tooltip, and is read with it by a screen reader.
+  const hintText = el('span', {}, t('settings.glass.help'));
+  const hint = el(
+    'span',
+    { class: 'settings__meta', id: GLASS_HELP_ID, title: t('settings.glass.privacy') },
+    hintText,
+    el('span', { class: 'u-sr' }, ` ${t('settings.glass.privacy')}`),
+  );
   const input = el('input', {
     type: 'range',
     class: 'glass-slider__input',
@@ -973,7 +981,7 @@ function createGlassControl(ctx: SettingsContext): GlassHandleLocal {
     const system = state.systemReducedTransparency;
     const level = state.transparency;
     const shown = t('settings.glass.value', { n: level });
-    setText(hint, t(system ? 'settings.glass.bySystem' : 'settings.glass.help'));
+    setText(hintText, t(system ? 'settings.glass.bySystem' : 'settings.glass.help'));
     // Only when it differs: writing the value the thumb already has would
     // be harmless, but a drag must never meet a write of its own past.
     if (input.value !== String(level)) input.value = String(level);
@@ -1313,6 +1321,10 @@ function createUsageSection(): UsageHandleLocal {
   // toggle buttons with a roving tab stop, so the chart is ONE stop in the tab
   // order and the arrow keys move along it.
   const chart = el('div', { class: 'usage__chart', role: 'group', 'aria-label': t('settings.usage.chart') });
+  // The full explanation moved under the list (owner, 2026-11-10), so the
+  // figures are never read without their framing: this one line stays right
+  // under them and says both claims, published API prices and not a bill.
+  const caption = el('p', { class: 'usage__caption' }, t('settings.usage.caption'));
   const list = el('ul', { class: 'usage__list', role: 'list' });
   const empty = el('p', { class: 'usage__empty' }, '');
   // --- the price note (ADR-003 A6, ADR-004 A3) -----------------------------
@@ -1365,12 +1377,15 @@ function createUsageSection(): UsageHandleLocal {
     el(
       'div',
       { class: 'usage__scroll' },
-      intro,
+      // Status first (something is missing or still being read), then the
+      // figures, then what they mean and where the prices come from.
       pendingNote,
       incompleteNote,
       chart,
       list,
+      caption,
       empty,
+      intro,
       note,
     ),
   );
@@ -1639,6 +1654,8 @@ function createUsageSection(): UsageHandleLocal {
       incompleteIds.length > 0 ? t('settings.usage.incomplete', { tools: toolsText(incompleteIds) }) : '',
     );
 
+    // The caption frames figures; with none on the page it has nothing to say.
+    caption.hidden = true;
     if (!hasData) {
       chart.hidden = true;
       list.hidden = true;
@@ -1665,6 +1682,7 @@ function createUsageSection(): UsageHandleLocal {
 
     empty.hidden = true;
     list.hidden = false;
+    caption.hidden = false;
     // The rebuild replaces every node, so a keyboard user sitting on a toggle
     // or on the chooser would lose focus on each push. Remember which control
     // held it and put focus back on its replacement.
@@ -1931,7 +1949,9 @@ export function createSettings(ctx: SettingsContext): SettingsHandle {
   let current: SettingsTab = 'providers';
   const tabs = createTabs(
     [
-      { id: 'providers', label: t('settings.tabs.providers'), content: [help, list, status] },
+      // The explanation comes after the list it explains (owner, 2026-11-10:
+      // a paragraph above pushed the tools down on every open).
+      { id: 'providers', label: t('settings.tabs.providers'), content: [list, status, help] },
       { id: 'usage', label: t('settings.tabs.usage'), content: [usage.el], extraClass: 'settings__panel--usage' },
       {
         id: 'general',
