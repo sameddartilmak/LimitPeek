@@ -360,6 +360,8 @@ test.describe('the honesty copy makes the same claim with the same force (ADR-00
     { file: 'renderer.json', key: 'cost.detailLead', en: [/\bat published API prices\b/i], tr: [/API fiyatlarıyla/] },
     { file: 'renderer.json', key: 'cost.toggleLabel', en: [/\bat published API prices\b/i, /\bnot a bill\b/i], tr: [/API fiyatlarıyla/i, /tutardı/, /fatura değil/] },
     { file: 'renderer.json', key: 'settings.usage.intro', en: [/\bat published API prices\b/i, /\bnot a bill\b/i], tr: [/API fiyatlarıyla/i, /fatura değil/] },
+    // The line that stays right under the history's figures (2026-11-10).
+    { file: 'renderer.json', key: 'settings.usage.caption', en: [/\bat published API prices\b/i, /\bnot a bill\b/i], tr: [/API fiyatlarıyla/i, /fatura değil/] },
     // not a bill
     { file: 'renderer.json', key: 'cost.denial', en: [/\bnot a bill\b/i], tr: [/fatura değil/] },
     // an estimate says so

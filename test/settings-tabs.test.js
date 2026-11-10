@@ -600,8 +600,11 @@ test.describe('Görünüm → "Saydamlık": a slider on the "Genel" tab, from "D
     const name = findById(handle.el, control.getAttribute('aria-labelledby'));
     assert.equal(name.textContent, 'Saydamlık');
     const help = findById(handle.el, control.getAttribute('aria-describedby'));
-    assert.match(help.textContent, /^Sola çekince panel buzlanıp düzleşir, sağa çekince arkası daha net görünür\./);
+    // One short line on screen (owner, 2026-11-10); the privacy sentence is
+    // the line's tooltip and is still read with it.
+    assert.match(help.textContent, /^Sola çekince buzlu, sağa çekince daha saydam\./);
     assert.match(help.textContent, /yalnızca bu bilgisayarda, panel açıkken kullanılır\.$/, 'the screen picture is said, and where it stays');
+    assert.match(help.getAttribute('title'), /yalnızca bu bilgisayarda, panel açıkken kullanılır\.$/, 'and shown on hover');
     const ends = walk(row).filter((el) => (el.getAttribute('class') || '').includes('glass-slider__end'));
     assert.deepEqual(ends.map((el) => el.textContent), ['Düz', 'Saydam']);
     assert.ok(ends.every((el) => el.getAttribute('aria-hidden') === 'true'), 'the ends are for the eye; the value is announced');
@@ -663,7 +666,7 @@ test.describe('Görünüm → "Saydamlık": a slider on the "Genel" tab, from "D
     assert.equal(control.getAttribute('disabled'), null);
     assert.equal(row.getAttribute('data-disabled'), null);
     assert.equal(figure.textContent, '%70');
-    assert.match(help.textContent, /^Sola çekince panel buzlanıp düzleşir/);
+    assert.match(help.textContent, /^Sola çekince buzlu/);
   });
 
   test('the stylesheet draws the range like the switches and in system colours under high contrast', () => {
