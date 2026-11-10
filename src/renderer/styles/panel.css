@@ -961,10 +961,14 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .panel__band--list
  * takes the list band's whole budget, so switching tabs never changes the
  * panel's height under the pointer. */
 .panel[data-view="settings"] .panel__band--list { overflow: hidden; overflow: clip; }
+/* At most 520 px tall (564 with the header), whatever the screen allows. The list's budget grew
+ * to the screen for tall tool sheets (0.6.54), and Settings, which took that
+ * whole budget, then ran from the top of the screen to the taskbar ("ekranı
+ * yukarıdan aşağı dolduruyor", owner, 2026-11-10). Its pages scroll inside. */
 .settings {
   display: flex;
   flex-direction: column;
-  height: var(--list-max, 520px);
+  height: min(var(--list-max, 520px), 520px);
   min-height: 0;
 }
 /* THE TAB BAND IS GLASS TOO (2026-10-21). The view's title row moved into the
@@ -1191,8 +1195,12 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
 }
 .settings__item[data-connected="true"] .mark { stroke-width: 2; opacity: 1; }
 
+/* Basis 0, not auto: a long status line (nowrap) made the column as wide as its
+ * text, so the wrapping item pushed it, and then the switch, onto lines of
+ * their own under the logo. It now takes what is left beside the mark and the
+ * switch and ellipsizes there. */
 .settings__text {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;

@@ -219,8 +219,13 @@ function metaFor(provider: ProviderSnapshot, enabled: boolean): string {
   const where = enabled ? t('settings.where.enabled') : t('settings.where.notEnabled');
   // A tool whose hook was removed is not "bağlı", even while an older figure
   // (or, for Claude, the desktop app's) still fills its card.
+  // A tool that is not on this machine says so in three words: its full
+  // "… bu bilgisayarda bulunamadı." sentence did not fit the line, and the
+  // item's tooltip (metaTipFor) still carries the explanation.
   const how = provider.hookInstalled === false && provider.setupAction?.kind === 'install-bridge'
     ? t('settings.disconnected')
+    : provider.setupAction?.kind === 'not-installed' && !provider.connected
+    ? t('settings.notInstalled')
     : provider.connected
     ? t('settings.connected')
     : asClause(provider.setupAction?.detail ?? '') || t('settings.notConnected');
