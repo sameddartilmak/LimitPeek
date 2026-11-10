@@ -1382,8 +1382,10 @@ function createUsageSection(): UsageHandleLocal {
       pendingNote,
       incompleteNote,
       chart,
-      list,
+      // Between the chart and the period's total, so the line is read with
+      // the figures; under the list it sat below a long model breakdown.
       caption,
+      list,
       empty,
       intro,
       note,

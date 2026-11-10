@@ -1653,7 +1653,8 @@ html[data-material="acrylic"]:not([data-reduce-transparency]) .settings { --tabs
 /* The one line that stays with the figures: "API fiyatlarıyla tutar · fatura değil". */
 .usage__caption {
   margin: 0;
-  padding: var(--s-1) calc(var(--s-4) + var(--s-4)) 0;
+  padding: var(--s-1) 0 var(--s-2);
+  text-align: center;
   font-size: var(--fs-micro);
   color: var(--ink-400);
 }
