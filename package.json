@@ -1,6 +1,6 @@
 {
   "name": "usage-notch",
-  "version": "0.6.54",
+  "version": "0.6.55",
   "private": true,
   "license": "MIT",
   "description": "Windows tray monitor for AI coding tool usage limits.",
