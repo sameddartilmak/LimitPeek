@@ -180,6 +180,7 @@
   "settings.connected": "已连接",
   "settings.notConnected": "尚未连接",
   "settings.disconnected": "未连接",
+  "settings.notInstalled": "此计算机上未安装",
   "settings.metaTip.bridgeOn": "添加到 {provider} 设置中的一行（桥接）把限额百分比传给本应用。不使用互联网。",
   "settings.metaTip.bridgeOff": "桥接未添加，因此限额百分比不会更新。token 和费用仍会显示。点击“连接”即可添加。",
   "settings.metaTip.files": "直接读取该工具写在这台电脑上的记录，无需额外连接。",

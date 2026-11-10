@@ -201,6 +201,7 @@
   "settings.connected": "connected",
   "settings.notConnected": "not connected yet",
   "settings.disconnected": "not connected",
+  "settings.notInstalled": "not on this computer",
   "settings.metaTip.bridgeOn": "A single line added to the {provider} settings (the bridge) passes the limit percentages to this app. It does not use the internet.",
   "settings.metaTip.bridgeOff": "The bridge is not in place, so the limit percentages are not updated. Tokens and cost still show. Press \"Connect\" to add it.",
   "settings.metaTip.files": "The records this tool writes on this computer are read directly; no connection is needed.",

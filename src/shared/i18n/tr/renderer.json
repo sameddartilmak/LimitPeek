@@ -180,6 +180,7 @@
   "settings.connected": "bağlı",
   "settings.notConnected": "henüz bağlı değil",
   "settings.disconnected": "bağlı değil",
+  "settings.notInstalled": "bu bilgisayarda yok",
   "settings.metaTip.bridgeOn": "{provider} ayarlarına eklenen tek bir satır (köprü), limit yüzdelerini bu uygulamaya iletiyor. İnternete bağlanmaz.",
   "settings.metaTip.bridgeOff": "Köprü ekli değil, bu yüzden limit yüzdeleri güncellenmiyor. Token ve maliyet yine görünür. Bağlamak için \"Bağla\"ya basın.",
   "settings.metaTip.files": "Bu aracın bu bilgisayara kendi yazdığı kayıt dosyaları okunuyor; ayrıca bir bağlantı gerekmez.",
